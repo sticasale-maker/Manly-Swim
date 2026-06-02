@@ -29,28 +29,50 @@
   * { box-sizing:border-box; margin:0; padding:0; }
   html { font-size:14px; }
   body {
-    background: linear-gradient(160deg, #c8e0ed 0%, #a8cfe0 100%);
+    background: linear-gradient(180deg, #b8dff0 0%, #7ec8e3 50%, #4aa8cc 100%);
     min-height:100vh;
     color:var(--text);
     font-family:'DM Mono',monospace;
     -webkit-font-smoothing:antialiased;
     overscroll-behavior-y:contain;
     padding-bottom: env(safe-area-inset-bottom);
+    overflow-x:hidden;
   }
 
-  /* ── Subtle texture only ── */
-  body::before {
+  /* ── Animated wave layers ── */
+  body::before, body::after {
     content:'';
-    position:fixed; top:0; left:0; right:0; bottom:0;
-    background: radial-gradient(ellipse at 70% 0%, rgba(255,255,255,0.25) 0%, transparent 60%);
+    position:fixed;
+    left:-50%; width:200%;
+    pointer-events:none; z-index:0;
+  }
+  body::before {
+    bottom:-20px; height:180px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 180'%3E%3Cpath fill='rgba(255,255,255,0.18)' d='M0,80 C240,140 480,20 720,80 C960,140 1200,20 1440,80 L1440,180 L0,180 Z'/%3E%3C/svg%3E") repeat-x bottom;
+    background-size:720px 180px;
+    animation: wave1 8s linear infinite;
+  }
+  body::after {
+    bottom:-10px; height:140px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 140'%3E%3Cpath fill='rgba(255,255,255,0.12)' d='M0,60 C180,110 360,10 540,60 C720,110 900,10 1080,60 C1260,110 1350,30 1440,60 L1440,140 L0,140 Z'/%3E%3C/svg%3E") repeat-x bottom;
+    background-size:540px 140px;
+    animation: wave2 6s linear infinite reverse;
+  }
+  @keyframes wave1 { from{transform:translateX(0)} to{transform:translateX(50%)} }
+  @keyframes wave2 { from{transform:translateX(0)} to{transform:translateX(33%)} }
+
+  /* ── Subtle top shimmer ── */
+  .wrap::before {
+    content:'';
+    position:fixed; top:0; left:0; right:0; height:40%;
+    background: radial-gradient(ellipse at 60% 0%, rgba(255,255,255,0.22) 0%, transparent 70%);
     pointer-events:none; z-index:0;
   }
 
   .wrap { position:relative; z-index:1; max-width:600px; margin:0 auto; padding:0 10px 40px; }
 
-  /* ── Header ── */
   header {
-    padding:20px 0 12px;
+    padding:calc(env(safe-area-inset-top) + 24px) 0 12px;
     display:flex; align-items:flex-end; justify-content:space-between;
   }
   .logo {
@@ -66,10 +88,11 @@
   }
   .sun-info {
     text-align:right;
-    font-size:10px; color:var(--dim);
-    letter-spacing:0.5px; line-height:1.8;
+    font-size:15px; color:var(--dim);
+    letter-spacing:0.5px; line-height:2.2;
   }
-  .sun-info strong { color:var(--ocean); font-weight:500; }
+  .sun-info .sun-icon { font-size:22px; vertical-align:middle; margin-right:2px; }
+  .sun-info strong { color:var(--ocean); font-weight:600; font-size:16px; }
 
   /* ── Score hero ── */
   .score-hero {
@@ -159,12 +182,12 @@
     display:flex; gap:6px; margin-bottom:10px;
   }
   .tab-btn {
-    flex:1; padding:10px;
+    flex:1; padding:12px;
     background:rgba(255,255,255,0.5);
     border:1px solid var(--border);
     border-radius:10px;
-    font-family:'DM Mono',monospace;
-    font-size:11px; letter-spacing:2px; text-transform:uppercase;
+    font-family:'Bebas Neue',sans-serif;
+    font-size:18px; letter-spacing:3px; text-transform:uppercase;
     color:var(--dim); cursor:pointer;
     transition:all 0.2s;
   }
@@ -329,8 +352,8 @@
       <div class="header-sub">South Steyne Ocean Swim</div>
     </div>
     <div class="sun-info" id="sunInfo">
-      <div>🌅 <strong id="sunriseTime">—</strong></div>
-      <div>🌇 <strong id="sunsetTime">—</strong></div>
+      <div><span class="sun-icon">🌅</span> <strong id="sunriseTime">—</strong></div>
+      <div><span class="sun-icon">🌇</span> <strong id="sunsetTime">—</strong></div>
     </div>
   </header>
 
