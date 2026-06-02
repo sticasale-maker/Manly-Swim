@@ -94,52 +94,55 @@
   .sun-info .sun-icon { font-size:22px; vertical-align:middle; margin-right:2px; }
   .sun-info strong { color:var(--ocean); font-weight:600; font-size:16px; }
 
-  /* ── Score hero ── */
-  .score-hero {
+  /* ── Metrics panel (replaces score hero) ── */
+  .metrics-panel {
     background:var(--card);
     backdrop-filter:blur(12px);
     border:1px solid var(--border);
     border-radius:var(--radius);
-    padding:20px 18px;
+    padding:16px 16px 12px;
     margin-bottom:10px;
-    display:flex; align-items:center; gap:20px;
   }
-  .score-circle {
-    width:128px; height:128px; flex-shrink:0;
-    border-radius:50%;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    border:3px solid var(--green);
-    background:rgba(26,158,110,0.08);
-    transition:all 0.4s ease;
+  .metrics-time {
+    font-size:16px; color:var(--dim); letter-spacing:0.5px;
+    margin-bottom:14px;
   }
-  .score-circle.yellow { border-color:var(--yellow); background:rgba(212,144,10,0.08); }
-  .score-circle.red    { border-color:var(--red);    background:rgba(192,57,43,0.08); }
-  .score-num {
+  .metrics-grid {
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap:10px;
+  }
+  .metric-block {
+    border-radius:12px;
+    padding:14px 12px 12px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .metric-block.green  { background:rgba(26,158,110,0.15);  border:1.5px solid var(--green); }
+  .metric-block.yellow { background:rgba(212,144,10,0.15);  border:1.5px solid var(--yellow); }
+  .metric-block.orange { background:rgba(200,100,20,0.15);  border:1.5px solid #c86414; }
+  .metric-block.red    { background:rgba(192,57,43,0.15);   border:1.5px solid var(--red); }
+  .metric-name {
+    font-size:9px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--dim); margin-bottom:8px;
+  }
+  .metric-value {
     font-family:'Bebas Neue',sans-serif;
-    font-size:72px; line-height:1; color:var(--green);
+    font-size:26px; line-height:1; margin-bottom:2px;
   }
-  .score-circle.yellow .score-num { color:var(--yellow); }
-  .score-circle.red    .score-num { color:var(--red); }
-  .score-label { font-size:11px; letter-spacing:2px; color:var(--dim); text-transform:uppercase; }
-  .score-details { flex:1; }
-  .score-verdict {
-    font-family:'Playfair Display',serif;
-    font-size:30px; font-style:italic;
-    color:var(--deep); margin-bottom:4px;
-    line-height:1.2;
+  .metric-block.green  .metric-value { color:var(--green); }
+  .metric-block.yellow .metric-value { color:var(--yellow); }
+  .metric-block.orange .metric-value { color:#c86414; }
+  .metric-block.red    .metric-value { color:var(--red); }
+  .metric-dot {
+    width:10px; height:10px; border-radius:50%;
+    margin:6px auto 0;
   }
-  .score-time {
-    font-size:16px; color:var(--dim); letter-spacing:0.5px; margin-top:6px;
-  }
-  /* demerit tags hidden in hero — wind only shown via weather strip */
-  .score-demerits { display:none; }
-  .demerit-tag {
-    font-size:9px; padding:3px 8px;
-    border-radius:20px; border:1px solid var(--border);
-    color:var(--dim); background:rgba(255,255,255,0.6);
-    letter-spacing:0.5px;
-  }
-  .demerit-tag.hot { border-color:var(--red); color:var(--red); }
+  .metric-block.green  .metric-dot { background:var(--green); }
+  .metric-block.yellow .metric-dot { background:var(--yellow); }
+  .metric-block.orange .metric-dot { background:#c86414; }
+  .metric-block.red    .metric-dot { background:var(--red); }
 
   /* ── Weather strip ── */
   .weather-strip {
@@ -260,13 +263,14 @@
   .tl-table td:first-child { text-align:left; font-size:9px; color:var(--dim); white-space:nowrap; }
   .tl-table tr:hover td { background:rgba(10,126,164,0.05); }
   .tl-score {
-    display:inline-block; width:36px; height:22px;
+    display:inline-block; min-width:60px; padding:0 6px; height:22px;
     border-radius:6px; line-height:22px;
-    font-family:'Bebas Neue',sans-serif; font-size:14px;
-    color:#fff;
+    font-family:'Bebas Neue',sans-serif; font-size:12px;
+    color:#fff; white-space:nowrap;
   }
   .tl-score.green  { background:var(--green); }
   .tl-score.yellow { background:var(--yellow); }
+  .tl-score.orange { background:#c86414; }
   .tl-score.red    { background:var(--red); }
   .tl-score.dim    { background:rgba(10,126,164,0.2); color:var(--dim); }
   .tl-day-hdr { background:rgba(10,126,164,0.06); font-weight:500; }
@@ -376,16 +380,25 @@
   <!-- SNAPSHOT TAB -->
   <div class="view-panel active" id="panel-snapshot">
 
-    <!-- Score hero -->
-    <div class="score-hero">
-      <div class="score-circle" id="scoreCircle">
-        <div class="score-num" id="scoreNum">—</div>
-        <div class="score-label">/ 60</div>
-      </div>
-      <div class="score-details">
-        <div class="score-verdict" id="scoreVerdict">Loading…</div>
-        <div class="score-time" id="scoreTime">—</div>
-        <div class="score-demerits" id="scoreDemerits"></div>
+    <!-- Metrics panel -->
+    <div class="metrics-panel">
+      <div class="metrics-time" id="metricsTime">—</div>
+      <div class="metrics-grid">
+        <div class="metric-block green" id="metricEntry">
+          <div class="metric-name">Entry</div>
+          <div class="metric-value" id="metricEntryVal">—</div>
+          <div class="metric-dot"></div>
+        </div>
+        <div class="metric-block green" id="metricSwim">
+          <div class="metric-name">Swim</div>
+          <div class="metric-value" id="metricSwimVal">—</div>
+          <div class="metric-dot"></div>
+        </div>
+        <div class="metric-block green" id="metricWater">
+          <div class="metric-name">Water</div>
+          <div class="metric-value" id="metricWaterVal">—</div>
+          <div class="metric-dot"></div>
+        </div>
       </div>
     </div>
 
@@ -427,18 +440,35 @@
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
 
-    <!-- Conditions bar — wind and wind wave only -->
+    <!-- Conditions bar -->
     <div class="conditions-bar">
       <div class="cond-card">
         <div class="cond-label">Wind</div>
         <div class="cond-value" id="sWind">—</div>
         <div class="cond-unit" id="sWindDir">—</div>
       </div>
+      <div class="cond-card">
+        <div class="cond-label">Primary Swell</div>
+        <div class="cond-value" id="sSwell1H">—</div>
+        <div class="cond-unit" id="sSwell1D">—</div>
+        <div class="cond-sub" id="sSwell1P">—</div>
+      </div>
+      <div class="cond-card" id="sSwell2Card" style="display:none">
+        <div class="cond-label">Secondary Swell</div>
+        <div class="cond-value" id="sSwell2H">—</div>
+        <div class="cond-unit" id="sSwell2D">—</div>
+        <div class="cond-sub" id="sSwell2P">—</div>
+      </div>
       <div class="cond-card" id="sWindWaveCard" style="display:none">
         <div class="cond-label">Wind Wave</div>
         <div class="cond-value" id="sWindWaveH">—</div>
         <div class="cond-unit" id="sWindWaveD">—</div>
         <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
+      </div>
+      <div class="cond-card">
+        <div class="cond-label">Tide</div>
+        <div class="cond-value" id="sTide">—</div>
+        <div class="cond-unit">metres</div>
       </div>
     </div>
 
@@ -480,11 +510,22 @@
 // CONSTANTS
 // =============================================================================
 const WW_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/forecast';
-const WW_CACHE_KEY    = 'swim_ww_cache';
+const WW_CACHE_KEY    = 'swim_ww_cache_v2';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const OM_CACHE_KEY    = 'swim_om_cache_v1';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
 const MAX_RETRIES     = 3;
+
+// Config from Google Sheet
+const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
+const SWIM_CONFIG_KEY  = 'swim_config_cache_v1';
+const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
+
+// S. Steyne column positions (0-based):
+//   Tuning params: col P = index 15 (rows 24–26 = indices 23–25)
+//   Direction table: cols AP=41, AQ=42, AR=43 (rows 32–63 = indices 31–62)
+const STEYNE_TUNE_COL = 15;
+const STEYNE_DIR_COL  = 41; // wind=41, sea=42, rif=43
 
 // Manly Beach coordinates
 const MANLY_LAT = -33.7969;
@@ -493,11 +534,9 @@ const MANLY_LNG = 151.2877;
 // Open-Meteo Marine — ALL wave + wind data for Manly (replaces WillyWeather for this app)
 const OM_MARINE_URL = `https://marine-api.open-meteo.com/v1/marine`
   + `?latitude=${MANLY_LAT}&longitude=${MANLY_LNG}`
-  + `&hourly=swell_wave_height,swell_wave_direction,swell_wave_period`
-  + `,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`
+  + `&hourly=secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`
   + `,wind_wave_height,wind_wave_direction,wind_wave_period`
-  + `&current=swell_wave_height,swell_wave_direction,swell_wave_period`
-  + `,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`
+  + `&current=secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`
   + `,wind_wave_height,wind_wave_direction,wind_wave_period`
   + `&forecast_days=7&wind_speed_unit=kmh&timezone=Australia%2FSydney`;
 
@@ -517,21 +556,114 @@ const OM_WEATHER_URL = `https://api.open-meteo.com/v1/forecast`
 // tideBase='all', tide formula: o*(t-0.2)
 // Direction table: 32 entries, 11.25° steps starting at N(0°)
 // =============================================================================
-const SITE = {
-  key:        'SteyneSw',
-  name:       'South Steyne',
+// =============================================================================
+// S. STEYNE SITE — defaults (verified against sheet, overwritten by loadConfig)
+// Tuning:     sheet row 24 col P (windSens), row 25 col P (swellSens), row 26 col P (periodPower)
+// Direction:  sheet rows 32–63, cols AP(41)=wind, AQ(42)=sea, AR(43)=rif
+// Fixed:      tideBase='all', tide=o*(t-0.2)  — not tunable
+// =============================================================================
+const SITE_DEFAULTS = {
   windSens:    0.5,
   swellSens:   2.5,
   periodPower: 20,
-  get spm()   { return 81 / this.periodPower; },
-  tideBase:   'all',
-  tide:       (o, t) => o * (t - 0.2),
   lookup: {
     wind: [80,70,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     rif:  [80,50,0,0,0,0,0,0,0,10,40,60,60,30,15,10,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   }
 };
+
+// Live SITE — starts as deep copy of defaults, overwritten by loadConfig
+let SITE = {
+  key:      'SteyneSw',
+  name:     'South Steyne',
+  tideBase: 'all',
+  tide:     (o, t) => o * (t - 0.2),
+  get spm() { return 81 / this.periodPower; },
+  ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
+};
+
+// =============================================================================
+// CONFIG LOADER — reads S. Steyne parameters from published Google Sheet CSV
+// =============================================================================
+function parseSheetCSV(text) {
+  return text.split('\n').map(line => {
+    const cols = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQ = !inQ;
+      else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else cur += c;
+    }
+    cols.push(cur); return cols;
+  });
+}
+
+function applySwimConfig(rows) {
+  const n = v => parseFloat(v) || 0;
+
+  // Row 24 (index 23) — Wind sens TUNE, col P (index 15)
+  if (rows[23]?.[1]?.includes('Wind sens'))
+    SITE.windSens = n(rows[23][STEYNE_TUNE_COL]);
+
+  // Row 25 (index 24) — Swell sens TUNE
+  if (rows[24]?.[1]?.includes('Swell sens'))
+    SITE.swellSens = n(rows[24][STEYNE_TUNE_COL]);
+
+  // Row 26 (index 25) — Period power TUNE
+  if (rows[25]?.[1]?.includes('Period power'))
+    SITE.periodPower = n(rows[25][STEYNE_TUNE_COL]);
+
+  // Rows 32–63 (indices 31–62) — direction table cols AP/AQ/AR
+  const wind=[], sea=[], rif=[];
+  for (let r = 31; r <= 62; r++) {
+    wind.push(n(rows[r]?.[STEYNE_DIR_COL]));
+    sea.push( n(rows[r]?.[STEYNE_DIR_COL + 1]));
+    rif.push( n(rows[r]?.[STEYNE_DIR_COL + 2]));
+  }
+  // Only apply if we got 32 values (sanity check)
+  if (wind.length === 32) SITE.lookup = { wind, sea, rif };
+}
+
+async function loadConfig() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(SWIM_CONFIG_KEY) || 'null');
+    if (cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
+      // Restore tuning params from cache (lookup arrays + scalars)
+      const c = cached.config;
+      SITE.windSens    = c.windSens;
+      SITE.swellSens   = c.swellSens;
+      SITE.periodPower = c.periodPower;
+      SITE.lookup      = c.lookup;
+      console.log('Swim config: loaded from cache');
+      return;
+    }
+  } catch(e) {}
+
+  try {
+    const res = await fetch(SHEET_CSV_URL + '&t=' + Date.now());
+    if (!res.ok) throw new Error('Sheet fetch failed: ' + res.status);
+    const rows = parseSheetCSV(await res.text());
+    applySwimConfig(rows);
+    localStorage.setItem(SWIM_CONFIG_KEY, JSON.stringify({
+      fetchedAt: Date.now(),
+      config: {
+        windSens:    SITE.windSens,
+        swellSens:   SITE.swellSens,
+        periodPower: SITE.periodPower,
+        lookup:      SITE.lookup,
+      }
+    }));
+    console.log(`Swim config: loaded from sheet (windSens=${SITE.windSens}, swellSens=${SITE.swellSens}, periodPower=${SITE.periodPower})`);
+  } catch(e) {
+    console.warn('Swim config: sheet unavailable, using defaults.', e.message);
+    // Reset to defaults
+    SITE.windSens    = SITE_DEFAULTS.windSens;
+    SITE.swellSens   = SITE_DEFAULTS.swellSens;
+    SITE.periodPower = SITE_DEFAULTS.periodPower;
+    SITE.lookup      = JSON.parse(JSON.stringify(SITE_DEFAULTS.lookup));
+  }
+}
 
 // =============================================================================
 // WIND POWER TABLE (shared with dive app)
@@ -606,7 +738,35 @@ function calcScore(d) {
       swell1:   Math.round(s1_d   * 10) / 10,
       swell2:   Math.round(s2_d   * 10) / 10,
       refrac:   Math.round(rif_d  * 10) / 10,
-    }
+    },
+    // ── Three swimmer metrics ──────────────────────────────────────────────
+    // Metric 1: Entry — based on final score (0–60)
+    //   Easy ≥45 (green), Doable ≥30 (green/yellow), Caution >10 (yellow), Dangerous ≤10 (red)
+    entry: (() => {
+      const s = Math.max(0, Math.round(60 - total));
+      if (s >= 45) return { label:'Easy',      cls:'green'  };
+      if (s >= 30) return { label:'Doable',    cls:'orange' };
+      if (s >  10) return { label:'Caution',   cls:'yellow' };
+      return             { label:'Dangerous', cls:'red'    };
+    })(),
+    // Metric 2: Swim — based on wind chop (wind_d + ww_d)
+    //   Flat ≤2 (green), A bit choppy ≤6 (yellow), Choppy >6 (red)
+    swim: (() => {
+      const chop = wind_d + ww_d;
+      if (chop <= 2) return { label:'Flat',         cls:'green'  };
+      if (chop <= 6) return { label:'A bit choppy', cls:'yellow' };
+      return               { label:'Choppy',        cls:'red'    };
+    })(),
+    // Metric 3: Water movement — raw swell power without sensitivity scaling
+    //   AH17 = 60 - swellPower(h,p) × seaHit/100 (no swellSens multiplier)
+    //   Low >50 (green), Medium >20 (yellow), High ≤20 (red)
+    water: (() => {
+      const rawSwell = s1p * (s1sea/100) + s2p * (s2sea/100);
+      const ah17 = Math.max(0, Math.round(60 - rawSwell));
+      if (ah17 >  50) return { label:'Low',    cls:'green'  };
+      if (ah17 >  20) return { label:'Medium', cls:'yellow' };
+      return                { label:'High',   cls:'red'    };
+    })(),
   };
 }
 
@@ -669,8 +829,89 @@ function cacheIsFresh(cache, ttl) {
 }
 
 // =============================================================================
-// FETCH OPEN-METEO MARINE — primary swell + secondary swell + wind wave
-// Used as the primary wave data source (WillyWeather worker is Botany Bay only)
+// FETCH WILLYWEATHER — primary swell, wind, tide (Manly Beach location)
+// =============================================================================
+async function fetchWillyWeather() {
+  const res = await Promise.race([
+    fetch(`${WW_WORKER_URL}?location=swimmers&days=5`),
+    new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')), 12000))
+  ]);
+  if (!res.ok) throw new Error(`WW ${res.status}`);
+  return await res.json();
+}
+
+function parseWillyWeather(j) {
+  const fc  = j?.forecasts?.swell?.days?.[0]?.entries?.[0] || {};
+  const wfc = j?.forecasts?.wind?.days?.[0]?.entries?.[0]  || {};
+  const tfc = j?.tides?.days;
+  let tideM = 1.0;
+  if (tfc) {
+    const now = Date.now();
+    let closest = null, minDiff = Infinity;
+    tfc.forEach(day => (day.entries||[]).forEach(e => {
+      if (!e.dateTime) return;
+      const diff = Math.abs(new Date(e.dateTime.replace(' ','T')).getTime() - now);
+      if (diff < minDiff) { minDiff = diff; closest = e; }
+    }));
+    if (closest) tideM = closest.height ?? 1.0;
+  }
+  return {
+    dateTime:  new Date().toISOString().replace('T',' ').substring(0,19),
+    windKmh:   wfc.speed     ?? 0,
+    windDir:   wfc.direction ?? 0,
+    swell1H:   fc.height     ?? 0,
+    swell1Dir: fc.direction  ?? 0,
+    swell1P:   fc.period     ?? 8,
+    swell2H: 0, swell2Dir: 0, swell2P: 8,
+    windWaveH: 0, windWaveDir: 0, windWaveP: 0,
+    tideM,
+  };
+}
+
+function buildHourlyMatrix(j) {
+  const matrix    = [];
+  const swellDays = j?.forecasts?.swell?.days || [];
+  const windDays  = j?.forecasts?.wind?.days  || [];
+  const tideDays  = j?.tides?.days            || [];
+
+  // Tide lookup (nearest neighbour)
+  const tideLookup = {};
+  tideDays.forEach(day => (day.entries||[]).forEach(e => {
+    if (e.dateTime) tideLookup[e.dateTime] = e.height ?? 1.0;
+  }));
+  function getTide(dt) {
+    const ts = new Date(dt.replace(' ','T')).getTime();
+    let best = 1.0, minD = Infinity;
+    Object.entries(tideLookup).forEach(([k,v]) => {
+      const d = Math.abs(new Date(k.replace(' ','T')).getTime() - ts);
+      if (d < minD) { minD = d; best = v; }
+    });
+    return best;
+  }
+
+  swellDays.forEach((sday, di) => {
+    const wday = windDays[di] || {};
+    (sday.entries||[]).forEach(se => {
+      const we = (wday.entries||[]).find(e => e.dateTime === se.dateTime) || {};
+      const dt = se.dateTime;
+      matrix.push({
+        dateTime:  dt,
+        windKmh:   we.speed     ?? 0,
+        windDir:   we.direction ?? 0,
+        swell1H:   se.height    ?? 0,
+        swell1Dir: se.direction ?? 0,
+        swell1P:   se.period    ?? 8,
+        swell2H: 0, swell2Dir: 0, swell2P: 8,
+        windWaveH: 0, windWaveDir: 0, windWaveP: 0,
+        tideM: getTide(dt),
+      });
+    });
+  });
+  return matrix;
+}
+
+// =============================================================================
+// FETCH OPEN-METEO MARINE — secondary swell + wind wave only (supplements WW)
 // =============================================================================
 async function fetchOMarine() {
   const cache = loadCache(OM_CACHE_KEY);
@@ -679,26 +920,18 @@ async function fetchOMarine() {
     const res = await fetch(OM_MARINE_URL);
     if (!res.ok) throw new Error(`OM Marine ${res.status}`);
     const j = await res.json();
-
-    // Current conditions
     const c = j.current || {};
     const current = {
-      swell1H:    c.swell_wave_height                ?? 0,
-      swell1Dir:  c.swell_wave_direction             ?? 0,
-      swell1P:    c.swell_wave_period                ?? 8,
-      swell2H:    c.secondary_swell_wave_height      ?? 0,
-      swell2Dir:  c.secondary_swell_wave_direction   ?? 0,
-      swell2P:    c.secondary_swell_wave_period      ?? 8,
-      windWaveH:  c.wind_wave_height                 ?? 0,
-      windWaveDir:c.wind_wave_direction              ?? 0,
-      windWaveP:  c.wind_wave_period                 ?? 0,
+      swell2H:    c.secondary_swell_wave_height    ?? 0,
+      swell2Dir:  c.secondary_swell_wave_direction ?? 0,
+      swell2P:    c.secondary_swell_wave_period    ?? 8,
+      windWaveH:  c.wind_wave_height               ?? 0,
+      windWaveDir:c.wind_wave_direction             ?? 0,
+      windWaveP:  c.wind_wave_period               ?? 0,
     };
-
-    // Hourly matrix
     const times = j.hourly?.time || [];
     const hourly = {};
     const fields = [
-      'swell_wave_height','swell_wave_direction','swell_wave_period',
       'secondary_swell_wave_height','secondary_swell_wave_direction','secondary_swell_wave_period',
       'wind_wave_height','wind_wave_direction','wind_wave_period',
     ];
@@ -706,10 +939,8 @@ async function fetchOMarine() {
       hourly[dt] = {};
       fields.forEach(f => { hourly[dt][f] = j.hourly?.[f]?.[i] ?? 0; });
     });
-
     const data = { current, hourly };
     saveCache(OM_CACHE_KEY, data);
-    console.log(`OM Marine: fetched ${times.length} hourly entries`);
     return data;
   } catch(e) {
     console.warn('OM Marine failed:', e.message);
@@ -718,9 +949,56 @@ async function fetchOMarine() {
 }
 
 // =============================================================================
+// MERGE OPEN-METEO INTO WW DATA + MATRIX
+// =============================================================================
+function mergeOMarine(data, omData) {
+  if (!omData?.current) return data;
+  const c = omData.current;
+  let windWaveP = c.windWaveP || 0;
+  if (!windWaveP && omData.hourly) {
+    const now = Date.now();
+    let closest = null, minDiff = Infinity;
+    Object.entries(omData.hourly).forEach(([dt, vals]) => {
+      const wwp = vals['wind_wave_period'];
+      if (!wwp) return;
+      const ts = Date.parse(dt.length === 16 ? dt + ':00' : dt);
+      if (isNaN(ts)) return;
+      const diff = Math.abs(ts - now);
+      if (diff < minDiff) { minDiff = diff; closest = { windWaveP: wwp }; }
+    });
+    if (closest) windWaveP = closest.windWaveP;
+  }
+  const guarded = guardSwell2(data.swell1H, data.swell1Dir,
+    c.swell2H||0, c.swell2Dir||0, c.swell2P||8);
+  return { ...data, ...guarded,
+    windWaveH:  c.windWaveH  || 0,
+    windWaveDir:c.windWaveDir || data.windDir,
+    windWaveP,
+  };
+}
+
+function mergeOMarineMatrix(matrix, omData) {
+  if (!omData?.hourly) return matrix;
+  return matrix.map(row => {
+    const omKey = row.dateTime.replace(' ','T').substring(0,16);
+    const om    = omData.hourly[omKey];
+    if (!om) return row;
+    const guarded = guardSwell2(row.swell1H, row.swell1Dir,
+      om.secondary_swell_wave_height    || 0,
+      om.secondary_swell_wave_direction || 0,
+      om.secondary_swell_wave_period    || 8);
+    return { ...row, ...guarded,
+      windWaveH:  om.wind_wave_height    || 0,
+      windWaveDir:om.wind_wave_direction || row.windDir,
+      windWaveP:  om.wind_wave_period    || 0,
+    };
+  });
+}
+
+// =============================================================================
 // FETCH OPEN-METEO WEATHER (temp, wind chill, cloud, rain, sunrise/sunset)
 // =============================================================================
-const OM_WX_CACHE_KEY = 'swim_omwx_cache_v1';
+const OM_WX_CACHE_KEY = 'swim_omwx_cache_v2';
 const OM_WX_CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
 
 async function fetchOMWeather() {
@@ -909,34 +1187,22 @@ function switchTab(tab) {
 
 function renderSnapshot(h, wx) {
   const result = calcScore(h);
-  const score  = result.score;
-  const cls    = scoreClass(score);
   const dm     = result.demerits;
-
-  // Score circle
-  const circle = document.getElementById('scoreCircle');
-  circle.className = 'score-circle ' + cls;
-  document.getElementById('scoreNum').textContent = score;
-  document.getElementById('scoreNum').style.color = `var(--${cls})`;
-  document.getElementById('scoreVerdict').textContent = verdict(score);
 
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
-  document.getElementById('scoreTime').textContent =
+  document.getElementById('metricsTime').textContent =
     dt.toLocaleString('en-AU', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
 
-  // Demerit tags
-  const tags = document.getElementById('scoreDemerits');
-  tags.innerHTML = '';
-  const addTag = (label, val) => {
-    if (val <= 0) return;
-    const t = document.createElement('div');
-    t.className = 'demerit-tag' + (val > 8 ? ' hot' : '');
-    t.textContent = `${label} −${val.toFixed(1)}`;
-    tags.appendChild(t);
-  };
-  addTag('tide', dm.tide); addTag('wind', dm.wind); addTag('ww', dm.windWave);
-  addTag('swell', dm.swell1); addTag('swell2', dm.swell2); addTag('rif', dm.refrac);
+  // Three metric blocks
+  function setMetric(id, valId, metric) {
+    const block = document.getElementById(id);
+    block.className = 'metric-block ' + metric.cls;
+    document.getElementById(valId).textContent = metric.label;
+  }
+  setMetric('metricEntry', 'metricEntryVal', result.entry);
+  setMetric('metricSwim',  'metricSwimVal',  result.swim);
+  setMetric('metricWater', 'metricWaterVal', result.water);
 
   // Weather strip
   if (wx) {
@@ -954,14 +1220,18 @@ function renderSnapshot(h, wx) {
   // Conditions bar
   document.getElementById('sWind').textContent    = Math.round(h.windKmh);
   document.getElementById('sWindDir').textContent = `km/h · ${bearingName(h.windDir)} (${Math.round(h.windDir)}°)`;
+  document.getElementById('sSwell1H').textContent = h.swell1H.toFixed(1);
+  document.getElementById('sSwell1D').textContent = `m · ${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`;
+  document.getElementById('sSwell1P').textContent = `${Math.round(h.swell1P)}s period`;
+  document.getElementById('sTide').textContent    = h.tideM.toFixed(2);
 
-  // Swell 2 guard (element may be removed from conditions bar but kept in JS for scoring)
+  // Secondary swell
   const s2Card = document.getElementById('sSwell2Card');
   if (s2Card) {
     if (h.swell2H > 0 || h.swell2Suppressed) {
       document.getElementById('sSwell2H').textContent = h.swell2Suppressed ? '—' : h.swell2H.toFixed(1);
       document.getElementById('sSwell2D').textContent = h.swell2Suppressed
-        ? `suppressed (${Math.round(h.swell2Dir)}° ≈ swell 1)`
+        ? `suppressed (${Math.round(h.swell2Dir)}° ≈ primary)`
         : `m · ${bearingName(h.swell2Dir)} (${Math.round(h.swell2Dir)}°)`;
       document.getElementById('sSwell2P').textContent = h.swell2Suppressed ? '' : `${Math.round(h.swell2P)}s period`;
       document.getElementById('sSwell2D').style.color = h.swell2Suppressed ? 'var(--yellow)' : '';
@@ -982,13 +1252,17 @@ function renderSnapshot(h, wx) {
     wwCard.style.display = '';
   } else { wwCard.style.display = 'none'; }
 
-  // Sunrise/sunset for today
-  const today = dt.toISOString().substring(0,10);
+  // Sunrise/sunset — use local date from dateTime string, not UTC
+  const today = h.dateTime.substring(0, 10);
   const sun = _wxDaily[today];
   if (sun) {
-    const fmt = t => t ? new Date(t).toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'}) : '—';
+    // OM returns "2026-06-03T06:52" — extract HH:MM directly, no Date parsing needed
+    const fmt = t => t ? t.substring(t.indexOf('T') + 1, t.indexOf('T') + 6) : '—';
     document.getElementById('sunriseTime').textContent = fmt(sun.sunrise);
     document.getElementById('sunsetTime').textContent  = fmt(sun.sunset);
+  } else {
+    document.getElementById('sunriseTime').textContent = '—';
+    document.getElementById('sunsetTime').textContent  = '—';
   }
 }
 
@@ -1048,8 +1322,7 @@ function renderTimeline(matrix, wxMatrix) {
 
     matrix.filter(r => r.dateTime.startsWith(date)).forEach((row, ri) => {
       const result  = calcScore(row);
-      const score   = result.score;
-      const cls     = scoreClass(score);
+      const entry   = result.entry;
       const hour    = row.dateTime.substring(11,16);
       const dtKey   = row.dateTime.replace(' ','T').substring(0,16);
       const wx      = wxMatrix[dtKey];
@@ -1059,7 +1332,7 @@ function renderTimeline(matrix, wxMatrix) {
 
       html += `<tr onclick="jumpToSlider(${matIdx})" title="${row.dateTime}">
         <td>${hour}</td>
-        <td><span class="tl-score ${cls}">${score}</span></td>
+        <td><span class="tl-score ${entry.cls}">${entry.label}</span></td>
         <td style="font-size:10px">${row.swell1H.toFixed(1)}m ${Math.round(row.swell1P)}s</td>
         <td style="font-size:10px">${Math.round(row.windKmh)} ${bearingName(row.windDir)}</td>
         <td>${temp}</td>
@@ -1080,25 +1353,53 @@ function jumpToSlider(idx) {
 }
 
 // =============================================================================
-// MAIN LOAD — Open-Meteo Marine + Weather (no WillyWeather — worker is Botany Bay only)
+// MAIN LOAD — WillyWeather (primary) + Open-Meteo Marine/Weather (supplementary)
 // =============================================================================
 async function loadAndRender(forceRefresh = false) {
   hideErrorBanner();
   try {
-    setStatus('Fetching Manly forecast…');
+    // Check WW cache
+    const wwCache = loadCache(WW_CACHE_KEY);
+    let wwData = null, matrix = null;
 
-    // Fetch wave data (primary + secondary swell + wind wave)
+    if (!forceRefresh && cacheIsFresh(wwCache, WW_CACHE_TTL) && wwCache.data) {
+      wwData  = wwCache.data;
+      matrix  = wwCache.matrix || [];
+      const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
+      setStatus(`Cached ${ago} min ago · WillyWeather Manly`);
+      document.getElementById('lastUpdated').textContent =
+        'Data from ' + new Date(wwCache.fetchedAt).toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
+    } else {
+      setStatus('Fetching Manly forecast…');
+      let lastErr;
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          if (attempt > 1) setStatus(`Retrying… (${attempt}/${MAX_RETRIES})`);
+          const j = await fetchWillyWeather();
+          wwData  = parseWillyWeather(j);
+          matrix  = buildHourlyMatrix(j);
+          saveCache(WW_CACHE_KEY, { data: wwData, matrix });
+          setStatus('Live · WillyWeather Manly');
+          document.getElementById('lastUpdated').textContent =
+            'Updated ' + new Date().toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
+          break;
+        } catch(e) {
+          lastErr = e;
+          if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt));
+        }
+      }
+      if (!wwData) throw lastErr;
+    }
+
+    // Fetch Open-Meteo Marine (secondary swell + wind wave)
     const omData = await fetchOMarine();
-    if (!omData) throw new Error('Marine forecast unavailable');
+    wwData = mergeOMarine(wwData, omData);
+    matrix = mergeOMarineMatrix(matrix, omData);
 
-    // Fetch weather data (wind, temp, cloud, rain, sunrise/sunset)
+    // Fetch Open-Meteo Weather (temp, wind, cloud, rain, sunrise/sunset)
     const wxData = await fetchOMWeather();
     _wxMatrix = wxData?.hourly || {};
     _wxDaily  = wxData?.daily  || {};
-
-    // Build current snapshot and full matrix
-    const currentData = buildDataFromOM(omData, wxData);
-    const matrix      = buildMatrixFromOM(omData, wxData);
 
     _matrix = matrix;
 
@@ -1113,18 +1414,15 @@ async function loadAndRender(forceRefresh = false) {
       _sliderIdx = bestIdx;
     }
 
-    const currentH  = _matrix[_sliderIdx] || currentData;
+    const currentH  = _matrix[_sliderIdx] || wwData;
     const currentDt = (currentH.dateTime || '').replace(' ','T').substring(0,16);
     const currentWx = _wxMatrix[currentDt] || wxData?.current || null;
 
     renderSnapshot(currentH, currentWx);
     renderSlider(_matrix);
     renderTimeline(_matrix, _wxMatrix);
-
-    setStatus('Live · Open-Meteo');
-    document.getElementById('lastUpdated').textContent =
-      'Updated ' + new Date().toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
     hideErrorBanner();
+
   } catch(e) {
     console.error('Load failed:', e);
     showErrorBanner('Could not load forecast. Check your connection.');
@@ -1136,7 +1434,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_om_cache_v1','swim_omwx_cache_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -1190,7 +1488,8 @@ document.getElementById('timeSlider').addEventListener('input', function() {
 // INIT
 // =============================================================================
 _retryFn = () => loadAndRender(true);
-loadAndRender();
+// Load config from sheet first, then fetch forecast
+loadConfig().then(() => loadAndRender());
 </script>
 </body>
 </html>
