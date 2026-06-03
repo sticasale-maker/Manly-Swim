@@ -140,6 +140,40 @@
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
+  .metric-track-wrap {
+    margin: 7px 0 3px;
+    position: relative;
+    height: 14px;
+  }
+  .metric-track-rail {
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 6px;
+    transform: translateY(-50%);
+    border-radius: 3px;
+    overflow: hidden;
+    display: flex;
+  }
+  .metric-track-rail .z { flex: 1; }
+  .metric-track-dot {
+    position: absolute;
+    top: 50%;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 2.5px solid var(--foam);
+    box-shadow: 0 0 0 1.5px currentColor;
+    transition: left 0.3s ease;
+  }
+  .metric-track-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 8px;
+    color: var(--dim);
+    margin-top: 1px;
+    letter-spacing: 0.3px;
+  }
+
   .metric-score {
     font-family:'DM Mono',monospace;
     font-size:10px; color:var(--dim); margin-top:4px;
@@ -497,16 +531,41 @@
         <div class="metric-block green" id="metricEntry">
           <div class="metric-name">Entry:</div>
           <div class="metric-value" id="metricEntryVal">—</div>
+          <div class="metric-track-wrap">
+            <div class="metric-track-rail">
+              <div class="z" style="background:var(--red)"></div>
+              <div class="z" style="background:var(--yellow)"></div>
+              <div class="z" style="background:#c86414"></div>
+              <div class="z" style="background:var(--green)"></div>
+            </div>
+            <div class="metric-track-dot" id="metricEntryDot" style="color:var(--green);left:50%"></div>
+          </div>
           <div class="metric-score" id="metricEntryScore">—</div>
         </div>
         <div class="metric-block green" id="metricSwim">
           <div class="metric-name">Swim:</div>
           <div class="metric-value" id="metricSwimVal">—</div>
+          <div class="metric-track-wrap">
+            <div class="metric-track-rail">
+              <div class="z" style="background:var(--red)"></div>
+              <div class="z" style="background:var(--yellow)"></div>
+              <div class="z" style="background:var(--green)"></div>
+            </div>
+            <div class="metric-track-dot" id="metricSwimDot" style="color:var(--green);left:50%"></div>
+          </div>
           <div class="metric-score" id="metricSwimScore">—</div>
         </div>
         <div class="metric-block green" id="metricSurge">
           <div class="metric-name">Surge:</div>
           <div class="metric-value" id="metricSurgeVal">—</div>
+          <div class="metric-track-wrap">
+            <div class="metric-track-rail">
+              <div class="z" style="background:var(--red)"></div>
+              <div class="z" style="background:var(--yellow)"></div>
+              <div class="z" style="background:var(--green)"></div>
+            </div>
+            <div class="metric-track-dot" id="metricSurgeDot" style="color:var(--green);left:50%"></div>
+          </div>
           <div class="metric-score" id="metricSurgeScore">—</div>
         </div>
       </div>
@@ -526,18 +585,6 @@
       </div>
       <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
     </div>
-
-    <!-- Shark strip -->
-    <a class="shark-strip"
-       href="https://www.sharksmart.nsw.gov.au/shark-activity#map=-33.7969/151.2877/13"
-       target="_blank" rel="noopener">
-      <div class="shark-icon">🦈</div>
-      <div class="shark-body">
-        <div class="shark-title">SharkSmart — Manly Area</div>
-        <div class="shark-sub">Tap for live sightings, drone alerts &amp; tagged detections</div>
-      </div>
-      <div class="shark-cta">↗ Open</div>
-    </a>
 
     <!-- Weather strip -->
     <div class="weather-strip" id="weatherStrip">
@@ -608,6 +655,18 @@
         <div class="cond-unit">metres</div>
       </div>
     </div>
+
+    <!-- Shark strip -->
+    <a class="shark-strip"
+       href="https://www.sharksmart.nsw.gov.au/shark-activity#map=-33.7969/151.2877/13"
+       target="_blank" rel="noopener">
+      <div class="shark-icon">🦈</div>
+      <div class="shark-body">
+        <div class="shark-title">SharkSmart Sightings</div>
+        <div class="shark-sub">Opens app → search Manly for local alerts</div>
+      </div>
+      <div class="shark-cta">↗ Open</div>
+    </a>
 
   </div><!-- /panel-snapshot -->
 
@@ -1277,6 +1336,41 @@ function renderSnapshot(h, wx) {
     document.getElementById(valId).textContent   = metric.label;
     document.getElementById(scoreId).textContent = metric.score;
   }
+
+  function setTrackDot(dotId, pct, colorVar) {
+    const dot = document.getElementById(dotId);
+    if (!dot) return;
+    const clamped = Math.min(97, Math.max(3, pct));
+    dot.style.left  = clamped + '%';
+    dot.style.color = colorVar;
+    dot.style.background = colorVar;
+  }
+
+  // Entry dot: score 0–60, rail = red(0-30) | yellow(30-45) | orange(45-50) | green(50-60)
+  // Wait — zones are: red 0-10, yellow 11-29, orange 30-44, green 45-60
+  // Map score directly: pct = score/60 * 100
+  const entryScore = result.entry.score;
+  const entryPct   = (entryScore / 60) * 100;
+  const entryColor = result.entry.cls === 'green'  ? 'var(--green)'
+                   : result.entry.cls === 'orange' ? '#c86414'
+                   : result.entry.cls === 'yellow' ? 'var(--yellow)' : 'var(--red)';
+  setTrackDot('metricEntryDot', entryPct, entryColor);
+
+  // Swim dot: chop value 0–15 practical max, rail = green(0-2) | yellow(2-7) | red(7+)
+  // Cap display at 15 for positioning
+  const swimVal  = parseFloat(result.swim.score) || 0;
+  const swimPct  = (1 - Math.min(swimVal / 15, 1)) * 100;
+  const swimColor = result.swim.cls === 'green' ? 'var(--green)'
+                  : result.swim.cls === 'yellow' ? 'var(--yellow)' : 'var(--red)';
+  setTrackDot('metricSwimDot', swimPct, swimColor);
+
+  // Surge dot: score 0–60, rail = red(0-20) | yellow(20-50) | green(50-60)
+  const surgeScore = result.water.score;
+  const surgePct   = (surgeScore / 60) * 100;
+  const surgeColor = result.water.cls === 'green' ? 'var(--green)'
+                   : result.water.cls === 'yellow' ? 'var(--yellow)' : 'var(--red)';
+  setTrackDot('metricSurgeDot', surgePct, surgeColor);
+
   setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry);
   setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim);
   setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water);
@@ -1553,6 +1647,7 @@ async function loadAndRender(forceRefresh = false) {
           const j = await fetchWillyWeather();
           wwData  = parseWillyWeather(j);
           matrix  = buildHourlyMatrix(j);
+          if (!matrix.length) throw new Error('WW returned empty forecast');
           saveCache(WW_CACHE_KEY, { data: wwData, matrix });
           setStatus('Live · WillyWeather Manly');
           document.getElementById('lastUpdated').textContent =
@@ -1589,7 +1684,8 @@ async function loadAndRender(forceRefresh = false) {
       _sliderIdx = bestIdx;
     }
 
-    const currentH  = _matrix[_sliderIdx] || wwData;
+    const currentH  = _matrix[_sliderIdx] || wwData || null;
+    if (!currentH) throw new Error('No forecast data available');
     const currentDt = (currentH.dateTime || '').replace(' ','T').substring(0,16);
     const currentWx = _wxMatrix[currentDt] || wxData?.current || null;
 
@@ -1609,8 +1705,19 @@ async function loadAndRender(forceRefresh = false) {
 
   } catch(e) {
     console.error('Load failed:', e);
-    showErrorBanner('Could not load forecast. Check your connection.');
-    setStatus('Error: ' + e.message);
+    // Show cached data age if available, so partial info is visible
+    const wwCache = loadCache(WW_CACHE_KEY);
+    if (wwCache?.data && wwCache?.matrix?.length) {
+      const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
+      setStatus(`Showing cached data (${ago} min old) — live fetch failed`);
+      hideErrorBanner();
+    } else {
+      const isLocal = location.protocol === 'file:';
+      showErrorBanner(isLocal
+        ? 'Live data unavailable in local preview — open via a web server or deploy to see live forecast.'
+        : 'Could not load forecast. Check your connection.');
+      setStatus('Error: ' + e.message);
+    }
   }
 }
 
