@@ -124,25 +124,27 @@
   .metric-block.orange { background:rgba(200,100,20,0.15);  border:1.5px solid #c86414; }
   .metric-block.red    { background:rgba(192,57,43,0.15);   border:1.5px solid var(--red); }
   .metric-name {
-    font-size:9px; letter-spacing:2px; text-transform:uppercase;
-    color:var(--dim); margin-bottom:8px;
+    font-family:'Bebas Neue',sans-serif;
+    font-size:26px; letter-spacing:2px; text-transform:uppercase;
+    line-height:1; margin-bottom:6px;
   }
+  .metric-block.green  .metric-name { color:var(--green); }
+  .metric-block.yellow .metric-name { color:var(--yellow); }
+  .metric-block.orange .metric-name { color:#c86414; }
+  .metric-block.red    .metric-name { color:var(--red); }
   .metric-value {
     font-family:'Bebas Neue',sans-serif;
-    font-size:26px; line-height:1; margin-bottom:2px;
+    font-size:26px; line-height:1; margin-bottom:4px;
   }
   .metric-block.green  .metric-value { color:var(--green); }
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
-  .metric-dot {
-    width:10px; height:10px; border-radius:50%;
-    margin:6px auto 0;
+  .metric-score {
+    font-family:'DM Mono',monospace;
+    font-size:10px; color:var(--dim); margin-top:4px;
+    letter-spacing:0.5px;
   }
-  .metric-block.green  .metric-dot { background:var(--green); }
-  .metric-block.yellow .metric-dot { background:var(--yellow); }
-  .metric-block.orange .metric-dot { background:#c86414; }
-  .metric-block.red    .metric-dot { background:var(--red); }
 
   /* ── Weather strip ── */
   .weather-strip {
@@ -385,19 +387,19 @@
       <div class="metrics-time" id="metricsTime">—</div>
       <div class="metrics-grid">
         <div class="metric-block green" id="metricEntry">
-          <div class="metric-name">Entry</div>
+          <div class="metric-name">Entry:</div>
           <div class="metric-value" id="metricEntryVal">—</div>
-          <div class="metric-dot"></div>
+          <div class="metric-score" id="metricEntryScore">—</div>
         </div>
         <div class="metric-block green" id="metricSwim">
-          <div class="metric-name">Swim</div>
+          <div class="metric-name">Swim:</div>
           <div class="metric-value" id="metricSwimVal">—</div>
-          <div class="metric-dot"></div>
+          <div class="metric-score" id="metricSwimScore">—</div>
         </div>
-        <div class="metric-block green" id="metricWater">
-          <div class="metric-name">Water</div>
-          <div class="metric-value" id="metricWaterVal">—</div>
-          <div class="metric-dot"></div>
+        <div class="metric-block green" id="metricSurge">
+          <div class="metric-name">Surge:</div>
+          <div class="metric-value" id="metricSurgeVal">—</div>
+          <div class="metric-score" id="metricSurgeScore">—</div>
         </div>
       </div>
     </div>
@@ -518,7 +520,7 @@ const MAX_RETRIES     = 3;
 
 // Config from Google Sheet
 const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
-const SWIM_CONFIG_KEY  = 'swim_config_cache_v1';
+const SWIM_CONFIG_KEY  = 'swim_config_cache_v2';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
 // S. Steyne column positions (0-based):
@@ -564,10 +566,10 @@ const OM_WEATHER_URL = `https://api.open-meteo.com/v1/forecast`
 // =============================================================================
 const SITE_DEFAULTS = {
   windSens:    0.5,
-  swellSens:   2.5,
+  swellSens:   1.8,
   periodPower: 20,
   lookup: {
-    wind: [80,70,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    wind: [80,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,20,30,40,50,60],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     rif:  [80,50,0,0,0,0,0,0,0,10,40,60,60,30,15,10,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   }
@@ -744,18 +746,18 @@ function calcScore(d) {
     //   Easy ≥45 (green), Doable ≥30 (green/yellow), Caution >10 (yellow), Dangerous ≤10 (red)
     entry: (() => {
       const s = Math.max(0, Math.round(60 - total));
-      if (s >= 45) return { label:'Easy',      cls:'green'  };
-      if (s >= 30) return { label:'Doable',    cls:'orange' };
-      if (s >  10) return { label:'Caution',   cls:'yellow' };
-      return             { label:'Dangerous', cls:'red'    };
+      if (s >= 45) return { label:'Easy',      cls:'green',  score: s };
+      if (s >= 30) return { label:'Doable',    cls:'orange', score: s };
+      if (s >  10) return { label:'Caution',   cls:'yellow', score: s };
+      return             { label:'Dangerous', cls:'red',    score: s };
     })(),
     // Metric 2: Swim — based on wind chop (wind_d + ww_d)
     //   Flat ≤2 (green), A bit choppy ≤6 (yellow), Choppy >6 (red)
     swim: (() => {
       const chop = wind_d + ww_d;
-      if (chop <= 2) return { label:'Flat',         cls:'green'  };
-      if (chop <= 6) return { label:'A bit choppy', cls:'yellow' };
-      return               { label:'Choppy',        cls:'red'    };
+      if (chop <= 2) return { label:'Flat',         cls:'green',  score: chop.toFixed(1) };
+      if (chop <= 7) return { label:'A bit choppy', cls:'yellow', score: chop.toFixed(1) };
+      return               { label:'Choppy',        cls:'red',    score: chop.toFixed(1) };
     })(),
     // Metric 3: Water movement — raw swell power without sensitivity scaling
     //   AH17 = 60 - swellPower(h,p) × seaHit/100 (no swellSens multiplier)
@@ -763,9 +765,9 @@ function calcScore(d) {
     water: (() => {
       const rawSwell = s1p * (s1sea/100) + s2p * (s2sea/100);
       const ah17 = Math.max(0, Math.round(60 - rawSwell));
-      if (ah17 >  50) return { label:'Low',    cls:'green'  };
-      if (ah17 >  20) return { label:'Medium', cls:'yellow' };
-      return                { label:'High',   cls:'red'    };
+      if (ah17 >  50) return { label:'Low',    cls:'green',  score: ah17 };
+      if (ah17 >  20) return { label:'Medium', cls:'yellow', score: ah17 };
+      return                { label:'High',   cls:'red',    score: ah17 };
     })(),
   };
 }
@@ -1195,14 +1197,15 @@ function renderSnapshot(h, wx) {
     dt.toLocaleString('en-AU', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
 
   // Three metric blocks
-  function setMetric(id, valId, metric) {
+  function setMetric(id, valId, scoreId, metric) {
     const block = document.getElementById(id);
     block.className = 'metric-block ' + metric.cls;
-    document.getElementById(valId).textContent = metric.label;
+    document.getElementById(valId).textContent   = metric.label;
+    document.getElementById(scoreId).textContent = metric.score;
   }
-  setMetric('metricEntry', 'metricEntryVal', result.entry);
-  setMetric('metricSwim',  'metricSwimVal',  result.swim);
-  setMetric('metricWater', 'metricWaterVal', result.water);
+  setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry);
+  setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim);
+  setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water);
 
   // Weather strip
   if (wx) {
@@ -1434,7 +1437,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
