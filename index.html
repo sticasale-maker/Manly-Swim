@@ -876,19 +876,33 @@ function buildHourlyMatrix(j) {
   const windDays  = j?.forecasts?.wind?.days   || [];
   const tideDays  = j?.forecasts?.tides?.days  || [];  // ← correct path
 
-  // Tide lookup (nearest neighbour)
-  const tideLookup = {};
+  // Build sorted tide turning points for interpolation
+  const tidePts = [];
   tideDays.forEach(day => (day.entries||[]).forEach(e => {
-    if (e.dateTime) tideLookup[e.dateTime] = e.height ?? 1.0;
+    if (e.dateTime && e.height != null) {
+      tidePts.push({ ts: new Date(e.dateTime.replace(' ','T')).getTime(), h: e.height });
+    }
   }));
+  tidePts.sort((a,b) => a.ts - b.ts);
+
   function getTide(dt) {
+    if (tidePts.length === 0) return 1.0;
     const ts = new Date(dt.replace(' ','T')).getTime();
-    let best = 1.0, minD = Infinity;
-    Object.entries(tideLookup).forEach(([k,v]) => {
-      const d = Math.abs(new Date(k.replace(' ','T')).getTime() - ts);
-      if (d < minD) { minD = d; best = v; }
-    });
-    return best;
+    // Find surrounding turning points
+    let lo = null, hi = null;
+    for (let i = 0; i < tidePts.length; i++) {
+      if (tidePts[i].ts <= ts) lo = tidePts[i];
+      else { hi = tidePts[i]; break; }
+    }
+    // Extrapolate at edges
+    if (!lo) return hi.h;
+    if (!hi) return lo.h;
+    // Cosine interpolation — tides follow a sinusoidal curve, not linear.
+    // Slow near turning points, fastest at the midpoint between high and low.
+    // h(t) = (h1 + h2)/2 - (h2 - h1)/2 × cos(π × frac)
+    const frac   = (ts - lo.ts) / (hi.ts - lo.ts);
+    const h1 = lo.h, h2 = hi.h;
+    return (h1 + h2) / 2 - (h2 - h1) / 2 * Math.cos(Math.PI * frac);
   }
 
   swellDays.forEach((sday, di) => {
