@@ -512,7 +512,7 @@
 // CONSTANTS
 // =============================================================================
 const WW_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/forecast';
-const WW_CACHE_KEY    = 'swim_ww_cache_v2';
+const WW_CACHE_KEY    = 'swim_ww_cache_v3';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const OM_CACHE_KEY    = 'swim_om_cache_v1';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
@@ -845,7 +845,7 @@ async function fetchWillyWeather() {
 function parseWillyWeather(j) {
   const fc  = j?.forecasts?.swell?.days?.[0]?.entries?.[0] || {};
   const wfc = j?.forecasts?.wind?.days?.[0]?.entries?.[0]  || {};
-  const tfc = j?.tides?.days;
+  const tfc = j?.forecasts?.tides?.days;   // ← correct path
   let tideM = 1.0;
   if (tfc) {
     const now = Date.now();
@@ -872,9 +872,9 @@ function parseWillyWeather(j) {
 
 function buildHourlyMatrix(j) {
   const matrix    = [];
-  const swellDays = j?.forecasts?.swell?.days || [];
-  const windDays  = j?.forecasts?.wind?.days  || [];
-  const tideDays  = j?.tides?.days            || [];
+  const swellDays = j?.forecasts?.swell?.days  || [];
+  const windDays  = j?.forecasts?.wind?.days   || [];
+  const tideDays  = j?.forecasts?.tides?.days  || [];  // ← correct path
 
   // Tide lookup (nearest neighbour)
   const tideLookup = {};
@@ -1059,88 +1059,6 @@ async function fetchOMWeather() {
     console.warn('OM Weather failed:', e.message);
     return null;
   }
-}
-
-// =============================================================================
-// BUILD DATA + MATRIX FROM OPEN-METEO MARINE (primary source for this app)
-// Wind comes from Open-Meteo Weather (fetched separately)
-// Tide: use a fixed average of 1.0m — tidal variation is ~1m at Manly
-// (no tidal API in OM; tide demerits will be approximate)
-// =============================================================================
-function buildDataFromOM(omData, wxData) {
-  const c   = omData?.current || {};
-  const wx  = wxData?.current || {};
-  const guarded = guardSwell2(
-    c.swell1H || 0, c.swell1Dir || 0,
-    c.swell2H || 0, c.swell2Dir || 0, c.swell2P || 8
-  );
-
-  // windWaveP fallback to closest hourly
-  let windWaveP = c.windWaveP || 0;
-  if (!windWaveP && omData?.hourly) {
-    const now = Date.now();
-    let closest = null, minDiff = Infinity;
-    Object.entries(omData.hourly).forEach(([dt, vals]) => {
-      const wwp = vals['wind_wave_period'];
-      if (!wwp) return;
-      const ts = Date.parse(dt.length === 16 ? dt + ':00' : dt);
-      if (isNaN(ts)) return;
-      const diff = Math.abs(ts - now);
-      if (diff < minDiff) { minDiff = diff; closest = { windWaveP: wwp }; }
-    });
-    if (closest) windWaveP = closest.windWaveP;
-  }
-
-  return {
-    dateTime:   new Date().toISOString().replace('T',' ').substring(0,19),
-    windKmh:    wx.windKmh  ?? 0,
-    windDir:    wx.windDir  ?? 0,
-    swell1H:    c.swell1H   ?? 0,
-    swell1Dir:  c.swell1Dir ?? 0,
-    swell1P:    c.swell1P   ?? 8,
-    ...guarded,
-    windWaveH:  c.windWaveH  ?? 0,
-    windWaveDir:c.windWaveDir ?? 0,
-    windWaveP,
-    tideM:      1.0,  // approximate — no tidal API in OM
-  };
-}
-
-function buildMatrixFromOM(omData, wxData) {
-  if (!omData?.hourly) return [];
-  const wxHourly = wxData?.hourly || {};
-  const matrix = [];
-
-  Object.entries(omData.hourly).forEach(([dt, om]) => {
-    // dt format: "2026-06-02T14:00" — convert to WW-style "2026-06-02 14:00:00"
-    const dateTime = dt.replace('T',' ') + ':00';
-    // Match wx hourly key (same format as OM)
-    const wx = wxHourly[dt] || {};
-    const guarded = guardSwell2(
-      om.swell_wave_height    || 0,
-      om.swell_wave_direction || 0,
-      om.secondary_swell_wave_height    || 0,
-      om.secondary_swell_wave_direction || 0,
-      om.secondary_swell_wave_period    || 8,
-    );
-    matrix.push({
-      dateTime,
-      windKmh:   wx.windKmh  ?? 0,
-      windDir:   wx.windDir  ?? 0,
-      swell1H:   om.swell_wave_height    ?? 0,
-      swell1Dir: om.swell_wave_direction ?? 0,
-      swell1P:   om.swell_wave_period    ?? 8,
-      ...guarded,
-      windWaveH:  om.wind_wave_height    ?? 0,
-      windWaveDir:om.wind_wave_direction ?? 0,
-      windWaveP:  om.wind_wave_period    ?? 0,
-      tideM:      1.0,  // approximate
-    });
-  });
-
-  // Sort chronologically
-  matrix.sort((a,b) => a.dateTime.localeCompare(b.dateTime));
-  return matrix;
 }
 
 // =============================================================================
@@ -1437,7 +1355,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
