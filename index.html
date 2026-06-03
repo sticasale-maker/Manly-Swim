@@ -533,10 +533,10 @@
           <div class="metric-value" id="metricEntryVal">—</div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
-              <div class="z" style="background:var(--red)"></div>
-              <div class="z" style="background:var(--yellow)"></div>
-              <div class="z" style="background:#c86414"></div>
               <div class="z" style="background:var(--green)"></div>
+              <div class="z" style="background:#c86414"></div>
+              <div class="z" style="background:var(--yellow)"></div>
+              <div class="z" style="background:var(--red)"></div>
             </div>
             <div class="metric-track-dot" id="metricEntryDot" style="color:var(--green);left:50%"></div>
           </div>
@@ -547,9 +547,9 @@
           <div class="metric-value" id="metricSwimVal">—</div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
-              <div class="z" style="background:var(--red)"></div>
-              <div class="z" style="background:var(--yellow)"></div>
               <div class="z" style="background:var(--green)"></div>
+              <div class="z" style="background:var(--yellow)"></div>
+              <div class="z" style="background:var(--red)"></div>
             </div>
             <div class="metric-track-dot" id="metricSwimDot" style="color:var(--green);left:50%"></div>
           </div>
@@ -560,9 +560,9 @@
           <div class="metric-value" id="metricSurgeVal">—</div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
-              <div class="z" style="background:var(--red)"></div>
-              <div class="z" style="background:var(--yellow)"></div>
               <div class="z" style="background:var(--green)"></div>
+              <div class="z" style="background:var(--yellow)"></div>
+              <div class="z" style="background:var(--red)"></div>
             </div>
             <div class="metric-track-dot" id="metricSurgeDot" style="color:var(--green);left:50%"></div>
           </div>
@@ -1351,7 +1351,7 @@ function renderSnapshot(h, wx) {
   // Wait — zones are: red 0-10, yellow 11-29, orange 30-44, green 45-60
   // Map score directly: pct = score/60 * 100
   const entryScore = result.entry.score;
-  const entryPct   = (entryScore / 60) * 100;
+  const entryPct   = (1 - entryScore / 60) * 100;
   const entryColor = result.entry.cls === 'green'  ? 'var(--green)'
                    : result.entry.cls === 'orange' ? '#c86414'
                    : result.entry.cls === 'yellow' ? 'var(--yellow)' : 'var(--red)';
@@ -1360,14 +1360,14 @@ function renderSnapshot(h, wx) {
   // Swim dot: chop value 0–15 practical max, rail = green(0-2) | yellow(2-7) | red(7+)
   // Cap display at 15 for positioning
   const swimVal  = parseFloat(result.swim.score) || 0;
-  const swimPct  = (1 - Math.min(swimVal / 15, 1)) * 100;
+  const swimPct  = Math.min(swimVal / 15, 1) * 100;
   const swimColor = result.swim.cls === 'green' ? 'var(--green)'
                   : result.swim.cls === 'yellow' ? 'var(--yellow)' : 'var(--red)';
   setTrackDot('metricSwimDot', swimPct, swimColor);
 
   // Surge dot: score 0–60, rail = red(0-20) | yellow(20-50) | green(50-60)
   const surgeScore = result.water.score;
-  const surgePct   = (surgeScore / 60) * 100;
+  const surgePct   = (1 - surgeScore / 60) * 100;
   const surgeColor = result.water.cls === 'green' ? 'var(--green)'
                    : result.water.cls === 'yellow' ? 'var(--yellow)' : 'var(--red)';
   setTrackDot('metricSurgeDot', surgePct, surgeColor);
