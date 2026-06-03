@@ -146,6 +146,114 @@
     letter-spacing:0.5px;
   }
 
+  /* ── Pollution strip ── */
+  .pollution-strip {
+    background: var(--card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 11px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pollution-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .pollution-label span {
+    display: block;
+    font-size: 8px;
+    letter-spacing: 1px;
+    margin-top: 2px;
+    opacity: 0.7;
+  }
+  .pollution-divider {
+    width: 1px;
+    height: 32px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+  .pollution-forecast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  .pollution-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pollution-dot.good    { background: var(--green); }
+  .pollution-dot.fair    { background: var(--yellow); }
+  .pollution-dot.poor    { background: var(--red); }
+  .pollution-dot.unknown { background: var(--dim); }
+  .pollution-text {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1px;
+    line-height: 1;
+  }
+  .pollution-text.good    { color: var(--green); }
+  .pollution-text.fair    { color: var(--yellow); }
+  .pollution-text.poor    { color: var(--red); }
+  .pollution-text.unknown { color: var(--dim); }
+  .pollution-sub {
+    font-size: 10px;
+    color: var(--dim);
+    line-height: 1.4;
+  }
+  .pollution-link {
+    font-size: 9px;
+    color: var(--ocean);
+    text-decoration: none;
+    letter-spacing: 0.5px;
+    margin-left: auto;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .pollution-link:hover { text-decoration: underline; }
+
+  /* ── Shark strip ── */
+  .shark-strip {
+    background: var(--card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 11px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .shark-strip:hover { background: rgba(255,255,255,0.88); }
+  .shark-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
+  .shark-body { flex: 1; min-width: 0; }
+  .shark-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px; letter-spacing: 1.5px;
+    color: var(--deep); line-height: 1;
+  }
+  .shark-sub {
+    font-size: 9px; color: var(--dim);
+    letter-spacing: 1.5px; text-transform: uppercase;
+    margin-top: 3px;
+  }
+  .shark-cta {
+    font-size: 9px; color: var(--ocean);
+    letter-spacing: 0.5px; white-space: nowrap;
+    flex-shrink: 0;
+  }
+
   /* ── Weather strip ── */
   .weather-strip {
     background:var(--card);
@@ -404,6 +512,33 @@
       </div>
     </div>
 
+    <!-- Pollution strip -->
+    <div class="pollution-strip" id="pollutionStrip">
+      <div class="pollution-label">
+        Water Quality
+        <span>Today · Beachwatch NSW</span>
+      </div>
+      <div class="pollution-divider"></div>
+      <div class="pollution-forecast">
+        <div class="pollution-dot unknown" id="pollutionDot"></div>
+        <div class="pollution-text unknown" id="pollutionText">—</div>
+        <div class="pollution-sub" id="pollutionSub"></div>
+      </div>
+      <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
+    </div>
+
+    <!-- Shark strip -->
+    <a class="shark-strip"
+       href="https://www.sharksmart.nsw.gov.au/shark-activity#map=-33.7969/151.2877/13"
+       target="_blank" rel="noopener">
+      <div class="shark-icon">🦈</div>
+      <div class="shark-body">
+        <div class="shark-title">SharkSmart — Manly Area</div>
+        <div class="shark-sub">Tap for live sightings, drone alerts &amp; tagged detections</div>
+      </div>
+      <div class="shark-cta">↗ Open</div>
+    </a>
+
     <!-- Weather strip -->
     <div class="weather-strip" id="weatherStrip">
       <div class="wx-item">
@@ -518,7 +653,14 @@ const OM_CACHE_KEY    = 'swim_om_cache_v1';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
 const MAX_RETRIES     = 3;
 
-// Config from Google Sheet
+// Beachwatch — try direct API first, then CORS proxy fallback
+// South Steyne site name as listed in Beachwatch ("South Steyne Beach")
+const BW_API_DIRECT   = 'https://api.beachwatch.nsw.gov.au/public/sites/geojson?site_name=South%20Steyne%20Beach';
+const BW_API_PROXY    = 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://api.beachwatch.nsw.gov.au/public/sites/geojson?site_name=South%20Steyne%20Beach');
+const BW_CACHE_KEY    = 'swim_bw_cache_v1';
+const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by Beachwatch)
+
+
 const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
 const SWIM_CONFIG_KEY  = 'swim_config_cache_v2';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
@@ -1288,6 +1430,104 @@ function jumpToSlider(idx) {
 }
 
 // =============================================================================
+// FETCH BEACHWATCH — today's water quality forecast for South Steyne
+// =============================================================================
+async function fetchBeachwatch() {
+  const cache = loadCache(BW_CACHE_KEY);
+  if (cacheIsFresh(cache, BW_CACHE_TTL)) return cache.data;
+
+  async function tryFetch(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`BW HTTP ${res.status}`);
+    let j = await res.json();
+    // allorigins wraps response in {contents: "...json string..."}
+    if (j?.contents) j = JSON.parse(j.contents);
+    // API returns FeatureCollection; find South Steyne feature
+    const feature = (j?.features || []).find(f =>
+      (f.properties?.siteName || '').toLowerCase().includes('south steyne')
+    ) || j?.features?.[0];
+    if (!feature) throw new Error('BW: no features in response');
+    const props = feature.properties || {};
+    console.log('Beachwatch raw props:', JSON.stringify(props));
+    return {
+      forecast:  props.pollutionForecast           || null,
+      timestamp: props.pollutionForecastTimeStamp  || null,
+      latest:    props.latestResult                || null,
+      latestDate:props.latestResultObservationDate || null,
+    };
+  }
+
+  // Try direct first, fall back to CORS proxy
+  for (const url of [BW_API_DIRECT, BW_API_PROXY]) {
+    try {
+      const data = await tryFetch(url);
+      saveCache(BW_CACHE_KEY, data);
+      console.log('Beachwatch loaded from', url);
+      return data;
+    } catch(e) {
+      console.warn('Beachwatch attempt failed:', url, e.message);
+    }
+  }
+  return null;
+}
+
+function renderPollution(bw) {
+  const dot  = document.getElementById('pollutionDot');
+  const txt  = document.getElementById('pollutionText');
+  const sub  = document.getElementById('pollutionSub');
+
+  if (!bw) {
+    // Fetch completely failed (CORS or network)
+    dot.className = 'pollution-dot unknown';
+    txt.className = 'pollution-text unknown';
+    txt.textContent = 'Check Beachwatch';
+    sub.textContent = 'Tap ↗ for today\'s forecast';
+    return;
+  }
+  if (!bw.forecast) {
+    // API worked but no forecast issued yet (e.g. before 6am update)
+    dot.className = 'pollution-dot unknown';
+    txt.className = 'pollution-text unknown';
+    txt.textContent = 'Not yet issued';
+    sub.textContent = 'Updated 6am & 1:30pm · Tap ↗ for details';
+    return;
+  }
+
+  const f = bw.forecast.toLowerCase();
+  let cls, label, subText;
+
+  if (f.includes('not available') || f.includes('not forecast')) {
+    cls = 'unknown'; label = 'No forecast';
+  } else if (f.includes('unlikely') || f.includes('good')) {
+    cls = 'good';    label = 'Unlikely';
+  } else if (f.includes('possible') || f.includes('fair')) {
+    cls = 'fair';    label = 'Possible';
+  } else if (f.includes('likely') || f.includes('poor')) {
+    cls = 'poor';    label = 'Likely';
+  } else {
+    cls = 'unknown'; label = bw.forecast;
+  }
+
+  // Subtitle: last sample result + how long ago
+  if (bw.latest && bw.latestDate) {
+    const d    = new Date(bw.latestDate);
+    const days = Math.round((Date.now() - d.getTime()) / 86400000);
+    const ago  = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`;
+    subText = `Last sample: ${bw.latest.toLowerCase()} · ${ago}`;
+  } else if (bw.timestamp) {
+    const d = new Date(bw.timestamp);
+    subText = `Forecast issued ${d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'})}`;
+  } else {
+    subText = 'Pollution risk based on rainfall model';
+  }
+
+  dot.className  = `pollution-dot ${cls}`;
+  txt.className  = `pollution-text ${cls}`;
+  txt.textContent = label;
+  sub.textContent = subText;
+}
+
+// =============================================================================
 // MAIN LOAD — WillyWeather (primary) + Open-Meteo Marine/Weather (supplementary)
 // =============================================================================
 async function loadAndRender(forceRefresh = false) {
@@ -1353,6 +1593,15 @@ async function loadAndRender(forceRefresh = false) {
     const currentDt = (currentH.dateTime || '').replace(' ','T').substring(0,16);
     const currentWx = _wxMatrix[currentDt] || wxData?.current || null;
 
+    // Fetch Beachwatch — isolated so it never breaks the main render
+    try {
+      const bwData = await fetchBeachwatch();
+      renderPollution(bwData);
+    } catch(e) {
+      console.warn('Beachwatch render failed:', e.message);
+      renderPollution(null);
+    }
+
     renderSnapshot(currentH, currentWx);
     renderSlider(_matrix);
     renderTimeline(_matrix, _wxMatrix);
@@ -1369,7 +1618,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2','swim_bw_cache_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
