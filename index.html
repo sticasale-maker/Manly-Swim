@@ -715,7 +715,7 @@ const MAX_RETRIES     = 3;
 // Beachwatch — try direct API first, then CORS proxy fallback
 // South Steyne site name as listed in Beachwatch ("South Steyne Beach")
 const BW_API_DIRECT   = 'https://api.beachwatch.nsw.gov.au/public/sites/geojson?site_name=South%20Steyne%20Beach';
-const BW_API_PROXY    = 'https://api.allorigins.win/get?url=' + encodeURIComponent('https://api.beachwatch.nsw.gov.au/public/sites/geojson?site_name=South%20Steyne%20Beach');
+const BW_API_PROXY    = 'https://bold-rain-6ded.sticasale.workers.dev/beachwatch';
 const BW_CACHE_KEY    = 'swim_bw_cache_v1';
 const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by Beachwatch)
 
@@ -1321,6 +1321,7 @@ function switchTab(tab) {
 }
 
 function renderSnapshot(h, wx) {
+  if (!h || !h.dateTime) return;
   const result = calcScore(h);
   const dm     = result.demerits;
 
@@ -1534,8 +1535,7 @@ async function fetchBeachwatch() {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`BW HTTP ${res.status}`);
     let j = await res.json();
-    // allorigins wraps response in {contents: "...json string..."}
-    if (j?.contents) j = JSON.parse(j.contents);
+    // worker returns clean JSON passthrough
     // API returns FeatureCollection; find South Steyne feature
     const feature = (j?.features || []).find(f =>
       (f.properties?.siteName || '').toLowerCase().includes('south steyne')
@@ -1705,16 +1705,27 @@ async function loadAndRender(forceRefresh = false) {
 
   } catch(e) {
     console.error('Load failed:', e);
-    // Show cached data age if available, so partial info is visible
     const wwCache = loadCache(WW_CACHE_KEY);
     if (wwCache?.data && wwCache?.matrix?.length) {
-      const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
-      setStatus(`Showing cached data (${ago} min old) — live fetch failed`);
-      hideErrorBanner();
+      // Render stale cached data rather than showing nothing
+      try {
+        _matrix   = wwCache.matrix;
+        _sliderIdx = 0;
+        const cachedH  = _matrix[0];
+        const cachedDt = (cachedH.dateTime || '').replace(' ','T').substring(0,16);
+        renderSnapshot(cachedH, null);
+        renderSlider(_matrix);
+        renderTimeline(_matrix, {});
+        const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
+        setStatus(`Cached data (${ago} min old) — live fetch failed`);
+        hideErrorBanner();
+      } catch(e2) {
+        console.error('Cache render failed:', e2);
+      }
     } else {
       const isLocal = location.protocol === 'file:';
       showErrorBanner(isLocal
-        ? 'Live data unavailable in local preview — open via a web server or deploy to see live forecast.'
+        ? 'Live data unavailable in local preview — deploy or open via a local server.'
         : 'Could not load forecast. Check your connection.');
       setStatus('Error: ' + e.message);
     }
