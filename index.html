@@ -282,6 +282,54 @@
     color: var(--dim);
     line-height: 1.4;
   }
+  /* ── Bluebottle strip ── */
+  .bb-strip {
+    background: var(--card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 11px 14px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .bb-strip.bb-alert-1 { background: rgba(212,144,10,0.12); border-color: var(--yellow); }
+  .bb-strip.bb-alert-2 { background: rgba(192,57,43,0.12);  border-color: var(--red); }
+  .bb-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
+  .bb-body { flex: 1; min-width: 0; }
+  .bb-status {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 15px; letter-spacing: 1px;
+    color: var(--dim); line-height: 1.2;
+  }
+  .bb-strip.bb-alert-1 .bb-status { color: var(--yellow); }
+  .bb-strip.bb-alert-2 .bb-status { color: var(--red); }
+  .bb-sub {
+    font-size: 9px; color: var(--dim);
+    letter-spacing: 0.5px; margin-top: 3px;
+  }
+  .bb-btn {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 14px; letter-spacing: 1.5px;
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: 1.5px solid var(--ocean);
+    background: transparent;
+    color: var(--ocean);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+  }
+  .bb-btn:hover { background: var(--ocean); color: #fff; }
+  .bb-btn:disabled {
+    border-color: var(--dim); color: var(--dim);
+    cursor: default; opacity: 0.6;
+  }
+  .bb-btn:disabled:hover { background: transparent; color: var(--dim); }
+
   /* ── Shark strip ── */
   .shark-strip {
     background: var(--card);
@@ -619,6 +667,16 @@
           <div class="pollution-sub" id="pollutionSub"></div>
         </div>
       </div>
+    </div>
+
+    <!-- Bluebottle report strip -->
+    <div class="bb-strip" id="bbStrip">
+      <div class="bb-icon">🪼</div>
+      <div class="bb-body">
+        <div class="bb-status" id="bbStatus">No blue bottles reported in the last 24h</div>
+        <div class="bb-sub" id="bbSub"></div>
+      </div>
+      <button class="bb-btn" id="bbBtn" onclick="bbReport()">Report</button>
     </div>
 
     <!-- Weather strip -->
@@ -1823,6 +1881,147 @@ document.getElementById('timeSlider').addEventListener('input', function() {
   const pct = this.max > 0 ? (this.value / this.max) * 100 : 0;
   this.style.background = `linear-gradient(to right, var(--ocean) ${pct}%, rgba(10,126,164,0.2) ${pct}%)`;
 });
+
+// =============================================================================
+// BLUEBOTTLE COMMUNITY REPORTS — Supabase backend
+// =============================================================================
+const BB_SUPABASE_URL  = 'https://gkspukabnfbzrvjoewpc.supabase.co';
+const BB_SUPABASE_KEY  = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
+const BB_COOLDOWN      = 4 * 60 * 60 * 1000; // 4 hours (stored locally per device)
+const BB_CACHE_TTL     = 5 * 60 * 1000;       // re-fetch from Supabase every 5 min
+
+// Local cooldown helpers (rate-limit per device)
+function bbGetLastMine() {
+  try { const v = localStorage.getItem('swim_bb_last_mine'); return v ? parseInt(v, 10) : 0; } catch(e) { return 0; }
+}
+function bbSetLastMine() {
+  try { localStorage.setItem('swim_bb_last_mine', Date.now().toString()); } catch(e) {}
+}
+
+// Simple hash for rough deduplication (not cryptographically secure, just enough)
+async function bbDeviceId() {
+  try {
+    let id = localStorage.getItem('swim_bb_device');
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+      localStorage.setItem('swim_bb_device', id);
+    }
+    const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id));
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('').slice(0,16);
+  } catch(e) { return 'unknown'; }
+}
+
+// Fetch reports from last 24h
+async function bbFetch() {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const res = await fetch(
+    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports?select=reported_at&reported_at=gte.${since}&order=reported_at.asc`,
+    { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}` } }
+  );
+  if (!res.ok) throw new Error(`Supabase fetch ${res.status}`);
+  return await res.json(); // [{reported_at: '...'}, ...]
+}
+
+// Insert a new report
+async function bbInsert(ipHash) {
+  const res = await fetch(
+    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports`,
+    {
+      method: 'POST',
+      headers: {
+        'apikey': BB_SUPABASE_KEY,
+        'Authorization': `Bearer ${BB_SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({ ip_hash: ipHash })
+    }
+  );
+  if (!res.ok) throw new Error(`Supabase insert ${res.status}`);
+}
+
+// Render the strip from a reports array
+function bbRenderFromData(reports) {
+  const strip  = document.getElementById('bbStrip');
+  const status = document.getElementById('bbStatus');
+  const sub    = document.getElementById('bbSub');
+  const btn    = document.getElementById('bbBtn');
+  if (!strip || !status || !btn) return;
+
+  const count    = reports.length;
+  const now      = Date.now();
+  const lastMine = bbGetLastMine();
+  const cooldownLeft = BB_COOLDOWN - (now - lastMine);
+  const onCooldown   = lastMine > 0 && cooldownLeft > 0;
+
+  // Status
+  if (count === 0) {
+    strip.className  = 'bb-strip';
+    status.textContent = 'No blue bottles reported in the last 24h';
+    sub.textContent  = '';
+  } else {
+    strip.className  = count >= 3 ? 'bb-strip bb-alert-2' : 'bb-strip bb-alert-1';
+    status.textContent = `${count} swimmer${count > 1 ? 's' : ''} reported blue bottles in the last 24h`;
+    const lastTs = new Date(reports[reports.length - 1].reported_at);
+    sub.textContent = `Last reported at ${lastTs.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`;
+  }
+
+  // Button
+  if (onCooldown) {
+    const h = Math.floor(cooldownLeft / 3600000);
+    const m = Math.floor((cooldownLeft % 3600000) / 60000);
+    btn.disabled    = true;
+    btn.textContent = `Again in ${h > 0 ? h + 'h ' : ''}${m}m`;
+  } else {
+    btn.disabled    = false;
+    btn.textContent = 'Report';
+  }
+}
+
+// Load and render (with a short cache to avoid hammering Supabase on every render tick)
+let _bbCache = null, _bbCacheAt = 0;
+async function bbLoad() {
+  try {
+    if (Date.now() - _bbCacheAt < BB_CACHE_TTL && _bbCache) {
+      bbRenderFromData(_bbCache);
+      return;
+    }
+    const reports = await bbFetch();
+    _bbCache   = reports;
+    _bbCacheAt = Date.now();
+    bbRenderFromData(reports);
+  } catch(e) {
+    console.warn('Bluebottle fetch failed:', e.message);
+    bbRenderFromData(_bbCache || []);
+  }
+}
+
+async function bbReport() {
+  const now      = Date.now();
+  const lastMine = bbGetLastMine();
+  if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
+
+  const btn = document.getElementById('bbBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try {
+    const deviceId = await bbDeviceId();
+    await bbInsert(deviceId);
+    bbSetLastMine();
+    _bbCache   = null; // bust cache so we re-fetch fresh count
+    _bbCacheAt = 0;
+    await bbLoad();
+  } catch(e) {
+    console.warn('Bluebottle report failed:', e.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Report'; }
+  }
+}
+
+// Initial load + refresh every 5 min
+bbLoad();
+setInterval(bbLoad, BB_CACHE_TTL);
+// Countdown refresh every minute
+setInterval(() => { if (_bbCache) bbRenderFromData(_bbCache); }, 60 * 1000);
 
 // =============================================================================
 // INIT
