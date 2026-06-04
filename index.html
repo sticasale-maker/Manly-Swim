@@ -181,17 +181,47 @@
   }
 
   /* ── Pollution strip ── */
+  .quality-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: stretch;
+  }
   .pollution-strip {
     background: var(--card);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 11px 16px;
-    margin-bottom: 10px;
+    padding: 11px 12px;
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
   }
+  .sea-temp-card {
+    background: var(--card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 80px;
+    text-align: center;
+  }
+  .sea-temp-icon { font-size: 20px; line-height: 1; margin-bottom: 4px; }
+  .sea-temp-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px;
+    color: var(--ocean);
+    line-height: 1;
+  }
+  .sea-temp-unit { font-size: 9px; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+  .sea-temp-label { font-size: 8px; color: var(--dim); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
   .pollution-label {
     font-size: 9px;
     letter-spacing: 2px;
@@ -571,19 +601,26 @@
       </div>
     </div>
 
-    <!-- Pollution strip -->
-    <div class="pollution-strip" id="pollutionStrip">
-      <div class="pollution-label">
-        Water Quality
-        <span>Today · Beachwatch NSW</span>
+    <!-- Water quality + sea temp row -->
+    <div class="quality-row">
+      <div class="sea-temp-card">
+        <div class="sea-temp-icon">🌊</div>
+        <div class="sea-temp-val" id="seaTempVal">—</div>
+        <div class="sea-temp-unit">°C</div>
+        <div class="sea-temp-label">Sea Temp</div>
       </div>
-      <div class="pollution-divider"></div>
-      <div class="pollution-forecast">
-        <div class="pollution-dot unknown" id="pollutionDot"></div>
-        <div class="pollution-text unknown" id="pollutionText">—</div>
-        <div class="pollution-sub" id="pollutionSub"></div>
+      <div class="pollution-strip" id="pollutionStrip">
+        <div class="pollution-label">
+          Water Quality
+          <span>Today · Beachwatch NSW</span>
+        </div>
+        <div class="pollution-divider"></div>
+        <div class="pollution-forecast">
+          <div class="pollution-text unknown" id="pollutionText">—</div>
+          <div class="pollution-sub" id="pollutionSub"></div>
+        </div>
+        <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
       </div>
-      <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
     </div>
 
     <!-- Weather strip -->
@@ -708,7 +745,7 @@
 const WW_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/forecast';
 const WW_CACHE_KEY    = 'swim_ww_cache_v3';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
-const OM_CACHE_KEY    = 'swim_om_cache_v1';
+const OM_CACHE_KEY    = 'swim_om_cache_v2';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
 const MAX_RETRIES     = 3;
 
@@ -738,7 +775,7 @@ const MANLY_LNG = 151.2877;
 const OM_MARINE_URL = `https://marine-api.open-meteo.com/v1/marine`
   + `?latitude=${MANLY_LAT}&longitude=${MANLY_LNG}`
   + `&hourly=secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`
-  + `,wind_wave_height,wind_wave_direction,wind_wave_period`
+  + `,wind_wave_height,wind_wave_direction,wind_wave_period,sea_surface_temperature`
   + `&current=secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period`
   + `,wind_wave_height,wind_wave_direction,wind_wave_period`
   + `&forecast_days=7&wind_speed_unit=kmh&timezone=Australia%2FSydney`;
@@ -1145,17 +1182,30 @@ async function fetchOMarine() {
       windWaveH:  c.wind_wave_height               ?? 0,
       windWaveDir:c.wind_wave_direction             ?? 0,
       windWaveP:  c.wind_wave_period               ?? 0,
+      seaTemp:    null, // filled below from closest hourly
     };
     const times = j.hourly?.time || [];
     const hourly = {};
     const fields = [
       'secondary_swell_wave_height','secondary_swell_wave_direction','secondary_swell_wave_period',
-      'wind_wave_height','wind_wave_direction','wind_wave_period',
+      'wind_wave_height','wind_wave_direction','wind_wave_period','sea_surface_temperature',
     ];
     times.forEach((dt, i) => {
       hourly[dt] = {};
       fields.forEach(f => { hourly[dt][f] = j.hourly?.[f]?.[i] ?? 0; });
     });
+    // sea_surface_temperature is hourly-only — find closest entry to now
+    const now = Date.now();
+    let bestSst = null, minDiff = Infinity;
+    times.forEach((dt, i) => {
+      const sst = j.hourly?.sea_surface_temperature?.[i];
+      if (sst == null || sst === 0) return;
+      const ts = Date.parse(dt.length === 16 ? dt + ':00' : dt);
+      if (isNaN(ts)) return;
+      const diff = Math.abs(ts - now);
+      if (diff < minDiff) { minDiff = diff; bestSst = sst; }
+    });
+    current.seaTemp = bestSst;
     const data = { current, hourly };
     saveCache(OM_CACHE_KEY, data);
     return data;
@@ -1191,6 +1241,7 @@ function mergeOMarine(data, omData) {
     windWaveH:  c.windWaveH  || 0,
     windWaveDir:c.windWaveDir || data.windDir,
     windWaveP,
+    seaTemp: c.seaTemp ?? null,
   };
 }
 
@@ -1208,6 +1259,7 @@ function mergeOMarineMatrix(matrix, omData) {
       windWaveH:  om.wind_wave_height    || 0,
       windWaveDir:om.wind_wave_direction || row.windDir,
       windWaveP:  om.wind_wave_period    || 0,
+      seaTemp:    om.sea_surface_temperature ?? null,
     };
   });
 }
@@ -1388,6 +1440,11 @@ function renderSnapshot(h, wx) {
     document.getElementById('wxSkyIcon').textContent = wxInfo.icon;
     document.getElementById('wxCondition').textContent = wxInfo.desc;
   }
+  // Sea temp (from marine data on h, available regardless of wx)
+  const seaTempEl = document.getElementById('seaTempVal');
+  if (seaTempEl) {
+    seaTempEl.textContent = h.seaTemp != null ? h.seaTemp.toFixed(1) : '—';
+  }
 
   // Conditions bar
   document.getElementById('sWind').textContent    = Math.round(h.windKmh);
@@ -1566,13 +1623,11 @@ async function fetchBeachwatch() {
 }
 
 function renderPollution(bw) {
-  const dot  = document.getElementById('pollutionDot');
   const txt  = document.getElementById('pollutionText');
   const sub  = document.getElementById('pollutionSub');
 
   if (!bw) {
     // Fetch completely failed (CORS or network)
-    dot.className = 'pollution-dot unknown';
     txt.className = 'pollution-text unknown';
     txt.textContent = 'Check Beachwatch';
     sub.textContent = 'Tap ↗ for today\'s forecast';
@@ -1580,7 +1635,6 @@ function renderPollution(bw) {
   }
   if (!bw.forecast) {
     // API worked but no forecast issued yet (e.g. before 6am update)
-    dot.className = 'pollution-dot unknown';
     txt.className = 'pollution-text unknown';
     txt.textContent = 'Not yet issued';
     sub.textContent = 'Updated 6am & 1:30pm · Tap ↗ for details';
@@ -1588,7 +1642,7 @@ function renderPollution(bw) {
   }
 
   const f = bw.forecast.toLowerCase();
-  let cls, label, subText;
+  let cls, label;
 
   if (f.includes('not available') || f.includes('not forecast')) {
     cls = 'unknown'; label = 'No forecast';
@@ -1602,23 +1656,9 @@ function renderPollution(bw) {
     cls = 'unknown'; label = bw.forecast;
   }
 
-  // Subtitle: last sample result + how long ago
-  if (bw.latest && bw.latestDate) {
-    const d    = new Date(bw.latestDate);
-    const days = Math.round((Date.now() - d.getTime()) / 86400000);
-    const ago  = days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days}d ago`;
-    subText = `Last sample: ${bw.latest.toLowerCase()} · ${ago}`;
-  } else if (bw.timestamp) {
-    const d = new Date(bw.timestamp);
-    subText = `Forecast issued ${d.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'})}`;
-  } else {
-    subText = 'Pollution risk based on rainfall model';
-  }
-
-  dot.className  = `pollution-dot ${cls}`;
   txt.className  = `pollution-text ${cls}`;
-  txt.textContent = label;
-  sub.textContent = subText;
+  txt.textContent = 'POLLUTION: ' + label;
+  sub.textContent = '';
 }
 
 // =============================================================================
@@ -1736,7 +1776,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_om_cache_v1','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2','swim_bw_cache_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_om_cache_v1','swim_om_cache_v2','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2','swim_bw_cache_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
