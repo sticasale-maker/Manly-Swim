@@ -803,7 +803,7 @@ const WW_CACHE_KEY    = 'swim_ww_cache_v3';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const OM_CACHE_KEY    = 'swim_om_cache_v2';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
-const MAX_RETRIES     = 3;
+const MAX_RETRIES     = 5;
 
 // Beachwatch — try direct API first, then CORS proxy fallback
 // South Steyne site name as listed in Beachwatch ("South Steyne Beach")
@@ -1727,6 +1727,30 @@ async function loadAndRender(forceRefresh = false) {
     const wwCache = loadCache(WW_CACHE_KEY);
     let wwData = null, matrix = null;
 
+    // If we have ANY cached data, render it immediately so the page isn't blank
+    // while we attempt a live fetch in the background
+    if (wwCache?.data && wwCache?.matrix?.length) {
+      try {
+        _matrix    = wwCache.matrix;
+        _sliderIdx = 0;
+        // Find closest entry to now in cached matrix
+        const now = Date.now();
+        let bestIdx = 0, minDiff = Infinity;
+        _matrix.forEach((row, i) => {
+          const diff = Math.abs(new Date(row.dateTime.replace(' ','T')).getTime() - now);
+          if (diff < minDiff) { minDiff = diff; bestIdx = i; }
+        });
+        _sliderIdx = bestIdx;
+        renderSnapshot(_matrix[_sliderIdx], null);
+        renderSlider(_matrix);
+        renderTimeline(_matrix, {});
+        const ago = Math.round((now - wwCache.fetchedAt) / 60000);
+        setStatus(cacheIsFresh(wwCache, WW_CACHE_TTL)
+          ? `Cached ${ago} min ago · WillyWeather Manly`
+          : `Loading… (showing ${ago} min old data)`);
+      } catch(e2) { /* silent — live fetch will overwrite */ }
+    }
+
     if (!forceRefresh && cacheIsFresh(wwCache, WW_CACHE_TTL) && wwCache.data) {
       wwData  = wwCache.data;
       matrix  = wwCache.matrix || [];
@@ -1751,7 +1775,8 @@ async function loadAndRender(forceRefresh = false) {
           break;
         } catch(e) {
           lastErr = e;
-          if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1500 * attempt));
+          // Exponential backoff: 2s, 4s, 6s, 8s between attempts
+          if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 2000 * attempt));
         }
       }
       if (!wwData) throw lastErr;
@@ -1803,27 +1828,20 @@ async function loadAndRender(forceRefresh = false) {
     console.error('Load failed:', e);
     const wwCache = loadCache(WW_CACHE_KEY);
     if (wwCache?.data && wwCache?.matrix?.length) {
-      // Render stale cached data rather than showing nothing
-      try {
-        _matrix   = wwCache.matrix;
-        _sliderIdx = 0;
-        const cachedH  = _matrix[0];
-        const cachedDt = (cachedH.dateTime || '').replace(' ','T').substring(0,16);
-        renderSnapshot(cachedH, null);
-        renderSlider(_matrix);
-        renderTimeline(_matrix, {});
-        const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
-        setStatus(`Cached data (${ago} min old) — live fetch failed`);
-        hideErrorBanner();
-      } catch(e2) {
-        console.error('Cache render failed:', e2);
-      }
+      // Already rendered stale cache above — just update status, no red banner
+      const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
+      setStatus(`Showing cached data (${ago} min old) · retrying…`);
+      hideErrorBanner();
+      // Silent auto-retry after 15 seconds
+      setTimeout(() => loadAndRender(false), 15000);
     } else {
       const isLocal = location.protocol === 'file:';
       showErrorBanner(isLocal
         ? 'Live data unavailable in local preview — deploy or open via a local server.'
         : 'Could not load forecast. Check your connection.');
       setStatus('Error: ' + e.message);
+      // Auto-retry after 15 seconds even without cache
+      if (!isLocal) setTimeout(() => loadAndRender(false), 15000);
     }
   }
 }
