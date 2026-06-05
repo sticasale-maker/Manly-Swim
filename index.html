@@ -1029,7 +1029,7 @@
 // CONSTANTS
 // =============================================================================
 const WW_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/forecast';
-const WW_CACHE_KEY    = 'swim_ww_cache_v3';
+const WW_CACHE_KEY    = 'swim_ww_cache_v4';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const OM_CACHE_KEY    = 'swim_om_cache_v2';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
@@ -1671,6 +1671,7 @@ function switchTab(tab) {
 
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) return;
+  if (!document.getElementById('metricEntry')) return;
   const result = calcScore(h);
   const dm     = result.demerits;
 
@@ -1682,6 +1683,7 @@ function renderSnapshot(h, wx) {
   // Three metric blocks
   function setMetric(id, valId, scoreId, metric) {
     const block = document.getElementById(id);
+    if (!block) return;
     block.className = 'metric-block ' + metric.cls;
     document.getElementById(valId).textContent   = metric.label;
     document.getElementById(scoreId).textContent = metric.score;
@@ -1800,7 +1802,9 @@ function renderSnapshot(h, wx) {
 }
 
 function renderSlider(matrix) {
+  if (!matrix || !matrix.length) return;
   const slider = document.getElementById('timeSlider');
+  _sliderIdx = Math.min(_sliderIdx, matrix.length - 1);
   slider.max   = matrix.length - 1;
   slider.value = _sliderIdx;
 
@@ -1968,6 +1972,11 @@ function renderPollution(bw) {
 // =============================================================================
 // MAIN LOAD — WillyWeather (primary) + Open-Meteo Marine/Weather (supplementary)
 // =============================================================================
+function setMatrix(matrix) {
+  _matrix    = matrix;
+  _sliderIdx = Math.min(_sliderIdx, Math.max(0, matrix.length - 1));
+}
+
 async function loadAndRender(forceRefresh = false) {
   hideErrorBanner();
   try {
@@ -1979,7 +1988,7 @@ async function loadAndRender(forceRefresh = false) {
     // while we attempt a live fetch in the background
     if (wwCache?.data && wwCache?.matrix?.length) {
       try {
-        _matrix    = wwCache.matrix;
+        setMatrix(wwCache.matrix);
         _sliderIdx = 0;
         // Find closest entry to now in cached matrix
         const now = Date.now();
@@ -2040,7 +2049,7 @@ async function loadAndRender(forceRefresh = false) {
     _wxMatrix = wxData?.hourly || {};
     _wxDaily  = wxData?.daily  || {};
 
-    _matrix = matrix;
+    setMatrix(matrix);
 
     // Find closest entry to now
     if (_matrix.length > 0) {
@@ -2098,7 +2107,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_om_cache_v1','swim_om_cache_v2','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2','swim_bw_cache_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_config_cache_v1','swim_config_cache_v2','swim_bw_cache_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
