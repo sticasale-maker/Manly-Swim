@@ -1957,6 +1957,11 @@ function selectDay(date) {
 }
 
 function renderSlider(matrix) {
+  // Initialise _selectedDay if not set — default to the day containing _sliderIdx
+  if (!_selectedDay && matrix.length) {
+    _selectedDay = matrix[_sliderIdx]?.dateTime?.substring(0, 10)
+                || matrix[0].dateTime.substring(0, 10);
+  }
   // Get rows for selected day only
   const dayRows = matrix.map((r,i) => ({r,i})).filter(({r}) => r.dateTime.startsWith(_selectedDay));
   if (!dayRows.length) return;
@@ -2167,6 +2172,7 @@ async function loadAndRender(forceRefresh = false) {
           if (diff < minDiff) { minDiff = diff; bestIdx = i; }
         });
         _sliderIdx = bestIdx;
+        _selectedDay = _matrix[_sliderIdx]?.dateTime?.substring(0, 10) || null;
         renderSnapshot(_matrix[_sliderIdx], null);
         renderSlider(_matrix);
         renderTimeline(_matrix, {});
