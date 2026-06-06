@@ -1853,7 +1853,8 @@ function renderSnapshot(h, wx) {
     document.getElementById('wxCloud').textContent   = wx.cloud != null ? Math.round(wx.cloud) : '—';
     document.getElementById('wxRain').textContent    = wx.rainProb != null ? Math.round(wx.rainProb) : '—';
     document.getElementById('wxSkyIcon').textContent = wxInfo.icon;
-    document.getElementById('wxCondition').textContent = wxInfo.desc;
+    const wxCondEl = document.getElementById('wxCondition');
+    if (wxCondEl) wxCondEl.textContent = wxInfo.desc;
   }
   // Sea temp (from marine data on h, available regardless of wx)
   const seaTempEl = document.getElementById('seaTempVal');
@@ -2232,19 +2233,8 @@ async function loadAndRender(forceRefresh = false) {
       if (!wwData) throw lastErr;
     }
 
-    // Fetch Open-Meteo Marine (secondary swell + wind wave)
-    const omData = await fetchOMarine();
-    wwData = mergeOMarine(wwData, omData);
-    matrix = mergeOMarineMatrix(matrix, omData);
-
-    // Fetch Open-Meteo Weather (temp, wind, cloud, rain, sunrise/sunset)
-    const wxData = await fetchOMWeather();
-    _wxMatrix = wxData?.hourly || {};
-    _wxDaily  = wxData?.daily  || {};
-
+    // ── Render immediately with WW data — metrics visible right away ─────────
     _matrix = matrix;
-
-    // Find closest entry to now
     if (_matrix.length > 0) {
       const now = Date.now();
       let bestIdx = 0, minDiff = Infinity;
@@ -2253,30 +2243,41 @@ async function loadAndRender(forceRefresh = false) {
         if (diff < minDiff) { minDiff = diff; bestIdx = i; }
       });
       _sliderIdx = bestIdx;
-      _selectedDay = null; // will be re-set by renderDayPicker to current day
+      _selectedDay = _matrix[_sliderIdx]?.dateTime?.substring(0, 10) || null;
     }
+    const firstH = _matrix[_sliderIdx] || wwData || null;
+    if (!firstH) throw new Error('No forecast data available');
+    renderSnapshot(firstH, null);
+    renderSlider(_matrix);
+    renderTimeline(_matrix, {});
+    hideErrorBanner();
+    if (!_bannerGenerated) generateBannerSummary();
 
+    // ── Fetch secondary data in parallel with 8s timeout each ─────────────────
+    const withTimeout = (p, ms) => Promise.race([p, new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+    const [omRes, wxRes, bwRes] = await Promise.allSettled([
+      withTimeout(fetchOMarine(),    8000),
+      withTimeout(fetchOMWeather(),  8000),
+      withTimeout(fetchBeachwatch(), 6000),
+    ]);
+
+    if (omRes.status === 'fulfilled' && omRes.value) {
+      wwData  = mergeOMarine(wwData, omRes.value);
+      _matrix = mergeOMarineMatrix(_matrix, omRes.value);
+    }
+    if (wxRes.status === 'fulfilled' && wxRes.value) {
+      _wxMatrix = wxRes.value.hourly || {};
+      _wxDaily  = wxRes.value.daily  || {};
+    }
+    renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null);
+
+    // ── Re-render with full merged data ────────────────────────────────────────
     const currentH  = _matrix[_sliderIdx] || wwData || null;
-    if (!currentH) throw new Error('No forecast data available');
-    const currentDt = (currentH.dateTime || '').replace(' ','T').substring(0,16);
-    const currentWx = _wxMatrix[currentDt] || wxData?.current || null;
-
-    // Fetch Beachwatch — isolated so it never breaks the main render
-    try {
-      const bwData = await fetchBeachwatch();
-      renderPollution(bwData);
-    } catch(e) {
-      console.warn('Beachwatch render failed:', e.message);
-      renderPollution(null);
-    }
-
+    const currentDt = (currentH?.dateTime || '').replace(' ','T').substring(0,16);
+    const currentWx = _wxMatrix[currentDt] || wxRes.value?.current || null;
     renderSnapshot(currentH, currentWx);
     renderSlider(_matrix);
     renderTimeline(_matrix, _wxMatrix);
-    hideErrorBanner();
-
-    // Generate AI conditions banner (once per load)
-    if (!_bannerGenerated) generateBannerSummary();
 
   } catch(e) {
     console.error('Load failed:', e);
