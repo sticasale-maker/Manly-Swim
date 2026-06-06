@@ -455,18 +455,18 @@
     backdrop-filter:blur(12px);
     border:1px solid var(--border);
     border-radius:var(--radius);
-    padding:16px 12px;
+    padding:8px 10px;
     margin-bottom:10px;
     display:grid;
     grid-template-columns: repeat(4, 1fr);
-    gap:4px;
+    gap:2px;
   }
-  .wx-item { text-align:center; padding:8px 4px; }
-  .wx-icon { font-size:32px; margin-bottom:6px; }
-  .wx-val  { font-family:'Bebas Neue',sans-serif; font-size:44px; color:var(--deep); line-height:1; }
-  .wx-unit { font-size:11px; color:var(--dim); letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
-  .wx-label{ font-size:11px; color:var(--dim); letter-spacing:0.5px; text-transform:uppercase; margin-top:3px; }
-  .wx-feels { font-family:'Bebas Neue',sans-serif; font-size:18px; color:var(--ocean); letter-spacing:1px; margin-top:4px; }
+  .wx-item { text-align:center; padding:4px 2px; }
+  .wx-icon { font-size:22px; margin-bottom:2px; }
+  .wx-val  { font-family:'Bebas Neue',sans-serif; font-size:30px; color:var(--deep); line-height:1; }
+  .wx-unit { font-size:10px; color:var(--dim); letter-spacing:0.5px; text-transform:uppercase; margin-top:2px; }
+  .wx-label{ font-size:10px; color:var(--dim); letter-spacing:0.5px; text-transform:uppercase; margin-top:2px; }
+  .wx-feels { font-family:'Bebas Neue',sans-serif; font-size:15px; color:var(--ocean); letter-spacing:1px; margin-top:2px; }
 
   /* ── Conditions bar ── */
   .conditions-bar {
@@ -952,6 +952,30 @@
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
 
+    <!-- Weather strip -->
+    <div class="weather-strip" id="weatherStrip">
+      <div class="wx-item">
+        <div class="wx-icon">🌡</div>
+        <div class="wx-val" id="wxTemp">—</div>
+        <div class="wx-unit">°C · FEELS <span id="wxFeels">—</span>°</div>
+      </div>
+      <div class="wx-item">
+        <div class="wx-icon" id="wxWindIcon">💨</div>
+        <div class="wx-val" id="wxWind">—</div>
+        <div class="wx-unit">km/h · <span id="wxWindDir">—</span></div>
+      </div>
+      <div class="wx-item">
+        <div class="wx-icon" id="wxSkyIcon">☁️</div>
+        <div class="wx-val" id="wxCloud">—</div>
+        <div class="wx-unit">% cloud</div>
+      </div>
+      <div class="wx-item">
+        <div class="wx-icon">🌧</div>
+        <div class="wx-val" id="wxRain">—</div>
+        <div class="wx-unit">% rain</div>
+      </div>
+    </div>
+
     <!-- Water quality + sea temp row -->
     <div class="quality-row">
       <div class="sea-temp-card">
@@ -982,34 +1006,6 @@
         <div class="bb-sub" id="bbSub"></div>
       </div>
       <button class="bb-btn" id="bbBtn" onclick="bbReport()">Report</button>
-    </div>
-
-    <!-- Weather strip -->
-    <div class="weather-strip" id="weatherStrip">
-      <div class="wx-item">
-        <div class="wx-icon">🌡</div>
-        <div class="wx-val" id="wxTemp">—</div>
-        <div class="wx-unit">°C</div>
-        <div class="wx-feels">FEELS <span id="wxFeels">—</span>°</div>
-      </div>
-      <div class="wx-item">
-        <div class="wx-icon" id="wxWindIcon">💨</div>
-        <div class="wx-val" id="wxWind">—</div>
-        <div class="wx-unit">km/h</div>
-        <div class="wx-label" id="wxWindDir">wind</div>
-      </div>
-      <div class="wx-item">
-        <div class="wx-icon" id="wxSkyIcon">☁️</div>
-        <div class="wx-val" id="wxCloud">—</div>
-        <div class="wx-unit">% cloud</div>
-        <div class="wx-label" id="wxCondition">—</div>
-      </div>
-      <div class="wx-item">
-        <div class="wx-icon">🌧</div>
-        <div class="wx-val" id="wxRain">—</div>
-        <div class="wx-unit">% rain</div>
-        <div class="wx-label">chance</div>
-      </div>
     </div>
 
     <!-- Conditions bar -->
@@ -1095,6 +1091,10 @@
       <p style="font-size:13px;margin-bottom:20px;">Be patient as we tune the scores in the coming weeks and, as always, use your own judgment before entering the water.</p>
 
       <img src="marco2.png" alt="Marco Bordieri" style="width:130px;height:130px;border-radius:50%;object-fit:cover;display:block;margin:0 0 14px 0;border:3px solid rgba(10,126,164,0.3)">
+
+      <p style="font-size:12px;color:var(--dim);margin-bottom:14px;">
+        👁 App views: <strong id="visitCount" style="color:var(--ocean);">—</strong>
+      </p>
 
       <p style="font-size:13px;margin-bottom:4px;">© Marco Bordieri — VIZ Group, June 2026</p>
       <p style="font-size:13px;margin-bottom:4px;">Creative Commons License: BY NC ND</p>
@@ -2995,6 +2995,50 @@ async function generateBannerSummary() {
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
 }
+
+
+// =============================================================================
+// VISIT COUNTER — Supabase (same project as bluebottle)
+// Table: visit_counter (id int PK default 1, count bigint default 0)
+// RPC:   increment_visit_counter() — UPDATE ... RETURNING count
+// Setup SQL (run once in Supabase SQL editor):
+//   create table if not exists visit_counter (id int primary key default 1, count bigint default 0);
+//   insert into visit_counter values (1,0) on conflict do nothing;
+//   create or replace function increment_visit_counter()
+//     returns bigint language sql security definer as
+//     $$ update visit_counter set count=count+1 where id=1 returning count; $$;
+// RLS: allow anon select on visit_counter; function is security definer so no extra RLS needed.
+// =============================================================================
+(async function() {
+  const el = document.getElementById('visitCount');
+  try {
+    const r = await fetch(BB_SUPABASE_URL + '/rest/v1/rpc/increment_visit_counter', {
+      method: 'POST',
+      headers: {
+        'apikey': BB_SUPABASE_KEY,
+        'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: '{}'
+    });
+    if (r.ok) {
+      const count = await r.json();
+      if (el && count != null) el.textContent = Number(count).toLocaleString();
+      return;
+    }
+  } catch(e) {}
+  // Fallback: just read without incrementing
+  try {
+    const r = await fetch(BB_SUPABASE_URL + '/rest/v1/visit_counter?select=count&id=eq.1', {
+      headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY }
+    });
+    if (r.ok) {
+      const rows = await r.json();
+      if (el && rows?.[0]?.count != null) el.textContent = Number(rows[0].count).toLocaleString();
+    }
+  } catch(e) {}
+})();
+
 
 
 function submitFeedback(e) {
