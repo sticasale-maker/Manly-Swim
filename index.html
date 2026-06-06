@@ -6,8 +6,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="SWIM MANLY">
-<link rel="apple-touch-icon" href="icon_small.png?v=2">
-<link rel="apple-touch-icon" sizes="180x180" href="icon_small.png?v=2">
+<link rel="apple-touch-icon" sizes="180x180" href="icon_small.png">
+<link rel="apple-touch-icon-precomposed" sizes="180x180" href="icon_small.png">
+<link rel="apple-touch-icon" href="icon_small.png">
 <title>VIZ Swim — South Steyne Manly</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -666,11 +667,13 @@
     border-radius: var(--radius);
     padding: 12px 14px 14px;
     margin-bottom: 10px;
-    transition: transform 0.3s ease, opacity 0.3s ease;
+    transform: translateY(0);
+    opacity: 1;
+    transition: transform 0.55s cubic-bezier(0.4,0,0.2,1), opacity 0.45s ease;
     box-shadow: 0 4px 24px rgba(10,126,164,0.10);
   }
   #conditions-banner.banner-hidden {
-    transform: translateY(-8px);
+    transform: translateY(-115%);
     opacity: 0;
     pointer-events: none;
   }
@@ -808,7 +811,7 @@
 </head>
 <body>
 <div id="splash-screen">
-  <img src="icon_big_360.png?v=2" alt="Swim Manly">
+  <img src="icon_big_360.png" alt="Swim Manly">
   <p class="splash-title">SWIM <span>MANLY</span></p>
   <p class="splash-sub">Swim conditions forecast for South Steyne&nbsp;– Shelly Beach.</p>
   <p class="splash-copy">© Marco Bordieri — VIZ Group, June 2026</p>
@@ -1086,7 +1089,7 @@
       <p><strong>SWIM MANLY — VIZ FORECAST APP</strong></p>
       <p>Ocean swim conditions forecast for South Steyne, Manly NSW.<br>Based on a proprietary wave transformation model.</p>
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin:16px 0;text-align:center;">
-        <img src="marco2.png?v=2" alt="Marco Bordieri" style="width:100px;height:100px;border-radius:50%;object-fit:cover;flex-shrink:0;border:3px solid rgba(10,126,164,0.3)">
+        <img src="marco2.png" alt="Marco Bordieri" style="width:100px;height:100px;border-radius:50%;object-fit:cover;flex-shrink:0;border:3px solid rgba(10,126,164,0.3)">
         <div>
           <p style="margin-bottom:4px;">© Marco Bordieri — VIZ Group, June 2026</p>
           <p style="margin-bottom:4px;">Creative Commons License: BY NC ND</p>
@@ -1917,11 +1920,14 @@ function renderDayPicker(matrix) {
   picker.innerHTML = '';
   days.forEach(date => {
     const d = new Date(date + 'T00:00');
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const isToday = date === todayStr;
     const btn = document.createElement('button');
     btn.className = 'day-btn' + (date === _selectedDay ? ' active' : '');
-    btn.innerHTML =
-      `<span class="day-btn-label">${d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
-      `<span class="day-btn-num">${d.getDate()}</span>`;
+    btn.innerHTML = isToday
+      ? `<span class="day-btn-label" style="font-size:17px;letter-spacing:1.5px;display:flex;align-items:center;justify-content:center;height:100%;margin:-7px -4px;padding:7px 4px;">today</span>`
+      : `<span class="day-btn-label">${d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
+        `<span class="day-btn-num">${d.getDate()}</span>`;
     btn.onclick = () => selectDay(date);
     picker.appendChild(btn);
   });
@@ -1937,15 +1943,22 @@ function selectDay(date) {
   // otherwise snap to first hour of the selected day (or current time if it's today)
   const currentOnDay = dayRows.find(({i}) => i === _sliderIdx);
   if (!currentOnDay) {
-    // Try to land on the nearest hour to now within the selected day
-    const now = Date.now();
-    let best = dayRows[0];
-    let minDiff = Infinity;
-    dayRows.forEach(({r,i}) => {
-      const diff = Math.abs(new Date(r.dateTime.replace(' ','T')).getTime() - now);
-      if (diff < minDiff) { minDiff = diff; best = {r,i}; }
-    });
-    _sliderIdx = best.i;
+    const todayStr = new Date().toISOString().substring(0, 10);
+    if (date === todayStr) {
+      // Today: snap to nearest hour to now
+      const now = Date.now();
+      let best = dayRows[0];
+      let minDiff = Infinity;
+      dayRows.forEach(({r,i}) => {
+        const diff = Math.abs(new Date(r.dateTime.replace(' ','T')).getTime() - now);
+        if (diff < minDiff) { minDiff = diff; best = {r,i}; }
+      });
+      _sliderIdx = best.i;
+    } else {
+      // Future day: default to 8am
+      const eightAm = dayRows.find(({r}) => r.dateTime.substring(11,13) === '08');
+      _sliderIdx = (eightAm || dayRows[0]).i;
+    }
   }
 
   renderSlider(_matrix);
@@ -2693,21 +2706,19 @@ function runCalibration() {
 // =============================================================================
 let _bannerGenerated = false;
 
-// Hide banner permanently once user scrolls down — reappears only on page refresh
+// Hide banner smoothly when user scrolls down; reappear when back at top
 (function() {
+  var hidden = false;
   function onScroll() {
     const y = window.scrollY || document.documentElement.scrollTop;
-    if (y > 80) {
-      const banner = document.getElementById('conditions-banner');
-      if (banner) {
-        banner.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-        banner.style.opacity = '0';
-        banner.style.transform = 'translateY(-8px)';
-        banner.style.pointerEvents = 'none';
-        // Collapse height so it doesn't take space
-        setTimeout(() => { if (banner) banner.style.display = 'none'; }, 320);
-      }
-      window.removeEventListener('scroll', onScroll);
+    const banner = document.getElementById('conditions-banner');
+    if (!banner) return;
+    if (y > 60 && !hidden) {
+      banner.classList.add('banner-hidden');
+      hidden = true;
+    } else if (y <= 10 && hidden) {
+      banner.classList.remove('banner-hidden');
+      hidden = false;
     }
   }
   window.addEventListener('scroll', onScroll, { passive: true });
