@@ -1197,7 +1197,7 @@ const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by B
 
 
 const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
-const SWIM_CONFIG_KEY  = 'swim_config_cache_v3';
+const SWIM_CONFIG_KEY  = 'swim_config_cache_v4';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
@@ -1207,6 +1207,14 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 // =============================================================================
 const GEM_MODEL = location.search.includes('model=gem');
 const GEM_DEBUG = location.search.includes('debug=1');
+// Optional URL override for the wind-wave route blend (0=arrival/point … 1=route/line).
+// e.g. ?wwblend=1 forces pure route geometry for A/B testing without editing the sheet.
+const WW_BLEND_OVERRIDE = (() => {
+  const m = location.search.match(/[?&]wwblend=([\d.]+)/);
+  if (!m) return null;
+  const v = parseFloat(m[1]);
+  return isNaN(v) ? null : Math.max(0, Math.min(1, v));
+})();
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid must match your sheet)
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid 2011938330)
 const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
@@ -1258,6 +1266,8 @@ const SITE_DEFAULTS = {
   swellSens:      1.8,
   periodPower:    20,
   swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
+  wwSens:         null,  // wind-wave demerit scale; null → falls back to swellSens (keeps existing calibration untouched)
+  wwRouteBlend:   0,     // wind-wave DIRECTION filter geometry: 0 = arrival (point, into S Steyne) … 1 = route (line, S Steyne→Shelly). Blend in between.
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
@@ -1310,6 +1320,19 @@ function applySwimConfig(rows) {
   if (rows[26]?.[1]?.includes('Swell period'))
     SITE.swellPeriodMult = n(rows[26][STEYNE_TUNE_COL]) || 5;
 
+  // Optional wind-wave tuning — label-matched anywhere in the tuning column, so
+  // they load wherever you add them in the sheet and fall back to defaults if absent.
+  for (let r = 0; r < rows.length; r++) {
+    const label = rows[r]?.[1] || '';
+    if (label.includes('WW sens') || label.includes('Wind wave sens')) {
+      const v = n(rows[r][STEYNE_TUNE_COL]);
+      if (v > 0) SITE.wwSens = v;
+    }
+    if (label.includes('Route blend') || label.includes('WW route') || label.includes('WW blend')) {
+      SITE.wwRouteBlend = Math.max(0, Math.min(1, n(rows[r][STEYNE_TUNE_COL])));
+    }
+  }
+
   // Rows 32–63 (indices 31–62) — direction table cols AP/AQ/AR
   const wind=[], sea=[], rif=[];
   for (let r = 31; r <= 62; r++) {
@@ -1331,6 +1354,8 @@ async function loadConfig() {
       SITE.swellSens      = c.swellSens;
       SITE.periodPower    = c.periodPower;
       SITE.swellPeriodMult = c.swellPeriodMult || 5;
+      SITE.wwSens          = (c.wwSens != null) ? c.wwSens : null;
+      SITE.wwRouteBlend    = c.wwRouteBlend || 0;
       SITE.lookup      = c.lookup;
       console.log('Swim config: loaded from cache');
       return;
@@ -1349,6 +1374,8 @@ async function loadConfig() {
         swellSens:      SITE.swellSens,
         periodPower:    SITE.periodPower,
         swellPeriodMult: SITE.swellPeriodMult,
+        wwSens:          SITE.wwSens,
+        wwRouteBlend:    SITE.wwRouteBlend,
         lookup:      SITE.lookup,
       }
     }));
@@ -1360,6 +1387,8 @@ async function loadConfig() {
     SITE.swellSens      = SITE_DEFAULTS.swellSens;
     SITE.periodPower    = SITE_DEFAULTS.periodPower;
     SITE.swellPeriodMult = SITE_DEFAULTS.swellPeriodMult;
+    SITE.wwSens          = SITE_DEFAULTS.wwSens;
+    SITE.wwRouteBlend    = SITE_DEFAULTS.wwRouteBlend;
     SITE.lookup      = JSON.parse(JSON.stringify(SITE_DEFAULTS.lookup));
   }
 }
@@ -1512,16 +1541,27 @@ function calcScore(d, modelOverride) {
   const windHit  = dirLookup(lk.wind, windDir);
   const wind_d   = windPower(windKmh) * (windHit / 100) * SITE.windSens;
 
+  // Wind-wave directional geometry — blend ARRIVAL (point: energy refracting into
+  // the S Steyne entry/break) with ROUTE (line: swimmer exposure crossing the bay
+  // S Steyne→Shelly). Arrival = the swell/sea filter; Route = the wind-exposure
+  // filter (lk.wind, calibrated on the swim line). wwRouteBlend: 0 = pure arrival
+  // (legacy), 1 = pure route. wwSens scales the wind-wave term on its own so the
+  // swell calibration (swellSens) is unaffected.
+  const wwBlend = (WW_BLEND_OVERRIDE != null) ? WW_BLEND_OVERRIDE : (SITE.wwRouteBlend || 0);
+  const wwSens  = (SITE.wwSens != null) ? SITE.wwSens : SITE.swellSens;
+  const wwRoute = Math.max(0, dirLookup(lk.wind, windWaveDir || windDir)) / 100;
+
   let ww_d, s1_d, s2_d, rif_d;
 
   if (useGem) {
     // ── GEM model: 2D table replaces seaHit + rif; real wind wave period ──
     const wwP    = windWaveP || 5; // use real period, fall back to 5 if missing
-    const wwTx   = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    const wwArrival = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    const wwTx   = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
     const s1Tx   = Math.max(0, gemLookup(swell1Dir, swell1P));
     const s2Tx   = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
 
-    ww_d  = swellPower(windWaveH || 0, wwP) * wwTx * SITE.swellSens;
+    ww_d  = swellPower(windWaveH || 0, wwP) * wwTx * wwSens;
     s1_d  = swellPower(swell1H, swell1P)    * s1Tx * SITE.swellSens;
     s2_d  = swellPower(swell2H || 0, swell2P || 8) * s2Tx * SITE.swellSens;
     rif_d = 0; // absorbed into gemLookup
@@ -1530,13 +1570,14 @@ function calcScore(d, modelOverride) {
     const s1p      = swellPower(swell1H, swell1P);
     const s2p      = swellPower(swell2H || 0, swell2P || 8);
 
-    const wwSeaHit = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
+    const wwArrival = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir)) / 100;
+    const wwTx     = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
     const s1sea    = Math.max(0, dirLookup(lk.sea, swell1Dir));
     const s1rif    =             dirLookup(lk.rif, swell1Dir);
     const s2sea    = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
     const s2rif    =             dirLookup(lk.rif, swell2Dir || 0);
 
-    ww_d  = swellPower(windWaveH || 0, 5) * (wwSeaHit / 100) * SITE.swellSens;
+    ww_d  = swellPower(windWaveH || 0, 5) * wwTx * wwSens;
     s1_d  = s1p * (s1sea / 100) * SITE.swellSens;
     s2_d  = s2p * (s2sea / 100) * SITE.swellSens;
     rif_d = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
