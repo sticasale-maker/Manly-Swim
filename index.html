@@ -903,6 +903,23 @@
           <div class="metric-track-labels">
             <span style="flex:15">Easy</span><span style="flex:15">Doable</span><span style="flex:20">Caution</span><span style="flex:10">Dangerous</span>
           </div>
+          <!-- Original model Entry — only shown in ?model=gem for comparison -->
+          <div id="gemEntryRow" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);">
+            <div class="metric-header" style="opacity:0.75;">
+              <div class="metric-name" style="font-size:10px;letter-spacing:1px;">Original:</div>
+              <div class="metric-value" id="gemEntryVal" style="font-size:14px;">—</div>
+              <div class="metric-score" id="gemEntryScore" style="font-size:11px;">—</div>
+            </div>
+            <div class="metric-track-wrap" style="margin-top:4px;">
+              <div class="metric-track-rail" style="height:5px;">
+                <div class="z" style="background:var(--green);flex:15"></div>
+                <div class="z" style="background:var(--amber);flex:15"></div>
+                <div class="z" style="background:var(--yellow);flex:20"></div>
+                <div class="z" style="background:var(--red);flex:10"></div>
+              </div>
+              <div class="metric-track-dot" id="gemEntryDot" style="color:var(--ocean);left:50%"></div>
+            </div>
+          </div>
         </div>
         <div class="metric-block green" id="metricSwim">
           <div class="metric-header">
@@ -956,24 +973,6 @@
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
 
-    <!-- GEM vs Original comparison card — only visible in ?model=gem mode -->
-    <div id="gemCompare" style="display:none;margin:0 0 10px;background:var(--card);border-radius:var(--radius);border:1.5px solid var(--ocean);padding:10px 12px;">
-      <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ocean);margin-bottom:8px;">Model Comparison</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <!-- Original -->
-        <div style="background:rgba(6,78,110,0.06);border-radius:8px;padding:8px 10px;">
-          <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:6px;font-weight:700;">Original</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;" id="gcOrig"></div>
-        </div>
-        <!-- GEM -->
-        <div style="background:rgba(10,126,164,0.08);border-radius:8px;padding:8px 10px;border:1px solid rgba(10,126,164,0.2);">
-          <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ocean);margin-bottom:6px;font-weight:700;">GEM</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;" id="gcGem"></div>
-        </div>
-      </div>
-      <!-- Score delta bar -->
-      <div id="gcDelta" style="margin-top:8px;font-size:10px;text-align:center;color:var(--dim);"></div>
-    </div>
     <div class="weather-strip" id="weatherStrip">
       <div class="wx-item">
         <div class="wx-icon">🌡</div>
@@ -2190,128 +2189,48 @@ function renderSlider(matrix) {
 // showing Entry / Swim / Surge zones for each, plus score delta.
 // =============================================================================
 function renderGemComparison(h) {
-  if (!GEM_MODEL) return;
-  const card = document.getElementById('gemCompare');
-  if (!card) return;
-  if (!h || !SITE.lookup) { card.style.display = 'none'; return; }
-  card.style.display = 'block';
+  const row = document.getElementById('gemEntryRow');
+  if (!row) return;
+  if (!GEM_MODEL || !h || !SITE.lookup) { row.style.display = 'none'; return; }
+  row.style.display = 'block';
 
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
-          swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = h;
+          swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, tideM } = h;
 
-  // ── Compute both scores by calling calcScore directly ────────────────────
-  // Temporarily force GEM_MODEL off to get the original model score,
-  // then restore it. This guarantees the comparison card is always
-  // numerically identical to what the main app would show.
-  let origResult, gemResult;
+  // Original model score — exact replica of calcScore original branch
+  const spm_cap = SITE.swellPeriodMult || 5;
+  const s1p     = swellPower(swell1H, Math.min(swell1P, spm_cap));
+  const s2p     = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+  const windHit = dirLookup(lk.wind, windDir);
+  const wwHit   = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
+  const s1sea   = Math.max(0, dirLookup(lk.sea, swell1Dir));
+  const s1rif   = dirLookup(lk.rif, swell1Dir);
+  const s2sea   = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
+  const s2rif   = dirLookup(lk.rif, swell2Dir || 0);
+  const wind_d  = windPower(windKmh) * (windHit / 100) * SITE.windSens;
+  const ww_d    = swellPower(windWaveH || 0, 5) * (wwHit / 100) * SITE.swellSens;
+  const s1_d    = s1p * (s1sea / 100) * SITE.swellSens;
+  const s2_d    = s2p * (s2sea / 100) * SITE.swellSens;
+  const rif_d   = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
+  const o       = wind_d + ww_d + s1_d + s2_d + rif_d;
+  const total   = o + SITE.tide(o, tideM);
+  const score   = Math.max(0, Math.round(60 - total));
 
-  if (GEM_MODEL) {
-    // Compute original: temporarily patch calcScore to use original logic
-    // by calling it with a flag override via a wrapper
-    gemResult  = calcScore(h);  // current model = GEM
+  const label = score >= 45 ? 'Easy' : score >= 30 ? 'Doable' : score > 10 ? 'Caution' : 'Dangerous';
+  const color = score >= 45 ? 'var(--green)' : score >= 30 ? 'var(--amber)'
+              : score > 10  ? 'var(--yellow)' : 'var(--red)';
 
-    // For original: replicate calcScore with GEM_MODEL forced false
-    // (inline, to avoid touching global state)
-    (() => {
-      const lk2 = SITE.lookup;
-      const spm_cap  = SITE.swellPeriodMult || 5;
-      const s1p      = swellPower(swell1H, Math.min(swell1P, spm_cap));
-      const s2p      = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
-      const windHit  = dirLookup(lk2.wind, windDir);
-      const wwHit    = Math.max(0, dirLookup(lk2.sea, windWaveDir || windDir));
-      const s1sea    = Math.max(0, dirLookup(lk2.sea, swell1Dir));
-      const s1rif    = dirLookup(lk2.rif, swell1Dir);
-      const s2sea    = Math.max(0, dirLookup(lk2.sea, swell2Dir || 0));
-      const s2rif    = dirLookup(lk2.rif, swell2Dir || 0);
-      const wind_d   = windPower(windKmh) * (windHit / 100) * SITE.windSens;
-      const ww_d     = swellPower(windWaveH || 0, 5) * (wwHit / 100) * SITE.swellSens;
-      const s1_d     = s1p * (s1sea / 100) * SITE.swellSens;
-      const s2_d     = s2p * (s2sea / 100) * SITE.swellSens;
-      const rif_d    = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
-      const o        = wind_d + ww_d + s1_d + s2_d + rif_d;
-      const tide_d   = SITE.tide(o, tideM);
-      const total    = o + tide_d;
-      const score    = Math.max(0, Math.round(60 - total));
-      const q7       = wind_d + ww_d;
-      const s1p2     = swellPower(swell1H, Math.min(swell1P, spm_cap));
-      const s2p2     = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
-      const rawSwell = s1p2 * (s1sea / 100) + s2p2 * (s2sea / 100);
-      const v6       = Math.max(0, Math.round(60 - rawSwell));
-      origResult = { score, q7, v6 };
-    })();
-  } else {
-    origResult = calcScore(h);
-    gemResult  = origResult; // not in GEM mode, show same
-  }
+  document.getElementById('gemEntryVal').textContent   = label;
+  document.getElementById('gemEntryVal').style.color   = color;
+  document.getElementById('gemEntryScore').textContent = score;
+  document.getElementById('gemEntryScore').style.color = color;
 
-  // ── Zone helpers ──────────────────────────────────────────────────────────
-  function entryZone(s) {
-    // s = 60 − total demerits (higher = better), matching calcScore
-    if (s >= 45) return { l:'Easy',      c:'#1a9e6e' };
-    if (s >= 30) return { l:'Doable',    c:'#8dae2a' };
-    if (s >  10) return { l:'Caution',   c:'#d4900a' };
-    return               { l:'Dangerous',c:'#c0392b' };
-  }
-  function swimZone(q) {
-    // q = raw wind_d + ww_d demerit value, matching calcScore
-    if (q < 1)   return { l:'Glassy', c:'#1a9e6e' };
-    if (q <= 3)  return { l:'Ripply', c:'#8dae2a' };
-    if (q <= 9)  return { l:'Choppy', c:'#d4900a' };
-    return               { l:'Messy',  c:'#c0392b' };
-  }
-  function surgeZone(v) {
-    // v = 60 − rawSwell (higher = better), matching calcScore
-    if (v > 50)  return { l:'Steady', c:'#1a9e6e' };
-    if (v > 30)  return { l:'Drifty', c:'#8dae2a' };
-    if (v >= 10) return { l:'Surgy',  c:'#d4900a' };
-    return               { l:'Washy',  c:'#c0392b' };
-  }
-
-  function metricCell(label, zone, score) {
-    return `<div style="text-align:center;padding:4px 2px;border-radius:6px;background:${zone.c}18;border:1px solid ${zone.c};">
-      <div style="font-size:8px;letter-spacing:0.8px;text-transform:uppercase;color:#5a8a9f;margin-bottom:2px;">${label}</div>
-      <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:${zone.c};line-height:1;">${zone.l}</div>
-      <div style="font-size:9px;color:#5a8a9f;">${score}</div>
-    </div>`;
-  }
-
-  const o = origScore();
-  const g = gemScore();
-
-  const oEz = entryZone(origResult.score);
-  const oSz = swimZone(origResult.swim ? origResult.swim.raw : origResult.q7);
-  const oGz = surgeZone(origResult.water ? origResult.water.score : origResult.v6);
-  const gEz = entryZone(gemResult.score);
-  const gSz = swimZone(gemResult.swim ? gemResult.swim.raw : gemResult.q7);
-  const gGz = surgeZone(gemResult.water ? gemResult.water.score : gemResult.v6);
-
-  const oEntryScore = origResult.score;
-  const gEntryScore = gemResult.score;
-  const oSwimRaw    = origResult.swim ? origResult.swim.raw : origResult.q7;
-  const gSwimRaw    = gemResult.swim  ? gemResult.swim.raw  : gemResult.q7;
-  const oSurgeV6    = origResult.water ? origResult.water.score : origResult.v6;
-  const gSurgeV6    = gemResult.water  ? gemResult.water.score  : gemResult.v6;
-
-  document.getElementById('gcOrig').innerHTML =
-    metricCell('Entry', oEz, oEntryScore) +
-    metricCell('Swim',  oSz, oSwimRaw.toFixed(1)) +
-    metricCell('Surge', oGz, oSurgeV6);
-
-  document.getElementById('gcGem').innerHTML =
-    metricCell('Entry', gEz, gEntryScore) +
-    metricCell('Swim',  gSz, gSwimRaw.toFixed(1)) +
-    metricCell('Surge', gGz, gSurgeV6);
-
-  const delta = gEntryScore - oEntryScore;
-  const dSign = delta > 0 ? '+' : '';
-  const dCol  = Math.abs(delta) <= 2 ? 'var(--green)' : Math.abs(delta) <= 5 ? 'var(--yellow)' : 'var(--red)';
-  const dDesc = delta > 0 ? 'GEM more lenient' : delta < 0 ? 'GEM more strict' : 'models agree';
-  document.getElementById('gcDelta').innerHTML =
-    `Score delta <b style="color:${dCol};">${dSign}${delta}</b> (${dDesc}) &nbsp;·&nbsp; ` +
-    `Entry: <span style="color:${oEz.c};">${oEz.l}</span> → <span style="color:${gEz.c};">${gEz.l}</span> &nbsp;` +
-    `Swim: <span style="color:${oSz.c};">${oSz.l}</span> → <span style="color:${gSz.c};">${gSz.l}</span>`;
+  const pct = Math.min(97, Math.max(3, (1 - score / 60) * 100));
+  const dot = document.getElementById('gemEntryDot');
+  if (dot) { dot.style.left = pct + '%'; dot.style.color = color; dot.style.background = color; }
 }
+
 
 function onSlider(val) {
   // val is position within the day's rows
