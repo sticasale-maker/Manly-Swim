@@ -1191,12 +1191,12 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 // When active: swell1, swell2, windWave use the Gem-Cla50-50 tab 2D lookup
 // (19 dir rows × 20 period cols, % energy loss). Wind chop unchanged.
 // =============================================================================
-const GEM_MODEL = (location.search + location.hash).includes('model=gem');
-const GEM_DEBUG = (location.search + location.hash).includes('debug');
+const GEM_MODEL = location.search.includes('model=gem');
+const GEM_DEBUG = location.search.includes('debug=1');
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid must match your sheet)
-// Replace GID_PLACEHOLDER with the actual gid of Gem-Cla50-50 in the URL below.
-const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=GID_PLACEHOLDER&single=true&output=csv';
-const GEM_CONFIG_KEY = 'swim_gem_config_v1'; // separate cache from main model
+// GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid 2011938330)
+const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
+const GEM_CONFIG_KEY = 'swim_gem_config_v2'; // bumped to v2 — forces fresh fetch with real gid
 
 // S. Steyne column positions (0-based):
 //   Tuning params: col P = index 15 (rows 24–26 = indices 23–25)
@@ -2237,6 +2237,11 @@ function renderGemComparison(h) {
     if (dbg) {
       dbg.style.display = 'block';
 
+      // Warn loudly if the GEM table failed to load (all lookups would return 0.5 fallback)
+      const tableStatus = SITE.gemTable
+        ? `<div style="color:#7ec8e3;">✓ GEM table loaded (${SITE.gemTable.length} dir rows)</div>`
+        : `<div style="color:#ff6b6b;font-weight:700;">⚠ GEM TABLE NOT LOADED — every lookup is using the 50% fallback. Check the sheet gid / publish settings.</div>`;
+
       // GEM-side intermediate values (mirror calcScore GEM branch)
       const wwP_g   = (h.windWaveP || 5);
       const s1Tx_g  = Math.max(0, gemLookup(swell1Dir, swell1P));
@@ -2256,6 +2261,7 @@ function renderGemComparison(h) {
       const time = h.dateTime || '';
       dbg.innerHTML =
         `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
+        tableStatus +
         `<div style="color:#9fd;">INPUTS:</div>` +
         `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s &nbsp; S2 ${swell2H}m ${swell2Dir}° ${swell2P}s<br>` +
         `WW ${windWaveH}m ${windWaveDir}° ${h.windWaveP||0}s &nbsp; Wind ${windKmh}km/h ${windDir}° &nbsp; Tide ${tideM}m<br>` +
@@ -2563,7 +2569,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_bw_cache_v1','swim_gem_config_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -2760,18 +2766,9 @@ setInterval(() => { if (_bbCache) bbRenderFromData(_bbCache); }, 60 * 1000);
 _retryFn = () => loadAndRender(true);
 // Load config from sheet first, then fetch forecast
 // Show GEM badge and load GEM table if in GEM model mode
-console.log('Flags → GEM_MODEL:', GEM_MODEL, '| GEM_DEBUG:', GEM_DEBUG, '| url:', location.href);
 if (GEM_MODEL) {
   const badge = document.getElementById('gem-badge');
   if (badge) badge.style.display = 'inline';
-}
-if (GEM_DEBUG) {
-  const dbg = document.getElementById('gemDebug');
-  if (dbg) {
-    dbg.style.display = 'block';
-    dbg.innerHTML = '<div style="color:#7ec8e3;">DEBUG ready — move the time slider to see the breakdown.</div>'
-      + (GEM_MODEL ? '' : '<div style="color:#fc8;">⚠ Not in GEM mode — add model=gem to compare both models.</div>');
-  }
 }
 loadConfig().then(() => {
   if (GEM_MODEL) {
