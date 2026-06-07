@@ -973,6 +973,9 @@
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
 
+    <!-- DEBUG PANEL — only visible with ?model=gem&debug=1 -->
+    <div id="gemDebug" style="display:none;margin:0 0 10px;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;"></div>
+
     <div class="weather-strip" id="weatherStrip">
       <div class="wx-item">
         <div class="wx-icon">🌡</div>
@@ -1189,6 +1192,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 // (19 dir rows × 20 period cols, % energy loss). Wind chop unchanged.
 // =============================================================================
 const GEM_MODEL = location.search.includes('model=gem');
+const GEM_DEBUG = location.search.includes('debug=1');
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid must match your sheet)
 // Replace GID_PLACEHOLDER with the actual gid of Gem-Cla50-50 in the URL below.
 const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=GID_PLACEHOLDER&single=true&output=csv';
@@ -1239,7 +1243,7 @@ const SITE_DEFAULTS = {
   windSens:       0.2,
   swellSens:      1.8,
   periodPower:    20,
-  swellPeriodMult: 5,   // sheet row 27 col P — caps swell period in power calc
+  swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
@@ -1505,9 +1509,8 @@ function calcScore(d) {
     rif_d = 0; // absorbed into gemLookup
   } else {
     // ── Original model ────────────────────────────────────────────────────
-    const spm_cap  = SITE.swellPeriodMult || 5;
-    const s1p      = swellPower(swell1H, Math.min(swell1P, spm_cap));
-    const s2p      = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+    const s1p      = swellPower(swell1H, swell1P);
+    const s2p      = swellPower(swell2H || 0, swell2P || 8);
 
     const wwSeaHit = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
     const s1sea    = Math.max(0, dirLookup(lk.sea, swell1Dir));
@@ -1564,9 +1567,8 @@ function calcScore(d) {
       const rawSwell = GEM_MODEL
         ? s1_d / SITE.swellSens + s2_d / SITE.swellSens  // GEM: use computed demerits scaled back
         : (() => {
-            const spm_cap = SITE.swellPeriodMult || 5;
-            const s1p2 = swellPower(swell1H, Math.min(swell1P, spm_cap));
-            const s2p2 = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+            const s1p2 = swellPower(swell1H, swell1P);
+            const s2p2 = swellPower(swell2H || 0, swell2P || 8);
             const s1sea2 = Math.max(0, dirLookup(lk.sea, swell1Dir));
             const s2sea2 = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
             return s1p2 * (s1sea2/100) + s2p2 * (s2sea2/100);
@@ -2199,9 +2201,8 @@ function renderGemComparison(h) {
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, tideM } = h;
 
   // Original model score — exact replica of calcScore original branch
-  const spm_cap = SITE.swellPeriodMult || 5;
-  const s1p     = swellPower(swell1H, Math.min(swell1P, spm_cap));
-  const s2p     = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+  const s1p     = swellPower(swell1H, swell1P);
+  const s2p     = swellPower(swell2H || 0, swell2P || 8);
   const windHit = dirLookup(lk.wind, windDir);
   const wwHit   = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
   const s1sea   = Math.max(0, dirLookup(lk.sea, swell1Dir));
@@ -2229,6 +2230,56 @@ function renderGemComparison(h) {
   const pct = Math.min(97, Math.max(3, (1 - score / 60) * 100));
   const dot = document.getElementById('gemEntryDot');
   if (dot) { dot.style.left = pct + '%'; dot.style.color = color; dot.style.background = color; }
+
+  // ── DEBUG breakdown ──────────────────────────────────────────────────────
+  if (GEM_DEBUG) {
+    const dbg = document.getElementById('gemDebug');
+    if (dbg) {
+      dbg.style.display = 'block';
+
+      // GEM-side intermediate values (mirror calcScore GEM branch)
+      const wwP_g   = (h.windWaveP || 5);
+      const s1Tx_g  = Math.max(0, gemLookup(swell1Dir, swell1P));
+      const s2Tx_g  = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
+      const wwTx_g  = Math.max(0, gemLookup(windWaveDir || windDir, wwP_g));
+      const s1pow_g = swellPower(swell1H, swell1P);
+      const s2pow_g = swellPower(swell2H || 0, swell2P || 8);
+      const wind_d_g = windPower(windKmh) * (windHit / 100) * SITE.windSens;
+      const ww_d_g   = swellPower(windWaveH || 0, wwP_g) * wwTx_g * SITE.swellSens;
+      const s1_d_g   = s1pow_g * s1Tx_g * SITE.swellSens;
+      const s2_d_g   = s2pow_g * s2Tx_g * SITE.swellSens;
+      const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g;
+      const total_g  = o_g + SITE.tide(o_g, tideM);
+      const score_g  = Math.max(0, Math.round(60 - total_g));
+
+      const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
+      const time = h.dateTime || '';
+      dbg.innerHTML =
+        `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
+        `<div style="color:#9fd;">INPUTS:</div>` +
+        `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s &nbsp; S2 ${swell2H}m ${swell2Dir}° ${swell2P}s<br>` +
+        `WW ${windWaveH}m ${windWaveDir}° ${h.windWaveP||0}s &nbsp; Wind ${windKmh}km/h ${windDir}° &nbsp; Tide ${tideM}m<br>` +
+        `<div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:2px 12px;margin-top:6px;">` +
+        `<b style="color:#9fd;"></b><b style="color:#9fd;">ORIGINAL</b><b style="color:#7ec8e3;">GEM</b>` +
+        `<span>S1 period used</span><span>${swell1P}s (real)</span><span>${swell1P}s (real)</span>` +
+        `<span>S2 period used</span><span>${swell2P||8}s</span><span>${swell2P||8}s</span>` +
+        `<span>S1 power H²·P^1.1</span><span>${f(s1p)}</span><span>${f(s1pow_g)}</span>` +
+        `<span>S2 power</span><span>${f(s2p)}</span><span>${f(s2pow_g)}</span>` +
+        `<span>S1 transmit/seaHit</span><span>sea ${s1sea}% rif ${s1rif}</span><span>${(s1Tx_g*100).toFixed(1)}%</span>` +
+        `<span>S2 transmit/seaHit</span><span>sea ${s2sea}% rif ${s2rif}</span><span>${(s2Tx_g*100).toFixed(1)}%</span>` +
+        `<span>WW transmit/seaHit</span><span>sea ${wwHit}%</span><span>${(wwTx_g*100).toFixed(1)}%</span>` +
+        `<span style="color:#fc8;">wind_d</span><span>${f(wind_d)}</span><span>${f(wind_d_g)}</span>` +
+        `<span style="color:#fc8;">ww_d</span><span>${f(ww_d)}</span><span>${f(ww_d_g)}</span>` +
+        `<span style="color:#fc8;">s1_d</span><span>${f(s1_d)}</span><span>${f(s1_d_g)}</span>` +
+        `<span style="color:#fc8;">s2_d</span><span>${f(s2_d)}</span><span>${f(s2_d_g)}</span>` +
+        `<span style="color:#fc8;">rif_d</span><span>${f(rif_d)}</span><span>0 (in table)</span>` +
+        `<span style="color:#9fd;">subtotal o</span><span>${f(o)}</span><span>${f(o_g)}</span>` +
+        `<span style="color:#9fd;">tide_d</span><span>${f(SITE.tide(o,tideM))}</span><span>${f(SITE.tide(o_g,tideM))}</span>` +
+        `<span style="color:#9fd;">total</span><span>${f(total)}</span><span>${f(total_g)}</span>` +
+        `<b style="color:#7ec8e3;">SCORE 60−total</b><b>${score}</b><b style="color:#7ec8e3;">${score_g}</b>` +
+        `</div>`;
+    }
+  }
 }
 
 
@@ -2831,8 +2882,8 @@ function runCalibration() {
     s2_sea     = Math.max(0, dirLookup(lk.sea, swell2Dir));
     const s2_rif     = dirLookup(lk.rif, swell2Dir);
     const pCap   = SITE.swellPeriodMult || 5;
-    s1p    = swellPower(swell1H, Math.min(swell1P, pCap));
-    s2p    = swellPower(swell2H, Math.min(swell2P, pCap));
+    s1p    = swellPower(swell1H, swell1P);
+    s2p    = swellPower(swell2H, swell2P);
     app_ww_d   = swellPower(wwH, 5) * (ww_sea_hit / 100) * SITE.swellSens;
     app_s1_d   = s1p * (s1_sea / 100) * SITE.swellSens;
     app_s2_d   = s2p * (s2_sea / 100) * SITE.swellSens;
@@ -2895,8 +2946,8 @@ function runCalibration() {
     Wind ${windDir}° → ${wind_hit}% &nbsp;|&nbsp; WW ${wwDir}° → ${ww_sea_hit}%<br>
     S1 ${swell1Dir}° → sea ${s1_sea}%${s1_sea===0?' <b style=\'color:var(--amber)\'>← 0%</b>':''}&nbsp;|&nbsp;
     S2 ${swell2Dir}° → sea ${s2_sea}%${s2_sea===0?' <b style=\'color:var(--amber)\'>← 0%</b>':''}<br>
-    <b>App:</b> windSens=${SITE.windSens} swellSens=${SITE.swellSens} periodCap=${pCap}<br>
-    <b>Sheet:</b> same sens, no period cap
+    <b>App:</b> windSens=${SITE.windSens} swellSens=${SITE.swellSens} (real period, no cap)<br>
+    <b>Sheet:</b> same sens, real period
   </div>`;
 
   // Overall score summary
