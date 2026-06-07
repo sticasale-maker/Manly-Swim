@@ -833,7 +833,7 @@
      
       <div>
         <div class="logo" style="font-size:36px; letter-spacing:2px;">SWIM <span>MANLY</span></div>
-        <div class="header-sub">South Steyne Ocean Swim</div>
+        <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--ocean);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">GEM MODEL</span></div>
       </div>
     </div>
   </header>
@@ -1167,6 +1167,17 @@ const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOt
 const SWIM_CONFIG_KEY  = 'swim_config_cache_v3';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
+// =============================================================================
+// GEM MODEL FLAG — append ?model=gem to URL to activate
+// When active: swell1, swell2, windWave use the Gem-Cla50-50 tab 2D lookup
+// (19 dir rows × 20 period cols, % energy loss). Wind chop unchanged.
+// =============================================================================
+const GEM_MODEL = location.search.includes('model=gem');
+// GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid must match your sheet)
+// Replace GID_PLACEHOLDER with the actual gid of Gem-Cla50-50 in the URL below.
+const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=GID_PLACEHOLDER&single=true&output=csv';
+const GEM_CONFIG_KEY = 'swim_gem_config_v1'; // separate cache from main model
+
 // S. Steyne column positions (0-based):
 //   Tuning params: col P = index 15 (rows 24–26 = indices 23–25)
 //   Direction table: cols AP=41, AQ=42, AR=43 (rows 32–63 = indices 31–62)
@@ -1213,6 +1224,7 @@ const SITE_DEFAULTS = {
   swellSens:      1.8,
   periodPower:    20,
   swellPeriodMult: 5,   // sheet row 27 col P — caps swell period in power calc
+  gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -1345,41 +1357,155 @@ function dirLookup(arr, deg) {
 }
 
 // =============================================================================
+// GEM MODEL — 2D bilinear lookup into Gem-Cla50-50 table
+// Table: rows = swell direction 0°–180° in 10° steps (19 rows)
+//        cols = period 1–20s in 1s steps (20 cols)
+//        values = % energy LOSS reaching beach
+// Returns: transmit fraction (0–1) = (100 − loss) / 100
+// =============================================================================
+function gemLookup(dirDeg, periodS) {
+  const tbl = SITE.gemTable;
+  if (!tbl) return 0.5; // fallback if table not loaded
+
+  // Clamp direction to 0–180 (table only covers swell-relevant arc)
+  const dir = Math.max(0, Math.min(180, ((dirDeg % 360) + 360) % 360 > 180
+    ? 360 - (((dirDeg % 360) + 360) % 360)
+    : ((dirDeg % 360) + 360) % 360));
+
+  // Clamp period to 1–20s
+  const per = Math.max(1, Math.min(20, periodS || 8));
+
+  // Row index: dir 0°=row0, 180°=row18, step=10°
+  const ri = dir / 10;
+  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
+  const rf = ri - r0;
+
+  // Col index: period 1s=col0, 20s=col19, step=1s
+  const ci = per - 1;
+  const c0 = Math.floor(ci), c1 = Math.min(19, c0 + 1);
+  const cf = ci - c0;
+
+  // Bilinear interpolation of % loss
+  const loss =
+    tbl[r0][c0] * (1-rf) * (1-cf) +
+    tbl[r0][c1] * (1-rf) *    cf  +
+    tbl[r1][c0] *    rf  * (1-cf) +
+    tbl[r1][c1] *    rf  *    cf;
+
+  return Math.max(0, (100 - loss) / 100); // transmit fraction
+}
+
+// Parse the Gem-Cla50-50 CSV tab into a 2D array [19][20]
+// Row 2 (index 1) = period headers (cols B–U = indices 1–20)
+// Rows 3–21 (indices 2–20) = data: col A = direction, cols B–U = % loss values
+function parseGemCSV(text) {
+  const rows = text.split('\n').map(line => {
+    const cols = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQ = !inQ;
+      else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else cur += c;
+    }
+    cols.push(cur); return cols;
+  });
+  const n = v => parseFloat(v) || 0;
+  const table = [];
+  // Rows 3–21 = indices 2–20 (19 direction rows)
+  for (let r = 2; r <= 20; r++) {
+    const row = rows[r] || [];
+    const periods = [];
+    // Cols B–U = indices 1–20 (20 period cols)
+    for (let c = 1; c <= 20; c++) {
+      periods.push(n(row[c]));
+    }
+    table.push(periods);
+  }
+  return table.length === 19 ? table : null;
+}
+
+async function loadGemConfig() {
+  if (!GEM_MODEL) return;
+  try {
+    const cached = JSON.parse(localStorage.getItem(GEM_CONFIG_KEY) || 'null');
+    if (cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.gemTable) {
+      SITE.gemTable = cached.gemTable;
+      console.log('GEM config: loaded from cache');
+      return;
+    }
+  } catch(e) {}
+  try {
+    const res = await fetch(GEM_SHEET_URL + '&t=' + Date.now());
+    if (!res.ok) throw new Error('GEM sheet fetch failed: ' + res.status);
+    const table = parseGemCSV(await res.text());
+    if (table) {
+      SITE.gemTable = table;
+      localStorage.setItem(GEM_CONFIG_KEY, JSON.stringify({ fetchedAt: Date.now(), gemTable: table }));
+      console.log('GEM config: loaded from sheet (' + table.length + ' dir rows)');
+    }
+  } catch(e) {
+    console.warn('GEM config: sheet unavailable, GEM model will use fallback.', e.message);
+  }
+}
+
+// =============================================================================
 // SCORE CALCULATION
-// Formula identical to dive app:
-//   spm = 81 / periodPower
+// Original model:
 //   wind_d   = windPower(kmh) × windHit/100 × windSens   (negatives kept)
 //   ww_d     = swellPower(wwH,5) × seaHit(wwDir)/100 × swellSens (period hardcoded=5)
 //   s1_d     = swellPower(h,p) × seaHit(dir)/100 × swellSens
 //   s2_d     = swellPower(h,p) × seaHit(dir)/100 × swellSens
 //   rif_d    = (rif1×p1×spm + rif2×p2×spm) / 1000
-//   tideBase = all (wind+ww+swell+rif)
 //   tide_d   = o*(t-0.2)
-//   score    = max(0, round(60 - total))
+// GEM model (?model=gem):
+//   wind_d   = same as original (AP column, no change)
+//   ww_d     = swellPower(wwH, wwP_real) × gemLookup(wwDir, wwP_real) × swellSens
+//   s1_d     = swellPower(h,p) × gemLookup(dir,p) × swellSens  (no period cap)
+//   s2_d     = swellPower(h,p) × gemLookup(dir,p) × swellSens  (no period cap)
+//   rif_d    = 0 (combined into gemLookup)
+//   tide_d   = o*(t-0.2)
 // =============================================================================
 function calcScore(d) {
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
-          swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, tideM } = d;
+          swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = d;
 
-  const spm_cap = SITE.swellPeriodMult || 5;
-  const s1p = swellPower(swell1H, Math.min(swell1P, spm_cap));
-  const s2p = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+  // Wind chop — identical in both models
+  const windHit  = dirLookup(lk.wind, windDir);
+  const wind_d   = windPower(windKmh) * (windHit / 100) * SITE.windSens;
 
-  const windHit  =                dirLookup(lk.wind, windDir);
-  const wwSeaHit = Math.max(0,    dirLookup(lk.sea,  windWaveDir || windDir));
-  const s1sea    = Math.max(0,    dirLookup(lk.sea,  swell1Dir));
-  const s1rif    =                dirLookup(lk.rif,  swell1Dir);
-  const s2sea    = Math.max(0,    dirLookup(lk.sea,  swell2Dir || 0));
-  const s2rif    =                dirLookup(lk.rif,  swell2Dir || 0);
+  let ww_d, s1_d, s2_d, rif_d;
 
-  const wind_d = windPower(windKmh)           * (windHit/100)   * SITE.windSens;
-  const ww_d   = swellPower(windWaveH||0, 5)  * (wwSeaHit/100)  * SITE.swellSens;
-  const s1_d   = s1p * (s1sea/100) * SITE.swellSens;
-  const s2_d   = s2p * (s2sea/100) * SITE.swellSens;
-  const rif_d  = (s1rif*s1p*SITE.spm + s2rif*s2p*SITE.spm) / 1000;
+  if (GEM_MODEL) {
+    // ── GEM model: 2D table replaces seaHit + rif; real wind wave period ──
+    const wwP    = windWaveP || 5; // use real period, fall back to 5 if missing
+    const wwTx   = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    const s1Tx   = Math.max(0, gemLookup(swell1Dir, swell1P));
+    const s2Tx   = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
 
-  const o      = wind_d + ww_d + s1_d + s2_d + rif_d; // tideBase='all'
+    ww_d  = swellPower(windWaveH || 0, wwP) * wwTx * SITE.swellSens;
+    s1_d  = swellPower(swell1H, swell1P)    * s1Tx * SITE.swellSens;
+    s2_d  = swellPower(swell2H || 0, swell2P || 8) * s2Tx * SITE.swellSens;
+    rif_d = 0; // absorbed into gemLookup
+  } else {
+    // ── Original model ────────────────────────────────────────────────────
+    const spm_cap  = SITE.swellPeriodMult || 5;
+    const s1p      = swellPower(swell1H, Math.min(swell1P, spm_cap));
+    const s2p      = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+
+    const wwSeaHit = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
+    const s1sea    = Math.max(0, dirLookup(lk.sea, swell1Dir));
+    const s1rif    =             dirLookup(lk.rif, swell1Dir);
+    const s2sea    = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
+    const s2rif    =             dirLookup(lk.rif, swell2Dir || 0);
+
+    ww_d  = swellPower(windWaveH || 0, 5) * (wwSeaHit / 100) * SITE.swellSens;
+    s1_d  = s1p * (s1sea / 100) * SITE.swellSens;
+    s2_d  = s2p * (s2sea / 100) * SITE.swellSens;
+    rif_d = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
+  }
+
+  const o      = wind_d + ww_d + s1_d + s2_d + rif_d;
   const tide_d = SITE.tide(o, tideM);
   const total  = o + tide_d;
 
@@ -1419,7 +1545,16 @@ function calcScore(d) {
     // Metric 3: Surge — v6 = 60 - rawSwell (higher = better)
     //   Steady v6>50, Drifty v6≤50&>30, Surgy v6≤30&≥10, Washy v6<10
     water: (() => {
-      const rawSwell = s1p * (s1sea/100) + s2p * (s2sea/100);
+      const rawSwell = GEM_MODEL
+        ? s1_d / SITE.swellSens + s2_d / SITE.swellSens  // GEM: use computed demerits scaled back
+        : (() => {
+            const spm_cap = SITE.swellPeriodMult || 5;
+            const s1p2 = swellPower(swell1H, Math.min(swell1P, spm_cap));
+            const s2p2 = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+            const s1sea2 = Math.max(0, dirLookup(lk.sea, swell1Dir));
+            const s2sea2 = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
+            return s1p2 * (s1sea2/100) + s2p2 * (s2sea2/100);
+          })();
       const v6 = Math.max(0, Math.round(60 - rawSwell));
       if (v6 > 50) return { label:'Steady', cls:'green',  score: v6 };
       if (v6 > 30) return { label:'Drifty', cls:'amber',  score: v6 };
@@ -2309,7 +2444,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_bw_cache_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_bw_cache_v1','swim_gem_config_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -2505,7 +2640,18 @@ setInterval(() => { if (_bbCache) bbRenderFromData(_bbCache); }, 60 * 1000);
 // =============================================================================
 _retryFn = () => loadAndRender(true);
 // Load config from sheet first, then fetch forecast
-loadConfig().then(() => loadAndRender());
+// Show GEM badge and load GEM table if in GEM model mode
+if (GEM_MODEL) {
+  const badge = document.getElementById('gem-badge');
+  if (badge) badge.style.display = 'inline';
+}
+loadConfig().then(() => {
+  if (GEM_MODEL) {
+    loadGemConfig().then(() => loadAndRender());
+  } else {
+    loadAndRender();
+  }
+});
 
   // ===== SPLASH SCREEN =====
   (function() {
@@ -2586,45 +2732,63 @@ function runCalibration() {
   const swell2Dir = h.swell2Dir   || 0;
   const wwH       = h.windWaveH   || 0;
   const wwDir     = h.windWaveDir || 0;
+  const wwP       = h.windWaveP   || 5;
   const tideM     = h.tideM;
 
   const wind_hit   = dirLookup(lk.wind, windDir);
-  const ww_sea_hit = Math.max(0, dirLookup(lk.sea, wwDir));
-  const s1_sea     = Math.max(0, dirLookup(lk.sea, swell1Dir));
-  const s1_rif     = dirLookup(lk.rif, swell1Dir);
-  const s2_sea     = Math.max(0, dirLookup(lk.sea, swell2Dir));
-  const s2_rif     = dirLookup(lk.rif, swell2Dir);
 
-  const pCap   = SITE.swellPeriodMult || 5;
-  const s1p    = swellPower(swell1H, Math.min(swell1P, pCap));
-  const s2p    = swellPower(swell2H, Math.min(swell2P, pCap));
+  let app_wind_d, app_ww_d, app_s1_d, app_s2_d, app_rif_d;
+  let sh_wind_d, sh_ww_d, sh_s1_d, sh_s2_d, sh_rif_d;
+  let s1_sea, s2_sea, s1p, s2p; // for lookup info display
 
-  const app_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
-  const app_ww_d   = swellPower(wwH, 5) * (ww_sea_hit / 100) * SITE.swellSens;
-  const app_s1_d   = s1p * (s1_sea / 100) * SITE.swellSens;
-  const app_s2_d   = s2p * (s2_sea / 100) * SITE.swellSens;
-  const app_rif_d  = (s1_rif * s1p * SITE.spm + s2_rif * s2p * SITE.spm) / 1000;
+  app_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
+
+  if (GEM_MODEL) {
+    const wwTx  = Math.max(0, gemLookup(wwDir, wwP));
+    const s1Tx  = Math.max(0, gemLookup(swell1Dir, swell1P));
+    const s2Tx  = Math.max(0, gemLookup(swell2Dir, swell2P));
+    app_ww_d  = swellPower(wwH, wwP) * wwTx * SITE.swellSens;
+    app_s1_d  = swellPower(swell1H, swell1P) * s1Tx * SITE.swellSens;
+    app_s2_d  = swellPower(swell2H, swell2P) * s2Tx * SITE.swellSens;
+    app_rif_d = 0;
+    // Sheet comparison not applicable in GEM mode — show same values
+    sh_wind_d = app_wind_d; sh_ww_d = app_ww_d;
+    sh_s1_d = app_s1_d; sh_s2_d = app_s2_d; sh_rif_d = 0;
+    s1_sea = Math.round(s1Tx * 100); s2_sea = Math.round(s2Tx * 100);
+    s1p = swellPower(swell1H, swell1P); s2p = swellPower(swell2H, swell2P);
+  } else {
+    const ww_sea_hit = Math.max(0, dirLookup(lk.sea, wwDir));
+    s1_sea     = Math.max(0, dirLookup(lk.sea, swell1Dir));
+    const s1_rif     = dirLookup(lk.rif, swell1Dir);
+    s2_sea     = Math.max(0, dirLookup(lk.sea, swell2Dir));
+    const s2_rif     = dirLookup(lk.rif, swell2Dir);
+    const pCap   = SITE.swellPeriodMult || 5;
+    s1p    = swellPower(swell1H, Math.min(swell1P, pCap));
+    s2p    = swellPower(swell2H, Math.min(swell2P, pCap));
+    app_ww_d   = swellPower(wwH, 5) * (ww_sea_hit / 100) * SITE.swellSens;
+    app_s1_d   = s1p * (s1_sea / 100) * SITE.swellSens;
+    app_s2_d   = s2p * (s2_sea / 100) * SITE.swellSens;
+    app_rif_d  = (s1_rif * s1p * SITE.spm + s2_rif * s2p * SITE.spm) / 1000;
+    // Sheet formula (no period cap)
+    const s1p_sh  = swellPower(swell1H, swell1P);
+    const s2p_sh  = swellPower(swell2H, swell2P);
+    sh_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
+    sh_ww_d   = swellPower(wwH, 5) * (ww_sea_hit / 100) * SITE.swellSens;
+    sh_s1_d   = s1p_sh * (s1_sea / 100) * SITE.swellSens;
+    sh_s2_d   = s2p_sh * (s2_sea / 100) * SITE.swellSens;
+    sh_rif_d  = (s1_rif * s1p_sh * SITE.spm + s2_rif * s2p_sh * SITE.spm) / 1000;
+  }
+
+  // Shared totals (used by both branches)
   const app_o      = app_wind_d + app_ww_d + app_s1_d + app_s2_d + app_rif_d;
   const app_tide_d = app_o * (tideM - 0.2);
   const app_total  = app_o + app_tide_d;
   const app_score  = Math.max(0, Math.round(60 - app_total));
-
-  // ── Sheet formula (same lookups, no period cap, no windSens/swellSens scaling) ──
-  // Based on reverse-engineering: sheet uses h^2 * p^1.1 raw, then * seaHit/100 * swellSens
-  // but without the period cap. windSens for S.Steyne = 1.0 so wind_d is same.
-  const s1p_sh  = swellPower(swell1H, swell1P);   // no cap
-  const s2p_sh  = swellPower(swell2H, swell2P);   // no cap
-  const sh_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
-  const sh_ww_d   = swellPower(wwH, 5) * (ww_sea_hit / 100) * SITE.swellSens;
-  const sh_s1_d   = s1p_sh * (s1_sea / 100) * SITE.swellSens;
-  const sh_s2_d   = s2p_sh * (s2_sea / 100) * SITE.swellSens;
-  const sh_rif_d  = (s1_rif * s1p_sh * SITE.spm + s2_rif * s2p_sh * SITE.spm) / 1000;
-  const sh_o      = sh_wind_d + sh_ww_d + sh_s1_d + sh_s2_d + sh_rif_d;
-  const sh_tide_d = sh_o * (tideM - 0.2);
-  const sh_total  = sh_o + sh_tide_d;
-  const sh_score  = Math.max(0, Math.round(60 - sh_total));
-
-  // Helper
+  const sh_o       = sh_wind_d + sh_ww_d + sh_s1_d + sh_s2_d + sh_rif_d;
+  const sh_tide_d  = sh_o * (tideM - 0.2);
+  const sh_total   = sh_o + sh_tide_d;
+  const sh_score   = Math.max(0, Math.round(60 - sh_total));
+  const pCap       = GEM_MODEL ? '—' : (SITE.swellPeriodMult || 5);
   function fmt(x) { return (typeof x === 'number' ? x : 0).toFixed(3); }
   function deltaClass(d) {
     const a = Math.abs(d);
