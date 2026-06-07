@@ -956,7 +956,24 @@
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
 
-    <!-- Weather strip -->
+    <!-- GEM vs Original comparison card — only visible in ?model=gem mode -->
+    <div id="gemCompare" style="display:none;margin:0 0 10px;background:var(--card);border-radius:var(--radius);border:1.5px solid var(--ocean);padding:10px 12px;">
+      <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--ocean);margin-bottom:8px;">Model Comparison</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <!-- Original -->
+        <div style="background:rgba(6,78,110,0.06);border-radius:8px;padding:8px 10px;">
+          <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:6px;font-weight:700;">Original</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;" id="gcOrig"></div>
+        </div>
+        <!-- GEM -->
+        <div style="background:rgba(10,126,164,0.08);border-radius:8px;padding:8px 10px;border:1px solid rgba(10,126,164,0.2);">
+          <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--ocean);margin-bottom:6px;font-weight:700;">GEM</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;" id="gcGem"></div>
+        </div>
+      </div>
+      <!-- Score delta bar -->
+      <div id="gcDelta" style="margin-top:8px;font-size:10px;text-align:center;color:var(--dim);"></div>
+    </div>
     <div class="weather-strip" id="weatherStrip">
       <div class="wx-item">
         <div class="wx-icon">🌡</div>
@@ -2049,6 +2066,8 @@ function renderSnapshot(h, wx) {
     document.getElementById('sunriseTime').textContent = '—';
     document.getElementById('sunsetTime').textContent  = '—';
   }
+  // Update GEM comparison card whenever the snapshot updates
+  renderGemComparison(h);
 }
 
 // Track which day is selected in the day-picker
@@ -2165,6 +2184,120 @@ function renderSlider(matrix) {
     dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
 }
 
+// =============================================================================
+// GEM COMPARISON — live side-by-side card (only active in ?model=gem)
+// Computes both models from the current slider row and renders a compact card
+// showing Entry / Swim / Surge zones for each, plus score delta.
+// =============================================================================
+function renderGemComparison(h) {
+  if (!GEM_MODEL) return;
+  const card = document.getElementById('gemCompare');
+  if (!card) return;
+  if (!h || !SITE.lookup) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const lk = SITE.lookup;
+  const { windKmh, windDir, swell1H, swell1Dir, swell1P,
+          swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = h;
+
+  // ── Original model ────────────────────────────────────────────────────────
+  function origScore() {
+    const spm_cap  = SITE.swellPeriodMult || 5;
+    const s1p      = swellPower(swell1H, Math.min(swell1P, spm_cap));
+    const s2p      = swellPower(swell2H || 0, Math.min(swell2P || 8, spm_cap));
+    const windHit  = dirLookup(lk.wind, windDir);
+    const wwHit    = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
+    const s1sea    = Math.max(0, dirLookup(lk.sea, swell1Dir));
+    const s1rif    = dirLookup(lk.rif, swell1Dir);
+    const s2sea    = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
+    const s2rif    = dirLookup(lk.rif, swell2Dir || 0);
+    const wind_d   = windPower(windKmh) * (windHit / 100) * SITE.windSens;
+    const ww_d     = swellPower(windWaveH || 0, 5) * (wwHit / 100) * SITE.swellSens;
+    const s1_d     = s1p * (s1sea / 100) * SITE.swellSens;
+    const s2_d     = s2p * (s2sea / 100) * SITE.swellSens;
+    const rif_d    = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
+    const o        = wind_d + ww_d + s1_d + s2_d + rif_d;
+    const total    = o + o * (tideM - 0.2);
+    const score    = Math.max(0, Math.round(60 - total));
+    const q7       = wind_d + ww_d;
+    const rawSwell = s1p * (s1sea / 100) + s2p * (s2sea / 100);
+    const v6       = Math.max(0, Math.round(60 - rawSwell));
+    return { score, q7, v6 };
+  }
+
+  // ── GEM model ─────────────────────────────────────────────────────────────
+  function gemScore() {
+    const wwP      = windWaveP || 5;
+    const windHit  = dirLookup(lk.wind, windDir);
+    const wind_d   = windPower(windKmh) * (windHit / 100) * SITE.windSens;
+    const wwTx     = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    const s1Tx     = Math.max(0, gemLookup(swell1Dir, swell1P));
+    const s2Tx     = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
+    const ww_d     = swellPower(windWaveH || 0, wwP) * wwTx * SITE.swellSens;
+    const s1_d     = swellPower(swell1H, swell1P) * s1Tx * SITE.swellSens;
+    const s2_d     = swellPower(swell2H || 0, swell2P || 8) * s2Tx * SITE.swellSens;
+    const o        = wind_d + ww_d + s1_d + s2_d;
+    const total    = o + o * (tideM - 0.2);
+    const score    = Math.max(0, Math.round(60 - total));
+    const q7       = wind_d + ww_d;
+    const rawSwell = s1_d / SITE.swellSens + s2_d / SITE.swellSens;
+    const v6       = Math.max(0, Math.round(60 - rawSwell));
+    return { score, q7, v6 };
+  }
+
+  // ── Zone helpers ──────────────────────────────────────────────────────────
+  function entryZone(s) {
+    if (s <= 5)  return { l:'Easy',      c:'#1a9e6e' };
+    if (s < 10)  return { l:'Doable',    c:'#8dae2a' };
+    if (s <= 20) return { l:'Caution',   c:'#d4900a' };
+    return               { l:'Dangerous',c:'#c0392b' };
+  }
+  function swimZone(q) {
+    if (q < 3)   return { l:'Glassy', c:'#1a9e6e' };
+    if (q <= 10) return { l:'Ripply', c:'#8dae2a' };
+    if (q <= 25) return { l:'Choppy', c:'#d4900a' };
+    return               { l:'Messy',  c:'#c0392b' };
+  }
+  function surgeZone(v) {
+    if (v > 50)  return { l:'Steady', c:'#1a9e6e' };
+    if (v > 30)  return { l:'Drifty', c:'#8dae2a' };
+    if (v >= 10) return { l:'Surgy',  c:'#d4900a' };
+    return               { l:'Washy',  c:'#c0392b' };
+  }
+
+  function metricCell(label, zone, score) {
+    return `<div style="text-align:center;padding:4px 2px;border-radius:6px;background:${zone.c}18;border:1px solid ${zone.c};">
+      <div style="font-size:8px;letter-spacing:0.8px;text-transform:uppercase;color:#5a8a9f;margin-bottom:2px;">${label}</div>
+      <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;color:${zone.c};line-height:1;">${zone.l}</div>
+      <div style="font-size:9px;color:#5a8a9f;">${score}</div>
+    </div>`;
+  }
+
+  const o = origScore();
+  const g = gemScore();
+
+  const oEz = entryZone(o.score); const oSz = swimZone(o.q7);  const oGz = surgeZone(o.v6);
+  const gEz = entryZone(g.score); const gSz = swimZone(g.q7);  const gGz = surgeZone(g.v6);
+
+  document.getElementById('gcOrig').innerHTML =
+    metricCell('Entry', oEz, o.score) +
+    metricCell('Swim',  oSz, o.q7.toFixed(1)) +
+    metricCell('Surge', oGz, o.v6);
+
+  document.getElementById('gcGem').innerHTML =
+    metricCell('Entry', gEz, g.score) +
+    metricCell('Swim',  gSz, g.q7.toFixed(1)) +
+    metricCell('Surge', gGz, g.v6);
+
+  const delta = g.score - o.score;
+  const dSign = delta > 0 ? '+' : '';
+  const dCol  = Math.abs(delta) <= 2 ? 'var(--green)' : Math.abs(delta) <= 5 ? 'var(--yellow)' : 'var(--red)';
+  document.getElementById('gcDelta').innerHTML =
+    `GEM score <b style="color:${dCol};">${dSign}${delta}</b> vs Original &nbsp;·&nbsp; ` +
+    `Entry: ${oEz.l} → <span style="color:${gEz.c};">${gEz.l}</span> &nbsp;` +
+    `Swim: ${oSz.l} → <span style="color:${gSz.c};">${gSz.l}</span>`;
+}
+
 function onSlider(val) {
   // val is position within the day's rows
   const dayRows = _matrix.map((r,i) => ({r,i})).filter(({r}) => r.dateTime.startsWith(_selectedDay));
@@ -2176,6 +2309,7 @@ function onSlider(val) {
   const dt = h.dateTime.replace(' ','T').substring(0,16);
   const wx = _wxMatrix[dt] || null;
   renderSnapshot(h, wx);
+  renderGemComparison(h);
   renderSlider(_matrix);
 }
 
