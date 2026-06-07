@@ -1147,6 +1147,20 @@
         <div id="calMetrics" style="margin-top:10px;"></div>
       </div>
     </div>
+
+    <!-- Model A/B Comparison (Original vs GEM) -->
+    <div class="about-panel" style="padding:16px 12px; margin-top:10px;">
+      <p style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--ocean);margin-bottom:8px;">MODEL A / B — ORIGINAL vs GEM</p>
+      <p id="cmpSub" style="font-size:11px;color:var(--dim);line-height:1.4;margin-bottom:10px;">Runs both wave models on the current time-slider slot. Original = 1-D sea-hit at 5s; GEM = 2-D direction×period table (Gem-Cla50-50) with real wind-wave period.</p>
+      <button onclick="runModelCompare()" style="width:100%;padding:12px;background:var(--deep);color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-family:inherit;margin-bottom:14px;">Compare models on current slot</button>
+      <div id="cmpResults" style="display:none;">
+        <table class="cal-table">
+          <thead><tr><th>Component</th><th>Original</th><th>GEM</th><th>Δ</th></tr></thead>
+          <tbody id="cmpTableBody"></tbody>
+        </table>
+        <div id="cmpMetrics" style="margin-top:10px;"></div>
+      </div>
+    </div>
   </div>
 
   <div id="tl-tooltip"></div>
@@ -1444,8 +1458,8 @@ function parseGemCSV(text) {
   return table.length === 19 ? table : null;
 }
 
-async function loadGemConfig() {
-  if (!GEM_MODEL) return;
+async function loadGemConfig(force) {
+  if (!GEM_MODEL && !force) return;
   try {
     const cached = JSON.parse(localStorage.getItem(GEM_CONFIG_KEY) || 'null');
     if (cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.gemTable) {
@@ -1485,7 +1499,11 @@ async function loadGemConfig() {
 //   rif_d    = 0 (combined into gemLookup)
 //   tide_d   = o*(t-0.2)
 // =============================================================================
-function calcScore(d) {
+function calcScore(d, modelOverride) {
+  // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
+  // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
+  // on the same forecast slot for side-by-side comparison.
+  const useGem = modelOverride ? (modelOverride === 'gem') : GEM_MODEL;
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = d;
@@ -1496,7 +1514,7 @@ function calcScore(d) {
 
   let ww_d, s1_d, s2_d, rif_d;
 
-  if (GEM_MODEL) {
+  if (useGem) {
     // ── GEM model: 2D table replaces seaHit + rif; real wind wave period ──
     const wwP    = windWaveP || 5; // use real period, fall back to 5 if missing
     const wwTx   = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
@@ -1564,7 +1582,7 @@ function calcScore(d) {
     // Metric 3: Surge — v6 = 60 - rawSwell (higher = better)
     //   Steady v6>50, Drifty v6≤50&>30, Surgy v6≤30&≥10, Washy v6<10
     water: (() => {
-      const rawSwell = GEM_MODEL
+      const rawSwell = useGem
         ? s1_d / SITE.swellSens + s2_d / SITE.swellSens  // GEM: use computed demerits scaled back
         : (() => {
             const s1p2 = swellPower(swell1H, swell1P);
@@ -1580,6 +1598,75 @@ function calcScore(d) {
       return             { label:'Washy',  cls:'red',     score: v6 };
     })(),
   };
+}
+
+// =============================================================================
+// MODEL A/B COMPARISON — runs Original vs GEM on the current slider slot
+// =============================================================================
+async function runModelCompare() {
+  const slot = _matrix[_sliderIdx];
+  const sub  = document.getElementById('cmpSub');
+  if (!slot) { if (sub) sub.textContent = 'No forecast slot loaded yet — open the Now tab first.'; return; }
+
+  // Ensure the GEM table is available even when not running in ?model=gem mode
+  if (!SITE.gemTable) {
+    if (sub) sub.textContent = 'Loading GEM table…';
+    await loadGemConfig(true);
+  }
+  const haveGem = !!SITE.gemTable;
+
+  const A = calcScore(slot, 'orig');
+  const B = calcScore(slot, 'gem');
+
+  const rows = [
+    ['Wind chop', 'wind'],
+    ['Wind wave', 'windWave'],
+    ['Swell 1',   'swell1'],
+    ['Swell 2',   'swell2'],
+    ['Refraction','refrac'],
+    ['Tide',      'tide'],
+  ];
+  const fmt = v => (Math.round(v * 10) / 10).toFixed(1);
+  let body = '';
+  rows.forEach(([label, key]) => {
+    const a = A.demerits[key], b = B.demerits[key], dRaw = b - a;
+    const big = Math.abs(dRaw) >= 3, mid = Math.abs(dRaw) >= 1;
+    const col = big ? 'var(--red)' : mid ? 'var(--yellow)' : 'var(--dim)';
+    const sign = dRaw > 0 ? '+' : '';
+    body += `<tr><td>${label}</td><td>${fmt(a)}</td><td>${fmt(b)}</td>`
+         +  `<td style="color:${col};font-weight:600;">${sign}${fmt(dRaw)}</td></tr>`;
+  });
+  // Total score row (higher score = better conditions)
+  const dScore = B.score - A.score;
+  const scoreCol = Math.abs(dScore) >= 5 ? 'var(--red)' : Math.abs(dScore) >= 2 ? 'var(--yellow)' : 'var(--green)';
+  body += `<tr style="border-top:2px solid var(--border);font-weight:700;">`
+       +  `<td>SCORE /60</td><td>${A.score}</td><td>${B.score}</td>`
+       +  `<td style="color:${scoreCol};">${dScore > 0 ? '+' : ''}${dScore}</td></tr>`;
+  document.getElementById('cmpTableBody').innerHTML = body;
+
+  // Three swimmer metrics, side by side
+  const metricRow = (name, a, b) => {
+    const same = a.label === b.label;
+    return `<div style="display:grid;grid-template-columns:60px 1fr 1fr;gap:6px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);">`
+      + `<span style="font-size:11px;font-weight:700;color:var(--deep);">${name}</span>`
+      + `<span style="font-size:12px;color:var(--${a.cls});font-weight:600;">${a.label} <span style="color:var(--dim);font-weight:400;">(${a.score})</span></span>`
+      + `<span style="font-size:12px;color:var(--${b.cls});font-weight:600;">${b.label} <span style="color:var(--dim);font-weight:400;">(${b.score})</span>${same ? '' : ' ⚠'}</span></div>`;
+  };
+  document.getElementById('cmpMetrics').innerHTML =
+      `<div style="display:grid;grid-template-columns:60px 1fr 1fr;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--dim);margin-bottom:2px;">`
+    + `<span></span><span>Original</span><span>GEM</span></div>`
+    + metricRow('Entry', A.entry, B.entry)
+    + metricRow('Swim',  A.swim,  B.swim)
+    + metricRow('Surge', A.water, B.water);
+
+  if (sub) {
+    const wwP = slot.windWaveP || 5;
+    sub.innerHTML = `Slot: <strong>${bearingName(slot.swell1Dir)} ${(slot.swell1H||0).toFixed(1)}m @ ${Math.round(slot.swell1P||0)}s</strong> swell · `
+      + `WW ${bearingName(slot.windWaveDir||slot.windDir)} ${(slot.windWaveH||0).toFixed(1)}m @ ${Math.round(wwP)}s · `
+      + `wind ${Math.round(slot.windKmh||0)}km/h ${bearingName(slot.windDir)}`
+      + (haveGem ? '' : `<br><span style="color:var(--red);">⚠ GEM table unavailable — GEM column uses fallback (0.5 transmit).</span>`);
+  }
+  document.getElementById('cmpResults').style.display = 'block';
 }
 
 // =============================================================================
