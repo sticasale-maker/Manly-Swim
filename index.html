@@ -1191,8 +1191,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 // When active: swell1, swell2, windWave use the Gem-Cla50-50 tab 2D lookup
 // (19 dir rows × 20 period cols, % energy loss). Wind chop unchanged.
 // =============================================================================
-const GEM_MODEL = location.search.includes('model=gem');
-const GEM_DEBUG = location.search.includes('debug=1');
+const GEM_MODEL = (location.search + location.hash).includes('model=gem');
+const GEM_DEBUG = (location.search + location.hash).includes('debug');
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid must match your sheet)
 // Replace GID_PLACEHOLDER with the actual gid of Gem-Cla50-50 in the URL below.
 const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=GID_PLACEHOLDER&single=true&output=csv';
@@ -2760,9 +2760,18 @@ setInterval(() => { if (_bbCache) bbRenderFromData(_bbCache); }, 60 * 1000);
 _retryFn = () => loadAndRender(true);
 // Load config from sheet first, then fetch forecast
 // Show GEM badge and load GEM table if in GEM model mode
+console.log('Flags → GEM_MODEL:', GEM_MODEL, '| GEM_DEBUG:', GEM_DEBUG, '| url:', location.href);
 if (GEM_MODEL) {
   const badge = document.getElementById('gem-badge');
   if (badge) badge.style.display = 'inline';
+}
+if (GEM_DEBUG) {
+  const dbg = document.getElementById('gemDebug');
+  if (dbg) {
+    dbg.style.display = 'block';
+    dbg.innerHTML = '<div style="color:#7ec8e3;">DEBUG ready — move the time slider to see the breakdown.</div>'
+      + (GEM_MODEL ? '' : '<div style="color:#fc8;">⚠ Not in GEM mode — add model=gem to compare both models.</div>');
+  }
 }
 loadConfig().then(() => {
   if (GEM_MODEL) {
