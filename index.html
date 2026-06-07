@@ -2247,18 +2247,21 @@ function renderGemComparison(h) {
 
   // ── Zone helpers ──────────────────────────────────────────────────────────
   function entryZone(s) {
-    if (s <= 5)  return { l:'Easy',      c:'#1a9e6e' };
-    if (s < 10)  return { l:'Doable',    c:'#8dae2a' };
-    if (s <= 20) return { l:'Caution',   c:'#d4900a' };
+    // s = 60 − total demerits (higher = better), matching calcScore
+    if (s >= 45) return { l:'Easy',      c:'#1a9e6e' };
+    if (s >= 30) return { l:'Doable',    c:'#8dae2a' };
+    if (s >  10) return { l:'Caution',   c:'#d4900a' };
     return               { l:'Dangerous',c:'#c0392b' };
   }
   function swimZone(q) {
-    if (q < 3)   return { l:'Glassy', c:'#1a9e6e' };
-    if (q <= 10) return { l:'Ripply', c:'#8dae2a' };
-    if (q <= 25) return { l:'Choppy', c:'#d4900a' };
+    // q = raw wind_d + ww_d demerit value, matching calcScore
+    if (q < 1)   return { l:'Glassy', c:'#1a9e6e' };
+    if (q <= 3)  return { l:'Ripply', c:'#8dae2a' };
+    if (q <= 9)  return { l:'Choppy', c:'#d4900a' };
     return               { l:'Messy',  c:'#c0392b' };
   }
   function surgeZone(v) {
+    // v = 60 − rawSwell (higher = better), matching calcScore
     if (v > 50)  return { l:'Steady', c:'#1a9e6e' };
     if (v > 30)  return { l:'Drifty', c:'#8dae2a' };
     if (v >= 10) return { l:'Surgy',  c:'#d4900a' };
@@ -2292,10 +2295,11 @@ function renderGemComparison(h) {
   const delta = g.score - o.score;
   const dSign = delta > 0 ? '+' : '';
   const dCol  = Math.abs(delta) <= 2 ? 'var(--green)' : Math.abs(delta) <= 5 ? 'var(--yellow)' : 'var(--red)';
+  const dDesc = delta > 0 ? 'GEM more lenient' : delta < 0 ? 'GEM more strict' : 'models agree';
   document.getElementById('gcDelta').innerHTML =
-    `GEM score <b style="color:${dCol};">${dSign}${delta}</b> vs Original &nbsp;·&nbsp; ` +
-    `Entry: ${oEz.l} → <span style="color:${gEz.c};">${gEz.l}</span> &nbsp;` +
-    `Swim: ${oSz.l} → <span style="color:${gSz.c};">${gSz.l}</span>`;
+    `Score delta <b style="color:${dCol};">${dSign}${delta}</b> (${dDesc}) &nbsp;·&nbsp; ` +
+    `Entry: <span style="color:${oEz.c};">${oEz.l}</span> → <span style="color:${gEz.c};">${gEz.l}</span> &nbsp;` +
+    `Swim: <span style="color:${oSz.c};">${oSz.l}</span> → <span style="color:${gSz.c};">${gSz.l}</span>`;
 }
 
 function onSlider(val) {
