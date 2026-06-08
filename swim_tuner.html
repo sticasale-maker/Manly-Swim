@@ -162,6 +162,26 @@
   <div class="status" id="dumpStatus"></div>
 </div>
 
+<div class="card" id="srcCard">
+  <h2>1d · Source check — WillyWeather vs Open-Meteo (3-hourly from 3am today)</h2>
+  <div class="note">
+    Pulls the live <b>WillyWeather</b> forecast (via your Worker, location 23127) and <b>Open-Meteo</b>
+    forecast for the same coordinate, aligns both to 3-hourly slots starting 3am today, and shows the
+    per-field discrepancy. Big, consistent gaps mean the historical Open-Meteo dump isn't a faithful
+    stand-in for the live WillyWeather inputs. Swell height differing by a roughly constant factor is
+    expected (different grid point — offshore cell vs WillyWeather's tuned beach point); period and
+    direction should track closely.
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div style="flex:0 0 auto"><button id="srcBtn">Run source check →</button></div>
+    <div style="flex:0 0 110px"><label>Slots</label><input id="srcSlots" type="number" min="2" max="16" value="8" style="text-align:center"></div>
+  </div>
+  <div class="note">8 slots × 3h = 24h from 3am today. Direction shown as smallest circular gap (0–180°).</div>
+  <div style="overflow-x:auto"><table id="srcTable"></table></div>
+  <div class="note" id="srcSummary"></div>
+  <div class="status" id="srcStatus"></div>
+</div>
+
 <div class="card" id="resultsCard" style="display:none">
   <h2>2 · Results &amp; per-metric labels</h2>
   <div class="note">
@@ -994,6 +1014,130 @@ function downloadDumpCSV(rows){
 function setDumpStatus(s){document.getElementById('dumpStatus').textContent=s;}
 
 // =============================================================================
+// SOURCE CHECK — WillyWeather (live, via Worker) vs Open-Meteo (forecast),
+// aligned to 3-hourly slots from 3am today. Shows per-field discrepancy.
+// =============================================================================
+function setSrcStatus(s){document.getElementById('srcStatus').textContent=s;}
+function circDelta(a,b){ // smallest circular distance between two bearings (0..180)
+  if(a==null||b==null)return null;
+  let d=Math.abs(((a-b)%360+360)%360); return d>180?360-d:d;
+}
+function flattenWW(j){
+  // → map of 'YYYY-MM-DD HH:00' → {h,p,dir,windKmh,windDir}
+  const out={};
+  const sDays=j?.forecasts?.swell?.days||[];
+  const wDays=j?.forecasts?.wind?.days||[];
+  sDays.forEach((sd,di)=>{
+    const wd=wDays[di]||{};
+    (sd.entries||[]).forEach(se=>{
+      const we=(wd.entries||[]).find(e=>e.dateTime===se.dateTime)||{};
+      out[se.dateTime]={h:se.height,p:se.period,dir:se.direction,windKmh:we.speed,windDir:we.direction};
+    });
+  });
+  return out;
+}
+async function fetchOMForecast(){
+  // Open-Meteo FORECAST (not archive) for the same point, hourly, local time.
+  const mUrl=`https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`+
+    `&hourly=swell_wave_height,swell_wave_direction,swell_wave_period,`+
+    `wind_wave_height,wind_wave_direction,wind_wave_period`+
+    `&timezone=Australia%2FSydney&forecast_days=3`;
+  const wUrl=`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`+
+    `&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh`+
+    `&timezone=Australia%2FSydney&forecast_days=3`;
+  const [m,w]=await Promise.all([fetch(mUrl).then(r=>r.json()),fetch(wUrl).then(r=>r.json())]);
+  const mh=m.hourly||{}, wh=w.hourly||{};
+  const out={};
+  (mh.time||[]).forEach((t,i)=>{
+    const key=t.replace('T',' ').slice(0,13)+':00'; // YYYY-MM-DD HH:00
+    out[key]={h:mh.swell_wave_height?.[i],p:mh.swell_wave_period?.[i],dir:mh.swell_wave_direction?.[i]};
+  });
+  (wh.time||[]).forEach((t,i)=>{
+    const key=t.replace('T',' ').slice(0,13)+':00';
+    (out[key]=out[key]||{}).windKmh=wh.wind_speed_10m?.[i];
+    out[key].windDir=wh.wind_direction_10m?.[i];
+  });
+  return out;
+}
+function slotKeys(nSlots){
+  // 3-hourly local slots starting today 03:00
+  const now=new Date();
+  const base=new Date(now.getFullYear(),now.getMonth(),now.getDate(),3,0,0);
+  const keys=[];
+  for(let i=0;i<nSlots;i++){
+    const d=new Date(base.getTime()+i*3*3600000);
+    const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:00`;
+    keys.push(k);
+  }
+  return keys;
+}
+function nearest(map,key){
+  if(map[key])return map[key];
+  // fall back to nearest hour within ±2h
+  const t=new Date(key.replace(' ','T')).getTime();
+  let best=null,bd=2*3600000+1;
+  Object.keys(map).forEach(k=>{const d=Math.abs(new Date(k.replace(' ','T')).getTime()-t);if(d<bd){bd=d;best=k;}});
+  return best?map[best]:{};
+}
+async function runSrcCheck(){
+  const n=Math.max(2,Math.min(16,parseInt(document.getElementById('srcSlots').value||'8',10)));
+  document.getElementById('srcBtn').disabled=true;
+  setSrcStatus('Fetching WillyWeather (Worker) and Open-Meteo forecast…');
+  let ww,om;
+  try{ ww=flattenWW(await (await fetch(`${WW_WORKER_BASE}/forecast?location=swimmers&days=3`)).json()); }
+  catch(e){ setSrcStatus('WillyWeather fetch failed: '+e.message); document.getElementById('srcBtn').disabled=false; return; }
+  try{ om=await fetchOMForecast(); }
+  catch(e){ setSrcStatus('Open-Meteo fetch failed: '+e.message); document.getElementById('srcBtn').disabled=false; return; }
+
+  const keys=slotKeys(n);
+  const fmt2=v=>(v==null?'—':(Math.round(v*100)/100));
+  let h='<thead><tr><th>Slot (local)</th>'+
+    '<th>Swell H (m)<br>WW / OM / Δ</th>'+
+    '<th>Period (s)<br>WW / OM / Δ</th>'+
+    '<th>Swell dir (°)<br>WW / OM / Δ</th>'+
+    '<th>Wind (km/h)<br>WW / OM / Δ</th>'+
+    '<th>Wind dir (°)<br>WW / OM / Δ</th></tr></thead><tbody>';
+  const agg={h:[],p:[],dir:[],wind:[],windDir:[]};
+  keys.forEach(k=>{
+    const a=nearest(ww,k), b=nearest(om,k);
+    const dH=(a.h!=null&&b.h!=null)?a.h-b.h:null;
+    const dP=(a.p!=null&&b.p!=null)?a.p-b.p:null;
+    const dDir=circDelta(a.dir,b.dir);
+    const dW=(a.windKmh!=null&&b.windKmh!=null)?a.windKmh-b.windKmh:null;
+    const dWd=circDelta(a.windDir,b.windDir);
+    if(dH!=null)agg.h.push(Math.abs(dH));
+    if(dP!=null)agg.p.push(Math.abs(dP));
+    if(dDir!=null)agg.dir.push(dDir);
+    if(dW!=null)agg.wind.push(Math.abs(dW));
+    if(dWd!=null)agg.windDir.push(dWd);
+    const cell=(wwv,omv,d,thr,unit='')=>{
+      const flag = d!=null && Math.abs(d)>thr ? 'color:var(--red);font-weight:700' : 'color:var(--dim)';
+      return `<td>${fmt2(wwv)} / ${fmt2(omv)} / <span style="${flag}">${d==null?'—':(d>0?'+':'')+fmt2(d)}${unit}</span></td>`;
+    };
+    h+=`<tr><td class="day">${k.slice(5)}</td>`+
+      cell(a.h,b.h,dH,0.3)+
+      cell(a.p,b.p,dP,2)+
+      `<td>${fmt2(a.dir)} / ${fmt2(b.dir)} / <span style="${dDir!=null&&dDir>30?'color:var(--red);font-weight:700':'color:var(--dim)'}">${dDir==null?'—':dDir+'°'}</span></td>`+
+      cell(a.windKmh,b.windKmh,dW,8)+
+      `<td>${fmt2(a.windDir)} / ${fmt2(b.windDir)} / <span style="${dWd!=null&&dWd>30?'color:var(--red);font-weight:700':'color:var(--dim)'}">${dWd==null?'—':dWd+'°'}</span></td></tr>`;
+  });
+  h+='</tbody>';
+  document.getElementById('srcTable').innerHTML=h;
+  const mean=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*100)/100:null;
+  const verdict=(()=>{
+    const okDir=(mean(agg.dir)||0)<=30 && (mean(agg.windDir)||0)<=30;
+    const okP=(mean(agg.p)||0)<=2;
+    if(okDir&&okP)return '<span style="color:var(--green);font-weight:700">✓ Direction &amp; period track closely — Open-Meteo dump is a sound proxy. Height offset is expected (different grid point).</span>';
+    return '<span style="color:var(--red);font-weight:700">⚠ Direction or period diverge — the historical dump may not represent live WillyWeather inputs well. Consider a coordinate-specific marine hindcast for tuning.</span>';
+  })();
+  document.getElementById('srcSummary').innerHTML=
+    `Mean abs Δ across slots — Swell H: <b>${mean(agg.h)??'—'} m</b> · Period: <b>${mean(agg.p)??'—'} s</b> · `+
+    `Swell dir: <b>${mean(agg.dir)??'—'}°</b> · Wind: <b>${mean(agg.wind)??'—'} km/h</b> · Wind dir: <b>${mean(agg.windDir)??'—'}°</b><br>${verdict}`;
+  setSrcStatus(`Done — ${keys.length} slots compared. Red Δ = beyond tolerance (H>0.3m, P>2s, dir>30°, wind>8km/h).`);
+  document.getElementById('srcBtn').disabled=false;
+}
+
+// =============================================================================
 // WIRE UP
 // =============================================================================
 document.getElementById('runBtn').onclick=runAll;
@@ -1006,6 +1150,7 @@ document.getElementById('keepRoughBtn').onclick=keepRough;
 document.getElementById('useInterpret').onchange=renderTriage;
 document.getElementById('dumpBtn').onclick=runDump;
 document.getElementById('dumpStopBtn').onclick=()=>{DUMP_STOP=true;};
+document.getElementById('srcBtn').onclick=runSrcCheck;
 initDumpDefaults();
 loadAllConfig();
 </script>
