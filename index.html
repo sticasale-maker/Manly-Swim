@@ -3354,12 +3354,22 @@ function getBannerTimeContext() {
   return 'tomorrow';                   // 5pm–midnight → tomorrow
 }
 
+// Local YYYY-MM-DD (NOT UTC). WillyWeather/Open-Meteo dateTimes are local Sydney
+// time with no timezone suffix, so comparing against a UTC date string fails
+// every morning before ~10–11am local — exactly when swimmers use the app.
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // Pick hourly rows for the target day
 function getBannerHours(targetDay) {
   // targetDay = 'today' | 'rest-of-today' | 'tomorrow'
   const now = new Date();
-  const todayStr = now.toISOString().substring(0,10);
-  const tomorrowStr = new Date(now.getTime() + 86400000).toISOString().substring(0,10);
+  const todayStr = localDateStr(now);
+  const tomorrowStr = localDateStr(new Date(now.getTime() + 86400000));
   const targetDate = targetDay === 'tomorrow' ? tomorrowStr : todayStr;
   const nowTs = now.getTime();
 
@@ -3375,8 +3385,8 @@ function getBannerHours(targetDay) {
 
 function getBannerWxRows(targetDay) {
   const now = new Date();
-  const todayStr = now.toISOString().substring(0,10);
-  const tomorrowStr = new Date(now.getTime() + 86400000).toISOString().substring(0,10);
+  const todayStr = localDateStr(now);
+  const tomorrowStr = localDateStr(new Date(now.getTime() + 86400000));
   const targetDate = targetDay === 'tomorrow' ? tomorrowStr : todayStr;
   return Object.entries(_wxMatrix)
     .filter(([dt]) => dt.startsWith(targetDate))
@@ -3391,9 +3401,19 @@ async function generateBannerSummary() {
   if (!_matrix || _matrix.length === 0) return;
 
   const timeCtx = getBannerTimeContext();
-  const rows = getBannerHours(timeCtx);
+  let rows = getBannerHours(timeCtx);
   const wxRows = getBannerWxRows(timeCtx);
 
+  // Fallback: if the matrix doesn't cover the target day (date mismatch,
+  // short forecast, etc.), use the next 12 hourly rows from now so the
+  // summary still renders rather than leaving skeletons up forever.
+  if (!rows.length) {
+    const nowTs = Date.now();
+    rows = _matrix
+      .filter(r => new Date(r.dateTime.replace(' ', 'T')).getTime() >= nowTs - 3600000)
+      .slice(0, 12);
+    if (!rows.length) rows = _matrix.slice(0, 12);
+  }
   if (!rows.length) return;
   _bannerGenerated = true;
 
