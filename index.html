@@ -742,11 +742,32 @@
   .summary-item-text #db-count { color: var(--ocean); font-weight: 700; }
   .summary-item-text .db-sub { font-size: 11px; color: var(--dim); margin-top: 3px; font-family: inherit; }
   /* ── What to expect ── */
-  #what-to-expect { text-align: center; margin-bottom: 14px; }
+  #what-to-expect { text-align: center; margin-bottom: 2px; }
   .wte-title {
     font-family: 'Bebas Neue', sans-serif;
     font-size: 24px; letter-spacing: 3px; text-transform: uppercase;
     color: var(--deep); font-weight: 700; line-height: 1.1;
+  }
+  /* Forked connector linking WHAT TO EXPECT to the two view buttons */
+  .wte-connector {
+    margin: 0 auto -4px;
+    max-width: 360px;
+    line-height: 0;
+  }
+  .wte-line {
+    fill: none;
+    stroke: var(--ocean);
+    stroke-width: 2;
+    stroke-linecap: round;
+    opacity: 0.55;
+  }
+  .wte-arrow {
+    fill: none;
+    stroke: var(--ocean);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: 0.55;
   }
   .wte-sub {
     font-family: 'DM Mono', monospace;
@@ -1001,7 +1022,23 @@
   <!-- What to expect -->
   <div id="what-to-expect">
     <div class="wte-title">WHAT TO EXPECT</div>
-    <div class="wte-sub">Scroll through the timeline below</div>
+  </div>
+
+  <!-- Forked connector → drives the eye to the two view options below -->
+  <div class="wte-connector" aria-hidden="true">
+    <svg viewBox="0 0 300 44" preserveAspectRatio="none" width="100%" height="44">
+      <!-- stem from title -->
+      <path class="wte-line" d="M150 0 L150 14" />
+      <!-- horizontal bar -->
+      <path class="wte-line" d="M75 14 L225 14" />
+      <!-- left branch to button 1 -->
+      <path class="wte-line" d="M75 14 L75 40" />
+      <!-- right branch to button 2 -->
+      <path class="wte-line" d="M225 14 L225 40" />
+      <!-- arrowheads -->
+      <path class="wte-arrow" d="M70 35 L75 41 L80 35" />
+      <path class="wte-arrow" d="M220 35 L225 41 L230 35" />
+    </svg>
   </div>
 
   <!-- Diver reports modal -->
@@ -2805,7 +2842,6 @@ async function loadAndRender(forceRefresh = false) {
     renderSlider(_matrix);
     renderTimeline(_matrix, {});
     hideErrorBanner();
-    if (!_bannerGenerated) generateBannerSummary();
 
     // ── Fetch secondary data in parallel with 8s timeout each ─────────────────
     const withTimeout = (p, ms) => Promise.race([p, new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
@@ -2832,6 +2868,9 @@ async function loadAndRender(forceRefresh = false) {
     renderSnapshot(currentH, currentWx);
     renderSlider(_matrix);
     renderTimeline(_matrix, _wxMatrix);
+
+    // Now that weather + marine data are merged, generate the summary banner
+    if (!_bannerGenerated) generateBannerSummary();
 
   } catch(e) {
     console.error('Load failed:', e);
@@ -3350,13 +3389,13 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 async function generateBannerSummary() {
   if (_bannerGenerated) return;
   if (!_matrix || _matrix.length === 0) return;
-  _bannerGenerated = true;
 
   const timeCtx = getBannerTimeContext();
   const rows = getBannerHours(timeCtx);
   const wxRows = getBannerWxRows(timeCtx);
 
   if (!rows.length) return;
+  _bannerGenerated = true;
 
   // Compute scores for each row
   const scored = rows.map(r => ({ ...r, result: calcScore(r) }));
@@ -3448,7 +3487,15 @@ async function generateBannerSummary() {
                   : `barely a breath of wind`;
   const chillStr  = windChill && avgFeel != null ? ` It'll feel more like ${avgFeel}° once you're out of the water though, so bring a layer to throw on.` : '';
 
-  if (avgRain > 60) {
+  const haveWx = wxRows.length > 0 && (avgRain != null || avgCloud != null);
+
+  if (!haveWx) {
+    // Weather feed unavailable — keep it honest, lean on wind from the forecast matrix
+    wxText = pick([
+      `Detailed weather isn't loading right now, but ${windStr} is showing in the forecast. Check the sky before you head down.`,
+      `Live weather data is briefly unavailable. The forecast has ${windStr} — worth a glance out the window before your swim.`,
+    ]);
+  } else if (avgRain > 60) {
     wxText = pick([
       `Wet one today${tempStr} — rain is pretty much guaranteed so plan accordingly. ${windStr.charAt(0).toUpperCase() + windStr.slice(1)} won't help. Tuck your gear under cover and embrace it.`,
       `Grey skies and rain on the way${tempStr}, with ${windStr}. Not the most inviting morning on the beach, but the water doesn't care — swimmers still going out there. Keep your dry clothes somewhere safe.`,
