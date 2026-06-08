@@ -733,6 +733,46 @@
   }
   .banner-skeleton.short { width: 60%; }
   @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+  /* ── What's happening below card ── */
+  #divers-below-card {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; box-sizing: border-box;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 16px;
+    cursor: pointer; text-align: left; font-family: inherit;
+    transition: border-color .15s ease, transform .12s ease, box-shadow .15s ease;
+  }
+  #divers-below-card:hover { border-color: var(--ocean); box-shadow: 0 2px 10px rgba(10,126,164,0.12); }
+  #divers-below-card:active { transform: scale(0.995); }
+  #divers-below-card .db-icon { font-size: 24px; line-height: 1; flex-shrink: 0; }
+  #divers-below-card .db-body { flex: 1; min-width: 0; }
+  #divers-below-card .db-title { font-size: 13px; color: var(--text); line-height: 1.35; }
+  #divers-below-card .db-title #db-count { color: var(--ocean); font-weight: 700; }
+  #divers-below-card .db-sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  #divers-below-card .db-cta { font-size: 12px; color: var(--ocean); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  #divers-below-card .db-arrow { display: inline-block; }
+  /* ── Diver modal ── */
+  .db-modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 1000;
+    background: rgba(6,46,62,0.45); backdrop-filter: blur(2px);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .db-modal-overlay.open { display: flex; }
+  .db-modal {
+    background: var(--foam); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 18px 14px;
+    max-width: 460px; width: 100%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 12px 40px rgba(6,46,62,0.3);
+  }
+  .db-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .db-modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1.5px; color: var(--ocean); }
+  .db-modal-close {
+    background: none; border: none; font-size: 18px; color: var(--dim);
+    cursor: pointer; line-height: 1; padding: 4px;
+  }
+  .db-modal-meta { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); margin-bottom: 12px; }
+  .db-modal-summary { font-size: 13px; line-height: 1.55; color: var(--text); white-space: pre-wrap; }
+  .db-modal-foot { font-size: 10px; color: var(--dim); margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
   /* ── Error ── */
   .error-banner {
     display:none; background:#fff0ee; border:1px solid var(--red);
@@ -863,16 +903,28 @@
         </div>
       </div>
     </div>
-    <div class="banner-divider"></div>
-    <div class="banner-section">
-      <div class="banner-icon" id="banner-sealife-icon">🐢</div>
-      <div class="banner-body">
-        <div class="banner-label">IN THE BAY THIS MONTH</div>
-        <div class="banner-text" id="banner-sealife-text">
-          <div class="banner-skeleton"></div>
-          <div class="banner-skeleton short"></div>
-        </div>
+  </div>
+
+  <!-- What's happening below? — diver reports summary card -->
+  <button id="divers-below-card" onclick="openDiversModal()" aria-label="View recent underwater reports">
+    <div class="db-icon">🐠</div>
+    <div class="db-body">
+      <div class="db-title">What's happening below? <span id="db-count">—</span> recent underwater reports.</div>
+      <div class="db-sub" id="db-sub">Updated recently</div>
+    </div>
+    <div class="db-cta">See all <span class="db-arrow">→</span></div>
+  </button>
+
+  <!-- Diver reports modal -->
+  <div id="divers-modal" class="db-modal-overlay" onclick="if(event.target===this)closeDiversModal()">
+    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="db-modal-title">
+      <div class="db-modal-head">
+        <div class="db-modal-title" id="db-modal-title">What's happening below?</div>
+        <button class="db-modal-close" onclick="closeDiversModal()" aria-label="Close">✕</button>
       </div>
+      <div class="db-modal-meta" id="db-modal-meta"></div>
+      <div class="db-modal-summary" id="db-modal-summary">Loading recent reports…</div>
+      <div class="db-modal-foot">Reports summarised from the VIZ diving community.</div>
     </div>
   </div>
 
@@ -1139,26 +1191,6 @@
       <p style="font-size:12px;color:var(--dim);margin-top:14px;margin-bottom:0;">
         👁 App views: <strong id="visitCount" style="color:var(--ocean);">—</strong>
       </p>
-    </div>
-
-    <!-- Sheet Calibration -->
-    <div class="about-panel" style="padding:16px 12px; margin-top:10px;">
-      <p style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--ocean);margin-bottom:8px;">SHEET CALIBRATION</p>
-      <div id="calSyncBanner" style="border-radius:8px;padding:9px 12px;margin-bottom:12px;background:rgba(26,158,110,0.1);border:1px solid var(--green);">
-        <p id="calSyncLabel" style="font-size:11px;font-weight:600;margin-bottom:1px;color:var(--green);">⟳ Synced to current forecast</p>
-        <p id="calSyncSub" style="font-size:10px;color:var(--dim);line-height:1.4;">Conditions are synced from the time slider. Hit Compare to run both formulas and see deltas.</p>
-      </div>
-      <div id="calConditionsGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:12px;"></div>
-      <button onclick="runCalibration()" style="width:100%;padding:12px;background:var(--ocean);color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-family:inherit;margin-bottom:14px;">Compare with Sheet Formula</button>
-      <div id="calResults" style="display:none;">
-        <p style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1.5px;color:var(--ocean);margin-bottom:8px;">RESULTS</p>
-        <table class="cal-table">
-          <thead><tr><th>Component</th><th>App (capped)</th><th>Sheet (no cap)</th><th>Delta</th></tr></thead>
-          <tbody id="calTableBody"></tbody>
-        </table>
-        <div id="calSummary" style="margin-top:12px;padding:10px 12px;border-radius:10px;font-size:13px;"></div>
-        <div id="calMetrics" style="margin-top:10px;"></div>
-      </div>
     </div>
 
     <!-- Model A/B Comparison (Original vs GEM) -->
@@ -3528,7 +3560,7 @@ let _latestSighting = null;
 async function fetchLatestSighting() {
   try {
     const res = await fetch(
-      SIGHTINGS_TABLE_URL + '?select=summary,updated_at&site_id=eq.' + SIGHTINGS_SITE_ID + '&limit=1',
+      SIGHTINGS_TABLE_URL + '?select=summary,updated_at,report_count&site_id=eq.' + SIGHTINGS_SITE_ID + '&limit=1',
       { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
     );
     if (!res.ok) throw new Error('Supabase ' + res.status);
@@ -3541,9 +3573,10 @@ async function fetchLatestSighting() {
 }
 
 function applySightingToBanner(s) {
-  const target = document.getElementById('banner-sealife-text');
-  const icon   = document.getElementById('banner-sealife-icon');
-  if (!target) return;
+  const card    = document.getElementById('divers-below-card');
+  const countEl = document.getElementById('db-count');
+  const subEl   = document.getElementById('db-sub');
+  if (!card) return;
 
   const stamp = s && (s.updated_at || s.created_at);
   let recent = false;
@@ -3554,21 +3587,52 @@ function applySightingToBanner(s) {
     recent = true;
   }
 
-  if (!recent) {
-    target.innerHTML = 'No recent sightings posted yet \u2014 check the VIZ group for the latest from the water.';
-    if (icon) icon.textContent = '\uD83D\uDC22';
+  if (!recent || !s) {
+    if (countEl) countEl.textContent = 'No';
+    if (subEl) subEl.textContent = 'Check the VIZ group for the latest';
+    _diversSummary = null;
+    _diversStamp = null;
     return;
   }
+
+  const count = (s.report_count != null) ? s.report_count : '';
+  if (countEl) countEl.textContent = count !== '' ? count : 'New';
 
   const when = stamp
     ? new Date(stamp).toLocaleDateString('en-AU', { day:'numeric', month:'short' })
     : '';
-  target.innerHTML =
-    '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--ocean);margin-bottom:4px;">Latest diver reports' +
-    (when ? ' \u00B7 ' + when : '') + '</div>' +
-    '<div>' + s.summary.replace(/</g,'&lt;') + '</div>';
-  if (icon) icon.textContent = '\uD83D\uDC20';
+  if (subEl) subEl.textContent = when ? ('Updated ' + when) : 'Updated recently';
+
+  _diversSummary = s.summary;
+  _diversStamp = when;
 }
+
+// ── Diver reports modal ──
+let _diversSummary = null;
+let _diversStamp = null;
+
+function openDiversModal() {
+  const overlay = document.getElementById('divers-modal');
+  const meta    = document.getElementById('db-modal-meta');
+  const body    = document.getElementById('db-modal-summary');
+  if (!overlay) return;
+  if (meta) meta.textContent = _diversStamp ? ('Latest diver reports · ' + _diversStamp) : 'Latest diver reports';
+  if (body) {
+    body.textContent = _diversSummary
+      ? _diversSummary
+      : 'No recent underwater reports posted yet — check the VIZ group for the latest from the water.';
+  }
+  overlay.classList.add('open');
+  document.addEventListener('keydown', _diversEsc);
+}
+
+function closeDiversModal() {
+  const overlay = document.getElementById('divers-modal');
+  if (overlay) overlay.classList.remove('open');
+  document.removeEventListener('keydown', _diversEsc);
+}
+
+function _diversEsc(e) { if (e.key === 'Escape') closeDiversModal(); }
 
 </script>
 </body>
