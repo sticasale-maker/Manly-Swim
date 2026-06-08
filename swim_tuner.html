@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VIZ Swim — Threshold Tuning Harness</title>
+<style>
+  :root{
+    --sky:#e8f4f8; --ocean:#0a7ea4; --deep:#064e6e; --foam:#f0faff;
+    --sand:#f5ede0; --text:#0d2b3e; --dim:#5a8a9f; --border:rgba(10,126,164,0.15);
+    --green:#1a9e6e; --amber:#8dae2a; --yellow:#d4900a; --red:#c0392b;
+    --card:rgba(255,255,255,0.78); --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:linear-gradient(160deg,var(--sky),var(--foam));
+    color:var(--text); font-family:'DM Mono',ui-monospace,Menlo,Consolas,monospace;
+    font-size:13px; line-height:1.5; padding:18px; max-width:1100px; margin:0 auto;
+    min-height:100vh;
+  }
+  h1{font-family:'Bebas Neue','Arial Narrow',sans-serif;font-size:34px;letter-spacing:2px;color:var(--deep);line-height:1}
+  h2{font-family:'Bebas Neue','Arial Narrow',sans-serif;font-size:20px;letter-spacing:1.5px;color:var(--ocean);margin:18px 0 8px}
+  .sub{color:var(--dim);font-size:11px;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;backdrop-filter:blur(4px)}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);margin-bottom:4px}
+  textarea,input,select{
+    width:100%;background:#fff;border:1px solid var(--border);border-radius:10px;
+    padding:9px 11px;font:inherit;color:var(--text);outline:none;resize:vertical;
+  }
+  textarea:focus,input:focus{border-color:var(--ocean)}
+  button{
+    background:var(--ocean);color:#fff;border:none;border-radius:10px;padding:10px 16px;
+    font:inherit;font-weight:600;cursor:pointer;letter-spacing:.5px;transition:background .15s;
+  }
+  button:hover{background:var(--deep)}
+  button.ghost{background:transparent;color:var(--ocean);border:1px solid var(--border)}
+  button.ghost:hover{background:rgba(10,126,164,.08)}
+  button:disabled{opacity:.4;cursor:default}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{flex:1;min-width:120px}
+  .status{font-size:11px;color:var(--dim);margin-top:8px;min-height:16px}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+  th,td{padding:6px 7px;text-align:center;border-bottom:1px solid var(--border)}
+  th{font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);font-weight:600;position:sticky;top:0;background:var(--foam)}
+  td.day{text-align:left;white-space:nowrap}
+  .pill{display:inline-block;padding:2px 7px;border-radius:6px;color:#fff;font-size:10px;font-weight:600;letter-spacing:.3px}
+  .z-green{background:var(--green)} .z-amber{background:var(--amber)}
+  .z-yellow{background:var(--yellow)} .z-red{background:var(--red)}
+  .z-none{background:var(--dim);opacity:.5}
+  .mismatch{outline:2px solid var(--red);outline-offset:-2px;border-radius:6px}
+  .label-sel{font-size:10px;padding:3px 5px;border-radius:6px;border:1px solid var(--border);background:#fff}
+  .scatter{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:8px}
+  .scatter .col{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px}
+  .scatter h3{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:var(--deep);margin-bottom:6px}
+  svg{width:100%;height:auto;display:block}
+  .note{font-size:10.5px;color:var(--dim);margin-top:6px;line-height:1.4}
+  .legend-row{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--dim);margin-top:6px}
+  .legend-row span{display:inline-flex;align-items:center;gap:4px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  code{background:rgba(6,78,110,.08);padding:1px 5px;border-radius:4px;font-size:11px}
+  .config-line{font-size:10.5px;color:var(--dim);margin-top:4px}
+  .config-line b{color:var(--text)}
+  details summary{cursor:pointer;color:var(--ocean);font-size:11px;letter-spacing:.5px}
+  @media (max-width:760px){.scatter{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<h1>VIZ SWIM — THRESHOLD TUNER</h1>
+<div class="sub">Step B · Offline calibration harness · runs the live engine on historical inputs</div>
+
+<div class="card">
+  <h2>How this works</h2>
+  <div class="note">
+    For each date you supply, this tool fetches the <b>Open-Meteo archive</b> (wind, marine/wave, SST)
+    and runs your <b>unchanged production <code>calcScore()</code></b> — no scoring params are swept.
+    It then pulls the <b>Bold &amp; Beautiful blog</b> post for that date (via your Cloudflare Worker
+    <code>/blog</code> route) so you can confirm a per-metric swim-sentiment label.
+    The scatter at the bottom plots each metric's raw value against your labels, so you can read off
+    where the zone break-points should sit. Days the current thresholds misclassify are flagged in red.
+  </div>
+  <div class="config-line" id="cfgLine">Config: loading from sheet…</div>
+</div>
+
+<div class="card">
+  <h2>1 · Dates to test</h2>
+  <label>One date per line — <code>YYYY-MM-DD</code>, optional <code>HH:MM</code> (default 07:00, swim time). Optional <code>| slug</code> to pin the exact blog post.</label>
+  <textarea id="dates" rows="6" placeholder="2026-05-26 07:00 | tuesday-26-may-2026-big-seas&#10;2026-05-29 07:00 | friday-29-may-2026-wild-wild-water&#10;2026-05-09 08:00&#10;2026-05-21 07:00"></textarea>
+  <div class="row" style="margin-top:10px">
+    <div style="flex:0 0 auto">
+      <button id="runBtn">Fetch &amp; score all dates</button>
+    </div>
+    <div style="flex:0 0 auto">
+      <button class="ghost" id="discoverBtn">Discover recent posts →</button>
+    </div>
+    <div style="flex:0 0 auto">
+      <button class="ghost" id="exportBtn" disabled>Export CSV</button>
+    </div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<div class="card" id="resultsCard" style="display:none">
+  <h2>2 · Results &amp; per-metric labels</h2>
+  <div class="note">
+    For each day: raw metric values + the zone the <i>current</i> thresholds assign. Set your blog-based
+    label per metric in the dropdowns. A red outline means the current threshold disagrees with your label.
+  </div>
+  <div style="overflow-x:auto">
+    <table id="resultsTable"></table>
+  </div>
+  <div class="legend-row">
+    <span><span class="dot z-green"></span>green / best</span>
+    <span><span class="dot z-amber"></span>amber</span>
+    <span><span class="dot z-yellow"></span>yellow</span>
+    <span><span class="dot z-red"></span>red / worst</span>
+  </div>
+</div>
+
+<div class="card" id="scatterCard" style="display:none">
+  <h2>3 · Threshold scatter — read off the break-points</h2>
+  <div class="note">
+    Each dot is a day, placed by its raw metric value (x-axis). Dot colour = <b>your label</b>.
+    Vertical lines = <b>current thresholds</b>. If colours don't separate cleanly along the axis,
+    the engine (not the threshold) likely needs attention — that's the signal to move to parameter tuning.
+  </div>
+  <div class="scatter" id="scatter"></div>
+</div>
+
+<script>
+// =============================================================================
+// CONFIG — mirrors live app constants
+// =============================================================================
+const WW_WORKER_BASE = 'https://bold-rain-6ded.sticasale.workers.dev';
+const BLOG_PROXY     = WW_WORKER_BASE + '/blog';
+const SHEET_CSV_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
+const GEM_SHEET_URL  = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
+const STEYNE_TUNE_COL = 15;
+const STEYNE_DIR_COL  = 41;
+// Cabbage Tree Bay / South Steyne
+const LAT = -33.797, LON = 151.290;
+// Use GEM model to match the live default direction? The harness defaults to the
+// ORIGINAL model unless ?model=gem is set, mirroring the app's live default.
+const GEM_MODEL = location.search.includes('model=gem');
+
+// =============================================================================
+// ENGINE — copied verbatim from index.html so scoring is identical
+// =============================================================================
+const SITE_DEFAULTS = {
+  windSens:0.2, swellSens:1.8, periodPower:20, swellPeriodMult:5,
+  wwSens:null, wwRouteBlend:0, gemTable:null,
+  lookup:{
+    wind:[100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
+    sea:[20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    rif:[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  }
+};
+let SITE = {
+  key:'SteyneSw', name:'South Steyne', tideBase:'all',
+  tide:(o,t)=>o*(t-0.2),
+  get spm(){return 81/this.periodPower;},
+  ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
+};
+const WW_BLEND_OVERRIDE = null;
+const WIND_WEIGHT = [
+  [0,0],[1,0.07],[2,0.29],[3,0.64],[4,1.14],[5,1.79],[6,2.57],[7,3.50],[8,4.57],
+  [9,5.79],[10,7.14],[11,8.64],[12,10.29],[13,12.07],[14,14.00],[15,16.07],
+  [16,18.29],[17,20.64],[18,23.14],[19,25.79],[20,28.57],[21,31.50],[22,34.57],
+  [23,37.79],[24,41.14],[25,44.64],[26,48.29],[27,52.07],[28,56.00],[29,60.07],
+  [30,64.29],[35,87.50],[40,114.29],[50,178.57]
+];
+function windPower(kmh){
+  if(kmh<=0)return 0;
+  for(let i=1;i<WIND_WEIGHT.length;i++){
+    if(WIND_WEIGHT[i][0]>=kmh){
+      const f=(kmh-WIND_WEIGHT[i-1][0])/(WIND_WEIGHT[i][0]-WIND_WEIGHT[i-1][0]);
+      return WIND_WEIGHT[i-1][1]*(1-f)+WIND_WEIGHT[i][1]*f;
+    }
+  }
+  return WIND_WEIGHT[WIND_WEIGHT.length-1][1];
+}
+function swellPower(h,p){return h*h*Math.pow(Math.max(p,1),1.1);}
+function dirLookup(arr,deg){
+  const norm=((deg%360)+360)%360;
+  return arr[Math.round(norm/11.25)%32];
+}
+function gemLookup(dirDeg,periodS){
+  const tbl=SITE.gemTable;
+  if(!tbl)return 0.5;
+  const dir=Math.max(0,Math.min(180,((dirDeg%360)+360)%360>180
+    ?360-(((dirDeg%360)+360)%360)
+    :((dirDeg%360)+360)%360));
+  const per=Math.max(1,Math.min(20,periodS||8));
+  const ri=dir/10, r0=Math.floor(ri), r1=Math.min(18,r0+1), rf=ri-r0;
+  const ci=per-1, c0=Math.floor(ci), c1=Math.min(19,c0+1), cf=ci-c0;
+  const loss=tbl[r0][c0]*(1-rf)*(1-cf)+tbl[r0][c1]*(1-rf)*cf+
+             tbl[r1][c0]*rf*(1-cf)+tbl[r1][c1]*rf*cf;
+  return Math.max(0,(100-loss)/100);
+}
+function calcScore(d, modelOverride){
+  const useGem = modelOverride ? (modelOverride==='gem') : GEM_MODEL;
+  const lk=SITE.lookup;
+  const {windKmh,windDir,swell1H,swell1Dir,swell1P,swell2H,swell2Dir,swell2P,
+         windWaveH,windWaveDir,windWaveP,tideM}=d;
+  const windHit=dirLookup(lk.wind,windDir);
+  const wind_d=windPower(windKmh)*(windHit/100)*SITE.windSens;
+  const wwBlend=(WW_BLEND_OVERRIDE!=null)?WW_BLEND_OVERRIDE:(SITE.wwRouteBlend||0);
+  const wwSens=(SITE.wwSens!=null)?SITE.wwSens:SITE.swellSens;
+  const wwRoute=Math.max(0,dirLookup(lk.wind,windWaveDir||windDir))/100;
+  let ww_d,s1_d,s2_d,rif_d;
+  if(useGem){
+    const wwP=windWaveP||5;
+    const wwArrival=Math.max(0,gemLookup(windWaveDir||windDir,wwP));
+    const wwTx=(1-wwBlend)*wwArrival+wwBlend*wwRoute;
+    const s1Tx=Math.max(0,gemLookup(swell1Dir,swell1P));
+    const s2Tx=Math.max(0,gemLookup(swell2Dir||0,swell2P||8));
+    ww_d=swellPower(windWaveH||0,wwP)*wwTx*wwSens;
+    s1_d=swellPower(swell1H,swell1P)*s1Tx*SITE.swellSens;
+    s2_d=swellPower(swell2H||0,swell2P||8)*s2Tx*SITE.swellSens;
+    rif_d=0;
+  }else{
+    const s1p=swellPower(swell1H,swell1P);
+    const s2p=swellPower(swell2H||0,swell2P||8);
+    const wwArrival=Math.max(0,dirLookup(lk.sea,windWaveDir||windDir))/100;
+    const wwTx=(1-wwBlend)*wwArrival+wwBlend*wwRoute;
+    const s1sea=Math.max(0,dirLookup(lk.sea,swell1Dir));
+    const s1rif=dirLookup(lk.rif,swell1Dir);
+    const s2sea=Math.max(0,dirLookup(lk.sea,swell2Dir||0));
+    const s2rif=dirLookup(lk.rif,swell2Dir||0);
+    ww_d=swellPower(windWaveH||0,5)*wwTx*wwSens;
+    s1_d=s1p*(s1sea/100)*SITE.swellSens;
+    s2_d=s2p*(s2sea/100)*SITE.swellSens;
+    rif_d=(s1rif*s1p*SITE.spm+s2rif*s2p*SITE.spm)/1000;
+  }
+  const o=wind_d+ww_d+s1_d+s2_d+rif_d;
+  const tide_d=SITE.tide(o,tideM);
+  const total=o+tide_d;
+  return {
+    score:Math.max(0,Math.round(60-total)),
+    demerits:{tide:r1(tide_d),wind:r1(wind_d),windWave:r1(ww_d),swell1:r1(s1_d),swell2:r1(s2_d),refrac:r1(rif_d)},
+    entry:(()=>{const s=Math.max(0,Math.round(60-total));
+      if(s>=45)return{label:'Easy',cls:'green',score:s};
+      if(s>=30)return{label:'Doable',cls:'amber',score:s};
+      if(s>10)return{label:'Caution',cls:'yellow',score:s};
+      return{label:'Dangerous',cls:'red',score:s};})(),
+    swim:(()=>{const q7=wind_d+ww_d;
+      const s60=Math.max(0,Math.round(60-Math.min(q7,18)*(60/18)));
+      if(q7<1)return{label:'Glassy',cls:'green',score:s60,raw:q7};
+      if(q7<=3)return{label:'Ripply',cls:'amber',score:s60,raw:q7};
+      if(q7<=9)return{label:'Choppy',cls:'yellow',score:s60,raw:q7};
+      return{label:'Messy',cls:'red',score:s60,raw:q7};})(),
+    water:(()=>{const rawSwell=useGem
+        ?s1_d/SITE.swellSens+s2_d/SITE.swellSens
+        :(()=>{const s1p2=swellPower(swell1H,swell1P);const s2p2=swellPower(swell2H||0,swell2P||8);
+          const s1sea2=Math.max(0,dirLookup(lk.sea,swell1Dir));const s2sea2=Math.max(0,dirLookup(lk.sea,swell2Dir||0));
+          return s1p2*(s1sea2/100)+s2p2*(s2sea2/100);})();
+      const v6=Math.max(0,Math.round(60-rawSwell));
+      if(v6>50)return{label:'Steady',cls:'green',score:v6,raw:rawSwell};
+      if(v6>30)return{label:'Drifty',cls:'amber',score:v6,raw:rawSwell};
+      if(v6>=10)return{label:'Surgy',cls:'yellow',score:v6,raw:rawSwell};
+      return{label:'Washy',cls:'red',score:v6,raw:rawSwell};})(),
+  };
+}
+function r1(v){return Math.round(v*10)/10;}
+
+// =============================================================================
+// CONFIG LOADERS (sheet + GEM table) — same parse logic as the app
+// =============================================================================
+function parseSheetCSV(text){
+  return text.split('\n').map(line=>{
+    const cols=[];let cur='',inQ=false;
+    for(let i=0;i<line.length;i++){const c=line[i];
+      if(c==='"')inQ=!inQ; else if(c===','&&!inQ){cols.push(cur);cur='';} else cur+=c;}
+    cols.push(cur);return cols;});
+}
+function applySwimConfig(rows){
+  const n=v=>parseFloat(v)||0;
+  if(rows[23]?.[1]?.includes('Wind sens'))SITE.windSens=n(rows[23][STEYNE_TUNE_COL]);
+  if(rows[24]?.[1]?.includes('Swell sens'))SITE.swellSens=n(rows[24][STEYNE_TUNE_COL]);
+  if(rows[25]?.[1]?.includes('Period power'))SITE.periodPower=n(rows[25][STEYNE_TUNE_COL]);
+  if(rows[26]?.[1]?.includes('Swell period'))SITE.swellPeriodMult=n(rows[26][STEYNE_TUNE_COL])||5;
+  for(let r=0;r<rows.length;r++){
+    const label=rows[r]?.[1]||'';
+    if(label.includes('WW sens')||label.includes('Wind wave sens')){const v=n(rows[r][STEYNE_TUNE_COL]);if(v>0)SITE.wwSens=v;}
+    if(label.includes('Route blend')||label.includes('WW route')||label.includes('WW blend'))
+      SITE.wwRouteBlend=Math.max(0,Math.min(1,n(rows[r][STEYNE_TUNE_COL])));
+  }
+  const wind=[],sea=[],rif=[];
+  for(let r=31;r<=62;r++){wind.push(n(rows[r]?.[STEYNE_DIR_COL]));sea.push(n(rows[r]?.[STEYNE_DIR_COL+1]));rif.push(n(rows[r]?.[STEYNE_DIR_COL+2]));}
+  if(wind.length===32)SITE.lookup={wind,sea,rif};
+}
+function parseGemCSV(text){
+  const rows=parseSheetCSV(text);const n=v=>parseFloat(v)||0;const table=[];
+  for(let r=2;r<=20;r++){const row=rows[r]||[];const periods=[];
+    for(let c=1;c<=20;c++)periods.push(n(row[c]));table.push(periods);}
+  return table.length===19?table:null;
+}
+async function loadAllConfig(){
+  try{
+    const t=await (await fetch(SHEET_CSV_URL+'&t='+Date.now())).text();
+    applySwimConfig(parseSheetCSV(t));
+  }catch(e){console.warn('sheet load failed, using defaults',e);}
+  try{
+    const g=parseGemCSV(await (await fetch(GEM_SHEET_URL+'&t='+Date.now())).text());
+    if(g)SITE.gemTable=g;
+  }catch(e){console.warn('gem table load failed',e);}
+  document.getElementById('cfgLine').innerHTML =
+    `Model: <b>${GEM_MODEL?'GEM':'Original'}</b> · windSens <b>${SITE.windSens}</b> · `+
+    `swellSens <b>${SITE.swellSens}</b> · periodPower <b>${SITE.periodPower}</b> · `+
+    `GEM table <b>${SITE.gemTable?'loaded':'fallback 0.5'}</b>`;
+}
+
+// =============================================================================
+// OPEN-METEO ARCHIVE — historical inputs
+// =============================================================================
+async function fetchInputs(dateStr, hour){
+  // Marine archive: waves / swell / wind-wave / SST
+  const mUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${LAT}&longitude=${LON}`+
+    `&hourly=swell_wave_height,swell_wave_direction,swell_wave_period,`+
+    `wind_wave_height,wind_wave_direction,wind_wave_period,sea_surface_temperature`+
+    `&start_date=${dateStr}&end_date=${dateStr}&timezone=Australia%2FSydney`;
+  // Weather archive: wind speed/dir (10m)
+  const wUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${LAT}&longitude=${LON}`+
+    `&hourly=wind_speed_10m,wind_direction_10m&start_date=${dateStr}&end_date=${dateStr}`+
+    `&timezone=Australia%2FSydney&wind_speed_unit=kmh`;
+
+  const [m,w] = await Promise.all([
+    fetch(mUrl).then(r=>r.json()),
+    fetch(wUrl).then(r=>r.json()),
+  ]);
+  const mh=m.hourly||{}, wh=w.hourly||{};
+  // index for the chosen hour
+  const times=mh.time||[];
+  let idx=times.findIndex(t=>t.endsWith(String(hour).padStart(2,'0')+':00'));
+  if(idx<0)idx=7; // fallback 07:00
+  const widx=(wh.time||[]).findIndex(t=>t.endsWith(String(hour).padStart(2,'0')+':00'));
+  const wi=widx<0?idx:widx;
+
+  // Open-Meteo marine archive does not split swell into two trains; we put the
+  // primary swell into swell1 and leave swell2 empty (height 0). The engine
+  // handles a zero second swell gracefully.
+  return {
+    windKmh:    g(wh.wind_speed_10m,wi),
+    windDir:    g(wh.wind_direction_10m,wi),
+    swell1H:    g(mh.swell_wave_height,idx),
+    swell1Dir:  g(mh.swell_wave_direction,idx),
+    swell1P:    g(mh.swell_wave_period,idx)||8,
+    swell2H:    0, swell2Dir:0, swell2P:8,
+    windWaveH:  g(mh.wind_wave_height,idx),
+    windWaveDir:g(mh.wind_wave_direction,idx),
+    windWaveP:  g(mh.wind_wave_period,idx)||5,
+    tideM:      estimateTide(dateStr,hour),
+    _sst:       g(mh.sea_surface_temperature,idx),
+  };
+}
+function g(arr,i){return (arr&&arr[i]!=null)?arr[i]:0;}
+
+// Tide reconstruction: Open-Meteo archive has no tide; approximate Sydney tide
+// height with a simple M2 semidiurnal model. This is a ROUGH placeholder —
+// tide_d is a multiplier on the subtotal, so small errors have limited impact,
+// but for serious tuning replace with a proper harmonic source.
+function estimateTide(dateStr,hour){
+  const d=new Date(dateStr+'T00:00:00+10:00');
+  const t=(d.getTime()/3600000)+hour;            // hours since epoch (approx local)
+  const M2=12.42;                                 // principal lunar period
+  const phase=(t % M2)/M2 * 2*Math.PI;
+  // Sydney range ~1.3m, mean ~0.9m above LAT
+  return 0.9 + 0.65*Math.cos(phase);
+}
+
+// =============================================================================
+// BLOG — fetch post text via Worker, extract date + description
+// =============================================================================
+async function fetchBlog(dateStr, slug){
+  let url = BLOG_PROXY + '?';
+  if(slug) url += 'slug=' + encodeURIComponent(slug);
+  else     url += 'url=' + encodeURIComponent(guessSlugUrl(dateStr));
+  try{
+    const html = await (await fetch(url)).text();
+    return extractBlogSummary(html);
+  }catch(e){
+    return {desc:'(blog fetch failed — '+e.message+')', title:'', found:false};
+  }
+}
+function guessSlugUrl(dateStr){
+  // Best-effort: blog slugs are titles, not dates, so without a slug we can't
+  // reliably build the URL. Return the index page so at least something loads.
+  return 'https://boldandbeautifulswim.com.au/';
+}
+function extractBlogSummary(html){
+  const pick=(re)=>{const m=html.match(re);return m?m[1].replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').trim():'';};
+  const desc=pick(/meta-og:description:\s*(.+)/) || pick(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)/);
+  const title=pick(/meta-og:title:\s*(.+)/) || pick(/<title>([^<]+)<\/title>/);
+  const pub=pick(/meta-article:published_time:\s*(.+)/);
+  return {desc:desc||'(no description found)', title, pub, found:!!desc};
+}
+
+// =============================================================================
+// THRESHOLDS (current, for misclassification flagging) — mirror calcScore
+// =============================================================================
+const THRESH = {
+  entry:[{max:Infinity,min:45,cls:'green',label:'Easy'},{min:30,cls:'amber',label:'Doable'},
+         {min:11,cls:'yellow',label:'Caution'},{min:0,cls:'red',label:'Dangerous'}], // on score (60=best)
+  // swim is on q7 raw (lower=better): <1 glassy, <=3 ripply, <=9 choppy, >9 messy
+  swimCuts:[{lt:1,cls:'green'},{lte:3,cls:'amber'},{lte:9,cls:'yellow'},{gt:9,cls:'red'}],
+  // surge on v6 (60=best): >50 steady, >30 drifty, >=10 surgy, <10 washy
+  surgeCuts:[{gt:50,cls:'green'},{gt:30,cls:'amber'},{gte:10,cls:'yellow'},{lt:10,cls:'red'}],
+};
+const CLS_ORDER=['green','amber','yellow','red'];
+
+// =============================================================================
+// UI STATE & RENDER
+// =============================================================================
+let ROWS=[]; // {date,hour,slug,inputs,result,blog,labels:{entry,swim,surge}}
+const METRIC_LABELS = {
+  entry:['Easy','Doable','Caution','Dangerous'],
+  swim:['Glassy','Ripply','Choppy','Messy'],
+  surge:['Steady','Drifty','Surgy','Washy'],
+};
+const LABEL_CLS = {
+  Easy:'green',Doable:'amber',Caution:'yellow',Dangerous:'red',
+  Glassy:'green',Ripply:'amber',Choppy:'yellow',Messy:'red',
+  Steady:'green',Drifty:'amber',Surgy:'yellow',Washy:'red',
+};
+
+function setStatus(s){document.getElementById('status').textContent=s;}
+
+async function runAll(){
+  const lines=document.getElementById('dates').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length){setStatus('Add at least one date.');return;}
+  document.getElementById('runBtn').disabled=true;
+  ROWS=[];
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    const slugMatch=line.split('|');
+    const left=slugMatch[0].trim();
+    const slug=slugMatch[1]?slugMatch[1].trim():null;
+    const parts=left.split(/\s+/);
+    const date=parts[0];
+    const hour=parts[1]?parseInt(parts[1].split(':')[0],10):7;
+    setStatus(`(${i+1}/${lines.length}) fetching ${date} ${String(hour).padStart(2,'0')}:00 …`);
+    let inputs,blog;
+    try{ inputs=await fetchInputs(date,hour); }
+    catch(e){ setStatus(`Open-Meteo failed for ${date}: ${e.message}`); inputs=null; }
+    try{ blog=await fetchBlog(date,slug); }catch(e){ blog={desc:'(blog error)',found:false}; }
+    if(!inputs)continue;
+    const result=calcScore(inputs);
+    ROWS.push({date,hour,slug,inputs,result,blog,
+      labels:{entry:result.entry.label, swim:result.swim.label, surge:result.water.label}});
+  }
+  document.getElementById('runBtn').disabled=false;
+  setStatus(`Done — ${ROWS.length} day(s) scored. Confirm labels below, then read the scatter.`);
+  renderResults();
+  renderScatter();
+  document.getElementById('exportBtn').disabled=ROWS.length===0;
+}
+
+function renderResults(){
+  const t=document.getElementById('resultsTable');
+  document.getElementById('resultsCard').style.display=ROWS.length?'block':'none';
+  let h='<thead><tr>'+
+    '<th>Date</th><th>Wind</th><th>Swell H/P/Dir</th><th>WW H/P/Dir</th><th>SST</th>'+
+    '<th>Score</th>'+
+    '<th>Entry<br>raw→zone</th><th>My label</th>'+
+    '<th>Swim q7<br>→zone</th><th>My label</th>'+
+    '<th>Surge raw<br>→zone</th><th>My label</th>'+
+    '<th>Blog</th></tr></thead><tbody>';
+  ROWS.forEach((row,ri)=>{
+    const r=row.result, inp=row.inputs;
+    const eMis = LABEL_CLS[row.labels.entry]!==r.entry.cls;
+    const sMis = LABEL_CLS[row.labels.swim]!==r.swim.cls;
+    const uMis = LABEL_CLS[row.labels.surge]!==r.water.cls;
+    h+=`<tr>
+      <td class="day">${row.date}<br><span style="color:var(--dim)">${String(row.hour).padStart(2,'0')}:00</span></td>
+      <td>${Math.round(inp.windKmh)}km/h<br>${Math.round(inp.windDir)}°</td>
+      <td>${(inp.swell1H||0).toFixed(2)}m<br>${Math.round(inp.swell1P)}s ${Math.round(inp.swell1Dir)}°</td>
+      <td>${(inp.windWaveH||0).toFixed(2)}m<br>${Math.round(inp.windWaveP)}s ${Math.round(inp.windWaveDir)}°</td>
+      <td>${inp._sst?inp._sst.toFixed(1)+'°':'—'}</td>
+      <td><b>${r.score}</b></td>
+      <td>${r.entry.score}<br><span class="pill z-${r.entry.cls}">${r.entry.label}</span></td>
+      <td class="${eMis?'mismatch':''}">${labelSelect('entry',ri,row.labels.entry)}</td>
+      <td>${r.swim.raw.toFixed(1)}<br><span class="pill z-${r.swim.cls}">${r.swim.label}</span></td>
+      <td class="${sMis?'mismatch':''}">${labelSelect('swim',ri,row.labels.swim)}</td>
+      <td>${r.water.raw.toFixed(1)}<br><span class="pill z-${r.water.cls}">${r.water.label}</span></td>
+      <td class="${uMis?'mismatch':''}">${labelSelect('surge',ri,row.labels.surge)}</td>
+      <td style="text-align:left;max-width:220px;white-space:normal;font-size:10px">${row.blog.desc.slice(0,180)}${row.blog.desc.length>180?'…':''}</td>
+    </tr>`;
+  });
+  h+='</tbody>';
+  t.innerHTML=h;
+}
+function labelSelect(metric,ri,current){
+  const opts=METRIC_LABELS[metric].map(l=>`<option ${l===current?'selected':''}>${l}</option>`).join('');
+  return `<select class="label-sel" onchange="setLabel('${metric}',${ri},this.value)">${opts}</select>`;
+}
+function setLabel(metric,ri,val){
+  ROWS[ri].labels[metric]=val;
+  renderResults(); renderScatter();
+}
+
+// =============================================================================
+// SCATTER — raw metric value (x) vs label colour, with current thresholds
+// =============================================================================
+function renderScatter(){
+  document.getElementById('scatterCard').style.display=ROWS.length?'block':'none';
+  const cont=document.getElementById('scatter');
+  cont.innerHTML='';
+  cont.appendChild(metricPlot('Entry (score 0–60, →left=worst)','entry',
+    r=>r.result.entry.score, 0,60, [11,30,45], r=>r.labels.entry, true));
+  cont.appendChild(metricPlot('Swim (q7 chop, →right=worse)','swim',
+    r=>r.result.swim.raw, 0, Math.max(12,...ROWS.map(r=>r.result.swim.raw)), [1,3,9], r=>r.labels.swim, false));
+  cont.appendChild(metricPlot('Surge (raw swell, →right=worse)','surge',
+    r=>r.result.water.raw, 0, Math.max(20,...ROWS.map(r=>r.result.water.raw)), null, r=>r.labels.surge, false, [10,30,50]));
+}
+function metricPlot(title,metric,valFn,min,max,cutsScore,labelFn,scoreAxis,cutsRaw){
+  const W=300,H=150,padL=10,padR=10,padT=24,padB=28;
+  const x=v=>padL+(v-min)/(max-min)*(W-padL-padR);
+  const wrap=document.createElement('div');wrap.className='col';
+  let svg=`<h3>${title}</h3><svg viewBox="0 0 ${W} ${H}">`;
+  // axis
+  svg+=`<line x1="${padL}" y1="${H-padB}" x2="${W-padR}" y2="${H-padB}" stroke="#cdd" stroke-width="1"/>`;
+  // threshold lines
+  const cuts = scoreAxis ? cutsScore : (cutsRaw||cutsScore);
+  if(cuts) cuts.forEach(c=>{
+    const cx=x(c);
+    svg+=`<line x1="${cx}" y1="${padT-6}" x2="${cx}" y2="${H-padB}" stroke="#b0c4ce" stroke-width="1" stroke-dasharray="3 3"/>`;
+    svg+=`<text x="${cx}" y="${H-padB+12}" font-size="8" fill="#5a8a9f" text-anchor="middle">${c}</text>`;
+  });
+  // jittered dots
+  const colMap={green:'#1a9e6e',amber:'#8dae2a',yellow:'#d4900a',red:'#c0392b'};
+  ROWS.forEach((r,i)=>{
+    const v=valFn(r); const cx=x(v);
+    const cy=padT + ((i*37)%(H-padT-padB-10)) + 5; // vertical jitter to separate
+    const cls=LABEL_CLS[labelFn(r)]||'dim';
+    svg+=`<circle cx="${cx}" cy="${cy}" r="5" fill="${colMap[cls]||'#5a8a9f'}" stroke="#fff" stroke-width="1.2">`+
+         `<title>${r.date} · ${valFn(r).toFixed(1)} · label ${labelFn(r)}</title></circle>`;
+  });
+  svg+=`<text x="${padL}" y="${padT-10}" font-size="8" fill="#5a8a9f">${min}</text>`;
+  svg+=`<text x="${W-padR}" y="${padT-10}" font-size="8" fill="#5a8a9f" text-anchor="end">${Math.round(max)}</text>`;
+  svg+='</svg>';
+  // mini consistency read-out
+  svg+=consistencyNote(metric,valFn,labelFn);
+  wrap.innerHTML=svg;
+  return wrap;
+}
+function consistencyNote(metric,valFn,labelFn){
+  // For each adjacent label pair, check if their value ranges overlap badly.
+  const byLabel={};
+  ROWS.forEach(r=>{const l=labelFn(r);(byLabel[l]=byLabel[l]||[]).push(valFn(r));});
+  const order=METRIC_LABELS[metric];
+  let overlaps=0,pairs=0;
+  for(let i=0;i<order.length-1;i++){
+    const a=byLabel[order[i]], b=byLabel[order[i+1]];
+    if(!a||!b)continue; pairs++;
+    const aMax=Math.max(...a), bMin=Math.min(...b);
+    // entry score axis is inverted (higher=better), others higher=worse
+    const inverted = metric==='entry';
+    const overlap = inverted ? (Math.min(...a) < bMin /*worse-better mix*/) : (aMax > bMin);
+    if(overlap)overlaps++;
+  }
+  const msg = pairs===0 ? 'Add labels across categories to assess separation.'
+    : overlaps===0 ? '✓ Clean separation — thresholds can fit your labels.'
+    : `⚠ ${overlaps}/${pairs} adjacent label pairs overlap on this axis — engine may need tuning.`;
+  const col = overlaps===0&&pairs>0 ? 'var(--green)' : overlaps>0 ? 'var(--red)' : 'var(--dim)';
+  return `<div class="note" style="color:${col};margin-top:4px">${msg}</div>`;
+}
+
+// =============================================================================
+// DISCOVER recent posts (fills the textarea with date | slug lines)
+// =============================================================================
+async function discover(){
+  setStatus('Fetching blog index for recent post slugs…');
+  try{
+    const html=await (await fetch(BLOG_PROXY+'?list=1&page=1')).text();
+    // links of form https://boldandbeautifulswim.com.au/<slug>/ with a date nearby
+    const re=/https:\/\/boldandbeautifulswim\.com\.au\/([a-z0-9-]+)\/"[^>]*>\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/gi;
+    const seen=new Set(); const out=[];
+    let m;
+    // simpler: grab slug + the dd/mm/yyyy that follows in the listing
+    const slugRe=/boldandbeautifulswim\.com\.au\/([a-z0-9][a-z0-9-]{4,})\//gi;
+    const dateRe=/([0-3][0-9])\/([01][0-9])\/(20[0-9]{2})/g;
+    const slugs=[]; while((m=slugRe.exec(html))){if(!seen.has(m[1])&&!/^(login|logout|page|category|my-account|registration|wp-content)/.test(m[1])){seen.add(m[1]);slugs.push(m[1]);}}
+    const dates=[]; while((m=dateRe.exec(html))){dates.push(`${m[3]}-${m[2]}-${m[1]}`);}
+    const n=Math.min(slugs.length,dates.length,15);
+    for(let i=0;i<n;i++) out.push(`${dates[i]} 07:00 | ${slugs[i]}`);
+    if(out.length){document.getElementById('dates').value=out.join('\n');
+      setStatus(`Loaded ${out.length} recent posts — edit the list, then "Fetch & score".`);}
+    else setStatus('Could not parse posts — is the /blog Worker route live?');
+  }catch(e){setStatus('Discover failed: '+e.message+' (add the /blog route to your Worker first)');}
+}
+
+// =============================================================================
+// EXPORT
+// =============================================================================
+function exportCSV(){
+  const head=['date','hour','windKmh','windDir','swell1H','swell1P','swell1Dir',
+    'windWaveH','windWaveP','windWaveDir','sst','tideM',
+    'score','entry_raw','entry_zone','entry_label',
+    'swim_q7','swim_zone','swim_label','surge_raw','surge_zone','surge_label','blog'];
+  const rows=ROWS.map(r=>{const i=r.inputs,res=r.result;return [
+    r.date,r.hour,fmt(i.windKmh),fmt(i.windDir),fmt(i.swell1H),fmt(i.swell1P),fmt(i.swell1Dir),
+    fmt(i.windWaveH),fmt(i.windWaveP),fmt(i.windWaveDir),fmt(i._sst),fmt(i.tideM),
+    res.score,res.entry.score,res.entry.label,r.labels.entry,
+    res.swim.raw.toFixed(2),res.swim.label,r.labels.swim,
+    res.water.raw.toFixed(2),res.water.label,r.labels.surge,
+    '"'+(r.blog.desc||'').replace(/"/g,'""').slice(0,300)+'"'
+  ].join(',');});
+  const csv=[head.join(','),...rows].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='swim_tuning_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+function fmt(v){return v==null?'':(Math.round(v*100)/100);}
+
+// =============================================================================
+// WIRE UP
+// =============================================================================
+document.getElementById('runBtn').onclick=runAll;
+document.getElementById('discoverBtn').onclick=discover;
+document.getElementById('exportBtn').onclick=exportCSV;
+loadAllConfig();
+</script>
+</body>
+</html>
