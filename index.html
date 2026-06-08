@@ -510,59 +510,7 @@
   .view-panel { display:none; }
   .view-panel.active { display:block; }
 
-  /* ── Admin (sightings) panel ── */
-  #tab-btn-admin { display:none; }            /* hidden until unlocked */
-  .admin-card {
-    background:var(--card);
-    border:1px solid var(--border);
-    border-radius:var(--radius);
-    padding:14px;
-    margin-bottom:12px;
-  }
-  .admin-card h3 {
-    font-family:'Bebas Neue',sans-serif;
-    font-size:20px; letter-spacing:2px; color:var(--deep);
-    margin:0 0 4px;
-  }
-  .admin-hint { font-size:11px; color:var(--dim); margin-bottom:10px; line-height:1.5; }
-  .admin-card textarea {
-    width:100%; min-height:160px; resize:vertical;
-    font-family:'DM Mono',monospace; font-size:12px; line-height:1.5;
-    color:var(--text);
-    background:rgba(255,255,255,0.7);
-    border:1px solid var(--border); border-radius:10px;
-    padding:10px; box-sizing:border-box;
-  }
-  .admin-btn {
-    font-family:'Bebas Neue',sans-serif;
-    font-size:16px; letter-spacing:2px; text-transform:uppercase;
-    padding:11px 16px; border:none; border-radius:10px;
-    background:var(--ocean); color:#fff; cursor:pointer;
-    transition:opacity 0.2s, background 0.2s;
-  }
-  .admin-btn:hover { opacity:0.9; }
-  .admin-btn:disabled { opacity:0.45; cursor:default; }
-  .admin-btn.secondary { background:var(--dim); }
-  .admin-btn.publish { background:var(--green); }
-  .admin-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  #admin-preview {
-    background:rgba(26,158,110,0.07);
-    border:1px solid rgba(26,158,110,0.3);
-    border-radius:10px; padding:12px;
-    font-size:13px; line-height:1.55; color:var(--text);
-    margin-top:12px; display:none; white-space:pre-wrap;
-  }
-  #admin-preview.visible { display:block; }
-  .admin-status { font-size:11px; color:var(--dim); margin-top:8px; min-height:14px; }
-  .admin-status.ok  { color:var(--green); }
-  .admin-status.err { color:var(--red); }
-  .admin-current {
-    font-size:11px; color:var(--dim); line-height:1.5;
-    border-top:1px dashed var(--border); padding-top:10px; margin-top:12px;
-  }
-  .admin-current b { color:var(--deep); }
-
-  /* ── Day picker ── */
+    /* ── Day picker ── */
   .day-picker {
     display: flex;
     gap: 6px;
@@ -770,33 +718,6 @@
     color: var(--ocean);
     font-weight: 500;
   }
-  .sealife-row {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 2px;
-  }
-  .sealife-item {
-    display: flex;
-    align-items: baseline;
-    gap: 7px;
-    flex-wrap: wrap;
-  }
-  .sealife-pill {
-    font-family: 'DM Mono', monospace;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.8px;
-    text-transform: uppercase;
-    border-radius: 4px;
-    padding: 2px 6px;
-    flex-shrink: 0;
-    color: #fff;
-  }
-  .pill-resident { background: var(--ocean); }
-  .pill-likely   { background: var(--green); }
-  .pill-possible { background: var(--amber); }
-  .pill-rare     { background: var(--dim); }
   .banner-divider {
     height: 1px;
     background: var(--border);
@@ -968,7 +889,6 @@
     <button class="tab-btn active" onclick="switchTab('snapshot')">Now</button>
     <button class="tab-btn" onclick="switchTab('timeline')">5 Days</button>
     <button class="tab-btn" onclick="switchTab('about')">About</button>
-    <button class="tab-btn" id="tab-btn-admin" onclick="switchTab('admin')">Bay</button>
   </div>
 
   <!-- SNAPSHOT TAB -->
@@ -1256,26 +1176,6 @@
     </div>
   </div>
 
-  <!-- ADMIN / BAY SIGHTINGS TAB (hidden until unlocked) -->
-  <div class="view-panel" id="panel-admin">
-    <div class="admin-card">
-      <h3>Bay Sightings — Admin</h3>
-      <div class="admin-hint">
-        Paste recent posts from the VIZ Facebook group below (sightings, visibility reports — copy as much or as little as you like). Tap <b>Summarise</b> to generate a short public blurb, review it, then <b>Publish</b> to push it live to the "In the bay this month" banner for all users.
-      </div>
-      <textarea id="admin-input" placeholder="Paste diver posts here…&#10;&#10;e.g. &quot;Dived CTB this morning, viz a solid 10m, three weedy seadragons near the kelp line and a big blue groper at Fairy Bower. Octopus out by the cabbages.&quot;"></textarea>
-      <div class="admin-row">
-        <button class="admin-btn" id="admin-summarise-btn" onclick="adminSummarise()">Summarise</button>
-        <button class="admin-btn secondary" onclick="document.getElementById('admin-input').value='';document.getElementById('admin-preview').classList.remove('visible');adminSetStatus('');">Clear</button>
-      </div>
-      <div id="admin-preview" contenteditable="true" spellcheck="true"></div>
-      <div class="admin-row" id="admin-publish-row" style="display:none;">
-        <button class="admin-btn publish" id="admin-publish-btn" onclick="adminPublish()">Publish to app</button>
-      </div>
-      <div class="admin-status" id="admin-status"></div>
-      <div class="admin-current" id="admin-current">Loading current published summary…</div>
-    </div>
-  </div>
 
   <div id="tl-tooltip"></div>
 
@@ -2178,13 +2078,12 @@ function switchTab(tab) {
   document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + tab).classList.add('active');
-  const labelFor = { snapshot:'now', timeline:'5', about:'about', admin:'bay' };
+  const labelFor = { snapshot:'now', timeline:'5', about:'about' };
   const want = labelFor[tab] || tab;
   document.querySelectorAll('.tab-btn').forEach(b => {
     if (b.textContent.toLowerCase().includes(want)) b.classList.add('active');
   });
   if (tab === 'about') syncCalFromForecast();
-  if (tab === 'admin') adminLoadCurrent();
 }
 
 function renderSnapshot(h, wx) {
@@ -3249,14 +3148,18 @@ function runCalibration() {
 // =============================================================================
 let _bannerGenerated = false;
 
-// Hide banner smoothly when user scrolls down; reappear when back at top
+// Hide banner smoothly when user scrolls past it; reappear when back at top
 (function() {
   var hidden = false;
   function onScroll() {
     const y = window.scrollY || document.documentElement.scrollTop;
     const banner = document.getElementById('conditions-banner');
     if (!banner) return;
-    if (y > 60 && !hidden) {
+    // Trigger point = past the banner's own height (so it can be fully read first),
+    // with a small margin. Falls back to 60px if height can't be measured.
+    const h = banner.offsetHeight || 60;
+    const hideAt = h + 40;
+    if (y > hideAt && !hidden) {
       banner.classList.add('banner-hidden');
       hidden = true;
     } else if (y <= 10 && hidden) {
@@ -3531,168 +3434,10 @@ async function generateBannerSummary() {
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
 
-  // Sealife section
-  generateBannerSealife(rows);
-  // Overlay latest community diver report (if recent) on top of seasonal model
+  // In-the-bay section: latest community diver report
   fetchLatestSighting().then(applySightingToBanner);
 }
 
-// =============================================================================
-// SEALIFE BANNER — monthly species likelihood for Cabbage Tree Bay
-// Data sourced from VIZ Tracking Project (Marco Bordieri, 2019–2023)
-// =============================================================================
-function generateBannerSealife(rows) {
-
-  // Monthly presence data — index 0=Jan … 11=Dec
-  // Likelihood: 'resident' | 'likely' | 'possible' | 'rare' | null (absent)
-  // SST thresholds used to refine dynamically where noted
-  const SPECIES = [
-    {
-      name: 'Sea Turtle',
-      emoji: '🐢',
-      months: ['possible','possible','possible','likely','likely','likely','likely','likely','likely','likely','likely','possible'],
-      note: [
-        'Resident green and hawksbill turtles are seen most mornings — check the sandy patches near the mooring buoys.',
-        'Keep a quiet eye on the bottom near the mooring buoys — the resident turtles tend to cruise through most mornings.',
-        'The bay\'s resident turtles are out there — they favour the sandy areas between the reef patches. Slow, steady swimming gives you the best chance of a close pass.',
-        'Good turtle month. Scan the sandy bottom slowly as you cross the bay — they\'re often resting near the mooring chains.',
-      ],
-      link: 'https://viz.net.au',
-    },
-    {
-      name: 'Port Jackson Shark',
-      emoji: '🦈',
-      // Arrive June/July (~17–19°C), peak Jul–Oct mating, gone by Dec
-      months: [null, null, null, null, null, 'possible', 'likely', 'likely', 'likely', 'likely', 'possible', null],
-      sstMin: 14, sstMax: 20, // only present in cooler water
-      note: [
-        'Port Jackson Sharks are back for their winter breeding season. Look under ledges and in crevices along the reef — they rest in groups during the day.',
-        'PJ season is well underway. These gentle bottom-dwellers wedge themselves under ledges to rest — check any dark overhang as you swim along the reef wall.',
-        'Port Jacksons are around in numbers right now. Pairs are often spotted together during mating — give them space and enjoy the show.',
-      ],
-    },
-    {
-      name: 'Giant Cuttlefish',
-      emoji: '🦑',
-      // Arrive May/Jun, peak Jun–Aug mating, gone Oct/Nov
-      months: [null, null, null, null, 'possible', 'likely', 'likely', 'likely', 'possible', null, null, null],
-      note: [
-        'Giant Australian Cuttlefish are at peak mating season in Cabbage Tree Bay right now — this is one of the best times of year to see their extraordinary colour-changing displays.',
-        'Cuttlefish season. Keep an eye along the reef edge — males display vivid patterns to attract females and warn off rivals. Genuinely one of the ocean\'s great spectacles.',
-        'The cuttlefish are in and putting on a show. Watch for the rippling skin and colour pulses — if you hover still they\'ll often investigate you out of curiosity.',
-      ],
-    },
-    {
-      name: 'Dusky Whaler Shark',
-      emoji: '🦈',
-      // Summer only Dec–Mar, water ≥22°C
-      months: ['likely', 'likely', 'possible', null, null, null, null, null, null, null, null, 'possible'],
-      sstMin: 22,
-      note: [
-        'Dusky Whalers visit the north end of the bay in summer when the water warms up. They\'re protected and generally uninterested in swimmers — a thrilling sighting if you\'re lucky.',
-        'With water temps climbing, Dusky Whalers may be patrolling the northern edge of the bay. A dozen has been spotted on peak days — keep an eye out near the headland.',
-      ],
-    },
-    {
-      name: 'Grey Nurse Shark',
-      emoji: '🦈',
-      // Occasional Jun–Sep
-      months: [null, null, null, null, null, 'rare', 'rare', 'rare', 'rare', null, null, null],
-      note: [
-        'Grey Nurse Sharks have been making occasional appearances at CTB — a rare treat. Despite their fierce look they\'re placid and slow-moving. If you see one, give it space and savour it.',
-      ],
-    },
-    {
-      name: 'Cownose Ray',
-      emoji: '🌊',
-      // Rare swarm events Feb–Apr and Sep–Oct
-      months: [null, 'rare', 'rare', 'rare', null, null, null, null, 'rare', 'rare', null, null],
-      note: [
-        'Keep an eye out — Cownose Rays sometimes appear in formation in CTB this time of year. A fever of dozens gliding together is one of those bucket-list ocean moments.',
-      ],
-    },
-    {
-      name: 'Australian Angelshark',
-      emoji: '🦈',
-      // Rare Apr–Aug
-      months: [null, null, null, 'rare', 'rare', 'rare', 'rare', 'rare', null, null, null, null],
-      note: [
-        'Angelsharks are occasionally spotted half-buried in the sand at CTB at this time of year — very easy to miss. Scan the sandy patches slowly and look for an outline.',
-      ],
-    },
-    {
-      name: 'Little Penguin',
-      emoji: '🐧',
-      // Rare Feb–Mar only
-      months: [null, 'rare', 'rare', null, null, null, null, null, null, null, null, null],
-      note: [
-        'Little Penguins have wandered into CTB a couple of times in late summer — possibly from the North Head colony. Incredibly rare but not impossible right now.',
-      ],
-    },
-  ];
-
-  const month = new Date().getMonth(); // 0-indexed
-  const sst = rows.length ? (rows.reduce((s,r) => s + (r.seaTemp || 18), 0) / rows.length) : null;
-
-  // Filter to species that are present this month
-  const present = SPECIES.map(sp => {
-    let likelihood = sp.months[month];
-    if (!likelihood) return null;
-
-    // SST gate: suppress if water temp outside species range
-    if (sst != null) {
-      if (sp.sstMin != null && sst < sp.sstMin) return null;
-      if (sp.sstMax != null && sst > sp.sstMax) return null;
-    }
-
-    return { ...sp, likelihood };
-  }).filter(Boolean);
-
-  if (!present.length) {
-    document.getElementById('banner-sealife-text').textContent = 'No notable seasonal species expected this month — but the bay always surprises.';
-    return;
-  }
-
-  // Sort: resident → likely → possible → rare
-  const order = { resident: 0, likely: 1, possible: 2, rare: 3 };
-  present.sort((a, b) => order[a.likelihood] - order[b.likelihood]);
-
-  // Pick the lead species for the narrative note (highest likelihood, prefer turtle)
-  const lead = present.find(s => s.name === 'Sea Turtle') || present[0];
-  const leadNote = pick(lead.note);
-
-  // Build species list HTML
-  const pillLabel = { resident: 'Resident', likely: 'Likely', possible: 'Possible', rare: 'Rare' };
-  const pillClass = { resident: 'pill-resident', likely: 'pill-likely', possible: 'pill-possible', rare: 'pill-rare' };
-
-  let html = `<div class="sealife-row">`;
-  present.forEach(sp => {
-    html += `<div class="sealife-item">
-      <span class="sealife-pill ${pillClass[sp.likelihood]}">${pillLabel[sp.likelihood]}</span>
-      <span>${sp.emoji} ${sp.name}</span>
-    </div>`;
-  });
-  html += `</div>`;
-
-  // Append lead narrative
-  html += `<div style="margin-top:8px;">${leadNote}</div>`;
-
-  // SST context line
-  if (sst != null) {
-    const sstRound = sst.toFixed(1);
-    let sstLine = '';
-    if (sst >= 22) sstLine = ` Water at <em>${sstRound}°C</em> — prime conditions for summer visitors.`;
-    else if (sst >= 19) sstLine = ` Water at <em>${sstRound}°C</em> — warming up, transition season in the bay.`;
-    else if (sst >= 16) sstLine = ` Water at <em>${sstRound}°C</em> — cool enough for the winter regulars.`;
-    else sstLine = ` Water at <em>${sstRound}°C</em> — cold water brings its own residents.`;
-    html += `<div style="margin-top:5px;font-size:11px;color:var(--dim);">${sstLine}</div>`;
-  }
-
-  document.getElementById('banner-sealife-text').innerHTML = html;
-
-  // Set icon to lead species emoji
-  document.getElementById('banner-sealife-icon').textContent = lead.emoji;
-}
 
 
 // =============================================================================
@@ -3767,154 +3512,23 @@ function submitFeedback(e) {
 }
 
 // ============================================================
-// BAY SIGHTINGS — ADMIN (paste → AI summarise → publish)
+// BAY SIGHTINGS — read-only (data published by VIZ Forecast)
 // ============================================================
-// Public summary surfaces in the "In the bay this month" banner.
-// Admin tab is hidden; unlocked via #bay-admin URL hash + passphrase.
-// Summarisation is proxied through the Cloudflare Worker /summarise
-// route (which holds the Anthropic API key as a Worker secret — the
-// key must NEVER live in this client file). Publish writes to the
-// Supabase `bay_sightings` table (public read + insert RLS).
+// VIZ Forecast hosts the weekly upload + per-site AI summary and
+// writes one row per site to the shared Supabase `site_sightings`
+// table. This app only READS the Cabbage Tree Bay row and shows it
+// in the "In the bay" banner. No admin/upload UI lives here.
 // ------------------------------------------------------------
 
-const SIGHTINGS_WORKER_URL = 'https://bold-rain-6ded.sticasale.workers.dev/summarise';
-const SIGHTINGS_TABLE_URL  = BB_SUPABASE_URL + '/rest/v1/bay_sightings';
+const SIGHTINGS_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/site_sightings';
+const SIGHTINGS_SITE_ID   = 'cabbage-tree-bay';   // must match the id used in VIZ Forecast
+const SIGHTING_MAX_AGE_DAYS = 14;                 // older than this falls back to a generic note
 
-// Change this to whatever you like — it only keeps casual users out of
-// the tab. Real protection is that Supabase RLS is insert/read-only.
-const ADMIN_PASSPHRASE = 'cabbagetree';
-
-// --- Editable prompt. Tune freely. {POSTS} is replaced with the pasted text.
-const SIGHTINGS_PROMPT = `You are writing a short, friendly public note for an ocean-swimming and snorkelling app about Cabbage Tree Bay / South Steyne, Manly. Below are recent posts from a local dive/snorkel Facebook group.
-
-Write 2-3 sentences summarising what has recently been SPOTTED in the bay and the latest VISIBILITY conditions. Be warm and concise, suitable for swimmers. Mention specific marine life and any visibility (in metres) reported. Do not invent anything not in the posts. Do not use bullet points, headers, or quotation marks. Plain sentences only. If the posts contain nothing relevant, reply with exactly: NONE
-
-Recent posts:
-{POSTS}`;
-
-function adminUnlock() {
-  const pass = prompt('Enter admin passphrase:');
-  if (pass === null) return;
-  if (pass === ADMIN_PASSPHRASE) {
-    document.getElementById('tab-btn-admin').style.display = 'block';
-    switchTab('admin');
-  } else {
-    alert('Incorrect passphrase.');
-  }
-}
-
-function adminSetStatus(msg, kind) {
-  const el = document.getElementById('admin-status');
-  el.textContent = msg || '';
-  el.className = 'admin-status' + (kind ? ' ' + kind : '');
-}
-
-async function adminSummarise() {
-  const input = document.getElementById('admin-input').value.trim();
-  if (!input) { adminSetStatus('Paste some posts first.', 'err'); return; }
-
-  const btn = document.getElementById('admin-summarise-btn');
-  btn.disabled = true;
-  adminSetStatus('Summarising…');
-
-  const prompt = SIGHTINGS_PROMPT.replace('{POSTS}', input);
-
-  try {
-    const res = await fetch(SIGHTINGS_WORKER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 400,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    if (!res.ok) throw new Error('Worker ' + res.status);
-    const data = await res.json();
-
-    // Anthropic response: collect all text blocks
-    const text = (data.content || [])
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('\n')
-      .trim();
-
-    if (!text || text.toUpperCase() === 'NONE') {
-      adminSetStatus('No relevant sightings found in those posts.', 'err');
-      document.getElementById('admin-preview').classList.remove('visible');
-      document.getElementById('admin-publish-row').style.display = 'none';
-    } else {
-      const prev = document.getElementById('admin-preview');
-      prev.textContent = text;
-      prev.classList.add('visible');
-      document.getElementById('admin-publish-row').style.display = 'flex';
-      adminSetStatus('Review and edit the summary above, then publish. (You can edit the text directly.)', 'ok');
-    }
-  } catch (e) {
-    adminSetStatus('Could not reach summariser: ' + e.message + '. Check the Worker /summarise route.', 'err');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function adminPublish() {
-  const summary = document.getElementById('admin-preview').textContent.trim();
-  const raw     = document.getElementById('admin-input').value.trim();
-  if (!summary) { adminSetStatus('Nothing to publish.', 'err'); return; }
-
-  const btn = document.getElementById('admin-publish-btn');
-  btn.disabled = true;
-  adminSetStatus('Publishing…');
-
-  try {
-    const res = await fetch(SIGHTINGS_TABLE_URL, {
-      method: 'POST',
-      headers: {
-        'apikey': BB_SUPABASE_KEY,
-        'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({ summary: summary, raw_input: raw })
-    });
-    if (!res.ok) throw new Error('Supabase ' + res.status);
-    adminSetStatus('Published! It will appear in the banner for all users.', 'ok');
-    document.getElementById('admin-input').value = '';
-    document.getElementById('admin-preview').classList.remove('visible');
-    document.getElementById('admin-publish-row').style.display = 'none';
-    adminLoadCurrent();
-    // Refresh the public banner immediately for this session too
-    fetchLatestSighting().then(applySightingToBanner);
-  } catch (e) {
-    adminSetStatus('Publish failed: ' + e.message, 'err');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function adminLoadCurrent() {
-  const el = document.getElementById('admin-current');
-  try {
-    const s = await fetchLatestSighting();
-    if (s && s.summary) {
-      const when = s.created_at ? new Date(s.created_at).toLocaleString('en-AU',
-        { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
-      el.innerHTML = '<b>Currently live:</b><br>' + s.summary +
-        (when ? '<br><span style="opacity:0.7;">Published ' + when + '</span>' : '');
-    } else {
-      el.innerHTML = '<b>Currently live:</b> nothing published yet — the banner is showing the seasonal species model.';
-    }
-  } catch (e) {
-    el.textContent = 'Could not load current summary.';
-  }
-}
-
-// --- Public side: fetch most recent published sighting ---
 let _latestSighting = null;
 async function fetchLatestSighting() {
   try {
     const res = await fetch(
-      SIGHTINGS_TABLE_URL + '?select=summary,created_at&order=created_at.desc&limit=1',
+      SIGHTINGS_TABLE_URL + '?select=summary,updated_at&site_id=eq.' + SIGHTINGS_SITE_ID + '&limit=1',
       { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
     );
     if (!res.ok) throw new Error('Supabase ' + res.status);
@@ -3926,34 +3540,35 @@ async function fetchLatestSighting() {
   }
 }
 
-// How recent must a sighting be to show? (days) — older ones fall back to seasonal model
-const SIGHTING_MAX_AGE_DAYS = 14;
-
 function applySightingToBanner(s) {
-  if (!s || !s.summary) return;
-  if (s.created_at) {
-    const ageDays = (Date.now() - new Date(s.created_at).getTime()) / 86400000;
-    if (ageDays > SIGHTING_MAX_AGE_DAYS) return;  // too old; leave seasonal model
-  }
   const target = document.getElementById('banner-sealife-text');
+  const icon   = document.getElementById('banner-sealife-icon');
   if (!target) return;
-  const when = s.created_at
-    ? new Date(s.created_at).toLocaleDateString('en-AU', { day:'numeric', month:'short' })
-    : '';
-  // Prepend the live community report above the seasonal species model
-  const block = document.createElement('div');
-  block.style.cssText = 'margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed var(--border);';
-  block.innerHTML =
-    '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--ocean);margin-bottom:4px;">Latest diver reports' +
-    (when ? ' · ' + when : '') + '</div>' +
-    '<div>' + s.summary.replace(/</g,'&lt;') + '</div>';
-  target.prepend(block);
-}
 
-// Unlock via URL hash, then load any published sighting for the public banner
-window.addEventListener('DOMContentLoaded', function() {
-  if (location.hash === '#bay-admin') adminUnlock();
-});
+  const stamp = s && (s.updated_at || s.created_at);
+  let recent = false;
+  if (s && s.summary && stamp) {
+    const ageDays = (Date.now() - new Date(stamp).getTime()) / 86400000;
+    recent = ageDays <= SIGHTING_MAX_AGE_DAYS;
+  } else if (s && s.summary) {
+    recent = true;
+  }
+
+  if (!recent) {
+    target.innerHTML = 'No recent sightings posted yet \u2014 check the VIZ group for the latest from the water.';
+    if (icon) icon.textContent = '\uD83D\uDC22';
+    return;
+  }
+
+  const when = stamp
+    ? new Date(stamp).toLocaleDateString('en-AU', { day:'numeric', month:'short' })
+    : '';
+  target.innerHTML =
+    '<div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--ocean);margin-bottom:4px;">Latest diver reports' +
+    (when ? ' \u00B7 ' + when : '') + '</div>' +
+    '<div>' + s.summary.replace(/</g,'&lt;') + '</div>';
+  if (icon) icon.textContent = '\uD83D\uDC20';
+}
 
 </script>
 </body>
