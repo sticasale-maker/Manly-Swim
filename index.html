@@ -266,6 +266,23 @@
   .cal-metric-val { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; }
 
   /* ── Pollution strip ── */
+  /* ── Forecasted Values box (slider-driven) ── */
+  .forecast-values {
+    background: rgba(255,255,255,0.45);
+    border: 1.5px solid rgba(10,126,164,0.3);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .forecast-values-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--deep); font-weight: 700;
+    margin-bottom: 10px; padding-bottom: 7px;
+    border-bottom: 1.5px solid rgba(10,126,164,0.2);
+  }
+  .forecast-values .conditions-bar { margin-bottom: 0; }
+  .pollution-strip.pollution-full { flex: none; width: 100%; margin-bottom: 10px; }
   .quality-row {
     display: flex;
     gap: 10px;
@@ -464,12 +481,12 @@
     padding:8px 10px;
     margin-bottom:10px;
     display:grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap:2px;
   }
   .wx-item { text-align:center; padding:4px 2px; }
   .wx-icon { font-size:22px; margin-bottom:2px; }
-  .wx-val  { font-family:'Bebas Neue',sans-serif; font-size:30px; color:var(--deep); line-height:1; }
+  .wx-val  { font-family:'Bebas Neue',sans-serif; font-size:26px; color:var(--deep); line-height:1; }
   .wx-unit { font-size:10px; color:var(--dim); letter-spacing:0.5px; text-transform:uppercase; margin-top:2px; }
   .wx-label{ font-size:10px; color:var(--dim); letter-spacing:0.5px; text-transform:uppercase; margin-top:2px; }
   .wx-feels { font-family:'Bebas Neue',sans-serif; font-size:15px; color:var(--ocean); letter-spacing:1px; margin-top:2px; }
@@ -792,33 +809,64 @@
     gap:16px; justify-content:space-between;
   }
   .about-link {
-    display: inline-flex; align-items: center; gap: 6px;
+    display: inline-flex; align-items: center; gap: 7px;
     background: none; border: none; cursor: pointer;
     font-family: 'DM Mono', monospace; font-size: 12px;
     color: var(--green); letter-spacing: 0.5px;
     padding: 4px 2px; flex-shrink: 0;
-    animation: aboutPulse 2.4s ease-in-out infinite alternate;
   }
-  .about-link:hover { color: var(--deep); animation-play-state: paused; }
-  .about-info-icon { font-size: 16px; line-height: 1; }
+  .about-link:hover { color: var(--deep); }
+  .about-link:hover .about-info-icon { animation-play-state: paused; }
+  .about-info-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--green); color: #fff;
+    font-family: Georgia, 'Times New Roman', serif; font-weight: 700;
+    font-size: 13px; line-height: 1;
+    font-style: normal; flex-shrink: 0;
+    animation: aboutPulse 1.8s ease-in-out infinite;
+  }
   .about-link-text { text-decoration: underline; }
   @keyframes aboutPulse {
-    from { opacity: 0.45; }
-    to   { opacity: 1; }
+    0%   { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0 0 rgba(26,158,110,0.5); }
+    50%  { opacity: 1;   transform: scale(1);   box-shadow: 0 0 0 6px rgba(26,158,110,0); }
+    100% { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0 0 rgba(26,158,110,0); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .about-link { animation: none; opacity: 1; }
+    .about-info-icon { animation: none; opacity: 1; transform: none; }
   }
-  .about-back {
-    background: none; border: 1px solid var(--border); cursor: pointer;
-    font-family: 'DM Mono', monospace; font-size: 12px;
-    color: var(--ocean); letter-spacing: 0.5px;
-    padding: 6px 12px; border-radius: 8px; margin-bottom: 14px;
+  #about-overlay {
+    display: none; position: fixed; inset: 0; z-index: 2000;
+    background: rgba(6,46,62,0.45); backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    padding: 0;
   }
-  .about-back:hover { border-color: var(--ocean); }
+  #about-overlay.open { display: block; }
+  .about-sheet {
+    position: relative;
+    background: var(--foam);
+    width: 100%; max-width: 640px;
+    margin: 0 auto;
+    max-height: 100vh; max-height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 16px calc(env(safe-area-inset-bottom) + 24px);
+    box-shadow: 0 10px 40px rgba(6,46,62,0.35);
+  }
+  .about-close {
+    position: sticky; top: 0; float: right; z-index: 10;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--ocean); color: #fff;
+    border: none; cursor: pointer;
+    font-size: 18px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 10px rgba(6,46,62,0.25);
+    margin-bottom: 6px;
+  }
+  .about-close:hover { background: var(--deep); }
   .status-bar {
     font-size:9px; color:var(--dim); letter-spacing:0.5px;
-    margin-bottom:12px;
+    margin-top:10px; padding-bottom:8px; text-align:center;
     min-height:14px;
   }
 
@@ -897,8 +945,8 @@
         <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--ocean);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">GEM MODEL</span></div>
       </div>
     </div>
-    <button class="about-link" onclick="switchTab('about')" aria-label="About this app">
-      <span class="about-info-icon" aria-hidden="true">ⓘ</span>
+    <button class="about-link" onclick="openAbout()" aria-label="About this app">
+      <span class="about-info-icon" aria-hidden="true">i</span>
       <span class="about-link-text">About this app</span>
     </button>
   </header>
@@ -985,8 +1033,6 @@
     <br>Check your connection and try again.
     <br><button class="retry-btn" onclick="retryLoad()">↺ Try Again</button>
   </div>
-
-  <div class="status-bar" id="statusBar">Loading…</div>
 
   <!-- Tab bar -->
   <div class="tab-bar">
@@ -1092,48 +1138,90 @@
     <!-- DEBUG PANEL — only visible with ?model=gem&debug=1 -->
     <div id="gemDebug" style="display:none;margin:0 0 10px;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;"></div>
 
-    <div class="weather-strip" id="weatherStrip">
-      <div class="wx-item">
-        <div class="wx-icon">🌡</div>
-        <div class="wx-val" id="wxTemp">—</div>
-        <div class="wx-unit">°C · FEELS <span id="wxFeels">—</span>°</div>
+    <!-- FORECASTED VALUES — everything here updates with the slider -->
+    <div class="forecast-values">
+      <div class="forecast-values-title">Forecasted Values</div>
+
+      <div class="weather-strip" id="weatherStrip">
+        <div class="wx-item">
+          <div class="wx-icon">🌡</div>
+          <div class="wx-val" id="wxTemp">—</div>
+          <div class="wx-unit">°C · FEELS <span id="wxFeels">—</span>°</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon" id="wxWindIcon">💨</div>
+          <div class="wx-val" id="wxWind">—</div>
+          <div class="wx-unit">km/h · <span id="wxWindDir">—</span></div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon" id="wxSkyIcon">☁️</div>
+          <div class="wx-val" id="wxCloud">—</div>
+          <div class="wx-unit">% cloud</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon">🌧</div>
+          <div class="wx-val" id="wxRain">—</div>
+          <div class="wx-unit">% rain</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon">🌊</div>
+          <div class="wx-val" id="seaTempVal">—</div>
+          <div class="wx-unit">°C sea</div>
+        </div>
       </div>
-      <div class="wx-item">
-        <div class="wx-icon" id="wxWindIcon">💨</div>
-        <div class="wx-val" id="wxWind">—</div>
-        <div class="wx-unit">km/h · <span id="wxWindDir">—</span></div>
-      </div>
-      <div class="wx-item">
-        <div class="wx-icon" id="wxSkyIcon">☁️</div>
-        <div class="wx-val" id="wxCloud">—</div>
-        <div class="wx-unit">% cloud</div>
-      </div>
-      <div class="wx-item">
-        <div class="wx-icon">🌧</div>
-        <div class="wx-val" id="wxRain">—</div>
-        <div class="wx-unit">% rain</div>
+
+      <!-- Conditions bar -->
+      <div class="conditions-bar">
+        <div class="cond-card">
+          <div class="cond-label">Wind</div>
+          <div class="cond-value" id="sWind">—</div>
+          <div class="cond-unit" id="sWindDir">—</div>
+        </div>
+        <div class="cond-card">
+          <div class="cond-label">Primary Swell</div>
+          <div class="cond-value" id="sSwell1H">—</div>
+          <div class="cond-unit" id="sSwell1D">—</div>
+          <div class="cond-sub" id="sSwell1P">—</div>
+        </div>
+        <div class="cond-card" id="sSwell2Card" style="display:none">
+          <div class="cond-label">Secondary Swell</div>
+          <div class="cond-value" id="sSwell2H">—</div>
+          <div class="cond-unit" id="sSwell2D">—</div>
+          <div class="cond-sub" id="sSwell2P">—</div>
+        </div>
+        <div class="cond-card" id="sWindWaveCard" style="display:none">
+          <div class="cond-label">Wind Wave</div>
+          <div class="cond-value" id="sWindWaveH">—</div>
+          <div class="cond-unit" id="sWindWaveD">—</div>
+          <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
+        </div>
+        <div class="cond-card" style="flex:none; min-width:0;">
+          <div class="cond-label">Tide</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div>
+              <div class="cond-value" id="sTide" style="font-size:22px;">—</div>
+              <div class="cond-unit">metres</div>
+            </div>
+            <div style="font-size:11px; color:var(--dim); line-height:1.8; white-space:nowrap;" id="sunInfo">
+              <div><span style="font-size:14px;">🌅</span> <strong style="color:var(--ocean);" id="sunriseTime">—</strong></div>
+              <div><span style="font-size:14px;">🌇</span> <strong style="color:var(--ocean);" id="sunsetTime">—</strong></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Water quality + sea temp row -->
-    <div class="quality-row">
-      <div class="sea-temp-card">
-        <div class="sea-temp-icon">🌊</div>
-        <div class="sea-temp-val" id="seaTempVal">—</div>
-        <div class="sea-temp-unit">°C</div>
-        <div class="sea-temp-label">Sea Temp</div>
+    <!-- Water quality -->
+    <div class="pollution-strip pollution-full" id="pollutionStrip">
+      <div class="pollution-label">
+        Water Quality
+        <span>Today · Beachwatch NSW</span>
+        <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
       </div>
-      <div class="pollution-strip" id="pollutionStrip">
-        <div class="pollution-label">
-          Water Quality
-          <span>Today · Beachwatch NSW</span>
-          <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
-        </div>
-        <div class="pollution-divider"></div>
-        <div class="pollution-forecast">
-          <div class="pollution-text unknown" id="pollutionText">—</div>
-          <div class="pollution-sub" id="pollutionSub"></div>
-        </div>
+      <div class="pollution-divider"></div>
+      <div class="pollution-forecast">
+        <div class="pollution-text unknown" id="pollutionText">—</div>
+        <div class="pollution-sub" id="pollutionSub"></div>
       </div>
     </div>
 
@@ -1147,45 +1235,6 @@
       <button class="bb-btn" id="bbBtn" onclick="bbReport()">Report</button>
     </div>
 
-    <!-- Conditions bar -->
-    <div class="conditions-bar">
-      <div class="cond-card">
-        <div class="cond-label">Wind</div>
-        <div class="cond-value" id="sWind">—</div>
-        <div class="cond-unit" id="sWindDir">—</div>
-      </div>
-      <div class="cond-card">
-        <div class="cond-label">Primary Swell</div>
-        <div class="cond-value" id="sSwell1H">—</div>
-        <div class="cond-unit" id="sSwell1D">—</div>
-        <div class="cond-sub" id="sSwell1P">—</div>
-      </div>
-      <div class="cond-card" id="sSwell2Card" style="display:none">
-        <div class="cond-label">Secondary Swell</div>
-        <div class="cond-value" id="sSwell2H">—</div>
-        <div class="cond-unit" id="sSwell2D">—</div>
-        <div class="cond-sub" id="sSwell2P">—</div>
-      </div>
-      <div class="cond-card" id="sWindWaveCard" style="display:none">
-        <div class="cond-label">Wind Wave</div>
-        <div class="cond-value" id="sWindWaveH">—</div>
-        <div class="cond-unit" id="sWindWaveD">—</div>
-        <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
-      </div>
-      <div class="cond-card" style="flex:none; min-width:0;">
-        <div class="cond-label">Tide</div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <div>
-            <div class="cond-value" id="sTide" style="font-size:22px;">—</div>
-            <div class="cond-unit">metres</div>
-          </div>
-          <div style="font-size:11px; color:var(--dim); line-height:1.8; white-space:nowrap;" id="sunInfo">
-            <div><span style="font-size:14px;">🌅</span> <strong style="color:var(--ocean);" id="sunriseTime">—</strong></div>
-            <div><span style="font-size:14px;">🌇</span> <strong style="color:var(--ocean);" id="sunsetTime">—</strong></div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Shark strip -->
     <a class="shark-strip"
@@ -1219,10 +1268,11 @@
     </div>
   </div>
 
-  <!-- ABOUT TAB -->
-  <div class="view-panel" id="panel-about">
-    <button class="about-back" onclick="switchTab('snapshot')">← Back</button>
-    <div class="about-panel">
+  <!-- ABOUT — overlay popup, opens from top -->
+  <div id="about-overlay" onclick="if(event.target===this)closeAbout()">
+    <div class="about-sheet">
+      <button class="about-close" onclick="closeAbout()" aria-label="Close">✕</button>
+      <div class="about-panel">
       <p style="font-size:13px;"><strong>SWIM MANLY — VIZ FORECAST APP</strong></p>
       <p style="font-size:13px;margin-bottom:14px;">Custom swim conditions forecast for South Steyne, Manly, generated by our proprietary wave-modeling engine.</p>
 
@@ -1258,20 +1308,17 @@
         <div id="cmpMetrics" style="margin-top:10px;"></div>
       </div>
     </div>
-  </div>
+    </div><!-- /about-sheet -->
+  </div><!-- /about-overlay -->
 
 
   <div id="tl-tooltip"></div>
 
   <!-- Footer -->
   <div class="page-footer">
-    <div class="legend">
-      <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div>Easy (40–60)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:var(--yellow)"></div>Caution (20–39)</div>
-      <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Avoid (&lt;20)</div>
-    </div>
     <div class="last-updated" id="lastUpdated">Loading…</div>
   </div>
+  <div class="status-bar" id="statusBar">Loading…</div>
 
 </div><!-- /wrap -->
 
@@ -2162,13 +2209,31 @@ function switchTab(tab) {
   document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + tab).classList.add('active');
-  const labelFor = { snapshot:'timeline', timeline:'heatmap', about:'about' };
+  const labelFor = { snapshot:'timeline', timeline:'heatmap' };
   const want = labelFor[tab] || tab;
   document.querySelectorAll('.tab-btn').forEach(b => {
     if (b.textContent.toLowerCase().includes(want)) b.classList.add('active');
   });
-  if (tab === 'about') { syncCalFromForecast(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
 }
+
+// About — overlay popup (not a tab)
+function openAbout() {
+  const ov = document.getElementById('about-overlay');
+  if (!ov) return;
+  if (typeof syncCalFromForecast === 'function') syncCalFromForecast();
+  ov.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  const sheet = ov.querySelector('.about-sheet');
+  if (sheet) sheet.scrollTop = 0;
+  document.addEventListener('keydown', _aboutEsc);
+}
+function closeAbout() {
+  const ov = document.getElementById('about-overlay');
+  if (ov) ov.classList.remove('open');
+  document.body.style.overflow = '';
+  document.removeEventListener('keydown', _aboutEsc);
+}
+function _aboutEsc(e) { if (e.key === 'Escape') closeAbout(); }
 
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) return;
@@ -3019,6 +3084,7 @@ loadConfig().then(() => {
 
 
 function syncCalFromForecast() {
+  if (!document.getElementById('calSyncLabel')) return;
   if (!_matrix || !_matrix[_sliderIdx]) {
     document.getElementById('calSyncLabel').textContent = '⚠ No forecast loaded yet';
     document.getElementById('calSyncBanner').style.borderColor = 'var(--yellow)';
