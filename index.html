@@ -666,7 +666,7 @@
     border-radius: var(--radius);
     padding: 12px 14px 14px;
     margin-bottom: 10px;
-    max-height: 300px;
+    max-height: 900px;
     overflow: hidden;
     opacity: 1;
     transition: max-height 0.5s cubic-bezier(0.4,0,0.2,1),
@@ -707,15 +707,44 @@
   }
   .banner-text {
     font-family: 'DM Mono', monospace;
-    font-size: 15px;
+    font-size: 13px;
     color: var(--text);
-    line-height: 1.7;
+    line-height: 1.65;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
   .banner-text em {
     font-style: normal;
     color: var(--ocean);
     font-weight: 500;
   }
+  .sealife-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .sealife-item {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    flex-wrap: wrap;
+  }
+  .sealife-pill {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 2px 6px;
+    flex-shrink: 0;
+    color: #fff;
+  }
+  .pill-resident { background: var(--ocean); }
+  .pill-likely   { background: var(--green); }
+  .pill-possible { background: var(--amber); }
+  .pill-rare     { background: var(--dim); }
   .banner-divider {
     height: 1px;
     background: var(--border);
@@ -856,6 +885,17 @@
       <div class="banner-body">
         <div class="banner-label">IN THE WATER</div>
         <div class="banner-text" id="banner-water-text">
+          <div class="banner-skeleton"></div>
+          <div class="banner-skeleton short"></div>
+        </div>
+      </div>
+    </div>
+    <div class="banner-divider"></div>
+    <div class="banner-section">
+      <div class="banner-icon" id="banner-sealife-icon">🐢</div>
+      <div class="banner-body">
+        <div class="banner-label">IN THE BAY THIS MONTH</div>
+        <div class="banner-text" id="banner-sealife-text">
           <div class="banner-skeleton"></div>
           <div class="banner-skeleton short"></div>
         </div>
@@ -3416,6 +3456,166 @@ async function generateBannerSummary() {
 
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
+
+  // Sealife section
+  generateBannerSealife(rows);
+}
+
+// =============================================================================
+// SEALIFE BANNER — monthly species likelihood for Cabbage Tree Bay
+// Data sourced from VIZ Tracking Project (Marco Bordieri, 2019–2023)
+// =============================================================================
+function generateBannerSealife(rows) {
+
+  // Monthly presence data — index 0=Jan … 11=Dec
+  // Likelihood: 'resident' | 'likely' | 'possible' | 'rare' | null (absent)
+  // SST thresholds used to refine dynamically where noted
+  const SPECIES = [
+    {
+      name: 'Sea Turtle',
+      emoji: '🐢',
+      months: ['possible','possible','possible','likely','likely','likely','likely','likely','likely','likely','likely','possible'],
+      note: [
+        'Resident green and hawksbill turtles are seen most mornings — check the sandy patches near the mooring buoys.',
+        'Keep a quiet eye on the bottom near the mooring buoys — the resident turtles tend to cruise through most mornings.',
+        'The bay\'s resident turtles are out there — they favour the sandy areas between the reef patches. Slow, steady swimming gives you the best chance of a close pass.',
+        'Good turtle month. Scan the sandy bottom slowly as you cross the bay — they\'re often resting near the mooring chains.',
+      ],
+      link: 'https://viz.net.au',
+    },
+    {
+      name: 'Port Jackson Shark',
+      emoji: '🦈',
+      // Arrive June/July (~17–19°C), peak Jul–Oct mating, gone by Dec
+      months: [null, null, null, null, null, 'possible', 'likely', 'likely', 'likely', 'likely', 'possible', null],
+      sstMin: 14, sstMax: 20, // only present in cooler water
+      note: [
+        'Port Jackson Sharks are back for their winter breeding season. Look under ledges and in crevices along the reef — they rest in groups during the day.',
+        'PJ season is well underway. These gentle bottom-dwellers wedge themselves under ledges to rest — check any dark overhang as you swim along the reef wall.',
+        'Port Jacksons are around in numbers right now. Pairs are often spotted together during mating — give them space and enjoy the show.',
+      ],
+    },
+    {
+      name: 'Giant Cuttlefish',
+      emoji: '🦑',
+      // Arrive May/Jun, peak Jun–Aug mating, gone Oct/Nov
+      months: [null, null, null, null, 'possible', 'likely', 'likely', 'likely', 'possible', null, null, null],
+      note: [
+        'Giant Australian Cuttlefish are at peak mating season in Cabbage Tree Bay right now — this is one of the best times of year to see their extraordinary colour-changing displays.',
+        'Cuttlefish season. Keep an eye along the reef edge — males display vivid patterns to attract females and warn off rivals. Genuinely one of the ocean\'s great spectacles.',
+        'The cuttlefish are in and putting on a show. Watch for the rippling skin and colour pulses — if you hover still they\'ll often investigate you out of curiosity.',
+      ],
+    },
+    {
+      name: 'Dusky Whaler Shark',
+      emoji: '🦈',
+      // Summer only Dec–Mar, water ≥22°C
+      months: ['likely', 'likely', 'possible', null, null, null, null, null, null, null, null, 'possible'],
+      sstMin: 22,
+      note: [
+        'Dusky Whalers visit the north end of the bay in summer when the water warms up. They\'re protected and generally uninterested in swimmers — a thrilling sighting if you\'re lucky.',
+        'With water temps climbing, Dusky Whalers may be patrolling the northern edge of the bay. A dozen has been spotted on peak days — keep an eye out near the headland.',
+      ],
+    },
+    {
+      name: 'Grey Nurse Shark',
+      emoji: '🦈',
+      // Occasional Jun–Sep
+      months: [null, null, null, null, null, 'rare', 'rare', 'rare', 'rare', null, null, null],
+      note: [
+        'Grey Nurse Sharks have been making occasional appearances at CTB — a rare treat. Despite their fierce look they\'re placid and slow-moving. If you see one, give it space and savour it.',
+      ],
+    },
+    {
+      name: 'Cownose Ray',
+      emoji: '🌊',
+      // Rare swarm events Feb–Apr and Sep–Oct
+      months: [null, 'rare', 'rare', 'rare', null, null, null, null, 'rare', 'rare', null, null],
+      note: [
+        'Keep an eye out — Cownose Rays sometimes appear in formation in CTB this time of year. A fever of dozens gliding together is one of those bucket-list ocean moments.',
+      ],
+    },
+    {
+      name: 'Australian Angelshark',
+      emoji: '🦈',
+      // Rare Apr–Aug
+      months: [null, null, null, 'rare', 'rare', 'rare', 'rare', 'rare', null, null, null, null],
+      note: [
+        'Angelsharks are occasionally spotted half-buried in the sand at CTB at this time of year — very easy to miss. Scan the sandy patches slowly and look for an outline.',
+      ],
+    },
+    {
+      name: 'Little Penguin',
+      emoji: '🐧',
+      // Rare Feb–Mar only
+      months: [null, 'rare', 'rare', null, null, null, null, null, null, null, null, null],
+      note: [
+        'Little Penguins have wandered into CTB a couple of times in late summer — possibly from the North Head colony. Incredibly rare but not impossible right now.',
+      ],
+    },
+  ];
+
+  const month = new Date().getMonth(); // 0-indexed
+  const sst = rows.length ? (rows.reduce((s,r) => s + (r.seaTemp || 18), 0) / rows.length) : null;
+
+  // Filter to species that are present this month
+  const present = SPECIES.map(sp => {
+    let likelihood = sp.months[month];
+    if (!likelihood) return null;
+
+    // SST gate: suppress if water temp outside species range
+    if (sst != null) {
+      if (sp.sstMin != null && sst < sp.sstMin) return null;
+      if (sp.sstMax != null && sst > sp.sstMax) return null;
+    }
+
+    return { ...sp, likelihood };
+  }).filter(Boolean);
+
+  if (!present.length) {
+    document.getElementById('banner-sealife-text').textContent = 'No notable seasonal species expected this month — but the bay always surprises.';
+    return;
+  }
+
+  // Sort: resident → likely → possible → rare
+  const order = { resident: 0, likely: 1, possible: 2, rare: 3 };
+  present.sort((a, b) => order[a.likelihood] - order[b.likelihood]);
+
+  // Pick the lead species for the narrative note (highest likelihood, prefer turtle)
+  const lead = present.find(s => s.name === 'Sea Turtle') || present[0];
+  const leadNote = pick(lead.note);
+
+  // Build species list HTML
+  const pillLabel = { resident: 'Resident', likely: 'Likely', possible: 'Possible', rare: 'Rare' };
+  const pillClass = { resident: 'pill-resident', likely: 'pill-likely', possible: 'pill-possible', rare: 'pill-rare' };
+
+  let html = `<div class="sealife-row">`;
+  present.forEach(sp => {
+    html += `<div class="sealife-item">
+      <span class="sealife-pill ${pillClass[sp.likelihood]}">${pillLabel[sp.likelihood]}</span>
+      <span>${sp.emoji} ${sp.name}</span>
+    </div>`;
+  });
+  html += `</div>`;
+
+  // Append lead narrative
+  html += `<div style="margin-top:8px;">${leadNote}</div>`;
+
+  // SST context line
+  if (sst != null) {
+    const sstRound = sst.toFixed(1);
+    let sstLine = '';
+    if (sst >= 22) sstLine = ` Water at <em>${sstRound}°C</em> — prime conditions for summer visitors.`;
+    else if (sst >= 19) sstLine = ` Water at <em>${sstRound}°C</em> — warming up, transition season in the bay.`;
+    else if (sst >= 16) sstLine = ` Water at <em>${sstRound}°C</em> — cool enough for the winter regulars.`;
+    else sstLine = ` Water at <em>${sstRound}°C</em> — cold water brings its own residents.`;
+    html += `<div style="margin-top:5px;font-size:11px;color:var(--dim);">${sstLine}</div>`;
+  }
+
+  document.getElementById('banner-sealife-text').innerHTML = html;
+
+  // Set icon to lead species emoji
+  document.getElementById('banner-sealife-icon').textContent = lead.emoji;
 }
 
 
