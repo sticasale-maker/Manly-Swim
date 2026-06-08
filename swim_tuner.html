@@ -137,6 +137,31 @@
   <div class="note" id="triageCount"></div>
 </div>
 
+<div class="card" id="dumpCard">
+  <h2>1c · Date-range dump → CSV (for hand-tuning against your own reports)</h2>
+  <div class="note">
+    Fetches conditions for every day in a range at a fixed hour, runs the unchanged GEM
+    <code>calcScore()</code>, and downloads a CSV — one row per day, with empty
+    <b>report</b> / <b>entry</b> / <b>swim</b> / <b>surge</b> / <b>notes</b> columns for you to fill
+    by hand from your own 6am source. No blog, no AI. Walks in rate-limit-safe chunks with an
+    auto-pause so Open-Meteo's free archive doesn't throttle.
+  </div>
+  <div class="row" style="margin-top:10px">
+    <div style="flex:0 0 140px"><label>Start date</label><input id="dumpStart" type="date"></div>
+    <div style="flex:0 0 140px"><label>End date</label><input id="dumpEnd" type="date"></div>
+    <div style="flex:0 0 90px"><label>Hour</label><input id="dumpHour" type="number" min="0" max="23" value="6" style="text-align:center"></div>
+    <div style="flex:0 0 100px"><label>Chunk size</label><input id="dumpChunk" type="number" min="10" max="120" value="60" style="text-align:center"></div>
+    <div style="flex:0 0 110px"><label>Pause (sec)</label><input id="dumpPause" type="number" min="0" max="120" value="20" style="text-align:center"></div>
+    <div style="flex:0 0 auto"><button id="dumpBtn">Dump range → CSV</button></div>
+    <div style="flex:0 0 auto"><button id="dumpStopBtn" class="ghost" disabled>Stop</button></div>
+  </div>
+  <div class="note">Defaults: last 6 months auto-filled, 6am, 60-day chunks with a 20s pause between. ~365 days ≈ 4 chunks ≈ a few minutes incl. pauses. If a chunk fails it retries once, then pauses longer.</div>
+  <div style="margin-top:10px;height:10px;background:rgba(10,126,164,.12);border-radius:6px;overflow:hidden">
+    <div id="dumpBar" style="height:100%;width:0;background:var(--ocean);transition:width .2s"></div>
+  </div>
+  <div class="status" id="dumpStatus"></div>
+</div>
+
 <div class="card" id="resultsCard" style="display:none">
   <h2>2 · Results &amp; per-metric labels</h2>
   <div class="note">
@@ -874,6 +899,101 @@ function exportCSV(){
 function fmt(v){return v==null?'':(Math.round(v*100)/100);}
 
 // =============================================================================
+// DATE-RANGE DUMP — fetch a span at a fixed hour, score with GEM, CSV out.
+// Chunked with auto-pause to respect Open-Meteo's free archive rate limits.
+// Blank manual columns (report/entry/swim/surge/notes) for hand-tuning.
+// =============================================================================
+let DUMP_STOP=false;
+function isoDate(d){return d.toISOString().slice(0,10);}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+function initDumpDefaults(){
+  const end=new Date();
+  const start=addDays(end,-182); // ~6 months
+  document.getElementById('dumpEnd').value=isoDate(end);
+  document.getElementById('dumpStart').value=isoDate(start);
+}
+
+async function runDump(){
+  const startStr=document.getElementById('dumpStart').value;
+  const endStr=document.getElementById('dumpEnd').value;
+  const hour=Math.max(0,Math.min(23,parseInt(document.getElementById('dumpHour').value||'6',10)));
+  const chunk=Math.max(5,parseInt(document.getElementById('dumpChunk').value||'60',10));
+  const pauseMs=Math.max(0,parseInt(document.getElementById('dumpPause').value||'20',10))*1000;
+  if(!startStr||!endStr){setDumpStatus('Set both start and end dates.');return;}
+  if(!SITE.gemTable){setDumpStatus('⚠ GEM table not loaded — open with ?model=gem and wait for "GEM table loaded".');return;}
+
+  // build day list
+  const days=[]; let d=new Date(startStr+'T00:00:00');
+  const last=new Date(endStr+'T00:00:00');
+  if(last<d){setDumpStatus('End date is before start date.');return;}
+  while(d<=last){days.push(isoDate(d)); d=addDays(d,1);}
+
+  DUMP_STOP=false;
+  document.getElementById('dumpBtn').disabled=true;
+  document.getElementById('dumpStopBtn').disabled=false;
+  const out=[]; let done=0, failed=0;
+
+  for(let i=0;i<days.length;i++){
+    if(DUMP_STOP){setDumpStatus(`Stopped at ${done}/${days.length}. Downloading what's collected…`);break;}
+    const date=days[i];
+    // chunk pause
+    if(i>0 && i%chunk===0 && pauseMs>0){
+      for(let s=Math.round(pauseMs/1000);s>0 && !DUMP_STOP;s--){
+        setDumpStatus(`Chunk done (${done}/${days.length}). Pausing ${s}s to avoid rate limit…`);
+        await sleep(1000);
+      }
+    }
+    setDumpStatus(`Fetching ${date} ${String(hour).padStart(2,'0')}:00 … (${done}/${days.length}${failed?`, ${failed} failed`:''})`);
+    let inputs=null;
+    try{ inputs=await fetchInputs(date,hour); }
+    catch(e){
+      // one retry after a longer wait (likely transient throttle)
+      setDumpStatus(`${date} failed (${e.message}) — retrying after 30s…`);
+      await sleep(30000);
+      try{ inputs=await fetchInputs(date,hour); }catch(e2){ failed++; }
+    }
+    if(inputs){
+      const res=calcScore(inputs);
+      out.push({date,hour,inputs,res});
+      done++;
+    }
+    document.getElementById('dumpBar').style.width=Math.round((i+1)/days.length*100)+'%';
+  }
+
+  document.getElementById('dumpBtn').disabled=false;
+  document.getElementById('dumpStopBtn').disabled=true;
+  if(!out.length){setDumpStatus('No rows collected.');return;}
+  downloadDumpCSV(out);
+  setDumpStatus(`Done — ${out.length} day(s) dumped${failed?`, ${failed} failed (re-run those dates if needed)`:''}. CSV downloaded.`);
+}
+
+function downloadDumpCSV(rows){
+  const head=[
+    // model inputs
+    'date','hour','wind_kmh','wind_dir','swell_h','swell_p','swell_dir',
+    'windwave_h','windwave_p','windwave_dir','sst','tide_m',
+    // gem scores
+    'score','entry_score','entry_zone','swim_q7','swim_zone','surge_raw','surge_zone',
+    // blank manual columns — fill from your own 6am source
+    'report','my_entry','my_swim','my_surge','notes'
+  ];
+  const lines=rows.map(r=>{const i=r.inputs,s=r.res;return [
+    r.date,r.hour,fmt(i.windKmh),fmt(i.windDir),fmt(i.swell1H),fmt(i.swell1P),fmt(i.swell1Dir),
+    fmt(i.windWaveH),fmt(i.windWaveP),fmt(i.windWaveDir),fmt(i._sst),fmt(i.tideM),
+    s.score,s.entry.score,s.entry.label,s.swim.raw.toFixed(2),s.swim.label,
+    s.water.raw.toFixed(2),s.water.label,
+    '','','','',''  // report, my_entry, my_swim, my_surge, notes
+  ].join(',');});
+  const csv=[head.join(','),...lines].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='swim_dump_'+rows[0].date+'_to_'+rows[rows.length-1].date+'.csv';a.click();
+}
+function setDumpStatus(s){document.getElementById('dumpStatus').textContent=s;}
+
+// =============================================================================
 // WIRE UP
 // =============================================================================
 document.getElementById('runBtn').onclick=runAll;
@@ -884,6 +1004,9 @@ document.getElementById('keepAllBtn').onclick=keepAll;
 document.getElementById('keepNoneBtn').onclick=keepNone;
 document.getElementById('keepRoughBtn').onclick=keepRough;
 document.getElementById('useInterpret').onchange=renderTriage;
+document.getElementById('dumpBtn').onclick=runDump;
+document.getElementById('dumpStopBtn').onclick=()=>{DUMP_STOP=true;};
+initDumpDefaults();
 loadAllConfig();
 </script>
 </body>
