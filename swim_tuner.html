@@ -91,12 +91,23 @@
       <button id="runBtn">Fetch &amp; score all dates</button>
     </div>
     <div style="flex:0 0 auto">
-      <button class="ghost" id="discoverBtn">Discover recent posts →</button>
+      <button class="ghost" id="discoverBtn">Discover posts →</button>
+    </div>
+    <div style="flex:0 0 90px">
+      <label>Index pages</label>
+      <input id="pageCount" type="number" min="1" max="40" value="3" style="text-align:center">
+    </div>
+    <div style="flex:0 0 auto;padding-bottom:9px">
+      <label style="margin-bottom:2px">&nbsp;</label>
+      <label style="text-transform:none;letter-spacing:0;color:var(--text);font-size:12px;cursor:pointer">
+        <input type="checkbox" id="borderlineOnly" style="width:auto;margin-right:6px;vertical-align:middle">borderline/rough only
+      </label>
     </div>
     <div style="flex:0 0 auto">
       <button class="ghost" id="exportBtn" disabled>Export CSV</button>
     </div>
   </div>
+  <div class="note">Each blog index page lists ~16 posts. 3 pages ≈ 7 weeks; 12 pages ≈ 6 months. Discover sorts rough/borderline days to the top and marks auto-guessed labels with a <span style="color:var(--yellow);font-weight:700">●</span> for you to confirm.</div>
   <div class="status" id="status"></div>
 </div>
 
@@ -425,6 +436,58 @@ const LABEL_CLS = {
 
 function setStatus(s){document.getElementById('status').textContent=s;}
 
+// =============================================================================
+// AUTO-LABELER — guess per-metric sentiment from blog text by keyword.
+// Returns {entry,swim,surge} where each is a label string, or '' if no signal.
+// Severity scale 0(best)..3(worst) maps to each metric's 4 labels.
+// You confirm/correct every guess in the dropdowns — this just saves typing.
+// =============================================================================
+const KW = {
+  // worsening signals (higher severity), with the metric(s) they bear on
+  rough: [
+    {re:/\b(huge|massive|enormous|wild|treacherous|dangerous|brutal|monster)\b/, sev:3, m:['entry','swim','surge']},
+    {re:/\b(big seas?|heavy|rough|churned|washing machine|maelstrom|smashed|pounding|battered)\b/, sev:3, m:['entry','swim','surge']},
+    {re:/\b(strong rips?|powerful current|dragged|sweeping|pulled|ripping)\b/, sev:3, m:['surge','entry']},
+    {re:/\b(messy|confused|sloppy|lumpy|bumpy|disorganised|disorganized)\b/, sev:3, m:['swim']},
+    {re:/\b(choppy|chop|whitecaps?|wind against|blown out|onshore)\b/, sev:2, m:['swim']},
+    {re:/\b(surge|surgy|surging|bouncy|sloshing|sucking|backwash)\b/, sev:2, m:['surge']},
+    {re:/\b(swell|sets? rolling in|rolling in|sizeable|decent surf|good surf)\b/, sev:2, m:['surge','entry']},
+    {re:/\b(tricky entry|hard to get (in|out)|tough entry|scrambl|timed? (it|our|my) )\b/, sev:2, m:['entry']},
+    {re:/\b(took the shelly|shelly option|swam (at|in) shelly|opted for shelly|stayed in the (bay|cove))\b/, sev:2, m:['entry','swim','surge']},
+    {re:/\b(bit (of )?(a )?(swell|chop|movement)|some movement|a little (rough|choppy)|moderate)\b/, sev:1, m:['swim','surge']},
+  ],
+  // calm signals (lower severity)
+  calm: [
+    {re:/\b(glassy|mirror|flat calm|millpond|dead calm|like glass|silky)\b/, sev:0, m:['swim','surge','entry']},
+    {re:/\b(gentle|calm|calming|serene|tranquil|peaceful|smooth|easy|benign|placid|still water|silver seas?)\b/, sev:0, m:['swim','surge','entry']},
+    {re:/\b(rolling waves?|gentle (roll|swell)|small (swell|waves?)|clean)\b/, sev:1, m:['surge']},
+    {re:/\b(lovely|beautiful|spectacular|stunning|perfect|magic|gorgeous|delightful)\b/, sev:0, m:['entry','swim']},
+    {re:/\b(clear water|so many fish|fish galore|crystal|great viz|good viz)\b/, sev:0, m:['surge']}, // clarity ≈ low energy
+  ],
+};
+const SEV_LABEL = {
+  entry:['Easy','Doable','Caution','Dangerous'],
+  swim:['Glassy','Ripply','Choppy','Messy'],
+  surge:['Steady','Drifty','Surgy','Washy'],
+};
+function autoLabel(text){
+  const t=(text||'').toLowerCase();
+  // accumulate the strongest severity seen per metric, separately for rough/calm
+  const hi={entry:null,swim:null,surge:null};  // worst (max) severity from rough hits
+  const lo={entry:null,swim:null,surge:null};  // best (min) severity from calm hits
+  KW.rough.forEach(k=>{ if(k.re.test(t)) k.m.forEach(m=>{ hi[m]=Math.max(hi[m]??-1,k.sev); }); });
+  KW.calm.forEach(k=>{ if(k.re.test(t)) k.m.forEach(m=>{ lo[m]=Math.min(lo[m]??99,k.sev); }); });
+  const out={entry:'',swim:'',surge:''};
+  ['entry','swim','surge'].forEach(m=>{
+    let sev=null;
+    if(hi[m]!=null && lo[m]!=null) sev=Math.round((hi[m]+lo[m])/2); // mixed text → middle
+    else if(hi[m]!=null) sev=hi[m];
+    else if(lo[m]!=null) sev=lo[m];
+    if(sev!=null) out[m]=SEV_LABEL[m][Math.max(0,Math.min(3,sev))];
+  });
+  return out;
+}
+
 async function runAll(){
   const lines=document.getElementById('dates').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if(!lines.length){setStatus('Add at least one date.');return;}
@@ -445,8 +508,17 @@ async function runAll(){
     try{ blog=await fetchBlog(date,slug); }catch(e){ blog={desc:'(blog error)',found:false}; }
     if(!inputs)continue;
     const result=calcScore(inputs);
+    // Auto-label from blog text where possible; fall back to model output only
+    // when the blog gives no signal (so you're confirming ground truth, not the
+    // model agreeing with itself). `auto` flags which metrics were keyword-guessed.
+    const guess=autoLabel((blog.title||'')+' '+(blog.desc||''));
     ROWS.push({date,hour,slug,inputs,result,blog,
-      labels:{entry:result.entry.label, swim:result.swim.label, surge:result.water.label}});
+      labels:{
+        entry: guess.entry || result.entry.label,
+        swim:  guess.swim  || result.swim.label,
+        surge: guess.surge || result.water.label,
+      },
+      auto:{entry:!!guess.entry, swim:!!guess.swim, surge:!!guess.surge}});
   }
   document.getElementById('runBtn').disabled=false;
   setStatus(`Done — ${ROWS.length} day(s) scored. Confirm labels below, then read the scatter.`);
@@ -478,23 +550,25 @@ function renderResults(){
       <td>${inp._sst?inp._sst.toFixed(1)+'°':'—'}</td>
       <td><b>${r.score}</b></td>
       <td>${r.entry.score}<br><span class="pill z-${r.entry.cls}">${r.entry.label}</span></td>
-      <td class="${eMis?'mismatch':''}">${labelSelect('entry',ri,row.labels.entry)}</td>
+      <td class="${eMis?'mismatch':''}">${labelSelect('entry',ri,row.labels.entry,row.auto?.entry)}</td>
       <td>${r.swim.raw.toFixed(1)}<br><span class="pill z-${r.swim.cls}">${r.swim.label}</span></td>
-      <td class="${sMis?'mismatch':''}">${labelSelect('swim',ri,row.labels.swim)}</td>
+      <td class="${sMis?'mismatch':''}">${labelSelect('swim',ri,row.labels.swim,row.auto?.swim)}</td>
       <td>${r.water.raw.toFixed(1)}<br><span class="pill z-${r.water.cls}">${r.water.label}</span></td>
-      <td class="${uMis?'mismatch':''}">${labelSelect('surge',ri,row.labels.surge)}</td>
+      <td class="${uMis?'mismatch':''}">${labelSelect('surge',ri,row.labels.surge,row.auto?.surge)}</td>
       <td style="text-align:left;max-width:220px;white-space:normal;font-size:10px">${row.blog.desc.slice(0,180)}${row.blog.desc.length>180?'…':''}</td>
     </tr>`;
   });
   h+='</tbody>';
   t.innerHTML=h;
 }
-function labelSelect(metric,ri,current){
+function labelSelect(metric,ri,current,isAuto){
   const opts=METRIC_LABELS[metric].map(l=>`<option ${l===current?'selected':''}>${l}</option>`).join('');
-  return `<select class="label-sel" onchange="setLabel('${metric}',${ri},this.value)">${opts}</select>`;
+  const mark=isAuto?'<span title="auto-guessed from blog — confirm" style="color:var(--yellow);font-weight:700;margin-left:3px">●</span>':'';
+  return `<select class="label-sel" onchange="setLabel('${metric}',${ri},this.value)">${opts}</select>${mark}`;
 }
 function setLabel(metric,ri,val){
   ROWS[ri].labels[metric]=val;
+  if(ROWS[ri].auto)ROWS[ri].auto[metric]=false; // confirmed/edited → no longer a guess
   renderResults(); renderScatter();
 }
 
@@ -566,27 +640,66 @@ function consistencyNote(metric,valFn,labelFn){
 }
 
 // =============================================================================
-// DISCOVER recent posts (fills the textarea with date | slug lines)
+// DISCOVER posts — walks N index pages, pairs slug+date+title robustly,
+// and sorts borderline/rough days first (using the auto-labeler on the title)
+// so the useful tuning days surface at the top of the list.
 // =============================================================================
 async function discover(){
-  setStatus('Fetching blog index for recent post slugs…');
+  const pages=Math.max(1,Math.min(40,parseInt(document.getElementById('pageCount').value||'3',10)));
+  const onlyInteresting=document.getElementById('borderlineOnly').checked;
+  document.getElementById('discoverBtn').disabled=true;
+  const seen=new Set(); const items=[]; // {date,slug,title,severity}
   try{
-    const html=await (await fetch(BLOG_PROXY+'?list=1&page=1')).text();
-    // links of form https://boldandbeautifulswim.com.au/<slug>/ with a date nearby
-    const re=/https:\/\/boldandbeautifulswim\.com\.au\/([a-z0-9-]+)\/"[^>]*>\s*([0-9]{2}\/[0-9]{2}\/[0-9]{4})/gi;
-    const seen=new Set(); const out=[];
-    let m;
-    // simpler: grab slug + the dd/mm/yyyy that follows in the listing
-    const slugRe=/boldandbeautifulswim\.com\.au\/([a-z0-9][a-z0-9-]{4,})\//gi;
-    const dateRe=/([0-3][0-9])\/([01][0-9])\/(20[0-9]{2})/g;
-    const slugs=[]; while((m=slugRe.exec(html))){if(!seen.has(m[1])&&!/^(login|logout|page|category|my-account|registration|wp-content)/.test(m[1])){seen.add(m[1]);slugs.push(m[1]);}}
-    const dates=[]; while((m=dateRe.exec(html))){dates.push(`${m[3]}-${m[2]}-${m[1]}`);}
-    const n=Math.min(slugs.length,dates.length,15);
-    for(let i=0;i<n;i++) out.push(`${dates[i]} 07:00 | ${slugs[i]}`);
-    if(out.length){document.getElementById('dates').value=out.join('\n');
-      setStatus(`Loaded ${out.length} recent posts — edit the list, then "Fetch & score".`);}
-    else setStatus('Could not parse posts — is the /blog Worker route live?');
-  }catch(e){setStatus('Discover failed: '+e.message+' (add the /blog route to your Worker first)');}
+    for(let p=1;p<=pages;p++){
+      setStatus(`Discovering — page ${p}/${pages} … (${items.length} posts so far)`);
+      let html;
+      try{ html=await (await fetch(`${BLOG_PROXY}?list=1&page=${p}`)).text(); }
+      catch(e){ setStatus('Discover failed on page '+p+': '+e.message); break; }
+      // Each listing entry: a post anchor (title+slug) followed by a dated anchor.
+      // Match the post link with its visible title, then the nearest dd/mm/yyyy.
+      // Anchor form: ...boldandbeautifulswim.com.au/<slug>/"...>TITLE</a> ... dd/mm/yyyy
+      const entryRe=/boldandbeautifulswim\.com\.au\/([a-z0-9][a-z0-9-]{4,})\/"[^>]*>\s*([^<]{3,120}?)\s*<\/a>[\s\S]{0,400}?([0-3][0-9])\/([01][0-9])\/(20[0-9]{2})/gi;
+      let m, found=0;
+      while((m=entryRe.exec(html))){
+        const slug=m[1];
+        if(/^(login|logout|page|category|my-account|registration|wp-content|wp-login|feed|comments)/.test(slug))continue;
+        if(seen.has(slug))continue;
+        seen.add(slug);
+        const title=m[2].replace(/&amp;/g,'&').replace(/&nbsp;/g,' ').replace(/&#[0-9]+;/g,'').trim();
+        const date=`${m[5]}-${m[4]}-${m[3]}`;
+        const g=autoLabel(title);
+        const sev=metricSeverity(g);
+        items.push({date,slug,title,severity:sev});
+        found++;
+      }
+      if(found===0 && p>1){ /* no more entries — stop early */ break; }
+    }
+  }finally{ document.getElementById('discoverBtn').disabled=false; }
+
+  if(!items.length){
+    setStatus('Could not parse posts — is the /blog Worker route deployed? Try opening /blog?list=1&page=1 in a browser.');
+    return;
+  }
+  // Optionally keep only days whose title shows a condition signal, then sort
+  // most-interesting first (highest severity, then most recent).
+  let list=items.slice();
+  if(onlyInteresting) list=list.filter(it=>it.severity>0);
+  list.sort((a,b)=> b.severity-a.severity || (a.date<b.date?1:-1));
+  const lines=list.map(it=>`${it.date} 07:00 | ${it.slug}`);
+  document.getElementById('dates').value=lines.join('\n');
+  const nInteresting=items.filter(it=>it.severity>0).length;
+  setStatus(`Found ${items.length} posts across ${pages} page(s) · ${nInteresting} show a condition signal`+
+    `${onlyInteresting?` (filtered to those ${list.length})`:''}. Borderline/rough sorted to top. Edit, then "Fetch & score".`);
+}
+// Rough severity of an auto-label guess: max over metrics, 0(calm)..3(rough).
+function metricSeverity(guess){
+  let s=0;
+  ['entry','swim','surge'].forEach(m=>{
+    const l=guess[m]; if(!l)return;
+    const idx=SEV_LABEL[m].indexOf(l);
+    if(idx>s)s=idx;
+  });
+  return s;
 }
 
 // =============================================================================
