@@ -666,21 +666,13 @@
     border-radius: var(--radius);
     padding: 12px 14px 14px;
     margin-bottom: 10px;
-    max-height: 900px;
     overflow: hidden;
     opacity: 1;
-    transition: max-height 0.5s cubic-bezier(0.4,0,0.2,1),
-                opacity 0.4s ease,
-                padding 0.5s cubic-bezier(0.4,0,0.2,1),
-                margin-bottom 0.5s cubic-bezier(0.4,0,0.2,1);
+    transition: opacity 0.3s ease;
     box-shadow: 0 4px 24px rgba(10,126,164,0.10);
   }
   #conditions-banner.banner-hidden {
-    max-height: 0;
-    opacity: 0;
-    padding: 0 14px;
-    margin-bottom: 0;
-    pointer-events: none;
+    display: none;
   }
   .banner-section {
     display: flex;
@@ -896,7 +888,7 @@
     <div class="banner-section">
       <div class="banner-icon" id="banner-water-icon">🏊</div>
       <div class="banner-body">
-        <div class="banner-label">IN THE WATER</div>
+        <div class="banner-label" id="banner-water-label">SWIMMING CONDITIONS</div>
         <div class="banner-text" id="banner-water-text">
           <div class="banner-skeleton"></div>
           <div class="banner-skeleton short"></div>
@@ -3192,8 +3184,15 @@ let _bannerGenerated = false;
     const h = banner.offsetHeight || 60;
     const hideAt = h + 40;
     if (y > hideAt && !hidden) {
+      // Measure the space the banner currently occupies (height + margin)
+      const rect = banner.getBoundingClientRect();
+      const mb = parseFloat(getComputedStyle(banner).marginBottom) || 0;
+      const collapseAmount = rect.height + mb;
       banner.classList.add('banner-hidden');
       hidden = true;
+      // Removing the banner from flow shifts everything below it up by
+      // collapseAmount; counter that immediately so the page doesn't jump.
+      window.scrollTo({ top: Math.max(0, y - collapseAmount), left: 0 });
     } else if (y <= 10 && hidden) {
       banner.classList.remove('banner-hidden');
       hidden = false;
@@ -3205,9 +3204,9 @@ let _bannerGenerated = false;
 function getBannerTimeContext() {
   const now = new Date();
   const h = now.getHours();
-  if (h < 12) return 'today'; // full day
-  if (h < 18) return 'rest-of-today'; // afternoon/evening
-  return 'tomorrow'; // next day
+  if (h < 12) return 'today';          // midnight–midday → today
+  if (h < 17) return 'rest-of-today';  // midday–5pm → this afternoon
+  return 'tomorrow';                   // 5pm–midnight → tomorrow
 }
 
 // Pick hourly rows for the target day
@@ -3317,6 +3316,9 @@ async function generateBannerSummary() {
   // Time label
   const labelMap = { 'today': 'TODAY', 'rest-of-today': 'THIS AFTERNOON', 'tomorrow': 'TOMORROW' };
   document.getElementById('banner-wx-label').textContent = `${labelMap[timeCtx]}'S CONDITIONS`;
+  const dayPhrase = { 'today': 'TODAY', 'rest-of-today': 'THIS AFTERNOON', 'tomorrow': 'TOMORROW' }[timeCtx];
+  const waterLabelEl = document.getElementById('banner-water-label');
+  if (waterLabelEl) waterLabelEl.textContent = `SWIMMING CONDITIONS · ${dayPhrase}`;
 
   // ── Generate colloquial summary locally
   const entryBad = ['Caution','Dangerous'].includes(domEntry);
@@ -3456,6 +3458,13 @@ async function generateBannerSummary() {
     }
 
     waterText = parts.join('');
+  }
+
+  // Re-word "today" in the prose to match the forecast period
+  if (timeCtx === 'tomorrow') {
+    waterText = waterText.replace(/\btoday\b/g, 'tomorrow').replace(/\bTomorrow\b/g, 'Tomorrow');
+  } else if (timeCtx === 'rest-of-today') {
+    waterText = waterText.replace(/\btoday\b/g, 'this afternoon');
   }
 
   // Water icon
