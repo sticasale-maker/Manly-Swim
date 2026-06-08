@@ -84,7 +84,7 @@
 
 <div class="card">
   <h2>1 · Dates to test</h2>
-  <label>One date per line — <code>YYYY-MM-DD</code>, optional <code>HH:MM</code> (default 07:00, swim time). Optional <code>| slug</code> to pin the exact blog post.</label>
+  <label>Primary flow: hit <b>Discover posts</b> → triage below. Or type dates manually here — one per line, <code>YYYY-MM-DD</code>, optional <code>HH:MM</code> (default 07:00), optional <code>| slug</code>. Manual entry uses keyword labels only (no AI-interpret).</label>
   <textarea id="dates" rows="6" placeholder="2026-05-26 07:00 | tuesday-26-may-2026-big-seas&#10;2026-05-29 07:00 | friday-29-may-2026-wild-wild-water&#10;2026-05-09 08:00&#10;2026-05-21 07:00"></textarea>
   <div class="row" style="margin-top:10px">
     <div style="flex:0 0 auto">
@@ -107,8 +107,34 @@
       <button class="ghost" id="exportBtn" disabled>Export CSV</button>
     </div>
   </div>
-  <div class="note">Each blog index page lists ~16 posts. 3 pages ≈ 7 weeks; 12 pages ≈ 6 months. Discover sorts rough/borderline days to the top and marks auto-guessed labels with a <span style="color:var(--yellow);font-weight:700">●</span> for you to confirm.</div>
+  <div class="note">Each blog index page lists ~16 posts. 3 pages ≈ 7 weeks; 12 pages ≈ 6 months. Discover builds a triage list below — keep the days you want, then score only those.</div>
   <div class="status" id="status"></div>
+</div>
+
+<div class="card" id="triageCard" style="display:none">
+  <h2>1b · Triage — keep the days worth scoring</h2>
+  <div class="note">
+    Discovered posts, rough/borderline at the top. Untick days you don't want. Keep a spread:
+    the borderline + rough days set the thresholds, a handful of clearly-easy days give the green end.
+    <b>Review</b> opens the actual post so you can sanity-check before scoring.
+    The kept set is interpreted by <b>Haiku</b> at fetch time (one cheap call each) to pre-fill labels you then confirm.
+  </div>
+  <div class="row" style="margin:8px 0">
+    <div style="flex:0 0 auto"><button id="keepAllBtn" class="ghost">Keep all</button></div>
+    <div style="flex:0 0 auto"><button id="keepNoneBtn" class="ghost">Keep none</button></div>
+    <div style="flex:0 0 auto"><button id="keepRoughBtn" class="ghost">Keep rough/borderline only</button></div>
+    <div style="flex:0 0 auto;padding-bottom:9px">
+      <label style="text-transform:none;letter-spacing:0;color:var(--text);font-size:12px;cursor:pointer">
+        <input type="checkbox" id="useInterpret" checked style="width:auto;margin-right:6px;vertical-align:middle">AI-interpret kept set (Haiku)
+      </label>
+    </div>
+    <div style="flex:1"></div>
+    <div style="flex:0 0 auto"><button id="scoreKeptBtn">Fetch &amp; score kept set →</button></div>
+  </div>
+  <div style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:10px">
+    <table id="triageTable"></table>
+  </div>
+  <div class="note" id="triageCount"></div>
 </div>
 
 <div class="card" id="resultsCard" style="display:none">
@@ -423,6 +449,7 @@ const CLS_ORDER=['green','amber','yellow','red'];
 // UI STATE & RENDER
 // =============================================================================
 let ROWS=[]; // {date,hour,slug,inputs,result,blog,labels:{entry,swim,surge}}
+let TRIAGE=[]; // {date,slug,title,severity,hour,keep,guess}
 const METRIC_LABELS = {
   entry:['Easy','Doable','Caution','Dangerous'],
   swim:['Glassy','Ripply','Choppy','Messy'],
@@ -536,6 +563,7 @@ function renderResults(){
     '<th>Entry<br>raw→zone</th><th>My label</th>'+
     '<th>Swim q7<br>→zone</th><th>My label</th>'+
     '<th>Surge raw<br>→zone</th><th>My label</th>'+
+    '<th>Label src</th>'+
     '<th>Blog</th></tr></thead><tbody>';
   ROWS.forEach((row,ri)=>{
     const r=row.result, inp=row.inputs;
@@ -555,11 +583,25 @@ function renderResults(){
       <td class="${sMis?'mismatch':''}">${labelSelect('swim',ri,row.labels.swim,row.auto?.swim)}</td>
       <td>${r.water.raw.toFixed(1)}<br><span class="pill z-${r.water.cls}">${r.water.label}</span></td>
       <td class="${uMis?'mismatch':''}">${labelSelect('surge',ri,row.labels.surge,row.auto?.surge)}</td>
+      <td style="font-size:9px;color:var(--dim)">${row.lblSrc==='ai'?'AI'+(row.lblConf?' ('+row.lblConf+')':''):(row.lblSrc||'kw')}<br><button class="ghost" style="padding:2px 6px;font-size:9px" onclick="reinterpret(${ri})">re-read</button></td>
       <td style="text-align:left;max-width:220px;white-space:normal;font-size:10px">${row.blog.desc.slice(0,180)}${row.blog.desc.length>180?'…':''}</td>
     </tr>`;
   });
   h+='</tbody>';
   t.innerHTML=h;
+}
+async function reinterpret(ri){
+  const row=ROWS[ri];
+  setStatus(`Re-interpreting ${row.date} with Haiku…`);
+  try{
+    const ai=await interpretPost(row.title||row.blog.title||'', row.blog.desc||row.title||'');
+    if(ai.entry)row.labels.entry=ai.entry;
+    if(ai.swim) row.labels.swim=ai.swim;
+    if(ai.surge)row.labels.surge=ai.surge;
+    row.lblSrc='ai'; row.lblConf=ai.conf||''; if(row.auto)row.auto={entry:false,swim:false,surge:false};
+    setStatus(`Re-interpreted ${row.date}.`);
+  }catch(e){ setStatus(`Re-interpret failed for ${row.date}: ${e.message}`); }
+  renderResults(); renderScatter();
 }
 function labelSelect(metric,ri,current,isAuto){
   const opts=METRIC_LABELS[metric].map(l=>`<option ${l===current?'selected':''}>${l}</option>`).join('');
@@ -680,16 +722,121 @@ async function discover(){
     setStatus('Could not parse posts — is the /blog Worker route deployed? Try opening /blog?list=1&page=1 in a browser.');
     return;
   }
-  // Optionally keep only days whose title shows a condition signal, then sort
-  // most-interesting first (highest severity, then most recent).
+  // Sort most-interesting first (highest severity, then most recent), default
+  // keep = rough/borderline (severity>0). Build the triage list.
   let list=items.slice();
-  if(onlyInteresting) list=list.filter(it=>it.severity>0);
   list.sort((a,b)=> b.severity-a.severity || (a.date<b.date?1:-1));
-  const lines=list.map(it=>`${it.date} 07:00 | ${it.slug}`);
-  document.getElementById('dates').value=lines.join('\n');
+  TRIAGE = list.map((it,i)=>({
+    ...it, hour:7, keep: it.severity>0, guess: autoLabel(it.title),
+  }));
+  // If "borderline/rough only" was ticked, drop the calm ones entirely.
+  if(onlyInteresting) TRIAGE = TRIAGE.filter(t=>t.severity>0);
+  renderTriage();
+  document.getElementById('triageCard').style.display='block';
   const nInteresting=items.filter(it=>it.severity>0).length;
-  setStatus(`Found ${items.length} posts across ${pages} page(s) · ${nInteresting} show a condition signal`+
-    `${onlyInteresting?` (filtered to those ${list.length})`:''}. Borderline/rough sorted to top. Edit, then "Fetch & score".`);
+  setStatus(`Found ${items.length} posts across ${pages} page(s) · ${nInteresting} show a condition signal. Triage below.`);
+}
+
+// =============================================================================
+// TRIAGE TABLE
+// =============================================================================
+const SEV_PILL=['z-green','z-amber','z-yellow','z-red'];
+const SEV_NAME=['calm','mild','rough','severe'];
+function renderTriage(){
+  const t=document.getElementById('triageTable');
+  let h='<thead><tr><th>Keep</th><th>Signal</th><th>Date</th><th>Title</th>'+
+    '<th>Auto E/S/Su</th><th>Review</th></tr></thead><tbody>';
+  TRIAGE.forEach((it,i)=>{
+    const g=it.guess;
+    const gl=['entry','swim','surge'].map(m=>g[m]?g[m][0]:'·').join('/');
+    h+=`<tr style="${it.keep?'':'opacity:.45'}">
+      <td><input type="checkbox" ${it.keep?'checked':''} onchange="toggleKeep(${i},this.checked)" style="width:auto"></td>
+      <td><span class="pill ${SEV_PILL[it.severity]}">${SEV_NAME[it.severity]}</span></td>
+      <td class="day">${it.date}</td>
+      <td style="text-align:left;max-width:320px;white-space:normal;font-size:11px">${it.title}</td>
+      <td style="font-size:10px;color:var(--dim)">${gl}</td>
+      <td><a href="https://${'boldandbeautifulswim.com.au'}/${it.slug}/" target="_blank" rel="noopener" style="color:var(--ocean)">open ↗</a></td>
+    </tr>`;
+  });
+  h+='</tbody>';
+  t.innerHTML=h;
+  const kept=TRIAGE.filter(t=>t.keep).length;
+  document.getElementById('triageCount').textContent=
+    `${kept} of ${TRIAGE.length} kept for scoring`+
+    (document.getElementById('useInterpret').checked?` · will use ~${kept} Haiku calls (~$${(kept*0.0014).toFixed(2)})`:'');
+}
+function toggleKeep(i,v){TRIAGE[i].keep=v;renderTriage();}
+function keepAll(){TRIAGE.forEach(t=>t.keep=true);renderTriage();}
+function keepNone(){TRIAGE.forEach(t=>t.keep=false);renderTriage();}
+function keepRough(){TRIAGE.forEach(t=>t.keep=t.severity>0);renderTriage();}
+
+// =============================================================================
+// AI INTERPRET — send a post through the Worker /summarise route (Haiku) and
+// get back a structured per-metric label. Falls back to keyword guess on error.
+// =============================================================================
+const INTERPRET_MODEL='claude-haiku-4-5-20251001';
+const SUMMARISE_URL=WW_WORKER_BASE+'/summarise';
+async function interpretPost(title,desc){
+  const prompt=
+`You are labelling ocean-swim conditions at South Steyne / Cabbage Tree Bay, Manly, from a swim-squad blog post. Read the title and description and rate THREE things as the swimmers would have experienced them that morning.
+
+ENTRY (getting in/out at the beach): Easy | Doable | Caution | Dangerous
+SWIM (surface chop mid-swim): Glassy | Ripply | Choppy | Messy
+SURGE (swell movement/drift in the water): Steady | Drifty | Surgy | Washy
+
+If the text doesn't say enough about one of them, infer conservatively from overall tone. Reply with ONLY a JSON object, no prose, no markdown:
+{"entry":"...","swim":"...","surge":"...","conf":"high|med|low"}
+
+TITLE: ${title}
+DESCRIPTION: ${desc}`;
+  const body=JSON.stringify({
+    model:INTERPRET_MODEL, max_tokens:200,
+    messages:[{role:'user',content:prompt}],
+  });
+  const res=await fetch(SUMMARISE_URL,{method:'POST',headers:{'Content-Type':'application/json'},body});
+  if(!res.ok)throw new Error('summarise '+res.status);
+  const data=await res.json();
+  const txt=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').replace(/```json|```/g,'').trim();
+  const j=JSON.parse(txt);
+  // validate against allowed labels; fall back per-metric if odd
+  const ok=(m,v)=>SEV_LABEL[m].includes(v)?v:'';
+  return {entry:ok('entry',j.entry),swim:ok('swim',j.swim),surge:ok('surge',j.surge),conf:j.conf||'',src:'ai'};
+}
+
+// =============================================================================
+// SCORE THE KEPT SET (replaces the old "run everything in textarea" path)
+// =============================================================================
+async function scoreKept(){
+  const kept=TRIAGE.filter(t=>t.keep);
+  if(!kept.length){setStatus('Nothing kept — tick at least one day.');return;}
+  const useAI=document.getElementById('useInterpret').checked;
+  document.getElementById('scoreKeptBtn').disabled=true;
+  ROWS=[];
+  for(let i=0;i<kept.length;i++){
+    const it=kept[i];
+    setStatus(`(${i+1}/${kept.length}) ${it.date} — fetching conditions${useAI?' + interpreting':''}…`);
+    let inputs,blog;
+    try{ inputs=await fetchInputs(it.date,it.hour); }
+    catch(e){ setStatus(`Open-Meteo failed for ${it.date}: ${e.message}. Pausing — likely rate limit, wait a minute and re-run.`); break; }
+    try{ blog=await fetchBlog(it.date,it.slug); }catch(e){ blog={desc:it.title,found:false}; }
+    const result=calcScore(inputs);
+    // Start from keyword guess, then upgrade with AI if enabled.
+    let lbl={entry:it.guess.entry||result.entry.label,
+             swim:it.guess.swim||result.swim.label,
+             surge:it.guess.surge||result.water.label, src:'kw'};
+    if(useAI){
+      try{
+        const ai=await interpretPost(it.title, blog.desc||it.title);
+        lbl={entry:ai.entry||lbl.entry, swim:ai.swim||lbl.swim, surge:ai.surge||lbl.surge, conf:ai.conf, src:'ai'};
+      }catch(e){ /* keep keyword fallback */ lbl.src='kw(ai failed)'; }
+    }
+    ROWS.push({date:it.date,hour:it.hour,slug:it.slug,title:it.title,inputs,result,blog,
+      labels:{entry:lbl.entry,swim:lbl.swim,surge:lbl.surge}, lblSrc:lbl.src, lblConf:lbl.conf||''});
+  }
+  document.getElementById('scoreKeptBtn').disabled=false;
+  setStatus(`Done — ${ROWS.length} day(s) scored. Confirm labels below, then read the scatter.`);
+  renderResults(); renderScatter();
+  document.getElementById('exportBtn').disabled=ROWS.length===0;
 }
 // Rough severity of an auto-label guess: max over metrics, 0(calm)..3(rough).
 function metricSeverity(guess){
@@ -709,13 +856,14 @@ function exportCSV(){
   const head=['date','hour','windKmh','windDir','swell1H','swell1P','swell1Dir',
     'windWaveH','windWaveP','windWaveDir','sst','tideM',
     'score','entry_raw','entry_zone','entry_label',
-    'swim_q7','swim_zone','swim_label','surge_raw','surge_zone','surge_label','blog'];
+    'swim_q7','swim_zone','swim_label','surge_raw','surge_zone','surge_label','label_src','label_conf','blog'];
   const rows=ROWS.map(r=>{const i=r.inputs,res=r.result;return [
     r.date,r.hour,fmt(i.windKmh),fmt(i.windDir),fmt(i.swell1H),fmt(i.swell1P),fmt(i.swell1Dir),
     fmt(i.windWaveH),fmt(i.windWaveP),fmt(i.windWaveDir),fmt(i._sst),fmt(i.tideM),
     res.score,res.entry.score,res.entry.label,r.labels.entry,
     res.swim.raw.toFixed(2),res.swim.label,r.labels.swim,
     res.water.raw.toFixed(2),res.water.label,r.labels.surge,
+    (r.lblSrc||'kw'),(r.lblConf||''),
     '"'+(r.blog.desc||'').replace(/"/g,'""').slice(0,300)+'"'
   ].join(',');});
   const csv=[head.join(','),...rows].join('\n');
@@ -731,6 +879,11 @@ function fmt(v){return v==null?'':(Math.round(v*100)/100);}
 document.getElementById('runBtn').onclick=runAll;
 document.getElementById('discoverBtn').onclick=discover;
 document.getElementById('exportBtn').onclick=exportCSV;
+document.getElementById('scoreKeptBtn').onclick=scoreKept;
+document.getElementById('keepAllBtn').onclick=keepAll;
+document.getElementById('keepNoneBtn').onclick=keepNone;
+document.getElementById('keepRoughBtn').onclick=keepRough;
+document.getElementById('useInterpret').onchange=renderTriage;
 loadAllConfig();
 </script>
 </body>
