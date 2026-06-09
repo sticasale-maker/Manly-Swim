@@ -995,7 +995,7 @@
      
       <div>
         <div class="logo" style="font-size:36px; letter-spacing:2px;">SWIM <span>MANLY</span></div>
-        <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--ocean);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">GEM MODEL</span></div>
+        <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span></div>
       </div>
     </div>
     <button class="about-link" onclick="openAbout()" aria-label="About this app">
@@ -1405,11 +1405,12 @@ const SWIM_CONFIG_KEY  = 'swim_config_cache_v8';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
-// GEM MODEL FLAG — append ?model=gem to URL to activate
-// When active: swell1, swell2, windWave use the Gem-Cla50-50 tab 2D lookup
+// MODEL FLAG — GEM is the live default model.
+// GEM: swell1, swell2, windWave use the Gem-Cla50-50 tab 2D lookup
 // (19 dir rows × 20 period cols, % energy loss). Wind chop unchanged.
+// Append ?model=orig to fall back to the legacy Original model for comparison.
 // =============================================================================
-const GEM_MODEL = location.search.includes('model=gem');
+const GEM_MODEL = !location.search.includes('model=orig');
 const GEM_DEBUG = location.search.includes('debug=1');
 // Optional URL override for the wind-wave route blend (0=arrival/point … 1=route/line).
 // e.g. ?wwblend=1 forces pure route geometry for A/B testing without editing the sheet.
@@ -1629,7 +1630,7 @@ async function loadConfig() {
   } catch(e) {}
 
   try {
-    const res = await fetch(SHEET_CSV_URL + '&t=' + Date.now());
+    const res = await fetchWithTimeout(SHEET_CSV_URL + '&t=' + Date.now(), 8000);
     if (!res.ok) throw new Error('Sheet fetch failed: ' + res.status);
     const rows = parseSheetCSV(await res.text());
     applySwimConfig(rows);
@@ -1770,7 +1771,7 @@ async function loadGemConfig(force) {
     }
   } catch(e) {}
   try {
-    const res = await fetch(GEM_SHEET_URL + '&t=' + Date.now());
+    const res = await fetchWithTimeout(GEM_SHEET_URL + '&t=' + Date.now(), 8000);
     if (!res.ok) throw new Error('GEM sheet fetch failed: ' + res.status);
     const table = parseGemCSV(await res.text());
     if (table) {
@@ -2042,6 +2043,17 @@ function loadCache(key) {
 }
 function cacheIsFresh(cache, ttl) {
   return cache && cache.fetchedAt && (Date.now() - cache.fetchedAt) < ttl;
+}
+
+// fetch() with a hard timeout. A stalled request (flaky mobile, captive portal,
+// slow Google Sheets) otherwise hangs the await forever — and when that await sits
+// in the startup chain, the whole app stays stuck on "—" no matter how many times
+// you refresh. AbortController actually cancels the request rather than racing it.
+function fetchWithTimeout(url, ms, opts) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...(opts || {}), signal: ctrl.signal })
+    .finally(() => clearTimeout(timer));
 }
 
 // =============================================================================
@@ -2375,13 +2387,15 @@ function renderSnapshot(h, wx) {
   document.getElementById('metricsTime').textContent =
     dt.toLocaleString('en-AU', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
 
-  // Three metric blocks
-  function setMetric(id, valId, scoreId, metric) {
+  // Three metric blocks. useRaw=true shows the raw band-scale value (e.g. Swim's
+  // q7) so the displayed number matches the scale the colour-band thresholds are
+  // set against; otherwise shows the 0–60 score (60 = best).
+  function setMetric(id, valId, scoreId, metric, useRaw) {
     const block = document.getElementById(id);
     block.className = 'metric-block ' + metric.cls;
     document.getElementById(valId).textContent   = metric.label;
-    // TEST READOUT: show the 0–60 score (60 = best) for all three metrics.
-    document.getElementById(scoreId).textContent = Math.round(metric.score * 10) / 10;
+    const shown = useRaw && (metric.raw != null) ? metric.raw : metric.score;
+    document.getElementById(scoreId).textContent = Math.round(shown * 10) / 10;
   }
 
   function setTrackDot(dotId, pct, colorVar) {
@@ -2444,7 +2458,7 @@ function renderSnapshot(h, wx) {
 
 
   setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry);
-  setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim);
+  setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true);
   setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water);
 
   // Weather strip
@@ -2640,7 +2654,9 @@ function renderSlider(matrix) {
 function renderGemComparison(h) {
   const row = document.getElementById('gemEntryRow');
   if (!row) return;
-  if (!GEM_MODEL || !h || !SITE.lookup) { row.style.display = 'none'; return; }
+  // GEM is now the default model, so only show the legacy comparison row when
+  // actively debugging (?debug=1), otherwise every swimmer sees a redundant Entry.
+  if (!GEM_DEBUG || !h || !SITE.lookup) { row.style.display = 'none'; return; }
   row.style.display = 'block';
 
   const lk = SITE.lookup;
@@ -3234,19 +3250,32 @@ setInterval(() => { if (_bbCache) bbRenderFromData(_bbCache); }, 60 * 1000);
 // INIT
 // =============================================================================
 _retryFn = () => loadAndRender(true);
-// Load config from sheet first, then fetch forecast
-// Show GEM badge and load GEM table if in GEM model mode
-if (GEM_MODEL) {
+// GEM is the default model. Show the legacy badge only when running Original (?model=orig).
+if (!GEM_MODEL) {
   const badge = document.getElementById('gem-badge');
   if (badge) badge.style.display = 'inline';
 }
-loadConfig().then(() => {
-  if (GEM_MODEL) {
-    loadGemConfig().then(() => loadAndRender());
-  } else {
-    loadAndRender();
+// Startup: config + GEM table are BEST-EFFORT and must never block or break the
+// forecast render. Each has a safe fallback (defaults for config; 0.5 transmit for
+// GEM), each fetch now has an 8s timeout, and every step is .catch()-guarded so a
+// stalled or failed network can't leave the app stuck on "—". loadAndRender ALWAYS
+// runs, even if both config loads fail.
+(async function startup() {
+  try { await loadConfig(); }    catch(e) { console.warn('loadConfig failed at startup:', e); }
+  try { await loadGemConfig(true); } catch(e) { console.warn('loadGemConfig failed at startup:', e); }
+  // GEM is the live model — if its table didn't load, every swell silently
+  // transmits at the 0.5 fallback (direction ignored), inflating scores. Surface it.
+  if (GEM_MODEL && !SITE.gemTable) {
+    const badge = document.getElementById('gem-badge');
+    if (badge) {
+      badge.textContent = '⚠ MODEL TABLE NOT LOADED';
+      badge.style.background = 'var(--red)';
+      badge.style.display = 'inline';
+    }
+    console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
   }
-});
+  loadAndRender();
+})();
 
   // ===== SPLASH SCREEN =====
   (function() {
