@@ -76,6 +76,36 @@
 
   .wrap { position:relative; z-index:1; max-width:600px; margin:0 auto; padding:0 10px 40px; }
 
+  /* ── TUNE MODE (?tune=1) ─────────────────────────────────────────────
+     Three-up desktop layout: debug docked left (fixed, internally scrollable),
+     app centred, tune panel docked right (its own fixed positioning). Lets you
+     read debug + scores + tuning together without scrolling the page. */
+  body.tune-mode #gemDebug.debug-docked {
+    position: fixed;
+    left: 12px;
+    top: 12px;
+    width: 320px;
+    max-height: calc(100vh - 24px);
+    overflow-y: auto;
+    z-index: 99998;
+    margin: 0;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.25);
+  }
+  /* Only shift the app over once the viewport is wide enough for all three columns
+     (≈ 320 debug + 600 app + 300 tune + gaps). Below that, fall back to normal flow. */
+  @media (min-width: 1300px) {
+    body.tune-mode .wrap { margin-left: 360px; }
+  }
+  @media (max-width: 1299px) {
+    body.tune-mode #gemDebug.debug-docked {
+      position: static;
+      width: auto;
+      max-height: none;
+      box-shadow: none;
+      margin: 0 0 10px;
+    }
+  }
+
   header {
     padding:calc(env(safe-area-inset-top) + 10px) 0 10px;
     display:flex; align-items:flex-end; justify-content:space-between;
@@ -1124,23 +1154,6 @@
           <div class="metric-track-labels" id="metricEntryLabels">
             <span style="flex:1">Easy</span><span style="flex:1">Doable</span><span style="flex:1">Caution</span><span style="flex:1">Dangerous</span>
           </div>
-          <!-- Original model Entry — only shown in ?model=gem for comparison -->
-          <div id="gemEntryRow" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--border);">
-            <div class="metric-header" style="opacity:0.75;">
-              <div class="metric-name" style="font-size:10px;letter-spacing:1px;">Original:</div>
-              <div class="metric-value" id="gemEntryVal" style="font-size:14px;">—</div>
-              <div class="metric-score" id="gemEntryScore" style="font-size:11px;">—</div>
-            </div>
-            <div class="metric-track-wrap" style="margin-top:4px;">
-              <div class="metric-track-rail" style="height:5px;">
-                <div class="z" style="background:var(--green);flex:1"></div>
-                <div class="z" style="background:var(--amber);flex:1"></div>
-                <div class="z" style="background:var(--yellow);flex:1"></div>
-                <div class="z" style="background:var(--red);flex:1"></div>
-              </div>
-              <div class="metric-track-dot" id="gemEntryDot" style="color:var(--ocean);left:50%"></div>
-            </div>
-          </div>
         </div>
         <div class="metric-block green" id="metricSwim" onclick="openMetricModal('swim')">
           <div class="metric-header">
@@ -1195,7 +1208,7 @@
     </div>
 
     <!-- DEBUG PANEL — visible with ?tune=1 (or legacy ?debug=1) -->
-    <div id="gemDebug" style="display:none;margin:0 0 10px;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;"></div>
+    <div id="gemDebug" style="display:none;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;margin:0 0 10px;"></div>
 
     <!-- FORECASTED VALUES — everything here updates with the slider -->
     <div class="forecast-values">
@@ -2712,120 +2725,68 @@ function renderSlider(matrix) {
 // Computes both models from the current slider row and renders a compact card
 // showing Entry / Swim / Surge zones for each, plus score delta.
 // =============================================================================
+// GEM DEBUG — live score breakdown for the current slider row (shown with ?tune=1).
+// The legacy Original-model comparison has been removed; only GEM values are shown.
+// =============================================================================
 function renderGemComparison(h) {
-  const row = document.getElementById('gemEntryRow');
-  if (!row) return;
-  // GEM is now the default model, so only show the legacy comparison row when
-  // actively debugging (?debug=1), otherwise every swimmer sees a redundant Entry.
-  if (!GEM_DEBUG || !h || !SITE.lookup) { row.style.display = 'none'; return; }
-  row.style.display = 'block';
+  if (!GEM_DEBUG) return;
+  const dbg = document.getElementById('gemDebug');
+  if (!dbg || !h || !SITE.lookup) { if (dbg) dbg.style.display = 'none'; return; }
+  dbg.style.display = 'block';
 
-  const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, tideM } = h;
+  const windHit = dirLookup(SITE.lookup.wind, windDir);
 
-  // Original model score — exact replica of calcScore original branch
-  const s1p     = swellPower(swell1H, swell1P);
-  const s2p     = swellPower(swell2H || 0, swell2P || 8);
-  const windHit = dirLookup(lk.wind, windDir);
-  const wwHit   = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir));
-  const s1sea   = Math.max(0, dirLookup(lk.sea, swell1Dir));
-  const s1rif   = dirLookup(lk.rif, swell1Dir);
-  const s2sea   = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
-  const s2rif   = dirLookup(lk.rif, swell2Dir || 0);
-  const wind_d  = windPower(windKmh) * (windHit / 100) * SITE.windSens;
-  const ww_d    = swellPower(windWaveH || 0, 5) * (wwHit / 100) * SITE.swellSens;
-  const s1_d    = s1p * (s1sea / 100) * SITE.swellSens;
-  const s2_d    = s2p * (s2sea / 100) * SITE.swellSens;
-  const rif_d   = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
-  const o       = wind_d + ww_d + s1_d + s2_d + rif_d;
-  const total   = o + SITE.tideDir(tideM, {
-    s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir,
+  // Warn loudly if the GEM table failed to load (all lookups would return 0.5 fallback)
+  const tableStatus = SITE.gemTable
+    ? `<div style="color:#7ec8e3;">✓ GEM table loaded (${SITE.gemTable.length} dir rows)</div>`
+    : `<div style="color:#ff6b6b;font-weight:700;">⚠ GEM TABLE NOT LOADED — every lookup is using the 50% fallback. Check the sheet gid / publish settings.</div>`;
+
+  // GEM-side intermediate values (mirror calcScore GEM branch)
+  const wwP_g   = (h.windWaveP || 5);
+  const s1Tx_g  = Math.max(0, gemLookup(swell1Dir, swell1P));
+  const s2Tx_g  = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
+  const wwTx_g  = Math.max(0, gemLookup(windWaveDir || windDir, wwP_g));
+  const s1pow_g = swellPower(swell1H, swell1P);
+  const s2pow_g = swellPower(swell2H || 0, swell2P || 8);
+  const wind_d_g = windPower(windKmh) * (windHit / 100) * SITE.windSens;
+  const ww_d_g   = swellPower(windWaveH || 0, wwP_g) * wwTx_g * SITE.swellSens;
+  const s1_d_g   = s1pow_g * s1Tx_g * SITE.swellSens;
+  const s2_d_g   = s2pow_g * s2Tx_g * SITE.swellSens;
+  const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g;
+  const tide_d_g = SITE.tideDir(tideM, {
+    s1_d: s1_d_g, s1Dir: swell1Dir, s2_d: s2_d_g, s2Dir: swell2Dir || 0, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
   });
-  const score   = Math.max(0, Math.round(60 - total));
+  const total_g  = o_g + tide_d_g;
+  const score_g  = Math.max(0, Math.round(60 - total_g));
 
-  const enT   = SITE.entryThresholds;
-  const label = total <= enT.easy ? 'Easy' : total <= enT.doable ? 'Doable' : total <= enT.caution ? 'Caution' : 'Dangerous';
-  const color = total <= enT.easy ? 'var(--green)' : total <= enT.doable ? 'var(--amber)'
-              : total <= enT.caution ? 'var(--yellow)' : 'var(--red)';
-
-  document.getElementById('gemEntryVal').textContent   = label;
-  document.getElementById('gemEntryVal').style.color   = color;
-  document.getElementById('gemEntryScore').textContent = score;
-  document.getElementById('gemEntryScore').style.color = color;
-
-  const enCap = enT.scaleMax > 0 ? enT.scaleMax : 60;
-  // Same fixed-25%-band mapping as the main rail (helper isn't in scope here).
-  const enBounds = [0, enT.easy, enT.doable, enT.caution, enCap];
-  let gemPct = 100;
-  if (total <= enBounds[0]) gemPct = 0;
-  else if (total < enBounds[4]) {
-    for (let i = 0; i < 4; i++) {
-      const lo = enBounds[i], hi = enBounds[i + 1];
-      if (total <= hi) { gemPct = (i + (hi > lo ? (total - lo) / (hi - lo) : 1)) * 25; break; }
-    }
-  }
-  const pct = Math.min(97, Math.max(3, gemPct));
-  const dot = document.getElementById('gemEntryDot');
-  if (dot) { dot.style.left = pct + '%'; dot.style.color = color; dot.style.background = color; }
-
-  // ── DEBUG breakdown ──────────────────────────────────────────────────────
-  if (GEM_DEBUG) {
-    const dbg = document.getElementById('gemDebug');
-    if (dbg) {
-      dbg.style.display = 'block';
-
-      // Warn loudly if the GEM table failed to load (all lookups would return 0.5 fallback)
-      const tableStatus = SITE.gemTable
-        ? `<div style="color:#7ec8e3;">✓ GEM table loaded (${SITE.gemTable.length} dir rows)</div>`
-        : `<div style="color:#ff6b6b;font-weight:700;">⚠ GEM TABLE NOT LOADED — every lookup is using the 50% fallback. Check the sheet gid / publish settings.</div>`;
-
-      // GEM-side intermediate values (mirror calcScore GEM branch)
-      const wwP_g   = (h.windWaveP || 5);
-      const s1Tx_g  = Math.max(0, gemLookup(swell1Dir, swell1P));
-      const s2Tx_g  = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
-      const wwTx_g  = Math.max(0, gemLookup(windWaveDir || windDir, wwP_g));
-      const s1pow_g = swellPower(swell1H, swell1P);
-      const s2pow_g = swellPower(swell2H || 0, swell2P || 8);
-      const wind_d_g = windPower(windKmh) * (windHit / 100) * SITE.windSens;
-      const ww_d_g   = swellPower(windWaveH || 0, wwP_g) * wwTx_g * SITE.swellSens;
-      const s1_d_g   = s1pow_g * s1Tx_g * SITE.swellSens;
-      const s2_d_g   = s2pow_g * s2Tx_g * SITE.swellSens;
-      const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g;
-      const total_g  = o_g + SITE.tideDir(tideM, {
-        s1_d: s1_d_g, s1Dir: swell1Dir, s2_d: s2_d_g, s2Dir: swell2Dir || 0, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
-      });
-      const score_g  = Math.max(0, Math.round(60 - total_g));
-
-      const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
-      const time = h.dateTime || '';
-      dbg.innerHTML =
-        `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
-        tableStatus +
-        `<div style="color:#9fd;">INPUTS:</div>` +
-        `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s &nbsp; S2 ${swell2H}m ${swell2Dir}° ${swell2P}s<br>` +
-        `WW ${windWaveH}m ${windWaveDir}° ${h.windWaveP||0}s &nbsp; Wind ${windKmh}km/h ${windDir}° &nbsp; Tide ${tideM}m<br>` +
-        `<div style="display:grid;grid-template-columns:auto 1fr 1fr;gap:2px 12px;margin-top:6px;">` +
-        `<b style="color:#9fd;"></b><b style="color:#9fd;">ORIGINAL</b><b style="color:#7ec8e3;">GEM</b>` +
-        `<span>S1 period used</span><span>${swell1P}s (real)</span><span>${swell1P}s (real)</span>` +
-        `<span>S2 period used</span><span>${swell2P||8}s</span><span>${swell2P||8}s</span>` +
-        `<span>S1 power H²·P^1.1</span><span>${f(s1p)}</span><span>${f(s1pow_g)}</span>` +
-        `<span>S2 power</span><span>${f(s2p)}</span><span>${f(s2pow_g)}</span>` +
-        `<span>S1 transmit/seaHit</span><span>sea ${s1sea}% rif ${s1rif}</span><span>${(s1Tx_g*100).toFixed(1)}%</span>` +
-        `<span>S2 transmit/seaHit</span><span>sea ${s2sea}% rif ${s2rif}</span><span>${(s2Tx_g*100).toFixed(1)}%</span>` +
-        `<span>WW transmit/seaHit</span><span>sea ${wwHit}%</span><span>${(wwTx_g*100).toFixed(1)}%</span>` +
-        `<span style="color:#fc8;">wind_d</span><span>${f(wind_d)}</span><span>${f(wind_d_g)}</span>` +
-        `<span style="color:#fc8;">ww_d</span><span>${f(ww_d)}</span><span>${f(ww_d_g)}</span>` +
-        `<span style="color:#fc8;">s1_d</span><span>${f(s1_d)}</span><span>${f(s1_d_g)}</span>` +
-        `<span style="color:#fc8;">s2_d</span><span>${f(s2_d)}</span><span>${f(s2_d_g)}</span>` +
-        `<span style="color:#fc8;">rif_d</span><span>${f(rif_d)}</span><span>0 (in table)</span>` +
-        `<span style="color:#9fd;">subtotal o</span><span>${f(o)}</span><span>${f(o_g)}</span>` +
-        `<span style="color:#9fd;">tide_d</span><span>${f(SITE.tideDir(tideM,{s1_d,s1Dir:swell1Dir,s2_d,s2Dir:swell2Dir||0,ww_d,wwDir:windWaveDir||windDir}))}</span><span>${f(SITE.tideDir(tideM,{s1_d:s1_d_g,s1Dir:swell1Dir,s2_d:s2_d_g,s2Dir:swell2Dir||0,ww_d:ww_d_g,wwDir:windWaveDir||windDir}))}</span>` +
-        `<span style="color:#9fd;">total</span><span>${f(total)}</span><span>${f(total_g)}</span>` +
-        `<b style="color:#7ec8e3;">SCORE 60−total</b><b>${score}</b><b style="color:#7ec8e3;">${score_g}</b>` +
-        `</div>`;
-    }
-  }
+  const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
+  const time = h.dateTime || '';
+  dbg.innerHTML =
+    `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
+    tableStatus +
+    `<div style="color:#9fd;">INPUTS:</div>` +
+    `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s &nbsp; S2 ${swell2H}m ${swell2Dir}° ${swell2P}s<br>` +
+    `WW ${windWaveH}m ${windWaveDir}° ${h.windWaveP||0}s &nbsp; Wind ${windKmh}km/h ${windDir}° &nbsp; Tide ${tideM}m<br>` +
+    `<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin-top:6px;">` +
+    `<b style="color:#9fd;"></b><b style="color:#7ec8e3;">GEM</b>` +
+    `<span>S1 period used</span><span>${swell1P}s (real)</span>` +
+    `<span>S2 period used</span><span>${swell2P||8}s</span>` +
+    `<span>S1 power H²·P^1.1</span><span>${f(s1pow_g)}</span>` +
+    `<span>S2 power</span><span>${f(s2pow_g)}</span>` +
+    `<span>S1 transmit</span><span>${(s1Tx_g*100).toFixed(1)}%</span>` +
+    `<span>S2 transmit</span><span>${(s2Tx_g*100).toFixed(1)}%</span>` +
+    `<span>WW transmit</span><span>${(wwTx_g*100).toFixed(1)}%</span>` +
+    `<span style="color:#fc8;">wind_d</span><span>${f(wind_d_g)}</span>` +
+    `<span style="color:#fc8;">ww_d</span><span>${f(ww_d_g)}</span>` +
+    `<span style="color:#fc8;">s1_d</span><span>${f(s1_d_g)}</span>` +
+    `<span style="color:#fc8;">s2_d</span><span>${f(s2_d_g)}</span>` +
+    `<span style="color:#9fd;">subtotal o</span><span>${f(o_g)}</span>` +
+    `<span style="color:#9fd;">tide_d</span><span>${f(tide_d_g)}</span>` +
+    `<span style="color:#9fd;">total</span><span>${f(total_g)}</span>` +
+    `<b style="color:#7ec8e3;">SCORE 60−total</b><b style="color:#7ec8e3;">${score_g}</b>` +
+    `</div>`;
 }
 
 
@@ -3400,6 +3361,15 @@ function buildTunePanel() {
       </div>
     </div>`;
   document.body.appendChild(panel);
+
+  // ── Tune-mode 3-up layout: dock the debug panel to the left of the screen so
+  // debug + scores + tuning are all readable at once on a wide display.
+  document.body.classList.add('tune-mode');
+  const dbgEl = document.getElementById('gemDebug');
+  if (dbgEl) {
+    dbgEl.classList.add('debug-docked');
+    document.body.appendChild(dbgEl); // lift out of the centred .wrap so it pins to the viewport
+  }
 
   const msg = (t) => { const m = panel.querySelector('#tune-msg'); if (m) { m.textContent = t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; }, 4000); } };
 
