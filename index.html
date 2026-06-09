@@ -3740,13 +3740,33 @@ const SIGHTING_MAX_AGE_DAYS = 14;                 // older than this falls back 
 
 let _latestSighting = null;
 async function fetchLatestSighting() {
+  const headers = { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY };
   try {
-    const res = await fetch(
-      SIGHTINGS_TABLE_URL + '?select=summary,updated_at,report_count&site_id=eq.' + SIGHTINGS_SITE_ID + '&limit=1',
-      { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
+    // 1) Exact site match
+    let res = await fetch(
+      SIGHTINGS_TABLE_URL + '?select=*&site_id=eq.' + SIGHTINGS_SITE_ID + '&limit=1',
+      { headers }
     );
     if (!res.ok) throw new Error('Supabase ' + res.status);
-    const rows = await res.json();
+    let rows = await res.json();
+
+    // 2) Fallback: if the expected site_id has no row, grab the most recent
+    //    sighting regardless of site_id (covers id-format mismatches).
+    if (!rows || !rows.length) {
+      res = await fetch(SIGHTINGS_TABLE_URL + '?select=*&limit=20', { headers });
+      if (res.ok) {
+        const all = await res.json();
+        if (all && all.length) {
+          all.sort(function(a, b) {
+            const ta = new Date(a.updated_at || a.created_at || a.reported_at || a.last_updated || a.date || 0).getTime();
+            const tb = new Date(b.updated_at || b.created_at || b.reported_at || b.last_updated || b.date || 0).getTime();
+            return tb - ta;
+          });
+          rows = [all[0]];
+        }
+      }
+    }
+
     _latestSighting = (rows && rows.length) ? rows[0] : null;
     return _latestSighting;
   } catch (e) {
@@ -3759,12 +3779,16 @@ function applySightingToBanner(s) {
   const subEl   = document.getElementById('db-sub');
   if (!countEl) return;
 
-  const stamp = s && (s.updated_at || s.created_at);
+  // Tolerate alternate column names from the VIZ Forecast writer
+  const summary = s && (s.summary || s.report_summary || s.note || s.notes || s.text);
+  const stamp   = s && (s.updated_at || s.created_at || s.reported_at || s.last_updated || s.date);
+
   let recent = false;
-  if (s && s.summary && stamp) {
+  if (summary && stamp) {
     const ageDays = (Date.now() - new Date(stamp).getTime()) / 86400000;
-    recent = ageDays <= SIGHTING_MAX_AGE_DAYS;
-  } else if (s && s.summary) {
+    recent = isFinite(ageDays) ? (ageDays <= SIGHTING_MAX_AGE_DAYS) : true;
+  } else if (summary) {
+    // We have a report but no usable timestamp — show it rather than hide it
     recent = true;
   }
 
@@ -3784,7 +3808,7 @@ function applySightingToBanner(s) {
     : '';
   if (subEl) subEl.textContent = when ? ('Updated ' + when) : 'Updated recently';
 
-  _diversSummary = s.summary;
+  _diversSummary = summary;
   _diversStamp = when;
 }
 
