@@ -1412,6 +1412,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 // =============================================================================
 const GEM_MODEL = !location.search.includes('model=orig');
 const GEM_DEBUG = location.search.includes('debug=1');
+const TUNE_PANEL = location.search.includes('tune=1'); // ?tune=1 shows the live sensitivity tuning panel
+const TUNE_KEY   = 'swim_tune_overrides_v1';            // localStorage: user's sensitivity overrides
 // Optional URL override for the wind-wave route blend (0=arrival/point … 1=route/line).
 // e.g. ?wwblend=1 forces pure route geometry for A/B testing without editing the sheet.
 const WW_BLEND_OVERRIDE = (() => {
@@ -1474,6 +1476,9 @@ const SITE_DEFAULTS = {
   swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
   wwSens:         null,  // wind-wave demerit scale; null → falls back to swellSens (keeps existing calibration untouched)
   wwRouteBlend:   0,     // wind-wave DIRECTION filter geometry: 0 = arrival (point, into S Steyne) … 1 = route (line, S Steyne→Shelly). Blend in between.
+  periodExp:      1.1,    // exponent on period in swellPower: H² × P^periodExp. Higher = long-period swell penalised more.
+  tideGateStart:  90,     // tide/headland effect begins above this swell direction (°)
+  tideGateFull:   135,    // tide/headland effect reaches full strength at this direction (°), flat beyond
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
   // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
   // three band edges + an explicit scaleMax (4th cell) that sets the rail's total
@@ -1506,10 +1511,13 @@ let SITE = {
   tide:     (o, t) => o * (t - 0.2),
   // Headland-protection gate: 0 at ≤90°, smoothstep ramp to 1 at ≥135°, then flat.
   // Tide only matters for waves from directions where the Shelly headland is in play.
-  tideGate: (dirDeg) => {
+  tideGate: function(dirDeg) {
     const a = ((dirDeg % 360) + 360) % 360;
     const dir = a > 180 ? 360 - a : a;
-    const t = Math.max(0, Math.min(1, (dir - 90) / (135 - 90)));
+    const start = this.tideGateStart ?? 90;
+    const full  = this.tideGateFull ?? 135;
+    const span  = Math.max(1, full - start);
+    const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
   },
   // Direction-gated, per-source tide demerit. Only swell + wind-wave terms are
@@ -1704,7 +1712,7 @@ function windPower(kmh) {
   }
   return WIND_WEIGHT[WIND_WEIGHT.length-1][1];
 }
-function swellPower(h, p) { return h * h * Math.pow(Math.max(p, 1), 1.1); }
+function swellPower(h, p) { return h * h * Math.pow(Math.max(p, 1), SITE.periodExp ?? 1.1); }
 function dirLookup(arr, deg) {
   const norm = ((deg % 360) + 360) % 360;
   return arr[Math.round(norm / 11.25) % 32];
@@ -3294,6 +3302,134 @@ if (!GEM_MODEL) {
 // GEM), each fetch now has an 8s timeout, and every step is .catch()-guarded so a
 // stalled or failed network can't leave the app stuck on "—". loadAndRender ALWAYS
 // runs, even if both config loads fail.
+// =============================================================================
+// LIVE TUNING PANEL (?tune=1) — read & adjust the sensitivities that used to live
+// in the sheet, with instant preview and localStorage persistence. The sheet (or
+// defaults) still sets the baseline; these overrides apply on top.
+// =============================================================================
+const TUNE_PARAMS = [
+  { key:'windSens',      label:'Wind sensitivity',     min:0,   max:1,    step:0.01, hint:'Scales wind-chop demerit (wind_d).' },
+  { key:'swellSens',     label:'Swell sensitivity',    min:0.2, max:4,    step:0.05, hint:'Scales all swell demerits. The main "harshness" knob.' },
+  { key:'wwSens',        label:'Wind-wave sensitivity',min:0.2, max:4,    step:0.05, hint:'Scales the wind-wave term. Blank = follows swell sensitivity.', nullable:true },
+  { key:'periodExp',     label:'Period exponent',      min:0.5, max:1.6,  step:0.05, hint:'Power on swell period (H squared times P^exp). Higher = long-period swell penalised more.' },
+  { key:'tideGateStart', label:'Tide gate start (deg)',min:0,   max:180,  step:5,    hint:'Swell direction where the headland/tide effect begins.' },
+  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Direction where the tide effect reaches full strength.' },
+];
+
+function loadTuneOverrides() {
+  try { return JSON.parse(localStorage.getItem(TUNE_KEY) || '{}') || {}; } catch(e) { return {}; }
+}
+function saveTuneOverrides(obj) {
+  try { localStorage.setItem(TUNE_KEY, JSON.stringify(obj)); } catch(e) {}
+}
+function applyTuneOverrides() {
+  const ov = loadTuneOverrides();
+  TUNE_PARAMS.forEach(p => {
+    if (Object.prototype.hasOwnProperty.call(ov, p.key)) SITE[p.key] = ov[p.key];
+  });
+}
+
+function buildTunePanel() {
+  if (!TUNE_PANEL) return;
+  const ov = loadTuneOverrides();
+  const fmt = v => (v == null ? '—' : (Math.round(v * 100) / 100));
+  const rows = TUNE_PARAMS.map(p => {
+    const overridden = Object.prototype.hasOwnProperty.call(ov, p.key);
+    const cur = SITE[p.key];
+    const sliderVal = (cur == null) ? p.min : cur;
+    return `
+      <div style="margin-bottom:12px;" data-tune-row="${p.key}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+          <span style="font-weight:700;color:var(--deep);">${p.label}</span>
+          <span style="font-family:'DM Mono',monospace;font-size:12px;">
+            <b data-tune-val="${p.key}">${fmt(cur)}</b>
+            <span data-tune-flag="${p.key}" style="margin-left:6px;font-size:9px;letter-spacing:0.5px;color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'OVERRIDDEN' : 'baseline'}</span>
+          </span>
+        </div>
+        <input type="range" data-tune-input="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}"
+          style="width:100%;margin:4px 0 2px;accent-color:var(--ocean);">
+        <div style="font-size:10px;color:var(--dim);line-height:1.3;">${p.hint}${p.nullable ? ' <button data-tune-clear="'+p.key+'" style="margin-left:6px;font-size:9px;padding:1px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--dim);cursor:pointer;">use swell sens</button>' : ''}</div>
+      </div>`;
+  }).join('');
+
+  const panel = document.createElement('div');
+  panel.id = 'tune-panel';
+  panel.style.cssText = `position:fixed;right:12px;bottom:12px;z-index:9999;width:300px;max-height:80vh;overflow-y:auto;
+    background:var(--foam);border:2px solid var(--ocean);border-radius:14px;padding:14px 16px;
+    box-shadow:0 8px 40px rgba(0,0,0,0.25);font-family:'DM Mono',monospace;font-size:12px;color:var(--text);`;
+  panel.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--deep);">TUNE SENSITIVITIES</span>
+      <button id="tune-min" title="collapse" style="border:none;background:transparent;font-size:16px;cursor:pointer;color:var(--dim);">–</button>
+    </div>
+    <div id="tune-body">
+      ${rows}
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button id="tune-reset" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reset to baseline</button>
+      </div>
+      <div style="font-size:9px;color:var(--dim);margin-top:8px;line-height:1.4;">
+        Changes persist on this device and apply on top of the sheet. "Reset" clears your overrides; reload to re-pull exact sheet values.
+      </div>
+    </div>`;
+  document.body.appendChild(panel);
+
+  panel.querySelector('#tune-min').addEventListener('click', () => {
+    const b = panel.querySelector('#tune-body');
+    b.style.display = (b.style.display === 'none') ? 'block' : 'none';
+  });
+
+  const refreshRow = (key) => {
+    const overrides = loadTuneOverrides();
+    const overridden = Object.prototype.hasOwnProperty.call(overrides, key);
+    const valEl  = panel.querySelector(`[data-tune-val="${key}"]`);
+    const flagEl = panel.querySelector(`[data-tune-flag="${key}"]`);
+    if (valEl)  valEl.textContent = fmt(SITE[key]);
+    if (flagEl) { flagEl.textContent = overridden ? 'OVERRIDDEN' : 'baseline'; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
+  };
+
+  const applyAndRender = () => {
+    applyTuneOverrides();
+    if (_matrix && _matrix.length) {
+      const slot = _matrix[_sliderIdx];
+      const wxKey = (slot?.dateTime || '').replace(' ','T').substring(0,16);
+      renderSnapshot(slot, _wxMatrix[wxKey] || null);
+      renderTimeline(_matrix, _wxMatrix);
+    }
+  };
+
+  TUNE_PARAMS.forEach(p => {
+    const input = panel.querySelector(`[data-tune-input="${p.key}"]`);
+    if (input) input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      const overrides = loadTuneOverrides();
+      overrides[p.key] = v;
+      saveTuneOverrides(overrides);
+      SITE[p.key] = v;
+      applyAndRender();
+      refreshRow(p.key);
+    });
+    if (p.nullable) {
+      const clr = panel.querySelector(`[data-tune-clear="${p.key}"]`);
+      if (clr) clr.addEventListener('click', () => {
+        const overrides = loadTuneOverrides();
+        overrides[p.key] = null;
+        saveTuneOverrides(overrides);
+        SITE[p.key] = null;
+        applyAndRender();
+        refreshRow(p.key);
+      });
+    }
+  });
+
+  panel.querySelector('#tune-reset').addEventListener('click', () => {
+    saveTuneOverrides({});
+    TUNE_PARAMS.forEach(p => { SITE[p.key] = SITE_DEFAULTS[p.key]; });
+    applyAndRender();
+    TUNE_PARAMS.forEach(p => refreshRow(p.key));
+    console.log('Tuning overrides cleared. Reload to re-pull exact sheet values.');
+  });
+}
+
 (async function startup() {
   try { await loadConfig(); }    catch(e) { console.warn('loadConfig failed at startup:', e); }
   try { await loadGemConfig(true); } catch(e) { console.warn('loadGemConfig failed at startup:', e); }
@@ -3308,6 +3444,10 @@ if (!GEM_MODEL) {
     }
     console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
   }
+  // Apply any saved sensitivity overrides on top of the sheet/defaults, then
+  // build the live tuning panel if ?tune=1 is present.
+  applyTuneOverrides();
+  buildTunePanel();
   loadAndRender();
 })();
 
