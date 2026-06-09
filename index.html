@@ -229,6 +229,93 @@
   }
   .metric-track-labels span { text-align:center; }
 
+  /* ── Calibration assessment slider (TUNE mode only) ───────────────────
+     A second track under each metric, same full width as the rail. You drag
+     it to where YOU think the dot should sit. Reports a 0–100% position in the
+     same coordinate as the auto dot, so the two are directly comparable. */
+  .assess-wrap { display: none; }                 /* hidden unless body.tune-mode */
+  body.tune-mode .assess-wrap {
+    display: block;
+    position: relative;
+    height: 26px;
+    margin: 2px 0 0;
+  }
+  .assess-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: var(--ocean);
+    text-transform: uppercase;
+    margin: 2px 0 1px;
+  }
+  body.tune-mode .assess-range {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 26px;
+    background: transparent;
+    cursor: pointer;
+    margin: 0;
+  }
+  /* visible groove */
+  body.tune-mode .assess-range::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: repeating-linear-gradient(90deg,
+      var(--ocean) 0 2px, transparent 2px 7px);
+    opacity: 0.55;
+  }
+  body.tune-mode .assess-range::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: repeating-linear-gradient(90deg,
+      var(--ocean) 0 2px, transparent 2px 7px);
+    opacity: 0.55;
+  }
+  /* the "where I think it should be" handle — hollow diamond-ish marker */
+  body.tune-mode .assess-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px; height: 18px;
+    margin-top: -6px;
+    border-radius: 4px;
+    background: var(--foam);
+    border: 3px solid var(--ocean);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    transform: rotate(45deg);
+  }
+  body.tune-mode .assess-range::-moz-range-thumb {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    background: var(--foam);
+    border: 3px solid var(--ocean);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  }
+  /* Freeze capture button + status, sits above the metrics in tune mode */
+  #calib-bar { display: none; }
+  body.tune-mode #calib-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    background: var(--foam);
+    border: 2px solid var(--ocean);
+    border-radius: var(--radius);
+  }
+  #calib-freeze {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px; letter-spacing: 2px;
+    padding: 8px 18px;
+    border: none; border-radius: 10px;
+    background: var(--ocean); color: #fff;
+    cursor: pointer;
+  }
+  #calib-freeze:active { transform: scale(0.98); }
+  #calib-freeze:disabled { opacity: 0.5; cursor: default; }
+  #calib-status { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--deep); }
+
 
   /* ── Calibration tab ── */
   .cal-field {
@@ -1132,6 +1219,12 @@
   <!-- SNAPSHOT TAB -->
   <div class="view-panel active" id="panel-snapshot">
 
+    <!-- Calibration bar (TUNE mode only) -->
+    <div id="calib-bar">
+      <button id="calib-freeze" onclick="freezeCalibration()">⦿ FREEZE</button>
+      <span id="calib-status">Set your three “My call” sliders, then freeze this moment.</span>
+    </div>
+
     <!-- Metrics panel -->
     <div class="metrics-panel">
       <div class="metrics-time" id="metricsTime">—</div>
@@ -1154,6 +1247,11 @@
           <div class="metric-track-labels" id="metricEntryLabels">
             <span style="flex:1">Easy</span><span style="flex:1">Doable</span><span style="flex:1">Caution</span><span style="flex:1">Dangerous</span>
           </div>
+          <div class="assess-wrap" onclick="event.stopPropagation()">
+            <div class="assess-label">My call ▸ drag to where the dot should be</div>
+            <input type="range" class="assess-range" id="assessEntry" min="0" max="100" step="0.5" value="50"
+                   oninput="onAssess('entry', this.value)">
+          </div>
         </div>
         <div class="metric-block green" id="metricSwim" onclick="openMetricModal('swim')">
           <div class="metric-header">
@@ -1173,6 +1271,11 @@
           <div class="metric-track-labels" id="metricSwimLabels">
             <span style="flex:1">Glassy</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
           </div>
+          <div class="assess-wrap" onclick="event.stopPropagation()">
+            <div class="assess-label">My call ▸ drag to where the dot should be</div>
+            <input type="range" class="assess-range" id="assessSwim" min="0" max="100" step="0.5" value="50"
+                   oninput="onAssess('swim', this.value)">
+          </div>
         </div>
         <div class="metric-block green" id="metricSurge" onclick="openMetricModal('surge')">
           <div class="metric-header">
@@ -1191,6 +1294,11 @@
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
             <span style="flex:1">Steady</span><span style="flex:1">Drifty</span><span style="flex:1">Surgy</span><span style="flex:1">Washy</span>
+          </div>
+          <div class="assess-wrap" onclick="event.stopPropagation()">
+            <div class="assess-label">My call ▸ drag to where the dot should be</div>
+            <input type="range" class="assess-range" id="assessSurge" min="0" max="100" step="0.5" value="50"
+                   oninput="onAssess('surge', this.value)">
           </div>
         </div>
       </div>
@@ -2107,6 +2215,8 @@ let _wxDaily  = {};   // daily weather (sunrise/sunset) keyed by date
 let _sliderIdx = 0;
 let _retryFn  = null;
 let _lastSnapshot = null; // { h, result } of the currently-shown slot, for breakdown modal
+let _autoDotPct = { entry: 50, swim: 50, surge: 50 }; // last auto dot positions (%) for calibration capture
+let _assessPct  = { entry: null, swim: null, surge: null }; // user's manual assessment positions (%), TUNE mode
 
 // =============================================================================
 // CACHE HELPERS
@@ -2479,6 +2589,10 @@ function renderSnapshot(h, wx) {
     dot.style.left  = clamped + '%';
     dot.style.color = colorVar;
     dot.style.background = colorVar;
+    // Record raw (unclamped) auto position for calibration capture comparison.
+    if (dotId === 'metricEntryDot') _autoDotPct.entry = pct;
+    else if (dotId === 'metricSwimDot') _autoDotPct.swim = pct;
+    else if (dotId === 'metricSurgeDot') _autoDotPct.surge = pct;
   }
 
   // Fixed-25%-band piecewise dot position.
@@ -2534,6 +2648,10 @@ function renderSnapshot(h, wx) {
   setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry);
   setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true);
   setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water);
+
+  // TUNE mode: reset the "My call" handles to the model's new auto positions
+  // as a neutral starting point each time the slot changes.
+  syncAssessSliders();
 
   // Weather strip
   if (wx) {
@@ -3047,6 +3165,15 @@ async function loadAndRender(forceRefresh = false) {
       renderSnapshot(currentH, currentWx);
       renderSlider(_matrix);
       renderTimeline(_matrix, _wxMatrix);
+
+      // ── Extend the timeline backwards with stored hourly history (last 14d).
+      // Non-fatal: if Supabase is unreachable the live forecast stays intact.
+      const added = await loadForecastHistory();
+      if (added > 0) {
+        renderDayPicker(_matrix);
+        renderSlider(_matrix);
+        renderTimeline(_matrix, _wxMatrix);
+      }
     } catch(secErr) {
       console.warn('Secondary data merge failed (forecast still shown):', secErr);
     }
@@ -4111,8 +4238,206 @@ function submitFeedback(e) {
 }
 
 // ============================================================
-// BAY SIGHTINGS — read-only (data published by VIZ Forecast)
+// CALIBRATION CAPTURE (TUNE mode) — freeze your assessment vs the
+// model for later analysis. One row per freeze → Supabase
+// `calibration_captures`. Stores BOTH dot coordinates in the same
+// 0–100% units, the full forecast input vector, and the sensitivity
+// params in force at capture time (so a row stays interpretable even
+// after you move a tuning slider).
 // ============================================================
+const CALIB_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/calibration_captures';
+
+// User drags a "My call" slider → store its % position for this metric.
+function onAssess(metric, val) {
+  _assessPct[metric] = parseFloat(val);
+  const allSet = _assessPct.entry != null && _assessPct.swim != null && _assessPct.surge != null;
+  const s = document.getElementById('calib-status');
+  if (s && !allSet) s.textContent = 'Set all three “My call” sliders, then freeze.';
+  else if (s) s.textContent = 'Ready to freeze.';
+}
+
+async function calibDeviceId() {
+  try {
+    let id = localStorage.getItem('swim_calib_device');
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+      localStorage.setItem('swim_calib_device', id);
+    }
+    return id;
+  } catch (e) { return 'unknown'; }
+}
+
+async function freezeCalibration() {
+  const btn = document.getElementById('calib-freeze');
+  const status = document.getElementById('calib-status');
+  const snap = _lastSnapshot;
+  if (!snap || !snap.h) { if (status) status.textContent = '⚠ No forecast slot loaded yet.'; return; }
+
+  if (_assessPct.entry == null || _assessPct.swim == null || _assessPct.surge == null) {
+    if (status) status.textContent = '⚠ Set all three “My call” sliders first.';
+    return;
+  }
+
+  const h = snap.h, r = snap.result;
+  const dt = h.dateTime.replace(' ', 'T').substring(0, 16);
+  const wx = _wxMatrix[dt] || null;
+  const seaTemp = (wx && wx.seaTemp != null) ? wx.seaTemp : (h.seaTemp ?? null);
+
+  // Effective wind-wave sensitivity actually used by calcScore.
+  const wwSensEff = (SITE.wwSens != null) ? SITE.wwSens : SITE.swellSens;
+
+  const payload = {
+    captured_at:  new Date().toISOString(),
+    forecast_dt:  h.dateTime,
+    device_id:    await calibDeviceId(),
+    model:        (typeof GEM_MODEL !== 'undefined' && GEM_MODEL) ? 'gem' : 'orig',
+
+    // Your assessment (where YOU put the dot), 0–100% along the rail
+    assess_entry_pct: _assessPct.entry,
+    assess_swim_pct:  _assessPct.swim,
+    assess_surge_pct: _assessPct.surge,
+
+    // Model's auto dot positions, same 0–100% coordinate
+    auto_entry_pct: _autoDotPct.entry,
+    auto_swim_pct:  _autoDotPct.swim,
+    auto_surge_pct: _autoDotPct.surge,
+
+    // Model raw values + labels
+    entry_raw:   r.entry.raw ?? null,
+    entry_score: r.entry.score ?? null,
+    entry_label: r.entry.label ?? null,
+    swim_raw:    r.swim.raw ?? null,
+    swim_score:  r.swim.score ?? null,
+    swim_label:  r.swim.label ?? null,
+    surge_v6:    r.water.score ?? null,
+    surge_label: r.water.label ?? null,
+
+    // Component demerits (for sensitivity regression)
+    d_wind:    r.demerits?.wind    ?? null,
+    d_windwave:r.demerits?.windWave?? null,
+    d_swell1:  r.demerits?.swell1  ?? null,
+    d_swell2:  r.demerits?.swell2  ?? null,
+    d_refrac:  r.demerits?.refrac  ?? null,
+    d_tide:    r.demerits?.tide    ?? null,
+
+    // Forecast input vector
+    wind_kmh:    h.windKmh    ?? null,
+    wind_dir:    h.windDir    ?? null,
+    swell1_h:    h.swell1H    ?? null,
+    swell1_dir:  h.swell1Dir  ?? null,
+    swell1_p:    h.swell1P    ?? null,
+    swell2_h:    h.swell2H    ?? null,
+    swell2_dir:  h.swell2Dir  ?? null,
+    swell2_p:    h.swell2P    ?? null,
+    windwave_h:  h.windWaveH  ?? null,
+    windwave_dir:h.windWaveDir?? null,
+    windwave_p:  h.windWaveP  ?? null,
+    tide_m:      h.tideM      ?? null,
+    sea_temp:    seaTemp,
+
+    // Sensitivities in force at capture time
+    wind_sens:        SITE.windSens ?? null,
+    swell_sens:       SITE.swellSens ?? null,
+    ww_sens:          wwSensEff,
+    period_power:     SITE.periodPower ?? null,
+    swell_period_mult:SITE.swellPeriodMult ?? null,
+  };
+
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await fetch(CALIB_TABLE_URL, {
+      method: 'POST',
+      headers: {
+        'apikey': BB_SUPABASE_KEY,
+        'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + (await res.text()).slice(0, 120));
+    const n = (parseInt(localStorage.getItem('swim_calib_count') || '0', 10) || 0) + 1;
+    localStorage.setItem('swim_calib_count', String(n));
+    if (status) status.textContent = `✓ Frozen (${n} total) · ${bearingName(h.swell1Dir)} ${(h.swell1H||0).toFixed(1)}m @${Math.round(h.swell1P||0)}s, wind ${Math.round(h.windKmh||0)}km/h`;
+  } catch (e) {
+    if (status) status.textContent = '⚠ Save failed: ' + e.message;
+    console.warn('calibration insert failed', e);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// When the shown slot changes, sync the "My call" handles to the model's
+// current auto position as a neutral starting point (you then nudge them).
+function syncAssessSliders() {
+  if (!document.body.classList.contains('tune-mode')) return;
+  [['assessEntry','entry'],['assessSwim','swim'],['assessSurge','surge']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const v = Math.min(100, Math.max(0, _autoDotPct[key] ?? 50));
+    el.value = v;
+    _assessPct[key] = v;
+  });
+}
+
+// ============================================================
+// FORECAST HISTORY — "back in time" beyond midnight today.
+// Pulls the last 14 days of hourly observed-forecast rows from
+// Supabase `forecast_history` (written hourly by the Worker cron)
+// and PREPENDS them to _matrix. The day picker + slider extend
+// backwards automatically since both derive days from _matrix.
+// ============================================================
+const HISTORY_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/forecast_history';
+
+async function loadForecastHistory() {
+  try {
+    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const res = await fetch(
+      `${HISTORY_TABLE_URL}?select=*&forecast_dt=gte.${since}&order=forecast_dt.asc`,
+      { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) return 0;
+
+    // Map DB rows → the same shape calcScore/_matrix expects.
+    const histRows = rows.map(x => ({
+      dateTime:  (x.forecast_dt || '').replace('T', ' ').substring(0, 19),
+      windKmh:   x.wind_kmh    ?? 0,
+      windDir:   x.wind_dir    ?? 0,
+      swell1H:   x.swell1_h    ?? 0,
+      swell1Dir: x.swell1_dir  ?? 0,
+      swell1P:   x.swell1_p    ?? 8,
+      swell2H:   x.swell2_h    ?? 0,
+      swell2Dir: x.swell2_dir  ?? 0,
+      swell2P:   x.swell2_p    ?? 8,
+      windWaveH: x.windwave_h  ?? 0,
+      windWaveDir: x.windwave_dir ?? 0,
+      windWaveP: x.windwave_p  ?? 0,
+      tideM:     x.tide_m      ?? 0,
+      seaTemp:   x.sea_temp    ?? null,
+      _history:  true,
+    }));
+
+    // Keep only rows strictly before the earliest dt already in _matrix
+    // (avoid duplicating the live forecast's first hours).
+    const firstLive = _matrix.length ? _matrix[0].dateTime : '9999';
+    const seen = new Set(_matrix.map(r => r.dateTime));
+    const toPrepend = histRows.filter(r => r.dateTime < firstLive && !seen.has(r.dateTime));
+    if (!toPrepend.length) return 0;
+
+    _matrix = toPrepend.concat(_matrix);
+    // _sliderIdx was an index into the old _matrix; shift it forward.
+    _sliderIdx += toPrepend.length;
+    return toPrepend.length;
+  } catch (e) {
+    console.warn('forecast history load failed (non-fatal):', e);
+    return 0;
+  }
+}
+
+
 // VIZ Forecast hosts the weekly upload + per-site AI summary and
 // writes one row per site to the shared Supabase `site_sightings`
 // table. This app only READS the Cabbage Tree Bay row and shows it
