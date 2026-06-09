@@ -1401,7 +1401,7 @@ const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by B
 
 
 const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
-const SWIM_CONFIG_KEY  = 'swim_config_cache_v8';
+const SWIM_CONFIG_KEY  = 'swim_config_cache_v9';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
@@ -1431,6 +1431,7 @@ const GEM_CONFIG_KEY = 'swim_gem_config_v2'; // bumped to v2 — forces fresh fe
 //   Tuning params: col P = index 15 (rows 24–26 = indices 23–25)
 //   Direction table: cols AP=41, AQ=42, AR=43 (rows 32–63 = indices 31–62)
 const STEYNE_TUNE_COL = 15;
+const STEYNE_TUNE_COL_R = 17; // col R — periodExp (r24), tideGateStart (r25), tideGateFull (r26)
 const STEYNE_DIR_COL  = 41; // wind=41, sea=42, rif=43
 const STEYNE_SWIM_COL = 36; // col AK — Swim metric thresholds, rows 9–12 (indices 8–11)
 
@@ -1476,9 +1477,9 @@ const SITE_DEFAULTS = {
   swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
   wwSens:         null,  // wind-wave demerit scale; null → falls back to swellSens (keeps existing calibration untouched)
   wwRouteBlend:   0,     // wind-wave DIRECTION filter geometry: 0 = arrival (point, into S Steyne) … 1 = route (line, S Steyne→Shelly). Blend in between.
-  periodExp:      1.1,    // exponent on period in swellPower: H² × P^periodExp. Higher = long-period swell penalised more.
-  tideGateStart:  90,     // tide/headland effect begins above this swell direction (°)
-  tideGateFull:   135,    // tide/headland effect reaches full strength at this direction (°), flat beyond
+  periodExp:      1.1,    // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
+  tideGateStart:  90,     // sheet col R r25 — tide/headland effect begins above this swell direction (°)
+  tideGateFull:   135,    // sheet col R r26 — tide/headland effect reaches full strength at this direction (°), flat beyond
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
   // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
   // three band edges + an explicit scaleMax (4th cell) that sets the rail's total
@@ -1567,6 +1568,22 @@ function applySwimConfig(rows) {
   if (rows[26]?.[1]?.includes('Swell period'))
     SITE.swellPeriodMult = n(rows[26][STEYNE_TUNE_COL]) || 5;
 
+  // Column R (index 17) tuning — the params that used to be hardcoded, now sheet-backed
+  // so they survive any device. Read by fixed cell; a blank/invalid cell falls back to
+  // the existing default rather than collapsing to 0.
+  const numR = (rowIdx) => {
+    const raw = rows[rowIdx]?.[STEYNE_TUNE_COL_R];
+    if (raw == null || String(raw).trim() === '') return null;
+    const v = parseFloat(raw);
+    return Number.isFinite(v) ? v : null;
+  };
+  const pExp = numR(23);  // R24 — period exponent
+  const tgS  = numR(24);  // R25 — tide gate start (°)
+  const tgF  = numR(25);  // R26 — tide gate full (°)
+  if (pExp != null) SITE.periodExp     = pExp;
+  if (tgS  != null) SITE.tideGateStart = tgS;
+  if (tgF  != null) SITE.tideGateFull  = tgF;
+
   // Optional wind-wave tuning — label-matched anywhere in the tuning column, so
   // they load wherever you add them in the sheet and fall back to defaults if absent.
   for (let r = 0; r < rows.length; r++) {
@@ -1642,6 +1659,9 @@ async function loadConfig() {
       SITE.swellSens      = c.swellSens;
       SITE.periodPower    = c.periodPower;
       SITE.swellPeriodMult = c.swellPeriodMult || 5;
+      if (c.periodExp     != null) SITE.periodExp     = c.periodExp;
+      if (c.tideGateStart != null) SITE.tideGateStart = c.tideGateStart;
+      if (c.tideGateFull  != null) SITE.tideGateFull  = c.tideGateFull;
       SITE.wwSens          = (c.wwSens != null) ? c.wwSens : null;
       SITE.wwRouteBlend    = c.wwRouteBlend || 0;
       // Merge over defaults so any key absent from an older cache (e.g. scaleMax)
@@ -1667,6 +1687,9 @@ async function loadConfig() {
         swellSens:      SITE.swellSens,
         periodPower:    SITE.periodPower,
         swellPeriodMult: SITE.swellPeriodMult,
+        periodExp:       SITE.periodExp,
+        tideGateStart:   SITE.tideGateStart,
+        tideGateFull:    SITE.tideGateFull,
         wwSens:          SITE.wwSens,
         wwRouteBlend:    SITE.wwRouteBlend,
         swimThresholds:  SITE.swimThresholds,
@@ -1683,6 +1706,9 @@ async function loadConfig() {
     SITE.swellSens      = SITE_DEFAULTS.swellSens;
     SITE.periodPower    = SITE_DEFAULTS.periodPower;
     SITE.swellPeriodMult = SITE_DEFAULTS.swellPeriodMult;
+    SITE.periodExp       = SITE_DEFAULTS.periodExp;
+    SITE.tideGateStart   = SITE_DEFAULTS.tideGateStart;
+    SITE.tideGateFull    = SITE_DEFAULTS.tideGateFull;
     SITE.wwSens          = SITE_DEFAULTS.wwSens;
     SITE.wwRouteBlend    = SITE_DEFAULTS.wwRouteBlend;
     SITE.swimThresholds  = JSON.parse(JSON.stringify(SITE_DEFAULTS.swimThresholds));
@@ -3097,7 +3123,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -3303,17 +3329,18 @@ if (!GEM_MODEL) {
 // stalled or failed network can't leave the app stuck on "—". loadAndRender ALWAYS
 // runs, even if both config loads fail.
 // =============================================================================
-// LIVE TUNING PANEL (?tune=1) — read & adjust the sensitivities that used to live
-// in the sheet, with instant preview and localStorage persistence. The sheet (or
-// defaults) still sets the baseline; these overrides apply on top.
+// LIVE TUNING PANEL (?tune=1) — read & adjust the sensitivities, instant preview,
+// localStorage persistence, plus Export/Import so values are never trapped on one
+// device. The sheet (col P + col R) remains the durable source of truth; these
+// overrides apply on top for live experimentation.
 // =============================================================================
 const TUNE_PARAMS = [
-  { key:'windSens',      label:'Wind sensitivity',     min:0,   max:1,    step:0.01, hint:'Scales wind-chop demerit (wind_d).' },
-  { key:'swellSens',     label:'Swell sensitivity',    min:0.2, max:4,    step:0.05, hint:'Scales all swell demerits. The main "harshness" knob.' },
-  { key:'wwSens',        label:'Wind-wave sensitivity',min:0.2, max:4,    step:0.05, hint:'Scales the wind-wave term. Blank = follows swell sensitivity.', nullable:true },
-  { key:'periodExp',     label:'Period exponent',      min:0.5, max:1.6,  step:0.05, hint:'Power on swell period (H squared times P^exp). Higher = long-period swell penalised more.' },
-  { key:'tideGateStart', label:'Tide gate start (deg)',min:0,   max:180,  step:5,    hint:'Swell direction where the headland/tide effect begins.' },
-  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Direction where the tide effect reaches full strength.' },
+  { key:'windSens',      label:'Wind sensitivity',     min:0,   max:1,    step:0.01, hint:'Scales wind-chop demerit.' },
+  { key:'swellSens',     label:'Swell sensitivity',    min:0.2, max:4,    step:0.05, hint:'Scales all swell demerits. Main harshness knob.' },
+  { key:'wwSens',        label:'Wind-wave sensitivity',min:0.2, max:4,    step:0.05, hint:'Scales wind-wave term. Blank = follows swell sens.', nullable:true },
+  { key:'periodExp',     label:'Period exponent',      min:0.5, max:1.6,  step:0.05, hint:'Power on swell period. Higher = long-period swell penalised more.' },
+  { key:'tideGateStart', label:'Tide gate start (deg)',min:0,   max:180,  step:5,    hint:'Swell direction where headland/tide effect begins.' },
+  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Direction where tide effect reaches full strength.' },
 ];
 
 function loadTuneOverrides() {
@@ -3331,30 +3358,31 @@ function applyTuneOverrides() {
 
 function buildTunePanel() {
   if (!TUNE_PANEL) return;
-  const ov = loadTuneOverrides();
+  try {
   const fmt = v => (v == null ? '—' : (Math.round(v * 100) / 100));
-  const rows = TUNE_PARAMS.map(p => {
+  const rowHTML = (p) => {
+    const ov = loadTuneOverrides();
     const overridden = Object.prototype.hasOwnProperty.call(ov, p.key);
     const cur = SITE[p.key];
     const sliderVal = (cur == null) ? p.min : cur;
     return `
-      <div style="margin-bottom:12px;" data-tune-row="${p.key}">
+      <div style="margin-bottom:12px;">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
           <span style="font-weight:700;color:var(--deep);">${p.label}</span>
           <span style="font-family:'DM Mono',monospace;font-size:12px;">
             <b data-tune-val="${p.key}">${fmt(cur)}</b>
-            <span data-tune-flag="${p.key}" style="margin-left:6px;font-size:9px;letter-spacing:0.5px;color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'OVERRIDDEN' : 'baseline'}</span>
+            <span data-tune-flag="${p.key}" style="margin-left:6px;font-size:9px;letter-spacing:0.5px;color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : 'sheet'}</span>
           </span>
         </div>
         <input type="range" data-tune-input="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}"
           style="width:100%;margin:4px 0 2px;accent-color:var(--ocean);">
-        <div style="font-size:10px;color:var(--dim);line-height:1.3;">${p.hint}${p.nullable ? ' <button data-tune-clear="'+p.key+'" style="margin-left:6px;font-size:9px;padding:1px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--dim);cursor:pointer;">use swell sens</button>' : ''}</div>
+        <div style="font-size:10px;color:var(--dim);line-height:1.3;">${p.hint}${p.nullable ? ' <button data-tune-clear="'+p.key+'" style="margin-left:4px;font-size:9px;padding:1px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--dim);cursor:pointer;">use swell sens</button>' : ''}</div>
       </div>`;
-  }).join('');
+  };
 
   const panel = document.createElement('div');
   panel.id = 'tune-panel';
-  panel.style.cssText = `position:fixed;right:12px;bottom:12px;z-index:9999;width:300px;max-height:80vh;overflow-y:auto;
+  panel.style.cssText = `position:fixed;right:12px;top:12px;z-index:99999;width:300px;max-height:90vh;overflow-y:auto;
     background:var(--foam);border:2px solid var(--ocean);border-radius:14px;padding:14px 16px;
     box-shadow:0 8px 40px rgba(0,0,0,0.25);font-family:'DM Mono',monospace;font-size:12px;color:var(--text);`;
   panel.innerHTML = `
@@ -3363,15 +3391,20 @@ function buildTunePanel() {
       <button id="tune-min" title="collapse" style="border:none;background:transparent;font-size:16px;cursor:pointer;color:var(--dim);">–</button>
     </div>
     <div id="tune-body">
-      ${rows}
-      <div style="display:flex;gap:8px;margin-top:10px;">
-        <button id="tune-reset" style="flex:1;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reset to baseline</button>
+      ${TUNE_PARAMS.map(rowHTML).join('')}
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+        <button id="tune-export" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Copy values</button>
+        <button id="tune-import" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Paste values</button>
+        <button id="tune-reset" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reset</button>
       </div>
-      <div style="font-size:9px;color:var(--dim);margin-top:8px;line-height:1.4;">
-        Changes persist on this device and apply on top of the sheet. "Reset" clears your overrides; reload to re-pull exact sheet values.
+      <div id="tune-msg" style="font-size:10px;color:var(--ocean);margin-top:6px;min-height:13px;"></div>
+      <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">
+        Live preview only persists on THIS device. To make values permanent for everyone, put them in the sheet (col P rows 24–27, col R rows 24–26). "Copy values" gives you a snapshot to paste into the sheet or save.
       </div>
     </div>`;
   document.body.appendChild(panel);
+
+  const msg = (t) => { const m = panel.querySelector('#tune-msg'); if (m) { m.textContent = t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; }, 4000); } };
 
   panel.querySelector('#tune-min').addEventListener('click', () => {
     const b = panel.querySelector('#tune-body');
@@ -3379,13 +3412,18 @@ function buildTunePanel() {
   });
 
   const refreshRow = (key) => {
-    const overrides = loadTuneOverrides();
-    const overridden = Object.prototype.hasOwnProperty.call(overrides, key);
+    const ov = loadTuneOverrides();
+    const overridden = Object.prototype.hasOwnProperty.call(ov, key);
     const valEl  = panel.querySelector(`[data-tune-val="${key}"]`);
     const flagEl = panel.querySelector(`[data-tune-flag="${key}"]`);
     if (valEl)  valEl.textContent = fmt(SITE[key]);
-    if (flagEl) { flagEl.textContent = overridden ? 'OVERRIDDEN' : 'baseline'; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
+    if (flagEl) { flagEl.textContent = overridden ? 'SET' : 'sheet'; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
   };
+  const refreshAll = () => TUNE_PARAMS.forEach(p => {
+    refreshRow(p.key);
+    const inp = panel.querySelector(`[data-tune-input="${p.key}"]`);
+    if (inp) inp.value = (SITE[p.key] == null) ? p.min : SITE[p.key];
+  });
 
   const applyAndRender = () => {
     applyTuneOverrides();
@@ -3401,33 +3439,51 @@ function buildTunePanel() {
     const input = panel.querySelector(`[data-tune-input="${p.key}"]`);
     if (input) input.addEventListener('input', () => {
       const v = parseFloat(input.value);
-      const overrides = loadTuneOverrides();
-      overrides[p.key] = v;
-      saveTuneOverrides(overrides);
-      SITE[p.key] = v;
-      applyAndRender();
-      refreshRow(p.key);
+      const ov = loadTuneOverrides(); ov[p.key] = v; saveTuneOverrides(ov);
+      SITE[p.key] = v; applyAndRender(); refreshRow(p.key);
     });
     if (p.nullable) {
       const clr = panel.querySelector(`[data-tune-clear="${p.key}"]`);
       if (clr) clr.addEventListener('click', () => {
-        const overrides = loadTuneOverrides();
-        overrides[p.key] = null;
-        saveTuneOverrides(overrides);
-        SITE[p.key] = null;
-        applyAndRender();
-        refreshRow(p.key);
+        const ov = loadTuneOverrides(); ov[p.key] = null; saveTuneOverrides(ov);
+        SITE[p.key] = null; applyAndRender(); refreshRow(p.key);
       });
     }
+  });
+
+  // EXPORT — copy current values as readable text + JSON to clipboard
+  panel.querySelector('#tune-export').addEventListener('click', () => {
+    const lines = TUNE_PARAMS.map(p => `${p.label}: ${fmt(SITE[p.key])}`).join('\n');
+    const json = JSON.stringify(TUNE_PARAMS.reduce((o,p)=>{o[p.key]=SITE[p.key];return o;}, {}));
+    const text = `Swim Manly tuning — ${new Date().toLocaleString('en-AU')}\n${lines}\n\nJSON: ${json}`;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(()=>msg('Copied to clipboard ✓')).catch(()=>{ prompt('Copy these values:', text); });
+    } else { prompt('Copy these values:', text); }
+  });
+
+  // IMPORT — paste a previously-exported JSON to restore values
+  panel.querySelector('#tune-import').addEventListener('click', () => {
+    const input = prompt('Paste exported JSON (the part after "JSON:"):', '');
+    if (!input) return;
+    try {
+      const m = input.match(/\{.*\}/s);
+      const obj = JSON.parse(m ? m[0] : input);
+      const ov = loadTuneOverrides();
+      TUNE_PARAMS.forEach(p => { if (Object.prototype.hasOwnProperty.call(obj, p.key)) { ov[p.key] = obj[p.key]; SITE[p.key] = obj[p.key]; } });
+      saveTuneOverrides(ov); applyAndRender(); refreshAll();
+      msg('Imported ✓');
+    } catch(e) { msg('Could not parse — check the JSON'); }
   });
 
   panel.querySelector('#tune-reset').addEventListener('click', () => {
     saveTuneOverrides({});
     TUNE_PARAMS.forEach(p => { SITE[p.key] = SITE_DEFAULTS[p.key]; });
-    applyAndRender();
-    TUNE_PARAMS.forEach(p => refreshRow(p.key));
-    console.log('Tuning overrides cleared. Reload to re-pull exact sheet values.');
+    applyAndRender(); refreshAll();
+    msg('Cleared — reload to re-pull exact sheet values');
   });
+  } catch(err) {
+    console.error('Tune panel failed to build:', err);
+  }
 }
 
 (async function startup() {
@@ -3444,8 +3500,6 @@ function buildTunePanel() {
     }
     console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
   }
-  // Apply any saved sensitivity overrides on top of the sheet/defaults, then
-  // build the live tuning panel if ?tune=1 is present.
   applyTuneOverrides();
   buildTunePanel();
   loadAndRender();
