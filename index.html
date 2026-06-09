@@ -1502,7 +1502,25 @@ let SITE = {
   key:      'SteyneSw',
   name:     'South Steyne',
   tideBase: 'all',
+  // Legacy flat tide (kept for any old callers): scales whole subtotal by water level.
   tide:     (o, t) => o * (t - 0.2),
+  // Headland-protection gate: 0 at ≤90°, smoothstep ramp to 1 at ≥135°, then flat.
+  // Tide only matters for waves from directions where the Shelly headland is in play.
+  tideGate: (dirDeg) => {
+    const a = ((dirDeg % 360) + 360) % 360;
+    const dir = a > 180 ? 360 - a : a;
+    const t = Math.max(0, Math.min(1, (dir - 90) / (135 - 90)));
+    return t * t * (3 - 2 * t);
+  },
+  // Direction-gated, per-source tide demerit. Only swell + wind-wave terms are
+  // amplified (each by its own arrival direction); wind chop is never tide-amplified.
+  tideDir: function(tideM, parts) {
+    const mult = tideM - 0.2;
+    const w = (parts.s1_d || 0) * this.tideGate(parts.s1Dir || 0)
+            + (parts.s2_d || 0) * this.tideGate(parts.s2Dir || 0)
+            + (parts.ww_d || 0) * this.tideGate(parts.wwDir || 0);
+    return mult * w;
+  },
   get spm() { return 81 / this.periodPower; },
   ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
 };
@@ -1857,7 +1875,17 @@ function calcScore(d, modelOverride) {
   }
 
   const o      = wind_d + ww_d + s1_d + s2_d + rif_d;
-  const tide_d = SITE.tide(o, tideM);
+
+  // ── Tide effect — headland protection model ──────────────────────────────
+  // The Shelly headland shelters the bay, and how much depends on water level.
+  // This only matters for waves from directions where the headland is in play:
+  // starts at >90°, smoothstep ramp to full at 135°, flat beyond. Wind chop is
+  // never tide-amplified — only swell + wind-wave, each gated by its own direction.
+  const tide_d = SITE.tideDir(tideM, {
+    s1_d, s1Dir: swell1Dir,
+    s2_d, s2Dir: swell2Dir || 0,
+    ww_d, wwDir: windWaveDir || windDir,
+  });
   const total  = o + tide_d;
 
   return {
@@ -2031,6 +2059,7 @@ let _wxMatrix = {};   // hourly weather keyed by datetime
 let _wxDaily  = {};   // daily weather (sunrise/sunset) keyed by date
 let _sliderIdx = 0;
 let _retryFn  = null;
+let _lastSnapshot = null; // { h, result } of the currently-shown slot, for breakdown modal
 
 // =============================================================================
 // CACHE HELPERS
@@ -2381,6 +2410,7 @@ function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) return;
   const result = calcScore(h);
   const dm     = result.demerits;
+  _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
 
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
@@ -2678,7 +2708,9 @@ function renderGemComparison(h) {
   const s2_d    = s2p * (s2sea / 100) * SITE.swellSens;
   const rif_d   = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
   const o       = wind_d + ww_d + s1_d + s2_d + rif_d;
-  const total   = o + SITE.tide(o, tideM);
+  const total   = o + SITE.tideDir(tideM, {
+    s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir,
+  });
   const score   = Math.max(0, Math.round(60 - total));
 
   const enT   = SITE.entryThresholds;
@@ -2729,7 +2761,9 @@ function renderGemComparison(h) {
       const s1_d_g   = s1pow_g * s1Tx_g * SITE.swellSens;
       const s2_d_g   = s2pow_g * s2Tx_g * SITE.swellSens;
       const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g;
-      const total_g  = o_g + SITE.tide(o_g, tideM);
+      const total_g  = o_g + SITE.tideDir(tideM, {
+        s1_d: s1_d_g, s1Dir: swell1Dir, s2_d: s2_d_g, s2Dir: swell2Dir || 0, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
+      });
       const score_g  = Math.max(0, Math.round(60 - total_g));
 
       const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
@@ -2755,7 +2789,7 @@ function renderGemComparison(h) {
         `<span style="color:#fc8;">s2_d</span><span>${f(s2_d)}</span><span>${f(s2_d_g)}</span>` +
         `<span style="color:#fc8;">rif_d</span><span>${f(rif_d)}</span><span>0 (in table)</span>` +
         `<span style="color:#9fd;">subtotal o</span><span>${f(o)}</span><span>${f(o_g)}</span>` +
-        `<span style="color:#9fd;">tide_d</span><span>${f(SITE.tide(o,tideM))}</span><span>${f(SITE.tide(o_g,tideM))}</span>` +
+        `<span style="color:#9fd;">tide_d</span><span>${f(SITE.tideDir(tideM,{s1_d,s1Dir:swell1Dir,s2_d,s2Dir:swell2Dir||0,ww_d,wwDir:windWaveDir||windDir}))}</span><span>${f(SITE.tideDir(tideM,{s1_d:s1_d_g,s1Dir:swell1Dir,s2_d:s2_d_g,s2Dir:swell2Dir||0,ww_d:ww_d_g,wwDir:windWaveDir||windDir}))}</span>` +
         `<span style="color:#9fd;">total</span><span>${f(total)}</span><span>${f(total_g)}</span>` +
         `<b style="color:#7ec8e3;">SCORE 60−total</b><b>${score}</b><b style="color:#7ec8e3;">${score_g}</b>` +
         `</div>`;
@@ -3406,11 +3440,11 @@ function runCalibration() {
 
   // Shared totals (used by both branches)
   const app_o      = app_wind_d + app_ww_d + app_s1_d + app_s2_d + app_rif_d;
-  const app_tide_d = app_o * (tideM - 0.2);
+  const app_tide_d = SITE.tideDir(tideM, { s1_d: app_s1_d, s1Dir: swell1Dir, s2_d: app_s2_d, s2Dir: swell2Dir, ww_d: app_ww_d, wwDir: wwDir });
   const app_total  = app_o + app_tide_d;
   const app_score  = Math.max(0, Math.round(60 - app_total));
   const sh_o       = sh_wind_d + sh_ww_d + sh_s1_d + sh_s2_d + sh_rif_d;
-  const sh_tide_d  = sh_o * (tideM - 0.2);
+  const sh_tide_d  = SITE.tideDir(tideM, { s1_d: sh_s1_d, s1Dir: swell1Dir, s2_d: sh_s2_d, s2Dir: swell2Dir, ww_d: sh_ww_d, wwDir: wwDir });
   const sh_total   = sh_o + sh_tide_d;
   const sh_score   = Math.max(0, Math.round(60 - sh_total));
   const pCap       = GEM_MODEL ? '—' : (SITE.swellPeriodMult || 5);
@@ -4040,9 +4074,65 @@ function openMetricModal(key) {
   const body    = document.getElementById('metric-modal-summary');
   if (!overlay) return;
   if (title) title.textContent = info.title;
-  if (body)  body.textContent  = info.text;
+  if (body) {
+    body.innerHTML = '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key);
+  }
   overlay.classList.add('open');
   document.addEventListener('keydown', _metricEsc);
+}
+
+// Live component breakdown for the currently-shown slot — restores the
+// "follow the math" transparency that the spreadsheet used to give.
+function metricBreakdownHTML(key) {
+  const snap = _lastSnapshot;
+  if (!snap || !snap.result) return '';
+  const r = snap.result, dm = r.demerits, h = snap.h;
+  const f = x => (Math.round((x || 0) * 10) / 10).toFixed(1);
+  const tideM = h.tideM ?? 0;
+  const row = (label, val, note) =>
+    `<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0;">
+       <span style="color:var(--dim);">${label}${note ? ` <span style="opacity:0.7;">${note}</span>` : ''}</span>
+       <b style="font-variant-numeric:tabular-nums;">${val}</b></div>`;
+  const wrap = inner =>
+    `<div style="margin-top:6px;padding:10px 12px;background:rgba(10,126,164,0.06);border-radius:10px;
+       font-family:'DM Mono',monospace;font-size:11px;line-height:1.5;">
+       <div style="font-weight:700;color:var(--deep);letter-spacing:0.5px;margin-bottom:4px;">CURRENT SLOT — COMPONENTS</div>
+       ${inner}</div>`;
+
+  if (key === 'entry') {
+    const o = (dm.wind + dm.windWave + dm.swell1 + dm.swell2 + dm.refrac);
+    return wrap(
+      row('Wind chop', f(dm.wind)) +
+      row('Wind-wave', f(dm.windWave)) +
+      row('Primary swell', f(dm.swell1)) +
+      row('Secondary swell', f(dm.swell2)) +
+      (Math.abs(dm.refrac) > 0.05 ? row('Refraction', f(dm.refrac)) : '') +
+      `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
+      row('Subtotal (before tide)', f(o)) +
+      row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — only swell from &gt;90°)`) +
+      `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
+      row('Total demerits', f(r.entry.raw)) +
+      row('Entry score (60 = best)', r.entry.score + ' · ' + r.entry.label)
+    );
+  }
+  if (key === 'swim') {
+    return wrap(
+      row('Wind chop', f(dm.wind)) +
+      row('Wind-wave', f(dm.windWave)) +
+      `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
+      row('q7 = wind + wind-wave', f(r.swim.raw)) +
+      row('Swim score (60 = best)', r.swim.score + ' · ' + r.swim.label)
+    );
+  }
+  if (key === 'surge') {
+    return wrap(
+      row('Primary swell', f(dm.swell1)) +
+      row('Secondary swell', f(dm.swell2)) +
+      `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
+      row('Surge score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
+    );
+  }
+  return '';
 }
 
 function closeMetricModal() {
