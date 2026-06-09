@@ -2123,10 +2123,7 @@ function fetchWithTimeout(url, ms, opts) {
 // FETCH WILLYWEATHER — primary swell, wind, tide (Manly Beach location)
 // =============================================================================
 async function fetchWillyWeather() {
-  const res = await Promise.race([
-    fetch(`${WW_WORKER_URL}?location=swimmers&days=5`),
-    new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')), 12000))
-  ]);
+  const res = await fetchWithTimeout(`${WW_WORKER_URL}?location=swimmers&days=5`, 12000);
   if (!res.ok) throw new Error(`WW ${res.status}`);
   return await res.json();
 }
@@ -3500,9 +3497,22 @@ function buildTunePanel() {
     }
     console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
   }
-  applyTuneOverrides();
-  buildTunePanel();
+  // Tuning overlay is best-effort and must never block the forecast render.
+  try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
+  try { buildTunePanel(); }    catch(e) { console.warn('buildTunePanel failed:', e); }
   loadAndRender();
+
+  // Watchdog: if nothing has rendered after 25s (silent stall — a hung fetch, a
+  // corrupt cache, etc.), self-recover by purging the WW cache and forcing one
+  // clean reload, so the user isn't left staring at "—" with no recourse.
+  setTimeout(() => {
+    if (!_matrix || _matrix.length === 0) {
+      console.warn('Watchdog: no forecast after 25s — purging WW cache and forcing reload.');
+      try { localStorage.removeItem(WW_CACHE_KEY); } catch(e) {}
+      setStatus('Recovering… reloading forecast');
+      loadAndRender(true);
+    }
+  }, 25000);
 })();
 
   // ===== SPLASH SCREEN =====
