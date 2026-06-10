@@ -3659,23 +3659,50 @@ function buildTunePanel() {
 }
 
 (async function startup() {
-  try { await loadConfig(); }    catch(e) { console.warn('loadConfig failed at startup:', e); }
-  try { await loadGemConfig(true); } catch(e) { console.warn('loadGemConfig failed at startup:', e); }
-  // GEM is the live model — if its table didn't load, every swell silently
-  // transmits at the 0.5 fallback (direction ignored), inflating scores. Surface it.
-  if (GEM_MODEL && !SITE.gemTable) {
-    const badge = document.getElementById('gem-badge');
-    if (badge) {
-      badge.textContent = '⚠ MODEL TABLE NOT LOADED';
-      badge.style.background = 'var(--red)';
-      badge.style.display = 'inline';
-    }
-    console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
-  }
-  // Tuning overlay is best-effort and must never block the forecast render.
+  // Apply any saved manual tuning first — it's a local read, no network, so it
+  // can safely precede the forecast paint and keeps the first render correct.
   try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
-  try { buildTunePanel(); }    catch(e) { console.warn('buildTunePanel failed:', e); }
+
+  // ── Start the forecast fetch IMMEDIATELY ─────────────────────────────────────
+  // It must NOT wait on the Google-Sheet config downloads. On a cold first open
+  // those config fetches can eat 8–16s and often stall, which used to delay (and
+  // frequently strand) the forecast request — leaving the dots halfway until a
+  // manual refresh. Fire it now, at second zero, on a fresh connection.
   loadAndRender();
+
+  // ── Load tuning + GEM energy table in the BACKGROUND ─────────────────────────
+  // loadGemConfig() now uses its 1-hour cache (no forced re-download every launch).
+  // When config resolves we re-apply overrides and — if the forecast has already
+  // painted — re-render so scores pick up the real config / GEM table rather than
+  // the 0.5 transmit fallback. This does not block or delay the forecast.
+  (async function loadConfigInBackground() {
+    try { await loadConfig(); }    catch(e) { console.warn('loadConfig failed at startup:', e); }
+    try { await loadGemConfig(); } catch(e) { console.warn('loadGemConfig failed at startup:', e); }
+
+    // GEM is the live model — if its table didn't load, every swell silently
+    // transmits at the 0.5 fallback (direction ignored), inflating scores. Surface it.
+    if (GEM_MODEL && !SITE.gemTable) {
+      const badge = document.getElementById('gem-badge');
+      if (badge) {
+        badge.textContent = '⚠ MODEL TABLE NOT LOADED';
+        badge.style.background = 'var(--red)';
+        badge.style.display = 'inline';
+      }
+      console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
+    }
+
+    // Apply manual tuning overlay on top of the freshly loaded config, build the
+    // (dev-only) tune panel against real values, then re-render the current slot
+    // so the visible scores reflect the loaded config / GEM table.
+    try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
+    try { buildTunePanel(); }    catch(e) { console.warn('buildTunePanel failed:', e); }
+    if (_matrix && _matrix.length) {
+      const slot  = _matrix[_sliderIdx];
+      const wxKey = (slot?.dateTime || '').replace(' ','T').substring(0,16);
+      renderSnapshot(slot, _wxMatrix[wxKey] || null);
+      renderTimeline(_matrix, _wxMatrix);
+    }
+  })();
 
   // Watchdog: if nothing has rendered after 25s (silent stall — a hung fetch, a
   // corrupt cache, etc.), self-recover by purging the WW cache and forcing one
