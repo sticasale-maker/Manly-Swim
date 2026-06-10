@@ -3500,22 +3500,26 @@ async function bbFetch() {
   return await res.json(); // [{reported_at: '...'}, ...]
 }
 
-// Insert a new report
-async function bbInsert(ipHash) {
+// Insert a new report — routed through the report_bluebottle() RPC so the
+// 4-hour cooldown is enforced SERVER-SIDE on the real client IP. Direct inserts
+// into bluebottle_reports are denied by RLS. The server derives + hashes the IP
+// itself; the deviceId arg is no longer sent (kept only for call-site compat).
+// A 4xx here = server cooldown rejected the report; bbReport treats any throw as
+// "report failed" and re-enables the button.
+async function bbInsert(_deviceId) {
   const res = await fetch(
-    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports`,
+    `${BB_SUPABASE_URL}/rest/v1/rpc/report_bluebottle`,
     {
       method: 'POST',
       headers: {
         'apikey': BB_SUPABASE_KEY,
         'Authorization': `Bearer ${BB_SUPABASE_KEY}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ ip_hash: ipHash })
+      body: '{}'
     }
   );
-  if (!res.ok) throw new Error(`Supabase insert ${res.status}`);
+  if (!res.ok) throw new Error(`Supabase rpc ${res.status}`);
 }
 
 // Render the strip from a reports array
