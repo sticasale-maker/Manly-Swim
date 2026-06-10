@@ -2312,6 +2312,14 @@ function loadCache(key) {
 function cacheIsFresh(cache, ttl) {
   return cache && cache.fetchedAt && (Date.now() - cache.fetchedAt) < ttl;
 }
+// A WW cache is only usable if it actually holds forecast rows that carry a
+// timestamp. A fresh-but-empty/corrupt cache (e.g. left by an older app version)
+// must NOT be trusted — otherwise it short-circuits the live fetch and the app
+// renders nothing, sitting stuck at the halfway default.
+function wwCacheUsable(cache) {
+  return !!(cache && cache.data && Array.isArray(cache.matrix)
+            && cache.matrix.some(r => r && r.dateTime));
+}
 
 // fetch() with a hard timeout. A stalled request (flaky mobile, captive portal,
 // slow Google Sheets) otherwise hangs the await forever — and when that await sits
@@ -2647,7 +2655,10 @@ function closeAbout() {
 function _aboutEsc(e) { if (e.key === 'Escape') closeAbout(); }
 
 function renderSnapshot(h, wx) {
-  if (!h || !h.dateTime) return;
+  if (!h || !h.dateTime) {
+    diag('renderSnapshot BAILED — ' + (!h ? 'no row object' : 'row has no dateTime'));
+    return false;
+  }
   const result = calcScore(h);
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
@@ -2810,6 +2821,7 @@ function renderSnapshot(h, wx) {
   }
   // Update GEM comparison card whenever the snapshot updates
   renderGemComparison(h);
+  return true;
 }
 
 // Track which day is selected in the day-picker
@@ -3161,7 +3173,7 @@ async function loadAndRender(forceRefresh = false) {
 
     // If we have ANY cached data, render it immediately so the page isn't blank
     // while we attempt a live fetch in the background
-    if (wwCache?.data && wwCache?.matrix?.length) {
+    if (wwCacheUsable(wwCache)) {
       try {
         _matrix    = wwCache.matrix;
         _sliderIdx = 0;
@@ -3170,6 +3182,7 @@ async function loadAndRender(forceRefresh = false) {
         const now = Date.now();
         let bestIdx = 0, minDiff = Infinity;
         _matrix.forEach((row, i) => {
+          if (!row || !row.dateTime) return;
           const diff = Math.abs(new Date(row.dateTime.replace(' ','T')).getTime() - now);
           if (diff < minDiff) { minDiff = diff; bestIdx = i; }
         });
@@ -3185,9 +3198,10 @@ async function loadAndRender(forceRefresh = false) {
       } catch(e2) { /* silent — live fetch will overwrite */ }
     }
 
-    if (!forceRefresh && cacheIsFresh(wwCache, WW_CACHE_TTL) && wwCache.data) {
+    if (!forceRefresh && cacheIsFresh(wwCache, WW_CACHE_TTL) && wwCacheUsable(wwCache)) {
       wwData  = wwCache.data;
       matrix  = wwCache.matrix || [];
+      diag('using fresh cache (' + matrix.length + ' rows)');
       const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
       setStatus(`Cached ${ago} min ago · WillyWeather Manly`);
       document.getElementById('lastUpdated').textContent =
@@ -3225,7 +3239,8 @@ async function loadAndRender(forceRefresh = false) {
     }
 
     // ── Render immediately with WW data — metrics visible right away ─────────
-    _matrix = matrix;
+    // Drop any rows missing a timestamp so a single bad row can't poison indexing.
+    _matrix = (matrix || []).filter(r => r && r.dateTime);
     if (_matrix.length > 0) {
       const now = Date.now();
       let bestIdx = 0, minDiff = Infinity;
@@ -3236,10 +3251,19 @@ async function loadAndRender(forceRefresh = false) {
       _sliderIdx = bestIdx;
       _selectedDay = _matrix[_sliderIdx]?.dateTime?.substring(0, 10) || null;
     }
-    const firstH = _matrix[_sliderIdx] || wwData || null;
+    const firstH = _matrix[_sliderIdx] || (wwData && wwData.dateTime ? wwData : null);
     if (!firstH) throw new Error('No forecast data available');
-    renderSnapshot(firstH, null);
-    diag('snapshot rendered (idx ' + _sliderIdx + ')');
+    const rendered = renderSnapshot(firstH, null);
+    diag(rendered ? ('snapshot rendered (idx ' + _sliderIdx + ')')
+                  : ('snapshot FAILED — firstH.dt=' + firstH.dateTime + ', rows=' + _matrix.length));
+    if (!rendered) {
+      // Extremely rare now (bad cache is already refused, bad rows already filtered).
+      // Purge and throw so the bounded auto-retry path handles it — never recurse,
+      // which could hammer the API if a fetch keeps returning unusable rows.
+      try { localStorage.removeItem(WW_CACHE_KEY); } catch(e) {}
+      diag('purged bad data → will auto-retry');
+      throw new Error('no usable forecast row');
+    }
     renderSlider(_matrix);
     renderTimeline(_matrix, {});
     hideErrorBanner();
@@ -3425,7 +3449,7 @@ function hideRefreshPrompt() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) retryIfStillEmpty('foreground');
   });
-  window.addEventListener('pageshow', () => retryIfStillEmpty('pageshow'));
+  window.addEventListener('pageshow', (e) => { if (e.persisted) retryIfStillEmpty('bfcache-restore'); });
 })();
 
 // =============================================================================
