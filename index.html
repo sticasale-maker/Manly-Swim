@@ -809,6 +809,25 @@
     transition:background 0.15s;
   }
   #refresh-prompt-btn:active { background:var(--deep); }
+  #refresh-prompt-details {
+    margin-top:14px; text-align:left; font-size:10px; color:var(--dim);
+  }
+  #refresh-prompt-details summary {
+    cursor:pointer; letter-spacing:0.5px; text-transform:uppercase;
+    font-size:10px; color:var(--dim); margin-bottom:6px;
+  }
+  #refresh-prompt-log {
+    background:rgba(6,78,110,0.06); border:1px solid var(--border);
+    border-radius:6px; padding:8px; font-family:'DM Mono',monospace;
+    font-size:9px; line-height:1.5; color:var(--text);
+    white-space:pre-wrap; word-break:break-word; max-height:160px; overflow:auto;
+    margin-bottom:8px;
+  }
+  #refresh-prompt-copy {
+    font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.5px;
+    color:var(--ocean); background:none; border:1px solid var(--ocean);
+    border-radius:6px; padding:5px 10px; cursor:pointer;
+  }
 
   /* ── Summary (collapsible) ── */
   #summary-section {
@@ -1146,6 +1165,11 @@
     <div id="refresh-prompt-arrow">↓</div>
     <div id="refresh-prompt-text">Please refresh by pulling down the screen</div>
     <button id="refresh-prompt-btn" type="button">Tap here to retry</button>
+    <details id="refresh-prompt-details">
+      <summary>What happened?</summary>
+      <pre id="refresh-prompt-log"></pre>
+      <button id="refresh-prompt-copy" type="button">Copy diagnostics</button>
+    </details>
   </div>
 </div>
 
@@ -2259,6 +2283,20 @@ let _sliderIdx = 0;
 let _retryFn  = null;
 let _lastSnapshot = null; // { h, result } of the currently-shown slot, for breakdown modal
 let _forecastRendered = false; // true once a real snapshot has been drawn (dots off the 50% default)
+
+// Lightweight on-device diagnostics. Because the "stuck halfway" bug is intermittent
+// and only happens on real phones, we record a timestamped trace of the load path and
+// surface the last lines inside the refresh popup, so a screenshot tells us exactly
+// what failed instead of us guessing.
+let _diagLog = [];
+function diag(msg) {
+  const t = new Date().toLocaleTimeString('en-AU', { hour12: false });
+  _diagLog.push(t + '  ' + msg);
+  if (_diagLog.length > 50) _diagLog.shift();
+  try { console.log('[swim] ' + msg); } catch(e) {}
+  const pre = document.getElementById('refresh-prompt-log');
+  if (pre) pre.textContent = _diagLog.slice(-18).join('\n');
+}
 let _autoDotPct = { entry: 50, swim: 50, surge: 50 }; // last auto dot positions (%) for calibration capture
 let _assessPct  = { entry: null, swim: null, surge: null }; // user's manual assessment positions (%), TUNE mode
 
@@ -3103,9 +3141,18 @@ function renderPollution(bw) {
 // MAIN LOAD — WillyWeather (primary) + Open-Meteo Marine/Weather (supplementary)
 // =============================================================================
 let _loadInFlight = false;
+let _loadStartedAt = 0;
 async function loadAndRender(forceRefresh = false) {
-  if (_loadInFlight) return;   // a load is already running — don't stack a second one
+  // Don't stack a second load on top of a running one — BUT never block forever:
+  // if a previous load wedged (e.g. a hung fetch), allow a new one after 35s so the
+  // app can always self-heal.
+  if (_loadInFlight && (Date.now() - _loadStartedAt) < 35000) {
+    diag('load skipped (already in flight)');
+    return;
+  }
   _loadInFlight = true;
+  _loadStartedAt = Date.now();
+  diag('load start (force=' + forceRefresh + ', online=' + navigator.onLine + ')');
   hideErrorBanner();
   try {
     // Check WW cache
@@ -3151,17 +3198,20 @@ async function loadAndRender(forceRefresh = false) {
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
           if (attempt > 1) setStatus(`Retrying… (${attempt}/${MAX_RETRIES})`);
+          diag('WW fetch attempt ' + attempt);
           const j = await fetchWillyWeather();
           wwData  = parseWillyWeather(j);
           matrix  = buildHourlyMatrix(j);
           if (!matrix.length) throw new Error('WW returned empty forecast');
           saveCache(WW_CACHE_KEY, { data: wwData, matrix });
+          diag('WW ok — ' + matrix.length + ' rows');
           setStatus('Live · WillyWeather Manly');
           document.getElementById('lastUpdated').textContent =
             'Updated ' + new Date().toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
           break;
         } catch(e) {
           lastErr = e;
+          diag('WW attempt ' + attempt + ' FAIL: ' + (e.name || '') + ' ' + (e.message || ''));
           // Exponential backoff: 2s, 4s, 6s, 8s between attempts
           // Front-loaded backoff: a cold-launch first fetch often fails instantly
           // because the network stack isn't up yet, so retry quickly, then ease off.
@@ -3189,6 +3239,7 @@ async function loadAndRender(forceRefresh = false) {
     const firstH = _matrix[_sliderIdx] || wwData || null;
     if (!firstH) throw new Error('No forecast data available');
     renderSnapshot(firstH, null);
+    diag('snapshot rendered (idx ' + _sliderIdx + ')');
     renderSlider(_matrix);
     renderTimeline(_matrix, {});
     hideErrorBanner();
@@ -3226,7 +3277,7 @@ async function loadAndRender(forceRefresh = false) {
 
       // ── Extend the timeline backwards with stored hourly history (last 14d).
       // Non-fatal: if Supabase is unreachable the live forecast stays intact.
-      const added = await loadForecastHistory();
+      const added = await withTimeout(loadForecastHistory(), 6000).catch(() => 0);
       if (added > 0) {
         renderDayPicker(_matrix);
         renderSlider(_matrix);
@@ -3243,6 +3294,7 @@ async function loadAndRender(forceRefresh = false) {
   } catch(e) {
     console.error('Load failed:', e);
     const wwCache = loadCache(WW_CACHE_KEY);
+    diag('LOAD FAILED: ' + (e.name || '') + ' ' + (e.message || '') + (wwCache?.matrix?.length ? ' (cache shown)' : ' (no cache)'));
     if (wwCache?.data && wwCache?.matrix?.length) {
       // Already rendered stale cache above — just update status, no red banner
       const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
@@ -3321,6 +3373,8 @@ function showRefreshPrompt() {
   if (_forecastRendered) return;            // data is already up — never show
   const el = document.getElementById('refresh-prompt');
   if (el) el.classList.add('visible');
+  const pre = document.getElementById('refresh-prompt-log');
+  if (pre) pre.textContent = _diagLog.slice(-18).join('\n') || '(no events logged yet)';
 }
 function hideRefreshPrompt() {
   const el = document.getElementById('refresh-prompt');
@@ -3334,6 +3388,14 @@ function hideRefreshPrompt() {
     loadAndRender(true);                     // retry the live fetch
     // If the retry also fails to render, bring the prompt back after a grace period.
     setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 9000);
+  });
+  const copyBtn = document.getElementById('refresh-prompt-copy');
+  if (copyBtn) copyBtn.addEventListener('click', () => {
+    const txt = 'Swim Manly diagnostics\nUA: ' + navigator.userAgent + '\nonline: ' + navigator.onLine + '\n\n' + _diagLog.join('\n');
+    const done = () => { copyBtn.textContent = 'Copied ✓'; setTimeout(() => copyBtn.textContent = 'Copy diagnostics', 2000); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(done).catch(() => { prompt('Copy these diagnostics:', txt); });
+    } else { prompt('Copy these diagnostics:', txt); }
   });
   // First check ~10s after launch — comfortably after the 4.2s splash and a couple
   // of fetch attempts. Re-check a few more times in case the connection is slow.
@@ -3355,7 +3417,7 @@ function hideRefreshPrompt() {
   function retryIfStillEmpty(reason) {
     if (_forecastRendered) return;          // data already in — nothing to do
     if (location.protocol === 'file:') return;
-    console.log('Self-heal retry (' + reason + ')');
+    diag('self-heal retry: ' + reason);
     setStatus('Reconnecting…');
     loadAndRender(true);
   }
@@ -3697,6 +3759,7 @@ function buildTunePanel() {
 }
 
 (async function startup() {
+  diag('startup (protocol=' + location.protocol + ', online=' + navigator.onLine + ')');
   // Apply any saved manual tuning first — it's a local read, no network, so it
   // can safely precede the forecast paint and keeps the first render correct.
   try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
@@ -3748,6 +3811,7 @@ function buildTunePanel() {
   setTimeout(() => {
     if (!_matrix || _matrix.length === 0) {
       console.warn('Watchdog: no forecast after 25s — purging WW cache and forcing reload.');
+      diag('watchdog: no data at 25s — purging cache + retry');
       try { localStorage.removeItem(WW_CACHE_KEY); } catch(e) {}
       setStatus('Recovering… reloading forecast');
       loadAndRender(true);
