@@ -1142,9 +1142,48 @@
     color: #ff6b5a;
     font-weight: 700;
   }
+
+  /* ── Video splash (phase 1) ── */
+  #video-splash {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.6s ease;
+  }
+  #video-splash.fade-out {
+    opacity: 0;
+    pointer-events: none;
+  }
+  #video-splash video {
+    /* On mobile: fill the screen edge-to-edge */
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  @media (min-width: 600px) {
+    /* On desktop: show at native resolution — never upscale */
+    #video-splash video {
+      width: auto;
+      height: auto;
+      max-width: 390px;
+      max-height: 100%;
+      object-fit: unset;
+      border-radius: 18px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+    }
+  }
 </style>
 </head>
 <body>
+<!-- Phase 1: video splash -->
+<div id="video-splash">
+  <video id="splash-video" src="splash.mp4" autoplay muted playsinline preload="auto"></video>
+</div>
+
 <div id="splash-screen">
   <img src="icon_big_360.png" alt="Swim Manly">
   <p class="splash-title">SWIM <span>MANLY</span></p>
@@ -3851,24 +3890,51 @@ function buildTunePanel() {
 })();
 
   // ===== SPLASH SCREEN =====
-  // Hold the splash until the forecast has actually rendered, so we never flash
-  // the metric dots in their halfway default. Floor at MIN_MS (branding still
-  // shows briefly) and a hard cap at MAX_MS so it can never stick — if data still
-  // hasn't arrived by then it fades to reveal the "pull to refresh" prompt.
+  // Phase 1: video plays to completion (or max 10s safety cap).
+  // Phase 2: logo splash shows for at least 4s, then waits for forecast data.
+  //          Hard cap at 8s so it can never stick.
   (function() {
-    var splash = document.getElementById('splash-screen');
-    if (!splash) return;
-    var MIN_MS = 6000, MAX_MS = 10000, started = Date.now();
-    function fade() {
-      splash.classList.add('fade-out');
-      setTimeout(function() { splash.style.display = 'none'; }, 650);
+    var videoEl   = document.getElementById('splash-video');
+    var videoWrap = document.getElementById('video-splash');
+    var logoSplash = document.getElementById('splash-screen');
+    if (!videoWrap || !logoSplash) return;
+
+    function fadeEl(el, cb) {
+      el.classList.add('fade-out');
+      setTimeout(function() { el.style.display = 'none'; if (cb) cb(); }, 650);
     }
-    (function check() {
-      var elapsed = Date.now() - started;
-      if (elapsed >= MAX_MS) return fade();                       // never stick
-      if (_forecastRendered && elapsed >= MIN_MS) return fade();  // data is in
-      setTimeout(check, 200);
-    })();
+
+    // Phase 2: logo splash with 4s floor, data-ready ceiling, 8s hard cap
+    function startLogoPhase() {
+      var MIN_MS = 4000, MAX_MS = 8000, started = Date.now();
+      function checkLogo() {
+        var elapsed = Date.now() - started;
+        if (elapsed >= MAX_MS) return fadeEl(logoSplash);
+        if (_forecastRendered && elapsed >= MIN_MS) return fadeEl(logoSplash);
+        setTimeout(checkLogo, 200);
+      }
+      checkLogo();
+    }
+
+    // Phase 1: wait for video ended event, with a 10s safety cap
+    var phase1Done = false;
+    function endPhase1() {
+      if (phase1Done) return;
+      phase1Done = true;
+      fadeEl(videoWrap, startLogoPhase);
+    }
+
+    if (videoEl) {
+      videoEl.addEventListener('ended', endPhase1);
+      // Safety cap — if video stalls or takes too long
+      setTimeout(endPhase1, 10000);
+      // If video fails to load at all, skip straight through
+      videoEl.addEventListener('error', endPhase1);
+    } else {
+      // No video element — go straight to logo phase
+      videoWrap.style.display = 'none';
+      startLogoPhase();
+    }
   })();
 
 
