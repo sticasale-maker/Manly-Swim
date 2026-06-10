@@ -776,6 +776,40 @@
   #ptr-arrow { font-size:16px; display:inline-block; transition:transform 0.2s; }
   #ptr-arrow.ready { transform:rotate(180deg); }
 
+  /* ── No-data refresh prompt (appears only when forecast hasn't loaded) ── */
+  #refresh-prompt {
+    position:fixed; top:0; left:0; right:0; bottom:0;
+    display:none; align-items:flex-start; justify-content:center;
+    background:rgba(13,43,62,0.28); backdrop-filter:blur(2px);
+    z-index:600; padding:64px 20px 20px;
+  }
+  #refresh-prompt.visible { display:flex; }
+  #refresh-prompt-card {
+    background:rgba(255,255,255,0.97); backdrop-filter:blur(12px);
+    border:1px solid var(--border); border-radius:var(--radius);
+    box-shadow:0 12px 40px rgba(6,78,110,0.28);
+    padding:22px 24px; max-width:300px; width:100%;
+    text-align:center; font-family:'DM Mono',monospace;
+    animation:rp-pop 0.25s ease;
+  }
+  @keyframes rp-pop { from{opacity:0; transform:translateY(-12px)} to{opacity:1; transform:translateY(0)} }
+  #refresh-prompt-arrow {
+    font-size:30px; color:var(--ocean); line-height:1;
+    margin-bottom:10px; animation:rp-bounce 1.4s ease-in-out infinite;
+  }
+  @keyframes rp-bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(8px)} }
+  #refresh-prompt-text {
+    font-size:13px; color:var(--text); line-height:1.6;
+    letter-spacing:0.3px; margin-bottom:16px; font-weight:500;
+  }
+  #refresh-prompt-btn {
+    font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1px;
+    text-transform:uppercase; color:#fff; background:var(--ocean);
+    border:none; border-radius:8px; padding:9px 16px; cursor:pointer;
+    transition:background 0.15s;
+  }
+  #refresh-prompt-btn:active { background:var(--deep); }
+
   /* ── Summary (collapsible) ── */
   #summary-section {
     background: var(--card);
@@ -1104,6 +1138,15 @@
 <div id="ptr-indicator">
   <span id="ptr-arrow">↓</span>
   <span id="ptr-text">Pull to refresh</span>
+</div>
+
+<!-- Shown only when forecast data hasn't arrived (dots stuck at halfway). Auto-hides once data loads. -->
+<div id="refresh-prompt" role="alert" aria-live="polite">
+  <div id="refresh-prompt-card">
+    <div id="refresh-prompt-arrow">↓</div>
+    <div id="refresh-prompt-text">Please refresh by pulling down the screen</div>
+    <button id="refresh-prompt-btn" type="button">Tap here to retry</button>
+  </div>
 </div>
 
 <div class="wrap">
@@ -2215,6 +2258,7 @@ let _wxDaily  = {};   // daily weather (sunrise/sunset) keyed by date
 let _sliderIdx = 0;
 let _retryFn  = null;
 let _lastSnapshot = null; // { h, result } of the currently-shown slot, for breakdown modal
+let _forecastRendered = false; // true once a real snapshot has been drawn (dots off the 50% default)
 let _autoDotPct = { entry: 50, swim: 50, surge: 50 }; // last auto dot positions (%) for calibration capture
 let _assessPct  = { entry: null, swim: null, surge: null }; // user's manual assessment positions (%), TUNE mode
 
@@ -2565,6 +2609,8 @@ function renderSnapshot(h, wx) {
   const result = calcScore(h);
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
+  _forecastRendered = true;       // real data is on screen — dots have left the 50% default
+  hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
 
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
@@ -3248,6 +3294,38 @@ function hardRefresh() {
     text.textContent = 'Pull to refresh';
     if (triggered) hardRefresh();
   });
+})();
+
+// =============================================================================
+// NO-DATA REFRESH PROMPT
+// If the forecast still hasn't rendered a short while after launch (a stalled or
+// failed first fetch with no cache leaves all three dots at their 50% default),
+// surface a popup telling the user to pull down to refresh. It auto-dismisses the
+// moment real data arrives (renderSnapshot calls hideRefreshPrompt).
+// =============================================================================
+function showRefreshPrompt() {
+  if (_forecastRendered) return;            // data is already up — never show
+  const el = document.getElementById('refresh-prompt');
+  if (el) el.classList.add('visible');
+}
+function hideRefreshPrompt() {
+  const el = document.getElementById('refresh-prompt');
+  if (el) el.classList.remove('visible');
+}
+(function() {
+  const btn = document.getElementById('refresh-prompt-btn');
+  if (btn) btn.addEventListener('click', () => {
+    hideRefreshPrompt();
+    setStatus('Refreshing…');
+    loadAndRender(true);                     // retry the live fetch
+    // If the retry also fails to render, bring the prompt back after a grace period.
+    setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 9000);
+  });
+  // First check ~10s after launch — comfortably after the 4.2s splash and a couple
+  // of fetch attempts. Re-check a few more times in case the connection is slow.
+  setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 10000);
+  setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 18000);
+  setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 30000);
 })();
 
 // =============================================================================
