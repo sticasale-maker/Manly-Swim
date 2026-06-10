@@ -4917,5 +4917,29 @@ function closeMetricModal() {
 function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 
 </script>
+
+<script>
+// ── Service Worker registration ──────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js')
+      .then(function (reg) {
+        console.log('[SW] registered, scope:', reg.scope);
+        reg.addEventListener('updatefound', function () {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', function () {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('[SW] new version ready — will activate on next visit');
+            }
+          });
+        });
+      })
+      .catch(function (err) {
+        console.warn('[SW] registration failed:', err);
+      });
+  });
+}
+</script>
 </body>
 </html>
