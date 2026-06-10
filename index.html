@@ -2290,7 +2290,11 @@ function fetchWithTimeout(url, ms, opts) {
 // FETCH WILLYWEATHER — primary swell, wind, tide (Manly Beach location)
 // =============================================================================
 async function fetchWillyWeather() {
-  const res = await fetchWithTimeout(`${WW_WORKER_URL}?location=swimmers&days=5`, 12000);
+  // Cache-bust + no-store: a cached error/empty response from a cold-start hit was
+  // being re-served to every automatic retry, so the app stayed stuck until a hard
+  // reload bypassed the HTTP cache. Force a fresh network read every time.
+  const url = `${WW_WORKER_URL}?location=swimmers&days=5&t=${Date.now()}`;
+  const res = await fetchWithTimeout(url, 12000, { cache: 'no-store' });
   if (!res.ok) throw new Error(`WW ${res.status}`);
   return await res.json();
 }
@@ -2386,7 +2390,7 @@ async function fetchOMarine() {
   const cache = loadCache(OM_CACHE_KEY);
   if (cacheIsFresh(cache, OM_CACHE_TTL)) return cache.data;
   try {
-    const res = await fetch(OM_MARINE_URL);
+    const res = await fetch(OM_MARINE_URL + '&t=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error(`OM Marine ${res.status}`);
     const j = await res.json();
     const c = j.current || {};
@@ -2489,7 +2493,7 @@ async function fetchOMWeather() {
   const cache = loadCache(OM_WX_CACHE_KEY);
   if (cacheIsFresh(cache, OM_WX_CACHE_TTL)) return cache.data;
   try {
-    const res = await fetch(OM_WEATHER_URL);
+    const res = await fetch(OM_WEATHER_URL + '&t=' + Date.now(), { cache: 'no-store' });
     if (!res.ok) throw new Error(`OM Weather ${res.status}`);
     const j = await res.json();
 
@@ -3023,7 +3027,7 @@ async function fetchBeachwatch() {
   if (cacheIsFresh(cache, BW_CACHE_TTL)) return cache.data;
 
   async function tryFetch(url) {
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) throw new Error(`BW HTTP ${res.status}`);
     let j = await res.json();
     // worker returns clean JSON passthrough
@@ -3098,7 +3102,10 @@ function renderPollution(bw) {
 // =============================================================================
 // MAIN LOAD — WillyWeather (primary) + Open-Meteo Marine/Weather (supplementary)
 // =============================================================================
+let _loadInFlight = false;
 async function loadAndRender(forceRefresh = false) {
+  if (_loadInFlight) return;   // a load is already running — don't stack a second one
+  _loadInFlight = true;
   hideErrorBanner();
   try {
     // Check WW cache
@@ -3156,7 +3163,12 @@ async function loadAndRender(forceRefresh = false) {
         } catch(e) {
           lastErr = e;
           // Exponential backoff: 2s, 4s, 6s, 8s between attempts
-          if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 2000 * attempt));
+          // Front-loaded backoff: a cold-launch first fetch often fails instantly
+          // because the network stack isn't up yet, so retry quickly, then ease off.
+          if (attempt < MAX_RETRIES) {
+            const backoff = [700, 1500, 3000, 5000][attempt - 1] || 5000;
+            await new Promise(r => setTimeout(r, backoff));
+          }
         }
       }
       if (!wwData) throw lastErr;
@@ -3247,6 +3259,8 @@ async function loadAndRender(forceRefresh = false) {
       // Auto-retry after 15 seconds even without cache
       if (!isLocal) setTimeout(() => loadAndRender(false), 15000);
     }
+  } finally {
+    _loadInFlight = false;
   }
 }
 
@@ -3326,6 +3340,30 @@ function hideRefreshPrompt() {
   setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 10000);
   setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 18000);
   setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 30000);
+})();
+
+// =============================================================================
+// SELF-HEAL ON CONNECTIVITY / FOREGROUND
+// The most common "no data on first open" cause is the app firing its first fetch
+// before the phone's network stack is awake — the request fails into a dead
+// connection. These listeners retry the instant the connection actually comes up
+// or the app returns to the foreground, but only while we still have no forecast,
+// so they go quiet the moment real data lands. This is what makes a cold open
+// behave like the manual reload that always works.
+// =============================================================================
+(function() {
+  function retryIfStillEmpty(reason) {
+    if (_forecastRendered) return;          // data already in — nothing to do
+    if (location.protocol === 'file:') return;
+    console.log('Self-heal retry (' + reason + ')');
+    setStatus('Reconnecting…');
+    loadAndRender(true);
+  }
+  window.addEventListener('online', () => retryIfStillEmpty('online'));
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) retryIfStillEmpty('foreground');
+  });
+  window.addEventListener('pageshow', () => retryIfStillEmpty('pageshow'));
 })();
 
 // =============================================================================
@@ -3718,16 +3756,24 @@ function buildTunePanel() {
 })();
 
   // ===== SPLASH SCREEN =====
+  // Hold the splash until the forecast has actually rendered, so we never flash
+  // the metric dots in their halfway default. Floor at MIN_MS (branding still
+  // shows briefly) and a hard cap at MAX_MS so it can never stick — if data still
+  // hasn't arrived by then it fades to reveal the "pull to refresh" prompt.
   (function() {
     var splash = document.getElementById('splash-screen');
     if (!splash) return;
-    var delay = 4200;
-    setTimeout(function() {
+    var MIN_MS = 2000, MAX_MS = 7000, started = Date.now();
+    function fade() {
       splash.classList.add('fade-out');
-      setTimeout(function() {
-        splash.style.display = 'none';
-      }, 650);
-    }, delay);
+      setTimeout(function() { splash.style.display = 'none'; }, 650);
+    }
+    (function check() {
+      var elapsed = Date.now() - started;
+      if (elapsed >= MAX_MS) return fade();                       // never stick
+      if (_forecastRendered && elapsed >= MIN_MS) return fade();  // data is in
+      setTimeout(check, 200);
+    })();
   })();
 
 
