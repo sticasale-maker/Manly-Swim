@@ -448,6 +448,68 @@
     white-space: nowrap;
   }
   .toast.show { opacity: 1; }
+  /* ── Send picker modal ── */
+  .picker-overlay {
+    position: fixed; inset: 0;
+    background: rgba(6,78,110,0.45);
+    backdrop-filter: blur(4px);
+    z-index: 300;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .picker-sheet {
+    background: var(--foam);
+    border-radius: 20px 20px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+    width: 100%;
+    max-width: 480px;
+    box-shadow: 0 -4px 30px rgba(6,78,110,0.2);
+  }
+  .picker-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 2px;
+    color: var(--deep);
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .picker-btn {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 15px 18px;
+    margin-bottom: 10px;
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    background: white;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    color: var(--text);
+    transition: background 0.15s;
+  }
+  .picker-btn:active { background: var(--sky); }
+  .picker-btn-icon { font-size: 26px; line-height: 1; }
+  .picker-btn-label { display: flex; flex-direction: column; text-align: left; }
+  .picker-btn-title { font-size: 15px; font-weight: 500; color: var(--deep); }
+  .picker-btn-sub   { font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .picker-cancel {
+    width: 100%;
+    margin-top: 4px;
+    padding: 13px;
+    border: none;
+    border-radius: 14px;
+    background: rgba(10,126,164,0.1);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: var(--dim);
+    cursor: pointer;
+  }
+
 </style>
 </head>
 <body>
@@ -567,7 +629,8 @@
 
 <script>
 // ── CONFIG ──────────────────────────────────────────────────────────────
-const REPORT_EMAIL = 'vizgroupsydney@gmail.com';
+const REPORT_EMAIL   = 'sticasale@gmail.com';
+const REPORT_PHONE   = '+61405461023';  // SMS / WhatsApp
 
 // Zone definitions per metric
 const METRICS = [
@@ -842,31 +905,11 @@ async function sendReport() {
       const zIdx = getZoneIndex(_pos[m.id]);
       return `${m.id}: ${m.zones[zIdx]}`;
     }).join(' · ');
-    const subject = `Swim Report — ${dateLabel} ${timeLabel}`;
+    const subject = `A report from Kelly`;
     const body = `${dateLabel} ${timeLabel}\n${summary}\n\nSent via Swim Reporter · South Steyne`;
 
-    // 4) Try Web Share API (mobile — opens native share sheet with image)
-    if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'swim-report.png', { type: 'image/png' })] })) {
-      const file = new File([blob], 'swim-report.png', { type: 'image/png' });
-      await navigator.share({
-        title: subject,
-        text: body,
-        files: [file]
-      });
-      showToast('Report shared ✓');
-    } else {
-      // 5) Fallback: open mailto with text summary (image download as bonus)
-      const url = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'swim-report.png';
-      a.click();
-      // Then open mailto
-      setTimeout(() => {
-        window.location.href = `mailto:${REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-      }, 400);
-      showToast('Image saved — email opened ✓');
-    }
+    // 4) Show send picker: Email / SMS / WhatsApp
+    await showSendPicker(canvas, blob, subject, body);
   } catch (err) {
     if (err.name !== 'AbortError') {
       console.error(err);
@@ -876,6 +919,100 @@ async function sendReport() {
     btn.textContent = '📤 SEND REPORT';
     btn.disabled = false;
   }
+}
+
+
+function showSendPicker(canvas, blob, subject, body) {
+  return new Promise((resolve) => {
+    // Build overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'picker-overlay';
+
+    const smsText   = encodeURIComponent(body);
+    const waText    = encodeURIComponent(body);
+    const emailHref = `mailto:${REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    const smsHref   = `sms:${REPORT_PHONE}?body=${smsText}`;
+    const waHref    = `https://wa.me/${REPORT_PHONE.replace('+','')}?text=${waText}`;
+
+    overlay.innerHTML = `
+      <div class="picker-sheet">
+        <div class="picker-title">Send Report</div>
+
+        <button class="picker-btn" id="pickEmail">
+          <span class="picker-btn-icon">✉️</span>
+          <span class="picker-btn-label">
+            <span class="picker-btn-title">Email</span>
+            <span class="picker-btn-sub">${REPORT_EMAIL}</span>
+          </span>
+        </button>
+
+        <button class="picker-btn" id="pickSMS">
+          <span class="picker-btn-icon">💬</span>
+          <span class="picker-btn-label">
+            <span class="picker-btn-title">SMS</span>
+            <span class="picker-btn-sub">${REPORT_PHONE}</span>
+          </span>
+        </button>
+
+        <button class="picker-btn" id="pickWA">
+          <span class="picker-btn-icon">🟢</span>
+          <span class="picker-btn-label">
+            <span class="picker-btn-title">WhatsApp</span>
+            <span class="picker-btn-sub">${REPORT_PHONE}</span>
+          </span>
+        </button>
+
+        <button class="picker-cancel" id="pickCancel">Cancel</button>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    function dismiss() {
+      overlay.remove();
+      resolve();
+    }
+
+    overlay.querySelector('#pickEmail').onclick = () => {
+      // Download image then open email
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = 'swim-report.png';
+      a.click();
+      setTimeout(() => { window.location.href = emailHref; }, 400);
+      showToast('Image saved — email opened ✓');
+      dismiss();
+    };
+
+    overlay.querySelector('#pickSMS').onclick = () => {
+      // Try sharing image first, fallback to SMS link
+      if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'swim-report.png', { type: 'image/png' })] })) {
+        const file = new File([blob], 'swim-report.png', { type: 'image/png' });
+        navigator.share({ title: subject, text: body, files: [file] }).catch(() => {
+          window.location.href = smsHref;
+        });
+      } else {
+        window.location.href = smsHref;
+      }
+      showToast('Opening SMS ✓');
+      dismiss();
+    };
+
+    overlay.querySelector('#pickWA').onclick = () => {
+      if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'swim-report.png', { type: 'image/png' })] })) {
+        const file = new File([blob], 'swim-report.png', { type: 'image/png' });
+        navigator.share({ title: subject, text: body, files: [file] }).catch(() => {
+          window.open(waHref, '_blank');
+        });
+      } else {
+        window.open(waHref, '_blank');
+      }
+      showToast('Opening WhatsApp ✓');
+      dismiss();
+    };
+
+    overlay.querySelector('#pickCancel').onclick = dismiss;
+    overlay.addEventListener('click', e => { if (e.target === overlay) dismiss(); });
+  });
 }
 
 function showToast(msg) {
