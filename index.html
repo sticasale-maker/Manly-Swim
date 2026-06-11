@@ -1238,18 +1238,6 @@
     </button>
     <div id="summary-body" class="summary-collapsed">
 
-      <!-- Today's / Tomorrow's conditions -->
-      <div class="summary-item">
-        <div class="summary-item-icon" id="banner-wx-icon">🌤</div>
-        <div class="summary-item-body">
-          <div class="summary-item-label" id="banner-wx-label">TODAY'S CONDITIONS</div>
-          <div class="summary-item-text" id="banner-wx-text">
-            <div class="banner-skeleton"></div>
-            <div class="banner-skeleton short"></div>
-          </div>
-        </div>
-      </div>
-
       <!-- Swimming conditions -->
       <div class="summary-item">
         <div class="summary-item-icon" id="banner-water-icon">🏊</div>
@@ -1262,17 +1250,32 @@
         </div>
       </div>
 
-      <!-- What's happening below? -->
-      <button class="summary-item summary-item-btn" onclick="openDiversModal()" aria-label="View recent underwater reports">
+      <!-- What's happening below? — expanded inline -->
+      <div class="summary-item">
         <div class="summary-item-icon">🐠</div>
         <div class="summary-item-body">
           <div class="summary-item-label">WHAT'S HAPPENING BELOW</div>
           <div class="summary-item-text">
-            <span id="db-count">—</span> recent underwater reports. <span class="db-cta">See all <span class="db-arrow">→</span></span>
-            <div class="db-sub" id="db-sub">Updated recently</div>
+            <div id="db-sub" style="color:var(--dim);font-size:11px;margin-bottom:4px;">Updated recently</div>
+            <div id="db-inline-summary" style="line-height:1.5;">
+              <div class="banner-skeleton"></div>
+              <div class="banner-skeleton short"></div>
+            </div>
           </div>
         </div>
-      </button>
+      </div>
+
+      <!-- Today's / Tomorrow's weather -->
+      <div class="summary-item">
+        <div class="summary-item-icon" id="banner-wx-icon">🌤</div>
+        <div class="summary-item-body">
+          <div class="summary-item-label" id="banner-wx-label">TODAY'S WEATHER</div>
+          <div class="summary-item-text" id="banner-wx-text">
+            <div class="banner-skeleton"></div>
+            <div class="banner-skeleton short"></div>
+          </div>
+        </div>
+      </div>
 
     </div>
   </section>
@@ -4299,7 +4302,7 @@ async function generateBannerSummary() {
 
   // Time label
   const labelMap = { 'today': 'TODAY', 'rest-of-today': 'THIS AFTERNOON', 'tomorrow': 'TOMORROW' };
-  document.getElementById('banner-wx-label').textContent = `${labelMap[timeCtx]}'S CONDITIONS`;
+  document.getElementById('banner-wx-label').textContent = `${labelMap[timeCtx]}'S WEATHER`;
   const dayPhrase = { 'today': 'TODAY', 'rest-of-today': 'THIS AFTERNOON', 'tomorrow': 'TOMORROW' }[timeCtx];
   const waterLabelEl = document.getElementById('banner-water-label');
   if (waterLabelEl) waterLabelEl.textContent = `SWIMMING CONDITIONS · ${dayPhrase}`;
@@ -4825,9 +4828,8 @@ async function fetchLatestSighting() {
 }
 
 function applySightingToBanner(s) {
-  const countEl = document.getElementById('db-count');
-  const subEl   = document.getElementById('db-sub');
-  if (!countEl) return;
+  const subEl    = document.getElementById('db-sub');
+  const inlineEl = document.getElementById('db-inline-summary');
 
   // Tolerate alternate column names from the VIZ Forecast writer
   const summary = s && (s.summary || s.report_summary || s.note || s.notes || s.text);
@@ -4842,21 +4844,20 @@ function applySightingToBanner(s) {
     recent = true;
   }
 
-  if (!recent || !s) {
-    if (countEl) countEl.textContent = 'No';
-    if (subEl) subEl.textContent = 'Check the VIZ group for the latest';
+  const when = stamp
+    ? new Date(stamp).toLocaleDateString('en-AU', { day:'numeric', month:'short' })
+    : '';
+
+  if (!recent || !s || !summary) {
+    if (subEl) subEl.textContent = '';
+    if (inlineEl) inlineEl.textContent = 'No recent underwater reports — check the VIZ group for the latest from the water.';
     _diversSummary = null;
     _diversStamp = null;
     return;
   }
 
-  const count = (s.report_count != null) ? s.report_count : '';
-  if (countEl) countEl.textContent = count !== '' ? count : 'New';
-
-  const when = stamp
-    ? new Date(stamp).toLocaleDateString('en-AU', { day:'numeric', month:'short' })
-    : '';
   if (subEl) subEl.textContent = when ? ('Updated ' + when) : 'Updated recently';
+  if (inlineEl) inlineEl.textContent = summary;
 
   _diversSummary = summary;
   _diversStamp = when;
