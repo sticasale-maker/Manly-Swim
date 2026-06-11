@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SWIM REPORTER">
+<link rel="apple-touch-icon" href="icon_small.png?v=2">
+<title>Swim Reporter — South Steyne</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root {
+    --sky:    #e8f4f8;
+    --ocean:  #0a7ea4;
+    --deep:   #064e6e;
+    --foam:   #f0faff;
+    --sand:   #f5ede0;
+    --text:   #0d2b3e;
+    --dim:    #5a8a9f;
+    --border: rgba(10,126,164,0.15);
+    --green:  #1a9e6e;
+    --amber:  #4aa8cc;
+    --yellow: #e07c2a;
+    --red:    #c0392b;
+    --card:   rgba(255,255,255,0.82);
+    --radius: 14px;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html { font-size: clamp(13px, 3.4vw, 15px); }
+  body {
+    background: linear-gradient(180deg, #b8dff0 0%, #7ec8e3 50%, #4aa8cc 100%);
+    min-height: 100vh;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior-y: contain;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 100px);
+    overflow-x: hidden;
+  }
+
+  /* animated waves */
+  body::before, body::after {
+    content:''; position:fixed; left:-50%; width:200%;
+    pointer-events:none; z-index:0;
+  }
+  body::before {
+    bottom:-20px; height:180px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 180'%3E%3Cpath fill='rgba(255,255,255,0.18)' d='M0,80 C240,140 480,20 720,80 C960,140 1200,20 1440,80 L1440,180 L0,180 Z'/%3E%3C/svg%3E") repeat-x bottom;
+    background-size:720px 180px;
+    animation: wave1 8s linear infinite;
+  }
+  body::after {
+    bottom:-10px; height:140px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 140'%3E%3Cpath fill='rgba(255,255,255,0.12)' d='M0,60 C180,110 360,10 540,60 C720,110 900,10 1080,60 C1260,110 1350,30 1440,60 L1440,140 L0,140 Z'/%3E%3C/svg%3E") repeat-x bottom;
+    background-size:540px 140px;
+    animation: wave2 6s linear infinite reverse;
+  }
+  @keyframes wave1 { from{transform:translateX(0)} to{transform:translateX(50%)} }
+  @keyframes wave2 { from{transform:translateX(0)} to{transform:translateX(33%)} }
+
+  .wrap {
+    position: relative; z-index: 1;
+    max-width: 480px; margin: 0 auto;
+    padding: 0 14px 20px;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 0 14px;
+  }
+  .header img {
+    width: 52px; height: 52px;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(6,78,110,0.25);
+  }
+  .header-text {}
+  .header-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 28px;
+    letter-spacing: 2px;
+    color: var(--deep);
+    line-height: 1;
+  }
+  .header-sub {
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  /* ── Card base ── */
+  .card {
+    background: var(--card);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+  .card-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 12px;
+  }
+
+  /* ── Day picker ── */
+  .day-picker {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .day-btn {
+    flex: 1; min-width: 0;
+    padding: 7px 4px;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 15px;
+    letter-spacing: 1.5px;
+    color: var(--dim);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.18s;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .day-btn .day-btn-label { display: block; font-size: 11px; letter-spacing: 1px; }
+  .day-btn .day-btn-num   { display: block; font-size: 19px; }
+  .day-btn.active {
+    background: var(--ocean);
+    border-color: var(--ocean);
+    color: #fff;
+  }
+
+  /* ── Slider area ── */
+  .datetime-display {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 14px;
+  }
+  .dt-date {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(20px, 5.5vw, 26px);
+    letter-spacing: 1px;
+    color: var(--deep);
+    text-transform: uppercase;
+  }
+  .dt-time {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(48px, 13vw, 60px);
+    color: var(--deep);
+    line-height: 1;
+  }
+  input[type=range].time-slider {
+    -webkit-appearance: none;
+    width: 100%; height: 6px;
+    background: linear-gradient(to right, var(--ocean) 0%, var(--ocean) 50%, rgba(10,126,164,0.2) 50%);
+    border-radius: 3px;
+    outline: none;
+  }
+  input[type=range].time-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 32px; height: 32px;
+    background: var(--ocean);
+    border-radius: 50%;
+    border: 4px solid white;
+    box-shadow: 0 3px 12px rgba(10,126,164,0.4);
+  }
+  input[type=range].time-slider::-moz-range-thumb {
+    width: 32px; height: 32px;
+    background: var(--ocean);
+    border-radius: 50%;
+    border: 4px solid white;
+    box-shadow: 0 3px 12px rgba(10,126,164,0.4);
+  }
+  .slider-ticks {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  /* ── Metric rails ── */
+  .metric-block {
+    margin-bottom: 20px;
+  }
+  .metric-block:last-child { margin-bottom: 4px; }
+
+  .metric-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(22px, 6vw, 28px);
+    letter-spacing: 2px;
+    color: var(--deep);
+    margin-bottom: 4px;
+  }
+  .metric-zone-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(18px, 5vw, 22px);
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+    transition: color 0.2s;
+  }
+  .zone-label-green  { color: var(--green); }
+  .zone-label-amber  { color: var(--amber); }
+  .zone-label-yellow { color: var(--yellow); }
+  .zone-label-red    { color: var(--red); }
+
+  .metric-zone-desc {
+    font-size: 15px;
+    color: var(--dim);
+    line-height: 1.4;
+    margin-top: -6px;
+    margin-bottom: 10px;
+    min-height: 1.4em;
+    transition: opacity 0.2s;
+  }
+
+  /* The track */
+  .rail-wrap {
+    position: relative;
+    height: 44px;
+    margin-bottom: 4px;
+    touch-action: none;
+    user-select: none;
+  }
+  .rail-track {
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 14px;
+    transform: translateY(-50%);
+    border-radius: 7px;
+    overflow: hidden;
+    display: flex;
+    cursor: pointer;
+  }
+  .rail-zone {
+    flex: 1;
+    transition: filter 0.15s;
+  }
+  .rail-zone.z-green  { background: var(--green); }
+  .rail-zone.z-amber  { background: var(--amber); }
+  .rail-zone.z-yellow { background: var(--yellow); }
+  .rail-zone.z-red    { background: var(--red); }
+
+  /* The draggable dot */
+  .rail-dot {
+    position: absolute;
+    top: 50%;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 4px solid white;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3), 0 0 0 2.5px currentColor;
+    cursor: grab;
+    transition: left 0.05s, box-shadow 0.15s;
+    touch-action: none;
+    z-index: 10;
+  }
+  .rail-dot:active, .rail-dot.dragging {
+    cursor: grabbing;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35), 0 0 0 3px currentColor;
+    width: 40px; height: 40px;
+  }
+
+  .rail-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(14px, 4vw, 18px);
+    letter-spacing: 1px;
+    color: var(--dim);
+    margin-top: 2px;
+  }
+  .rail-labels span { flex: 1; text-align: center; }
+
+  /* ── SEND button ── */
+  .send-wrap {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+    background: rgba(240,250,255,0.92);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    z-index: 100;
+  }
+  .send-btn {
+    width: 100%;
+    padding: 18px;
+    background: var(--deep);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 26px;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    box-shadow: 0 4px 18px rgba(6,78,110,0.35);
+  }
+  .send-btn:active { background: var(--ocean); transform: scale(0.98); }
+
+  /* ── Off-screen snapshot card (rendered by html2canvas) ── */
+  #snapshot-card {
+    position: fixed;
+    top: -9999px; left: -9999px;
+    width: 600px;
+    background: #e8f4f8;
+    padding: 28px 28px 32px;
+    font-family: 'DM Mono', monospace;
+    border-radius: 0;
+  }
+  .snap-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
+    border-bottom: 2px solid rgba(6,78,110,0.15);
+    padding-bottom: 16px;
+  }
+  .snap-header img {
+    width: 56px; height: 56px;
+    border-radius: 12px;
+  }
+  .snap-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 30px;
+    letter-spacing: 2px;
+    color: #064e6e;
+    line-height: 1;
+  }
+  .snap-sub {
+    font-size: 11px;
+    color: #5a8a9f;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+  .snap-datetime {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .snap-date-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 24px;
+    letter-spacing: 2px;
+    color: #064e6e;
+    text-transform: uppercase;
+  }
+  .snap-time-val {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 64px;
+    color: #064e6e;
+    line-height: 1;
+  }
+  .snap-metric {
+    margin-bottom: 20px;
+  }
+  .snap-metric-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: #064e6e;
+    margin-bottom: 2px;
+  }
+  .snap-zone-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    letter-spacing: 1.5px;
+    margin-bottom: 8px;
+  }
+  .snap-rail-wrap {
+    position: relative;
+    height: 36px;
+  }
+  .snap-rail-track {
+    position: absolute;
+    top: 50%; left: 0; right: 0;
+    height: 12px;
+    transform: translateY(-50%);
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+  }
+  .snap-rail-zone { flex: 1; }
+  .sz-green  { background: #1a9e6e; }
+  .sz-amber  { background: #4aa8cc; }
+  .sz-yellow { background: #e07c2a; }
+  .sz-red    { background: #c0392b; }
+  .snap-dot {
+    position: absolute;
+    top: 50%;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    border: 4px solid white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 2px currentColor;
+  }
+  .snap-rail-labels {
+    display: flex;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: #5a8a9f;
+    margin-top: 3px;
+  }
+  .snap-rail-labels span { flex: 1; text-align: center; }
+  .snap-footer {
+    margin-top: 20px;
+    font-size: 10px;
+    color: #5a8a9f;
+    letter-spacing: 0.5px;
+    text-align: center;
+    border-top: 1px solid rgba(6,78,110,0.12);
+    padding-top: 12px;
+  }
+
+  /* Toast feedback */
+  .toast {
+    position: fixed;
+    bottom: 90px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--deep);
+    color: white;
+    padding: 10px 22px;
+    border-radius: 30px;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="header">
+    <img src="icon_small.png" alt="Swim Manly">
+    <div class="header-text">
+      <div class="header-title">Swim Reporter</div>
+      <div class="header-sub">South Steyne · Cabbage Tree Bay</div>
+    </div>
+  </div>
+
+  <!-- Date/time card -->
+  <div class="card">
+    <div class="card-title">When did you swim?</div>
+    <div class="day-picker" id="dayPicker"></div>
+    <div class="datetime-display">
+      <div class="dt-date" id="dtDate">—</div>
+      <div class="dt-time" id="dtTime">—</div>
+    </div>
+    <input type="range" class="time-slider" id="timeSlider" min="6" max="22" value="7" step="1">
+    <div class="slider-ticks" id="sliderTicks"></div>
+  </div>
+
+  <!-- Metrics card -->
+  <div class="card">
+    <div class="card-title">What were conditions like?</div>
+
+    <!-- Entry -->
+    <div class="metric-block">
+      <div class="metric-name">Entry</div>
+      <div class="metric-zone-label zone-label-green" id="zoneLabelEntry">Easy</div>
+      <div class="metric-zone-desc" id="zoneDescEntry">For anyone — pleasant entry and exit</div>
+      <div class="rail-wrap" id="railEntry">
+        <div class="rail-track">
+          <div class="rail-zone z-green"></div>
+          <div class="rail-zone z-amber"></div>
+          <div class="rail-zone z-yellow"></div>
+          <div class="rail-zone z-red"></div>
+        </div>
+        <div class="rail-dot" id="dotEntry" style="color:var(--green);left:12.5%"></div>
+      </div>
+      <div class="rail-labels">
+        <span>Easy</span><span>Doable</span><span>Caution</span><span>Dangerous</span>
+      </div>
+    </div>
+
+    <!-- Swim -->
+    <div class="metric-block">
+      <div class="metric-name">Swim</div>
+      <div class="metric-zone-label zone-label-green" id="zoneLabelSwim">Glassy</div>
+      <div class="metric-zone-desc" id="zoneDescSwim">Flat — barely a ripple</div>
+      <div class="rail-wrap" id="railSwim">
+        <div class="rail-track">
+          <div class="rail-zone z-green"></div>
+          <div class="rail-zone z-amber"></div>
+          <div class="rail-zone z-yellow"></div>
+          <div class="rail-zone z-red"></div>
+        </div>
+        <div class="rail-dot" id="dotSwim" style="color:var(--green);left:12.5%"></div>
+      </div>
+      <div class="rail-labels">
+        <span>Glassy</span><span>Ripply</span><span>Choppy</span><span>Messy</span>
+      </div>
+    </div>
+
+    <!-- Surge -->
+    <div class="metric-block">
+      <div class="metric-name">Surge</div>
+      <div class="metric-zone-label zone-label-green" id="zoneLabelSurge">Steady</div>
+      <div class="metric-zone-desc" id="zoneDescSurge">No swell inside the bay</div>
+      <div class="rail-wrap" id="railSurge">
+        <div class="rail-track">
+          <div class="rail-zone z-green"></div>
+          <div class="rail-zone z-amber"></div>
+          <div class="rail-zone z-yellow"></div>
+          <div class="rail-zone z-red"></div>
+        </div>
+        <div class="rail-dot" id="dotSurge" style="color:var(--green);left:12.5%"></div>
+      </div>
+      <div class="rail-labels">
+        <span>Steady</span><span>Drifty</span><span>Surgy</span><span>Washy</span>
+      </div>
+    </div>
+
+  </div><!-- /metrics card -->
+
+</div><!-- /wrap -->
+
+<!-- Fixed SEND button -->
+<div class="send-wrap">
+  <button class="send-btn" id="sendBtn" onclick="sendReport()">📤 SEND REPORT</button>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Off-screen snapshot card -->
+<div id="snapshot-card">
+  <div class="snap-header">
+    <img src="icon_small.png" alt="">
+    <div>
+      <div class="snap-title">Swim Reporter</div>
+      <div class="snap-sub">South Steyne · Cabbage Tree Bay · VIZ Group</div>
+    </div>
+  </div>
+  <div class="snap-datetime">
+    <div class="snap-date-val" id="snapDate">—</div>
+    <div class="snap-time-val" id="snapTime">—</div>
+  </div>
+  <!-- Snapshot metrics filled dynamically -->
+  <div id="snapMetrics"></div>
+  <div class="snap-footer">Swim Reporter · app.viz.net.au · VIZ Group Sydney</div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────
+const REPORT_EMAIL = 'vizgroupsydney@gmail.com';
+
+// Zone definitions per metric
+const METRICS = [
+  {
+    id: 'Entry',
+    zones: ['Easy','Doable','Caution','Dangerous'],
+    descs: [
+      'For anyone — pleasant entry and exit',
+      'Dynamic entry/exit but still recommended for all',
+      'Some opt for the Bower',
+      'Most if not all go to the Bower'
+    ],
+    colors: ['var(--green)','var(--amber)','var(--yellow)','var(--red)'],
+    snapColors: ['#1a9e6e','#4aa8cc','#e07c2a','#c0392b'],
+    classes: ['zone-label-green','zone-label-amber','zone-label-yellow','zone-label-red']
+  },
+  {
+    id: 'Swim',
+    zones: ['Glassy','Ripply','Choppy','Messy'],
+    descs: [
+      'Flat — barely a ripple',
+      'Noticeable but not disturbing',
+      'Swim disturbed by wind at some point',
+      'Very disturbing, uncomfortable to swim'
+    ],
+    colors: ['var(--green)','var(--amber)','var(--yellow)','var(--red)'],
+    snapColors: ['#1a9e6e','#4aa8cc','#e07c2a','#c0392b'],
+    classes: ['zone-label-green','zone-label-amber','zone-label-yellow','zone-label-red']
+  },
+  {
+    id: 'Surge',
+    zones: ['Steady','Drifty','Surgy','Washy'],
+    descs: [
+      'No swell inside the bay',
+      'Visible little waves hitting the wall',
+      'Waves bouncing back from the wall — pedestrians dry',
+      'Waves hitting the wall and wetting pedestrians'
+    ],
+    colors: ['var(--green)','var(--amber)','var(--yellow)','var(--red)'],
+    snapColors: ['#1a9e6e','#4aa8cc','#e07c2a','#c0392b'],
+    classes: ['zone-label-green','zone-label-amber','zone-label-yellow','zone-label-red']
+  }
+];
+
+// dot positions (0–1), one per metric
+const _pos = { Entry: 0.125, Swim: 0.125, Surge: 0.125 };
+
+// ── DATE/TIME ────────────────────────────────────────────────────────────
+let _selectedDay = null;  // 'YYYY-MM-DD'
+let _selectedHour = 7;
+
+function buildDayPicker() {
+  const picker = document.getElementById('dayPicker');
+  picker.innerHTML = '';
+  const today = new Date();
+
+  for (let offset = -3; offset <= 0; offset++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + offset);
+    const dateStr = localDateStr(d);
+    const isToday = offset === 0;
+    const btn = document.createElement('button');
+    btn.className = 'day-btn' + (isToday ? ' active' : '');
+    if (isToday) {
+      btn.innerHTML = `<span class="day-btn-label" style="font-size:17px;letter-spacing:1.5px;display:flex;align-items:center;justify-content:center;height:100%;margin:-7px -4px;padding:7px 4px;">today</span>`;
+      _selectedDay = dateStr;
+    } else {
+      btn.innerHTML = `<span class="day-btn-label">${d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
+                      `<span class="day-btn-num">${d.getDate()}</span>`;
+    }
+    btn.dataset.date = dateStr;
+    btn.onclick = () => selectDay(dateStr);
+    picker.appendChild(btn);
+  }
+
+  // Default hour = now (clamped to 4–18)
+  const nowHour = new Date().getHours();
+  _selectedHour = Math.min(22, Math.max(6, nowHour));
+  updateSlider();
+  updateDateTime();
+}
+
+function localDateStr(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+
+function selectDay(dateStr) {
+  _selectedDay = dateStr;
+  document.querySelectorAll('.day-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.date === dateStr);
+  });
+  updateDateTime();
+}
+
+function updateSlider() {
+  const slider = document.getElementById('timeSlider');
+  slider.value = _selectedHour;
+  // gradient fill
+  const pct = ((_selectedHour - 6) / 16) * 100;
+  slider.style.background = `linear-gradient(to right, var(--ocean) ${pct}%, rgba(10,126,164,0.2) ${pct}%)`;
+}
+
+function updateDateTime() {
+  if (!_selectedDay) return;
+  const d = new Date(_selectedDay + 'T00:00');
+  const dateLabel = d.toLocaleDateString('en-AU', {weekday:'long', day:'numeric', month:'long'});
+  document.getElementById('dtDate').textContent = dateLabel;
+  document.getElementById('dtTime').textContent =
+    String(_selectedHour).padStart(2,'0') + ':00';
+
+  document.getElementById('snapDate').textContent = dateLabel;
+  document.getElementById('snapTime').textContent =
+    String(_selectedHour).padStart(2,'0') + ':00';
+}
+
+// Build tick marks
+function buildTicks() {
+  const ticks = document.getElementById('sliderTicks');
+  ticks.innerHTML = '';
+  ['6am','8am','10am','12pm','2pm','4pm','6pm','8pm','10pm'].forEach(t => {
+    const s = document.createElement('span');
+    s.textContent = t;
+    ticks.appendChild(s);
+  });
+}
+
+document.getElementById('timeSlider').addEventListener('input', function() {
+  _selectedHour = parseInt(this.value);
+  updateSlider();
+  updateDateTime();
+});
+
+// Slider only covers 4am–6pm (reasonable swim window)
+document.getElementById('timeSlider').min = 4;
+document.getElementById('timeSlider').max = 18;
+
+// ── DRAGGABLE RAIL DOTS ──────────────────────────────────────────────────
+function getZoneIndex(pos) {
+  // pos 0–1 → zone 0–3
+  return Math.min(3, Math.floor(pos * 4));
+}
+
+function updateDotVisual(metricId, pos) {
+  const m = METRICS.find(x => x.id === metricId);
+  const dot = document.getElementById('dot' + metricId);
+  const label = document.getElementById('zoneLabel' + metricId);
+  const desc  = document.getElementById('zoneDesc'  + metricId);
+  const zIdx = getZoneIndex(pos);
+
+  // Clamp to 0–100%, with 5px margin either side for the dot radius
+  const pct = Math.max(0, Math.min(100, pos * 100));
+  dot.style.left = pct + '%';
+  dot.style.color = m.colors[zIdx];
+
+  label.textContent = m.zones[zIdx];
+  label.className = 'metric-zone-label ' + m.classes[zIdx];
+  desc.textContent  = m.descs[zIdx];
+}
+
+function initRail(metricId) {
+  const rail = document.getElementById('rail' + metricId);
+  const dot  = document.getElementById('dot'  + metricId);
+
+  let dragging = false;
+
+  function posFromEvent(e) {
+    const rect = rail.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let p = (clientX - rect.left) / rect.width;
+    return Math.max(0.01, Math.min(0.99, p));
+  }
+
+  function onStart(e) {
+    e.preventDefault();
+    dragging = true;
+    dot.classList.add('dragging');
+    const p = posFromEvent(e);
+    _pos[metricId] = p;
+    updateDotVisual(metricId, p);
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault();
+    const p = posFromEvent(e);
+    _pos[metricId] = p;
+    updateDotVisual(metricId, p);
+  }
+  function onEnd() {
+    dragging = false;
+    dot.classList.remove('dragging');
+  }
+
+  // Touch
+  rail.addEventListener('touchstart', onStart, { passive: false });
+  rail.addEventListener('touchmove',  onMove,  { passive: false });
+  rail.addEventListener('touchend',   onEnd);
+
+  // Mouse (desktop)
+  rail.addEventListener('mousedown', onStart);
+  document.addEventListener('mousemove', e => { if (dragging) onMove(e); });
+  document.addEventListener('mouseup',   onEnd);
+
+  // Tap anywhere on the track also places the dot
+  rail.querySelector('.rail-track').addEventListener('click', e => {
+    const p = posFromEvent(e);
+    _pos[metricId] = p;
+    updateDotVisual(metricId, p);
+  });
+}
+
+// ── SNAPSHOT CARD ─────────────────────────────────────────────────────────
+function buildSnapMetrics() {
+  const container = document.getElementById('snapMetrics');
+  container.innerHTML = '';
+  METRICS.forEach(m => {
+    const pos    = _pos[m.id];
+    const zIdx   = getZoneIndex(pos);
+    const pct    = pos * 100;
+    const color  = m.snapColors[zIdx];
+
+    const html = `
+      <div class="snap-metric">
+        <div class="snap-metric-name">${m.id}</div>
+        <div class="snap-zone-label" style="color:${color}">${m.zones[zIdx]}</div>
+        <div class="snap-rail-wrap">
+          <div class="snap-rail-track">
+            <div class="snap-rail-zone sz-green"></div>
+            <div class="snap-rail-zone sz-amber"></div>
+            <div class="snap-rail-zone sz-yellow"></div>
+            <div class="snap-rail-zone sz-red"></div>
+          </div>
+          <div class="snap-dot" style="left:${pct}%;color:${color};background:${color}"></div>
+        </div>
+        <div class="snap-rail-labels">
+          ${m.zones.map(z => `<span>${z}</span>`).join('')}
+        </div>
+      </div>`;
+    container.insertAdjacentHTML('beforeend', html);
+  });
+}
+
+// ── SEND ──────────────────────────────────────────────────────────────────
+async function sendReport() {
+  const btn = document.getElementById('sendBtn');
+  btn.textContent = '⏳ Preparing…';
+  btn.disabled = true;
+
+  try {
+    // 1) Build snapshot card
+    buildSnapMetrics();
+
+    // 2) Render to canvas
+    await new Promise(r => setTimeout(r, 80)); // allow DOM paint
+    const card = document.getElementById('snapshot-card');
+    const canvas = await html2canvas(card, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#e8f4f8',
+      logging: false
+    });
+
+    // 3) Convert to blob
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+
+    // Build summary text
+    const d = new Date(_selectedDay + 'T00:00');
+    const dateLabel = d.toLocaleDateString('en-AU', {weekday:'long', day:'numeric', month:'long'});
+    const timeLabel = String(_selectedHour).padStart(2,'0') + ':00';
+    const summary = METRICS.map(m => {
+      const zIdx = getZoneIndex(_pos[m.id]);
+      return `${m.id}: ${m.zones[zIdx]}`;
+    }).join(' · ');
+    const subject = `Swim Report — ${dateLabel} ${timeLabel}`;
+    const body = `${dateLabel} ${timeLabel}\n${summary}\n\nSent via Swim Reporter · South Steyne`;
+
+    // 4) Try Web Share API (mobile — opens native share sheet with image)
+    if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'swim-report.png', { type: 'image/png' })] })) {
+      const file = new File([blob], 'swim-report.png', { type: 'image/png' });
+      await navigator.share({
+        title: subject,
+        text: body,
+        files: [file]
+      });
+      showToast('Report shared ✓');
+    } else {
+      // 5) Fallback: open mailto with text summary (image download as bonus)
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'swim-report.png';
+      a.click();
+      // Then open mailto
+      setTimeout(() => {
+        window.location.href = `mailto:${REPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      }, 400);
+      showToast('Image saved — email opened ✓');
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error(err);
+      showToast('Could not share — try again');
+    }
+  } finally {
+    btn.textContent = '📤 SEND REPORT';
+    btn.disabled = false;
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────
+buildDayPicker();
+buildTicks();
+METRICS.forEach(m => {
+  initRail(m.id);
+  updateDotVisual(m.id, _pos[m.id]);
+});
+</script>
+</body>
+</html>
