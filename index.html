@@ -4694,7 +4694,7 @@ function submitFeedback(e) {
 // params in force at capture time (so a row stays interpretable even
 // after you move a tuning slider).
 // ============================================================
-const CALIB_RPC_URL = BB_SUPABASE_URL + '/rest/v1/rpc/capture_calibration';
+const CALIB_INSERT_URL = BB_SUPABASE_URL + '/rest/v1/calibration_captures';
 
 // User drags a "My call" slider → store its % position for this metric.
 function onAssess(metric, val) {
@@ -4716,19 +4716,6 @@ async function calibDeviceId() {
   } catch (e) { return 'unknown'; }
 }
 
-// Capture token for tune-mode calibration writes. The capture_calibration()
-// function compares this server-side against app_secrets.calib_token. It is
-// entered once per device and kept only in localStorage — never in page source.
-function calibToken() {
-  try {
-    let t = localStorage.getItem('swim_calib_token');
-    if (!t) {
-      t = (window.prompt('Enter calibration capture token:') || '').trim();
-      if (t) localStorage.setItem('swim_calib_token', t);
-    }
-    return t || '';
-  } catch (e) { return ''; }
-}
 
 async function freezeCalibration() {
   const btn = document.getElementById('calib-freeze');
@@ -4809,29 +4796,18 @@ async function freezeCalibration() {
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Saving…';
   try {
-    const token = calibToken();
-    if (!token) {
-      if (status) status.textContent = '⚠ Capture token required.';
-      if (btn) btn.disabled = false;
-      return;
-    }
-    const res = await fetch(CALIB_RPC_URL, {
+    const res = await fetch(CALIB_INSERT_URL, {
       method: 'POST',
       headers: {
         'apikey': BB_SUPABASE_KEY,
         'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
         'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
       },
-      body: JSON.stringify({ p: payload, token }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const detail = (await res.text()).slice(0, 160);
-      // 401/unauthorized almost always = wrong/stale token: forget it so the
-      // next freeze re-prompts for the correct one.
-      if (res.status === 401 || /unauthorized/i.test(detail)) {
-        try { localStorage.removeItem('swim_calib_token'); } catch (e) {}
-        throw new Error('Token rejected — re-enter on next freeze');
-      }
       throw new Error('HTTP ' + res.status + ' ' + detail);
     }
     const n = (parseInt(localStorage.getItem('swim_calib_count') || '0', 10) || 0) + 1;
