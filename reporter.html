@@ -973,13 +973,23 @@ function showSendPicker(canvas, blob, subject, body) {
     }
 
     overlay.querySelector('#pickEmail').onclick = () => {
-      // Download image then open email
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/png');
-      a.download = 'swim-report.png';
-      a.click();
-      setTimeout(() => { window.location.href = emailHref; }, 400);
-      showToast('Image saved — email opened ✓');
+      // Use native share sheet (includes Mail on iOS) so the image travels with the message.
+      // Fallback: download PNG + open mailto (desktop or unsupported browsers).
+      if (navigator.canShare && navigator.canShare({ files: [new File([blob], 'swim-report.png', { type: 'image/png' })] })) {
+        const file = new File([blob], 'swim-report.png', { type: 'image/png' });
+        navigator.share({ title: subject, text: body, files: [file] }).catch(() => {
+          // User cancelled or share failed — silent
+        });
+        showToast('Choose Mail in the share sheet ✓');
+      } else {
+        // Desktop fallback: download image, then open mailto
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = 'swim-report.png';
+        a.click();
+        setTimeout(() => { window.location.href = emailHref; }, 400);
+        showToast('Image saved — attach it to the email ✓');
+      }
       dismiss();
     };
 
