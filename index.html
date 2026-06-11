@@ -384,20 +384,43 @@
   .cal-metric-val { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; }
 
   /* ── Pollution strip ── */
-  /* ── Forecasted Values box (slider-driven) ── */
+  /* ── Forecasted Values box (collapsible, slider-driven) ── */
   .forecast-values {
-    background: rgba(255,255,255,0.45);
-    border: 1.5px solid rgba(10,126,164,0.3);
+    background: var(--card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 12px;
     margin-bottom: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(10,126,164,0.10);
   }
-  .forecast-values-title {
+  #fv-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; box-sizing: border-box;
+    background: none; border: none; cursor: pointer;
+    padding: 13px 16px; font-family: inherit; text-align: left;
+  }
+  #fv-toggle:hover { background: rgba(10,126,164,0.04); }
+  .fv-toggle-label {
     font-family: 'Bebas Neue', sans-serif;
     font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
     color: var(--deep); font-weight: 700;
-    margin-bottom: 10px; padding-bottom: 7px;
-    border-bottom: 1.5px solid rgba(10,126,164,0.2);
+  }
+  .fv-toggle-chevron {
+    font-size: 26px; color: var(--ocean);
+    transition: transform 0.3s ease;
+  }
+  #fv-toggle[aria-expanded="true"] .fv-toggle-chevron { transform: rotate(180deg); }
+  #fv-body {
+    overflow: hidden;
+    transition: max-height 0.35s ease, opacity 0.3s ease;
+    max-height: 0; opacity: 0;
+    padding: 0 12px;
+  }
+  #fv-body.fv-open {
+    max-height: 1200px; opacity: 1;
+    padding: 0 12px 12px;
   }
   .forecast-values .conditions-bar { margin-bottom: 0; }
   .pollution-strip.pollution-full { flex: none; width: 100%; margin-bottom: 10px; }
@@ -1529,7 +1552,11 @@
 
     <!-- FORECASTED VALUES — everything here updates with the slider -->
     <div class="forecast-values">
-      <div class="forecast-values-title">Forecasted Values</div>
+      <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
+        <span class="fv-toggle-label">Expand for forecast details</span>
+        <span class="fv-toggle-chevron">▾</span>
+      </button>
+      <div id="fv-body">
 
       <div class="weather-strip" id="weatherStrip">
         <div class="wx-item">
@@ -1598,6 +1625,8 @@
           </div>
         </div>
       </div>
+
+      </div><!-- /fv-body -->
     </div>
 
     <!-- Water quality -->
@@ -1641,7 +1670,7 @@
     <div class="about-panel" style="padding:20px;margin-top:10px;">
       <p style="color:var(--dim); font-size:13px; margin-bottom:16px;">Not quite right? Tell us why and help improve the model.</p>
       <form id="feedbackForm" onsubmit="submitFeedback(event)">
-        <textarea id="feedbackText" rows="4" placeholder="Describe the issue. For forecast discrepancies indicate date/time."
+        <textarea id="feedbackText" rows="4" placeholder="Describe the issue. For forecast discrepancies indicate date/time. Leave your email if you want to be recontacted. Thanks!"
           style="width:100%; box-sizing:border-box; background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:12px; font-size:14px; font-family:inherit; resize:vertical; outline:none;"></textarea>
         <button type="submit" style="margin-top:12px; width:100%; padding:12px; background:var(--ocean); color:#fff; border:none; border-radius:10px; font-size:15px; cursor:pointer; font-family:inherit;">Submit</button>
       </form>
@@ -4264,6 +4293,14 @@ function toggleSummary() {
   if (!body || !btn) return;
   const collapsed = body.classList.toggle('summary-collapsed');
   btn.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function toggleForecastValues() {
+  const body = document.getElementById('fv-body');
+  const btn  = document.getElementById('fv-toggle');
+  if (!body || !btn) return;
+  const open = body.classList.toggle('fv-open');
+  btn.setAttribute('aria-expanded', String(open));
 }
 
 function getBannerTimeContext() {
