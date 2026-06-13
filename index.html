@@ -3001,17 +3001,24 @@ let _selectedDay = null; // date string "YYYY-MM-DD"
 function renderDayPicker(matrix) {
   const picker = document.getElementById('dayPicker');
   if (!picker) return;
-  const days = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
 
-  // Default selection: day containing current _sliderIdx
+  // Use local date (not UTC) — avoids date shifting for Sydney time zone
+  const _now = new Date();
+  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+
+  // Show today + next 5 days only — filter out past days, cap at 6
+  const allDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
+  const days = allDays.filter(d => d >= todayStr).slice(0, 6);
+
+  // Default selection: today, or nearest future day
   if (!_selectedDay || !days.includes(_selectedDay)) {
-    _selectedDay = matrix[_sliderIdx].dateTime.substring(0,10);
+    const sliderDay = matrix[_sliderIdx]?.dateTime.substring(0,10);
+    _selectedDay = days.includes(sliderDay) ? sliderDay : (days[0] || todayStr);
   }
 
   picker.innerHTML = '';
   days.forEach(date => {
     const d = new Date(date + 'T00:00');
-    const todayStr = new Date().toISOString().substring(0, 10);
     const isToday = date === todayStr;
     const btn = document.createElement('button');
     btn.className = 'day-btn' + (date === _selectedDay ? ' active' : '');
@@ -3034,7 +3041,7 @@ function selectDay(date) {
   // otherwise snap to first hour of the selected day (or current time if it's today)
   const currentOnDay = dayRows.find(({i}) => i === _sliderIdx);
   if (!currentOnDay) {
-    const todayStr = new Date().toISOString().substring(0, 10);
+    const _n = new Date(); const todayStr = `${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;
     if (date === todayStr) {
       // Today: snap to nearest hour to now
       const now = Date.now();
@@ -4845,7 +4852,7 @@ const HISTORY_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/forecast_history';
 
 async function loadForecastHistory() {
   try {
-    const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
       `${HISTORY_TABLE_URL}?select=*&forecast_dt=gte.${since}&order=forecast_dt.asc`,
       { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
