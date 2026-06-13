@@ -2177,21 +2177,53 @@ async function loadGemConfig(force) {
     const cached = JSON.parse(localStorage.getItem(GEM_CONFIG_KEY) || 'null');
     if (cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.gemTable) {
       SITE.gemTable = cached.gemTable;
-      console.log('GEM config: loaded from cache');
+      diag('GEM table: cache hit (' + cached.gemTable.length + ' rows)');
       return;
     }
   } catch(e) {}
+  diag('GEM table: fetching...');
   try {
-    const res = await fetchWithTimeout(GEM_SHEET_URL + '&t=' + Date.now(), 8000);
-    if (!res.ok) throw new Error('GEM sheet fetch failed: ' + res.status);
-    const table = parseGemCSV(await res.text());
+    const res = await fetchWithTimeout(GEM_SHEET_URL + '&t=' + Date.now(), 15000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const table = parseGemCSV(text);
     if (table) {
       SITE.gemTable = table;
       localStorage.setItem(GEM_CONFIG_KEY, JSON.stringify({ fetchedAt: Date.now(), gemTable: table }));
-      console.log('GEM config: loaded from sheet (' + table.length + ' dir rows)');
+      diag('GEM table: loaded from sheet (' + table.length + ' rows)');
+    } else {
+      diag('GEM table: parse returned null — check Gem-Cla50-50 sheet structure (expected 19 dir rows × 20 period cols starting at row 3)');
     }
   } catch(e) {
+    diag('GEM table: FAIL — ' + (e.message || e));
     console.warn('GEM config: sheet unavailable, GEM model will use fallback.', e.message);
+  }
+}
+
+// Retry handler — invoked when user taps the red model-table badge.
+// Clears the stale/failed cache entry, re-fetches, updates badge + re-renders.
+async function retryGemTable() {
+  const badge = document.getElementById('gem-badge');
+  if (badge) { badge.textContent = 'LOADING…'; badge.style.background = 'var(--dim)'; badge.style.cursor = 'default'; badge.onclick = null; }
+  localStorage.removeItem(GEM_CONFIG_KEY);
+  await loadGemConfig(true);
+  if (SITE.gemTable) {
+    if (badge) badge.style.display = 'none';
+    try {
+      if (_matrix && _matrix.length) {
+        const slot  = _matrix[_sliderIdx];
+        const wxKey = (slot?.dateTime || '').replace(' ','T').substring(0,16);
+        renderSnapshot(slot, _wxMatrix[wxKey] || null);
+        renderTimeline(_matrix, _wxMatrix);
+      }
+    } catch(e) {}
+  } else {
+    if (badge) {
+      badge.textContent = '⚠ TABLE UNAVAIL — TAP RETRY';
+      badge.style.background = 'var(--red)';
+      badge.style.cursor = 'pointer';
+      badge.onclick = retryGemTable;
+    }
   }
 }
 
@@ -3991,11 +4023,13 @@ function buildTunePanel() {
     if (GEM_MODEL && !SITE.gemTable) {
       const badge = document.getElementById('gem-badge');
       if (badge) {
-        badge.textContent = '⚠ MODEL TABLE NOT LOADED';
+        badge.textContent = '⚠ TABLE NOT LOADED — TAP';
         badge.style.background = 'var(--red)';
+        badge.style.cursor = 'pointer';
         badge.style.display = 'inline';
+        badge.onclick = retryGemTable;
       }
-      console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback.');
+      console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback. Check diag log for error detail.');
     }
 
     // Apply manual tuning overlay on top of the freshly loaded config, build the
