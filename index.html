@@ -13,7 +13,7 @@
 <title>VIZ Swim — South Steyne Manly</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
     --sky:    #e8f4f8;
@@ -646,19 +646,19 @@
   .wx-bar-left { display:flex; align-items:center; gap:9px; min-width:0; }
   .wx-bar-icon { font-size:clamp(22px, 6.5vw, 26px); line-height:1; flex:none; }
   .wx-bar-desc {
-    font-family:'DM Mono',monospace;
+    font-family:'DM Mono',monospace; font-weight:500;
     font-size:clamp(13px, 3.6vw, 15px);
     color:var(--deep); letter-spacing:0.3px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   .wx-bar-feels { display:flex; align-items:baseline; gap:6px; white-space:nowrap; flex:none; }
   .wx-bar-feels-label {
-    font-family:'DM Mono',monospace;
+    font-family:'DM Mono',monospace; font-weight:500;
     font-size:clamp(13px, 3.6vw, 15px);
     color:var(--deep); letter-spacing:0.3px;
   }
   .wx-bar-feels-val {
-    font-family:'DM Mono',monospace;
+    font-family:'DM Mono',monospace; font-weight:500;
     font-size:clamp(13px, 3.6vw, 15px);
     color:var(--deep); letter-spacing:0.3px; line-height:1;
   }
@@ -1298,6 +1298,7 @@
      ═══════════════════════════════════════════════════════════════ */
   @media (max-width: 340px) {
     .weather-strip { grid-template-columns: repeat(5, 1fr); gap: 1px; padding: 6px 6px; }
+    .wx-bar { padding: 6px 10px; }
     .wx-val  { font-size: 18px; }
     .wx-icon { font-size: 16px; }
     .wx-unit, .wx-label { font-size: 8px; letter-spacing: 0; }
@@ -1713,7 +1714,9 @@
     <div class="about-panel" style="padding:20px;margin-top:10px;">
       <p style="color:var(--dim); font-size:13px; margin-bottom:16px;">Not quite right? Tell us why and help improve the model.</p>
       <form id="feedbackForm" onsubmit="submitFeedback(event)">
-        <textarea id="feedbackText" rows="4" placeholder="Describe the issue. For forecast discrepancies indicate date/time. Leave your email if you want to be recontacted. Thanks!"
+        <input id="feedbackContact" type="text" required placeholder="Name or email (required)"
+          style="width:100%; box-sizing:border-box; background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:12px; font-size:14px; font-family:inherit; outline:none; margin-bottom:10px;">
+        <textarea id="feedbackText" rows="4" placeholder="Describe the issue. For forecast discrepancies indicate date/time. Thanks!"
           style="width:100%; box-sizing:border-box; background:var(--card); color:var(--text); border:1px solid var(--border); border-radius:10px; padding:12px; font-size:14px; font-family:inherit; resize:vertical; outline:none;"></textarea>
         <button type="submit" style="margin-top:12px; width:100%; padding:12px; background:var(--ocean); color:#fff; border:none; border-radius:10px; font-size:15px; cursor:pointer; font-family:inherit;">Submit</button>
       </form>
@@ -4132,8 +4135,8 @@ function buildTunePanel() {
 
   // ===== SPLASH SCREEN =====
   // Phase 1: video plays to completion (or max 10s safety cap).
-  // Phase 2: logo splash shows for at least 4s, then waits for forecast data.
-  //          Hard cap at 8s so it can never stick.
+  // Phase 2: logo splash shows for at least 2s, then waits for forecast data.
+  //          Hard cap at 6s so it can never stick.
   (function() {
     var videoEl   = document.getElementById('splash-video');
     var videoWrap = document.getElementById('video-splash');
@@ -4145,9 +4148,9 @@ function buildTunePanel() {
       setTimeout(function() { el.style.display = 'none'; if (cb) cb(); }, 650);
     }
 
-    // Phase 2: logo splash with 4s floor, data-ready ceiling, 8s hard cap
+    // Phase 2: logo splash with 2s floor, data-ready ceiling, 6s hard cap
     function startLogoPhase() {
-      var MIN_MS = 4000, MAX_MS = 8000, started = Date.now();
+      var MIN_MS = 2000, MAX_MS = 6000, started = Date.now();
       function checkLogo() {
         var elapsed = Date.now() - started;
         if (elapsed >= MAX_MS) return fadeEl(logoSplash);
@@ -4773,23 +4776,39 @@ async function generateBannerSummary() {
 
 function submitFeedback(e) {
   e.preventDefault();
+  var contact = document.getElementById('feedbackContact').value.trim();
   var text = document.getElementById('feedbackText').value.trim();
-  if (!text) return;
   var msg = document.getElementById('feedbackMsg');
+  if (!contact) {
+    msg.textContent = 'Please enter your name or email.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+    document.getElementById('feedbackContact').focus();
+    return;
+  }
+  if (!text) {
+    msg.textContent = 'Please describe the issue.';
+    msg.style.color = 'var(--red)';
+    msg.style.display = 'block';
+    document.getElementById('feedbackText').focus();
+    return;
+  }
   // Use mailto as fallback (EmailJS not configured) — sends via user's mail client
   // For a silent background send, use a form submission service
   var subject = encodeURIComponent('Swim Manly App Feedback');
-  var body = encodeURIComponent(text);
+  var body = encodeURIComponent('From: ' + contact + '\n\n' + text);
   var mailtoLink = 'mailto:vizgroupsydney@gmail.com?subject=' + subject + '&body=' + body;
   
   // Try to send silently via fetch to a form endpoint, fallback to mailto
   fetch('https://formsubmit.co/ajax/vizgroupsydney@gmail.com', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-    body: JSON.stringify({ message: text, _subject: 'Swim Manly App Feedback' })
+    body: JSON.stringify({ name_or_email: contact, message: text, _subject: 'Swim Manly App Feedback' })
   }).then(function(r) {
+    document.getElementById('feedbackContact').value = '';
     document.getElementById('feedbackText').value = '';
     msg.textContent = 'Thank you! Your feedback has been sent.';
+    msg.style.color = 'var(--green)';
     msg.style.display = 'block';
     setTimeout(function(){ msg.style.display = 'none'; }, 5000);
   }).catch(function() {
