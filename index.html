@@ -744,6 +744,39 @@
     border:4px solid white;
     box-shadow:0 3px 12px rgba(10,126,164,0.4);
   }
+  /* ── Tide graph (below the slider) ── */
+  .tide-graph-wrap {
+    background:var(--card);
+    backdrop-filter:blur(12px);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:clamp(12px,4vw,16px) clamp(12px,4vw,16px) clamp(8px,2.5vw,10px);
+    margin-bottom:10px;
+  }
+  .tide-graph-head {
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+  }
+  .tide-graph-title {
+    font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px;
+    font-size:clamp(16px,4.8vw,20px); color:var(--deep); text-transform:uppercase;
+  }
+  .tide-graph-now { text-align:right; line-height:1.05; }
+  .tide-graph-now .h {
+    font-family:'Bebas Neue',sans-serif; font-size:clamp(20px,6vw,26px);
+    color:var(--ocean); letter-spacing:1px;
+  }
+  .tide-graph-now .t {
+    font-family:'DM Mono',monospace; font-size:clamp(9px,2.6vw,11px);
+    color:var(--dim); letter-spacing:0.5px;
+  }
+  .tide-graph-svg { width:100%; height:auto; display:block; }
+  .tide-graph-svg .axis-lbl { font-family:'DM Mono',monospace; font-size:11px; fill:var(--dim); }
+  .tide-graph-svg .ext-lbl  { font-family:'DM Mono',monospace; font-size:10px; fill:var(--deep); font-weight:500; }
+  .tide-graph-empty {
+    font-family:'DM Mono',monospace; font-size:clamp(10px,2.8vw,12px);
+    color:var(--dim); text-align:center; padding:14px 0;
+  }
+
   .slider-ticks {
     display:flex; justify-content:space-between;
     margin-top:6px;
@@ -1589,6 +1622,18 @@
       </div>
       <input type="range" id="timeSlider" min="0" max="0" value="0" oninput="onSlider(this.value)">
       <div class="slider-ticks" id="sliderTicks"></div>
+    </div>
+
+    <!-- Tide graph for the selected day -->
+    <div class="tide-graph-wrap" id="tideGraphWrap">
+      <div class="tide-graph-head">
+        <span class="tide-graph-title">Tide · Sydney</span>
+        <div class="tide-graph-now">
+          <div class="h" id="tideNowH">—</div>
+          <div class="t" id="tideNowState">—</div>
+        </div>
+      </div>
+      <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 150" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
     </div>
 
     <!-- DEBUG PANEL — visible with ?tune=1 (or legacy ?debug=1) -->
@@ -2545,6 +2590,7 @@ function guardSwell2(s1H, s1Dir, s2H, s2Dir, s2P) {
 // =============================================================================
 let _matrix   = [];   // hourly forecast rows
 let _wxMatrix = {};   // hourly weather keyed by datetime
+let _tidePts  = [];   // sorted tide turning points {ts, h} — feeds the tide graph
 let _wxDaily  = {};   // daily weather (sunrise/sunset) keyed by date
 let _sliderIdx = 0;
 let _retryFn  = null;
@@ -2654,6 +2700,7 @@ function buildHourlyMatrix(j) {
     }
   }));
   tidePts.sort((a,b) => a.ts - b.ts);
+  _tidePts = tidePts;   // expose for the tide graph (same points getTide uses)
 
   function getTide(dt) {
     if (tidePts.length === 0) return 1.0;
@@ -3220,6 +3267,139 @@ function renderSlider(matrix) {
     dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'}).toUpperCase();
   document.getElementById('sliderTime').textContent =
     dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+
+  renderTideGraph();
+}
+
+// =============================================================================
+// TIDE GRAPH — smooth tide curve for the selected day with a moving "now" line.
+// Uses the same turning points (_tidePts) and cosine interpolation as getTide(),
+// so the curve and readout match the tideM the scoring model actually uses.
+// =============================================================================
+function tideHeightAtTs(ts) {
+  const pts = _tidePts;
+  if (!pts.length) return null;
+  let lo = null, hi = null;
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i].ts <= ts) lo = pts[i];
+    else { hi = pts[i]; break; }
+  }
+  if (!lo) return hi.h;            // before first turning point
+  if (!hi) return lo.h;            // after last turning point
+  const frac = (ts - lo.ts) / (hi.ts - lo.ts);
+  return (lo.h + hi.h) / 2 - (hi.h - lo.h) / 2 * Math.cos(Math.PI * frac);
+}
+
+function renderTideGraph() {
+  const svg     = document.getElementById('tideGraphSvg');
+  const nowHEl  = document.getElementById('tideNowH');
+  const nowStEl = document.getElementById('tideNowState');
+  if (!svg) return;
+
+  // No tide data (fetch failed / past edge) → show a gentle empty state
+  if (!_tidePts.length) {
+    svg.innerHTML = '<text x="180" y="78" text-anchor="middle" class="ext-lbl" fill="var(--dim)">Tide data unavailable</text>';
+    if (nowHEl)  nowHEl.textContent  = '—';
+    if (nowStEl) nowStEl.textContent = '—';
+    return;
+  }
+
+  // Window = the full selected day (local midnight → next midnight)
+  const dayStart = new Date(_selectedDay + 'T00:00:00').getTime();
+  const dayEnd   = dayStart + 24 * 3600 * 1000;
+
+  // Current cursor time = the slider's selected row
+  const curRow = _matrix[_sliderIdx];
+  const curTs  = curRow ? new Date(curRow.dateTime.replace(' ','T')).getTime() : dayStart;
+
+  // ── SVG geometry ──
+  const VB_W = 360, VB_H = 150;
+  const PAD_L = 8, PAD_R = 8, PAD_T = 26, PAD_B = 22;
+  const plotW = VB_W - PAD_L - PAD_R;
+  const plotH = VB_H - PAD_T - PAD_B;
+
+  // Sample the curve across the day (every 10 min)
+  const STEP = 10 * 60 * 1000;
+  const samples = [];
+  for (let ts = dayStart; ts <= dayEnd + 1; ts += STEP) {
+    samples.push({ ts, h: tideHeightAtTs(ts) });
+  }
+  const heights = samples.map(s => s.h);
+  let hMin = Math.min(...heights), hMax = Math.max(...heights);
+  if (hMax - hMin < 0.3) { const m = (hMin+hMax)/2; hMin = m-0.2; hMax = m+0.2; } // flat-day guard
+  const pad = (hMax - hMin) * 0.18;
+  hMin -= pad; hMax += pad;
+
+  const xOf = ts => PAD_L + ((ts - dayStart) / (dayEnd - dayStart)) * plotW;
+  const yOf = h  => PAD_T + (1 - (h - hMin) / (hMax - hMin)) * plotH;
+
+  const esc = s => String(s);
+  const parts = [];
+
+  // defs: fill gradient
+  parts.push(
+    '<defs><linearGradient id="tideFillGrad" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0%" stop-color="var(--ocean)" stop-opacity="0.30"/>' +
+      '<stop offset="100%" stop-color="var(--ocean)" stop-opacity="0.04"/>' +
+    '</linearGradient></defs>'
+  );
+
+  // hour gridlines + labels at 0/6/12/18/24
+  const hourLabels = { 0:'12a', 6:'6a', 12:'12p', 18:'6p', 24:'12a' };
+  [0,6,12,18,24].forEach(hr => {
+    const x = xOf(dayStart + hr*3600*1000);
+    parts.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T-4}" x2="${x.toFixed(1)}" y2="${PAD_T+plotH}" stroke="var(--border)" stroke-width="1"/>`);
+    const anchor = hr===0 ? 'start' : (hr===24 ? 'end' : 'middle');
+    parts.push(`<text x="${x.toFixed(1)}" y="${VB_H-7}" text-anchor="${anchor}" class="axis-lbl">${hourLabels[hr]}</text>`);
+  });
+
+  // curve path
+  let curve = '';
+  samples.forEach((s, i) => {
+    curve += (i===0 ? 'M' : 'L') + xOf(s.ts).toFixed(1) + ' ' + yOf(s.h).toFixed(1) + ' ';
+  });
+  curve = curve.trim();
+
+  // filled area under curve
+  const baseY = PAD_T + plotH;
+  parts.push(`<path d="${curve} L${xOf(dayEnd).toFixed(1)} ${baseY} L${xOf(dayStart).toFixed(1)} ${baseY} Z" fill="url(#tideFillGrad)" stroke="none"/>`);
+  // the tide line
+  parts.push(`<path d="${curve}" fill="none" stroke="var(--ocean)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`);
+
+  // high/low markers for turning points inside the day
+  _tidePts.forEach((p, i) => {
+    if (p.ts < dayStart || p.ts > dayEnd) return;
+    const prev = _tidePts[i-1], next = _tidePts[i+1];
+    const isHigh = prev ? p.h > prev.h : (next ? p.h > next.h : true);
+    const x = xOf(p.ts), y = yOf(p.h);
+    parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="#fff" stroke="var(--deep)" stroke-width="1.5"/>`);
+    const d = new Date(p.ts);
+    let hh = d.getHours(); const mm = d.getMinutes();
+    const ap = hh >= 12 ? 'pm' : 'am'; const h12 = (hh % 12) || 12;
+    const clock = h12 + ':' + String(mm).padStart(2,'0') + ap;
+    const anchor = x < 34 ? 'start' : (x > VB_W-34 ? 'end' : 'middle');
+    const ly = isHigh ? y-7 : y+13;
+    parts.push(`<text x="${x.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${anchor}" class="ext-lbl">${(isHigh?'H ':'L ')}${p.h.toFixed(2)}m · ${clock}</text>`);
+  });
+
+  // moving "now" line + dot (only if the cursor falls within the day)
+  if (curTs >= dayStart && curTs <= dayEnd) {
+    const nx = xOf(curTs);
+    const nh = tideHeightAtTs(curTs);
+    const ny = yOf(nh);
+    parts.push(`<line x1="${nx.toFixed(1)}" y1="${PAD_T-6}" x2="${nx.toFixed(1)}" y2="${PAD_T+plotH}" stroke="var(--deep)" stroke-width="1.6" stroke-dasharray="3 3"/>`);
+    parts.push(`<circle cx="${nx.toFixed(1)}" cy="${ny.toFixed(1)}" r="4.5" fill="var(--deep)" stroke="#fff" stroke-width="2"/>`);
+  }
+
+  svg.innerHTML = parts.join('');
+
+  // readout — current height + rising/falling
+  const nowH = tideHeightAtTs(curTs);
+  if (nowH != null) {
+    const rising = tideHeightAtTs(curTs + 5*60*1000) >= tideHeightAtTs(curTs - 5*60*1000);
+    if (nowHEl)  nowHEl.textContent  = nowH.toFixed(2) + ' m';
+    if (nowStEl) nowStEl.textContent = rising ? 'rising' : 'falling';
+  }
 }
 
 // =============================================================================
