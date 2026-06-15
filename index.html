@@ -535,7 +535,7 @@
     backdrop-filter: blur(12px);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 11px 14px;
+    padding: 15px 16px;
     margin-bottom: 10px;
     display: flex;
     align-items: center;
@@ -543,23 +543,23 @@
   }
   .bb-strip.bb-alert-1 { border-color: var(--yellow); }
   .bb-strip.bb-alert-2 { border-color: var(--red); }
-  .bb-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
+  .bb-icon { font-size: 32px; flex-shrink: 0; line-height: 1; }
   .bb-body { flex: 1; min-width: 0; }
   .bb-status {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 15px; letter-spacing: 1px;
-    color: var(--dim); line-height: 1.2;
+    font-size: 19px; letter-spacing: 1px;
+    color: var(--dim); line-height: 1.25;
   }
   .bb-strip.bb-alert-1 .bb-status { color: var(--yellow); }
   .bb-strip.bb-alert-2 .bb-status { color: var(--red); }
   .bb-sub {
-    font-size: 9px; color: var(--dim);
-    letter-spacing: 0.5px; margin-top: 3px;
+    font-size: 12px; color: var(--dim);
+    letter-spacing: 0.5px; margin-top: 4px;
   }
   .bb-btn {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 14px; letter-spacing: 1.5px;
-    padding: 7px 12px;
+    font-size: 15px; letter-spacing: 1.5px;
+    padding: 9px 14px;
     border-radius: 8px;
     border: 1.5px solid var(--ocean);
     background: transparent;
@@ -1406,7 +1406,7 @@
   .cond-chip-ext { color:var(--ocean); }
   .cond-chip-val { font-family:'Bebas Neue',sans-serif; font-size:clamp(20px,6vw,26px); color:var(--deep); letter-spacing:0.5px; line-height:1; }
   .cond-chip-unit { font-size:0.5em; color:var(--dim); margin-left:2px; }
-  .cond-chip-sub { font-family:'DM Mono',monospace; font-size:9px; color:var(--dim); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cond-chip-sub { font-family:'DM Mono',monospace; font-size:9px; color:var(--dim); line-height:1.25; }
   .cond-chip .pollution-text { font-family:'Bebas Neue',sans-serif; font-size:clamp(18px,5vw,24px); line-height:1; letter-spacing:0.5px; }
   .bb-btn-mini { margin-top:4px; align-self:flex-start; font-family:'DM Mono',monospace; font-size:10px; padding:3px 9px; border:1px solid var(--ocean); color:var(--ocean); background:transparent; border-radius:8px; cursor:pointer; }
   .bb-btn-mini:disabled { opacity:0.5; border-color:var(--dim); color:var(--dim); cursor:default; }
@@ -1637,6 +1637,38 @@
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
 
+
+    <!-- DEBUG PANEL — visible with ?tune=1 (or legacy ?debug=1) -->
+    <div id="gemDebug" style="display:none;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;margin:0 0 10px;"></div>
+
+
+    <!-- Conditions chips — sea temp · pollution risk -->
+    <div class="cond-chips">
+
+      <div class="cond-chip">
+        <div class="cond-chip-label">Sea temp</div>
+        <div class="cond-chip-val"><span id="seaChipVal">—</span><span class="cond-chip-unit">°C</span></div>
+      </div>
+
+      <a class="cond-chip" id="pollutionStrip"
+         href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8"
+         target="_blank" rel="noopener">
+        <div class="cond-chip-label">Pollution risk <span class="cond-chip-ext">↗</span></div>
+        <div class="pollution-text unknown" id="pollutionText">—</div>
+        <div class="cond-chip-sub" id="pollutionSub"></div>
+      </a>
+
+    </div>
+
+    <!-- Bluebottle report strip — larger, shows when last reported -->
+    <div class="bb-strip" id="bbStrip">
+      <div class="bb-icon">🪼</div>
+      <div class="bb-body">
+        <div class="bb-status" id="bbStatus">No blue bottles reported in the last 24h</div>
+        <div class="bb-sub" id="bbSub"></div>
+      </div>
+      <button class="bb-btn" id="bbBtn" onclick="bbReport()">Report</button>
+    </div>
     <!-- Tide graph for the selected day -->
     <div class="tide-graph-wrap" id="tideGraphWrap">
       <div class="tide-graph-head">
@@ -1649,34 +1681,6 @@
       <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 105" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
     </div>
 
-    <!-- DEBUG PANEL — visible with ?tune=1 (or legacy ?debug=1) -->
-    <div id="gemDebug" style="display:none;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;margin:0 0 10px;"></div>
-
-
-    <!-- Conditions chips — sea temp · water quality · bluebottle (compact) -->
-    <div class="cond-chips">
-
-      <div class="cond-chip">
-        <div class="cond-chip-label">Sea temp</div>
-        <div class="cond-chip-val"><span id="seaChipVal">—</span><span class="cond-chip-unit">°C</span></div>
-      </div>
-
-      <a class="cond-chip" id="pollutionStrip"
-         href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8"
-         target="_blank" rel="noopener">
-        <div class="cond-chip-label">Water quality <span class="cond-chip-ext">↗</span></div>
-        <div class="pollution-text unknown" id="pollutionText">—</div>
-        <div class="cond-chip-sub" id="pollutionSub"></div>
-      </a>
-
-      <div class="cond-chip bb-strip" id="bbStrip">
-        <div class="cond-chip-label">🪼 Bluebottle</div>
-        <div class="cond-chip-val" id="bbChipLabel">—</div>
-        <button class="bb-btn-mini" id="bbBtn" onclick="event.stopPropagation(); bbReport()">Report</button>
-        <span id="bbStatus" hidden></span><span id="bbSub" hidden></span>
-      </div>
-
-    </div>
 
 
     <!-- FORECASTED VALUES — everything here updates with the slider -->
@@ -1758,6 +1762,34 @@
       </div><!-- /fv-body -->
     </div>
 
+  </div><!-- /panel-snapshot -->
+
+
+  <!-- Plan your swim -->
+  <div id="what-to-expect">
+    <div class="wte-sub">choose how you'd like to look ahead</div>
+  </div>
+
+  <!-- Segmented toggle → drives the two views below -->
+  <div class="view-toggle" role="tablist" aria-label="Choose forecast view">
+    <button class="view-seg active" id="seg-snapshot" role="tab" aria-selected="true" onclick="switchTab('snapshot')">
+      <span class="view-seg-title">Scroll the timeline</span>
+      <span class="view-seg-sub">hour by hour</span>
+    </button>
+    <button class="view-seg" id="seg-timeline" role="tab" aria-selected="false" onclick="switchTab('timeline')">
+      <span class="view-seg-title">5-day heatmap</span>
+      <span class="view-seg-sub">the week ahead</span>
+    </button>
+  </div>
+
+
+  <!-- TIMELINE TAB -->
+  <div class="view-panel" id="panel-timeline">
+    <div class="timeline-wrap">
+      <div id="timelineContent">Loading…</div>
+    </div>
+  </div>
+
     <!-- Shark strip -->
     <a class="shark-strip"
        href="https://www.sharksmart.nsw.gov.au/shark-activity#map=-33.7969/151.2877/13"
@@ -1782,8 +1814,6 @@
       </form>
       <p id="feedbackMsg" style="display:none; margin-top:12px; color:var(--green); font-size:14px; text-align:center;"></p>
     </div>
-
-  </div><!-- /panel-snapshot -->
 
   <!-- Summary (collapsible) -->
   <section id="summary-section">
@@ -1835,32 +1865,6 @@
     </div>
   </section>
 
-  <!-- Plan your swim -->
-  <div id="what-to-expect">
-    <div class="wte-title">PLAN YOUR SWIM</div>
-    <div class="wte-sub">choose how you'd like to look ahead</div>
-  </div>
-
-  <!-- Segmented toggle → drives the two views below -->
-  <div class="view-toggle" role="tablist" aria-label="Choose forecast view">
-    <button class="view-seg active" id="seg-snapshot" role="tab" aria-selected="true" onclick="switchTab('snapshot')">
-      <span class="view-seg-title">Scroll the timeline</span>
-      <span class="view-seg-sub">hour by hour</span>
-    </button>
-    <button class="view-seg" id="seg-timeline" role="tab" aria-selected="false" onclick="switchTab('timeline')">
-      <span class="view-seg-title">5-day heatmap</span>
-      <span class="view-seg-sub">the week ahead</span>
-    </button>
-  </div>
-
-
-  <!-- TIMELINE TAB -->
-  <div class="view-panel" id="panel-timeline">
-    <div class="timeline-wrap">
-      <div id="timelineContent">Loading…</div>
-    </div>
-  </div>
-
   <!-- ABOUT — overlay popup, opens from top -->
   <div id="about-overlay" onclick="if(event.target===this)closeAbout()">
     <div class="about-sheet">
@@ -1888,19 +1892,6 @@
       </p>
     </div>
 
-    <!-- Model A/B Comparison (Original vs GEM) -->
-    <div class="about-panel" style="padding:16px 12px; margin-top:10px;">
-      <p style="font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:2px;color:var(--ocean);margin-bottom:8px;">MODEL A / B — ORIGINAL vs GEM</p>
-      <p id="cmpSub" style="font-size:11px;color:var(--dim);line-height:1.4;margin-bottom:10px;">Runs both wave models on the current time-slider slot. Original = 1-D sea-hit at 5s; GEM = 2-D direction×period table (Gem-Cla50-50) with real wind-wave period.</p>
-      <button onclick="runModelCompare()" style="width:100%;padding:12px;background:var(--deep);color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-family:inherit;margin-bottom:14px;">Compare models on current slot</button>
-      <div id="cmpResults" style="display:none;">
-        <table class="cal-table">
-          <thead><tr><th>Component</th><th>Original</th><th>GEM</th><th>Δ</th></tr></thead>
-          <tbody id="cmpTableBody"></tbody>
-        </table>
-        <div id="cmpMetrics" style="margin-top:10px;"></div>
-      </div>
-    </div>
     </div><!-- /about-sheet -->
   </div><!-- /about-overlay -->
 
@@ -3721,23 +3712,23 @@ function renderPollution(bw) {
   }
 
   const f = bw.forecast.toLowerCase();
-  let cls, label;
+  let cls, label, mean;
 
   if (f.includes('not available') || f.includes('not forecast')) {
-    cls = 'unknown'; label = 'No forecast';
+    cls = 'unknown'; label = 'No forecast'; mean = 'Tap ↗ for details';
   } else if (f.includes('unlikely') || f.includes('good')) {
-    cls = 'good';    label = 'Unlikely';
+    cls = 'good';    label = 'Unlikely'; mean = 'Pollution unlikely — fine to swim';
   } else if (f.includes('possible') || f.includes('fair')) {
-    cls = 'fair';    label = 'Possible';
+    cls = 'fair';    label = 'Possible'; mean = 'Pollution possible — care after rain';
   } else if (f.includes('likely') || f.includes('poor')) {
-    cls = 'poor';    label = 'Likely';
+    cls = 'poor';    label = 'Likely'; mean = 'Pollution likely — best avoid';
   } else {
-    cls = 'unknown'; label = bw.forecast;
+    cls = 'unknown'; label = bw.forecast; mean = '';
   }
 
   txt.className  = `pollution-text ${cls}`;
   txt.textContent = label;
-  sub.textContent = '';
+  sub.textContent = mean;
 }
 
 // =============================================================================
