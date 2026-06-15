@@ -1084,14 +1084,17 @@
     gap:16px; justify-content:space-between;
   }
   .about-link {
-    display: inline-flex; align-items: center; gap: 7px;
-    background: none; border: none; cursor: pointer;
-    font-family: 'DM Mono', monospace; font-size: 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--green); cursor: pointer;
+    font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500;
     color: var(--green); letter-spacing: 0.5px;
-    padding: 4px 2px; flex-shrink: 0;
+    padding: 5px 11px 5px 7px; border-radius: 999px; flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(6,78,110,0.08);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
   }
-  .about-link:hover { color: var(--deep); }
-  .about-link:hover .about-info-icon { animation-play-state: paused; }
+  .about-link:hover { background: var(--green); color: #fff; border-color: var(--green); }
+  .about-link:hover .about-info-icon { animation-play-state: paused; background:#fff; color:var(--green); }
+  .about-link:active { transform: scale(0.97); }
   .about-info-icon {
     display: inline-flex; align-items: center; justify-content: center;
     width: 20px; height: 20px; border-radius: 50%;
@@ -1101,7 +1104,27 @@
     font-style: normal; flex-shrink: 0;
     animation: aboutPulse 1.8s ease-in-out infinite;
   }
-  .about-link-text { text-decoration: underline; }
+  .about-link-text { text-decoration: none; }
+
+  /* Newcomer call-to-action banner → opens About */
+  .newhere-banner {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; box-sizing: border-box;
+    background: linear-gradient(135deg, var(--foam), var(--card));
+    border: 1px solid var(--green); border-radius: var(--radius);
+    padding: 10px 14px; margin: 6px 0 10px;
+    cursor: pointer; text-align: left;
+    font-family: 'DM Mono', monospace; font-size: clamp(12px, 3.4vw, 13px);
+    color: var(--deep); letter-spacing: 0.3px;
+    box-shadow: 0 1px 4px rgba(6,78,110,0.06);
+    transition: box-shadow 0.12s, transform 0.12s;
+  }
+  .newhere-banner:hover { box-shadow: 0 2px 9px rgba(6,78,110,0.13); }
+  .newhere-banner:active { transform: scale(0.99); }
+  .newhere-icon { font-size: 18px; line-height: 1; flex-shrink: 0; }
+  .newhere-text { flex: 1; }
+  .newhere-text strong { color: var(--green); font-weight: 700; }
+  .newhere-arrow { color: var(--green); font-weight: 700; font-size: 16px; flex-shrink: 0; }
   @keyframes aboutPulse {
     0%   { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0 0 rgba(26,158,110,0.5); }
     50%  { opacity: 1;   transform: scale(1);   box-shadow: 0 0 0 6px rgba(26,158,110,0); }
@@ -1411,9 +1434,16 @@
     </div>
     <button class="about-link" onclick="openAbout()" aria-label="About this app">
       <span class="about-info-icon" aria-hidden="true">i</span>
-      <span class="about-link-text">About this app</span>
+      <span class="about-link-text">About</span>
     </button>
   </header>
+
+  <!-- Newcomer call-to-action → opens About -->
+  <button class="newhere-banner" onclick="openAbout()" aria-label="About this app — how to read it">
+    <span class="newhere-icon" aria-hidden="true">👋</span>
+    <span class="newhere-text">First time here? <strong>How to read this app</strong></span>
+    <span class="newhere-arrow" aria-hidden="true">→</span>
+  </button>
 
   <!-- Summary (collapsible) -->
   <section id="summary-section">
@@ -1633,11 +1663,37 @@
           <div class="t" id="tideNowState">—</div>
         </div>
       </div>
-      <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 150" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
+      <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 105" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
     </div>
 
     <!-- DEBUG PANEL — visible with ?tune=1 (or legacy ?debug=1) -->
     <div id="gemDebug" style="display:none;background:#0d2b3e;color:#cfe8f2;border-radius:var(--radius);padding:10px 12px;font-family:'DM Mono',monospace;font-size:10px;line-height:1.5;overflow-x:auto;margin:0 0 10px;"></div>
+
+
+    <!-- Water quality -->
+    <div class="pollution-strip pollution-full" id="pollutionStrip">
+      <div class="pollution-label">
+        Water Quality
+        <span>Today · Beachwatch NSW</span>
+        <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
+      </div>
+      <div class="pollution-divider"></div>
+      <div class="pollution-forecast">
+        <div class="pollution-text unknown" id="pollutionText">—</div>
+        <div class="pollution-sub" id="pollutionSub"></div>
+      </div>
+    </div>
+
+    <!-- Bluebottle report strip -->
+    <div class="bb-strip" id="bbStrip">
+      <div class="bb-icon">🪼</div>
+      <div class="bb-body">
+        <div class="bb-status" id="bbStatus">No blue bottles reported in the last 24h</div>
+        <div class="bb-sub" id="bbSub"></div>
+      </div>
+      <button class="bb-btn" id="bbBtn" onclick="bbReport()">Report</button>
+    </div>
+
 
     <!-- FORECASTED VALUES — everything here updates with the slider -->
     <div class="forecast-values">
@@ -1717,31 +1773,6 @@
 
       </div><!-- /fv-body -->
     </div>
-
-    <!-- Water quality -->
-    <div class="pollution-strip pollution-full" id="pollutionStrip">
-      <div class="pollution-label">
-        Water Quality
-        <span>Today · Beachwatch NSW</span>
-        <a class="pollution-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank">↗ Details</a>
-      </div>
-      <div class="pollution-divider"></div>
-      <div class="pollution-forecast">
-        <div class="pollution-text unknown" id="pollutionText">—</div>
-        <div class="pollution-sub" id="pollutionSub"></div>
-      </div>
-    </div>
-
-    <!-- Bluebottle report strip -->
-    <div class="bb-strip" id="bbStrip">
-      <div class="bb-icon">🪼</div>
-      <div class="bb-body">
-        <div class="bb-status" id="bbStatus">No blue bottles reported in the last 24h</div>
-        <div class="bb-sub" id="bbSub"></div>
-      </div>
-      <button class="bb-btn" id="bbBtn" onclick="bbReport()">Report</button>
-    </div>
-
 
     <!-- Shark strip -->
     <a class="shark-strip"
@@ -3313,8 +3344,8 @@ function renderTideGraph() {
   const curTs  = curRow ? new Date(curRow.dateTime.replace(' ','T')).getTime() : dayStart;
 
   // ── SVG geometry ──
-  const VB_W = 360, VB_H = 150;
-  const PAD_L = 8, PAD_R = 8, PAD_T = 26, PAD_B = 22;
+  const VB_W = 360, VB_H = 105;
+  const PAD_L = 8, PAD_R = 8, PAD_T = 20, PAD_B = 18;
   const plotW = VB_W - PAD_L - PAD_R;
   const plotH = VB_H - PAD_T - PAD_B;
 
