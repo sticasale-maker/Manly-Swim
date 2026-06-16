@@ -469,6 +469,26 @@
   }
   .week-ahead-btn .wa-arrow { font-size: 26px; color: var(--ocean); }
 
+  /* ── Timeline back button ── */
+  .timeline-back-btn {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; box-sizing: border-box;
+    background: var(--card);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    cursor: pointer; padding: 13px 16px; margin-bottom: 12px;
+    font-family: inherit; text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 0 4px 24px rgba(10,126,164,0.10);
+  }
+  .timeline-back-btn:hover { background: rgba(10,126,164,0.04); }
+  .timeline-back-btn .tb-arrow { font-size: 26px; color: var(--ocean); line-height: 1; }
+  .timeline-back-btn .tb-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--deep); font-weight: 700;
+  }
+
   /* ── Pollution strip ── */
   /* ── Forecasted Values box (collapsible, slider-driven) ── */
   .forecast-values {
@@ -1926,6 +1946,10 @@
 
   <!-- TIMELINE TAB -->
   <div class="view-panel" id="panel-timeline">
+    <button class="timeline-back-btn" onclick="switchTab('snapshot')" aria-label="Back to today">
+      <span class="tb-arrow">‹</span>
+      <span class="tb-label">Back to Today</span>
+    </button>
     <div class="timeline-wrap">
       <div id="timelineContent">Loading…</div>
     </div>
@@ -2457,8 +2481,7 @@ async function retryGemTable() {
     try {
       if (_matrix && _matrix.length) {
         const slot  = _matrix[_sliderIdx];
-        const wxKey = (slot?.dateTime || '').replace(' ','T').substring(0,16);
-        renderSnapshot(slot, _wxMatrix[wxKey] || null);
+        renderSnapshot(slot, wxLookup(slot?.dateTime));
         renderTimeline(_matrix, _wxMatrix);
       }
     } catch(e) {}
@@ -2746,6 +2769,31 @@ let _matrix   = [];   // hourly forecast rows
 let _wxMatrix = {};   // hourly weather keyed by datetime
 let _tidePts  = [];   // sorted tide turning points {ts, h} — feeds the tide graph
 let _wxDaily  = {};   // daily weather (sunrise/sunset) keyed by date
+
+// Robust weather lookup. Forecast slot times and Open-Meteo hourly times can
+// disagree on the minute/seconds or drift slightly, which left the weather
+// strip blank when an exact key didn't match. Try the exact key first, then
+// the same key rounded to the hour, then fall back to the nearest hourly entry.
+function wxLookup(dt) {
+  if (!dt) return null;
+  const key = String(dt).replace(' ', 'T').substring(0, 16);
+  if (_wxMatrix[key]) return _wxMatrix[key];
+  // Round to the hour (Open-Meteo is hourly, on the hour).
+  const hourKey = key.substring(0, 13) + ':00';
+  if (_wxMatrix[hourKey]) return _wxMatrix[hourKey];
+  // Nearest hourly entry by timestamp.
+  const target = Date.parse(key.length === 16 ? key + ':00' : key);
+  if (isNaN(target)) return null;
+  let best = null, bestDiff = Infinity;
+  for (const k in _wxMatrix) {
+    const ts = Date.parse(k.length === 16 ? k + ':00' : k);
+    if (isNaN(ts)) continue;
+    const diff = Math.abs(ts - target);
+    if (diff < bestDiff) { bestDiff = diff; best = _wxMatrix[k]; }
+  }
+  // Only accept if within ~90 min, otherwise it's not really "this hour".
+  return bestDiff <= 90 * 60 * 1000 ? best : null;
+}
 let _sliderIdx = 0;
 let _retryFn  = null;
 let _lastSnapshot = null; // { h, result } of the currently-shown slot, for breakdown modal
@@ -2980,9 +3028,29 @@ function mergeOMarine(data, omData) {
 
 function mergeOMarineMatrix(matrix, omData) {
   if (!omData?.hourly) return matrix;
+  const hourly = omData.hourly;
+  // Pre-index by timestamp for nearest-hour fallback.
+  const idx = [];
+  for (const k in hourly) {
+    const ts = Date.parse(k.length === 16 ? k + ':00' : k);
+    if (!isNaN(ts)) idx.push({ ts, v: hourly[k] });
+  }
+  function nearest(dt) {
+    const key = dt.replace(' ','T').substring(0,16);
+    if (hourly[key]) return hourly[key];
+    const hourKey = key.substring(0,13) + ':00';
+    if (hourly[hourKey]) return hourly[hourKey];
+    const target = Date.parse(key + ':00');
+    if (isNaN(target)) return null;
+    let best = null, bestDiff = Infinity;
+    for (const e of idx) {
+      const d = Math.abs(e.ts - target);
+      if (d < bestDiff) { bestDiff = d; best = e.v; }
+    }
+    return bestDiff <= 90*60*1000 ? best : null;
+  }
   return matrix.map(row => {
-    const omKey = row.dateTime.replace(' ','T').substring(0,16);
-    const om    = omData.hourly[omKey];
+    const om = nearest(row.dateTime);
     if (!om) return row;
     const guarded = guardSwell2(row.swell1H, row.swell1Dir,
       om.secondary_swell_wave_height    || 0,
@@ -3414,7 +3482,7 @@ function selectDay(date) {
   renderSlider(_matrix);
   const h  = _matrix[_sliderIdx];
   const dt = h.dateTime.replace(' ','T').substring(0,16);
-  renderSnapshot(h, _wxMatrix[dt] || null);
+  renderSnapshot(h, wxLookup(h && h.dateTime ? h.dateTime : dt));
 }
 
 function renderSlider(matrix) {
@@ -3680,7 +3748,7 @@ function onSlider(val) {
 
   const h  = _matrix[_sliderIdx];
   const dt = h.dateTime.replace(' ','T').substring(0,16);
-  const wx = _wxMatrix[dt] || null;
+  const wx = wxLookup(dt);
   renderSnapshot(h, wx);
   renderGemComparison(h);
   renderSlider(_matrix);
@@ -3967,8 +4035,7 @@ async function loadAndRender(forceRefresh = false) {
 
       // ── Re-render with full merged data ────────────────────────────────────────
       const currentH  = _matrix[_sliderIdx] || wwData || null;
-      const currentDt = (currentH?.dateTime || '').replace(' ','T').substring(0,16);
-      const currentWx = _wxMatrix[currentDt] || (wxRes.status === 'fulfilled' ? wxRes.value?.current : null) || null;
+      const currentWx = wxLookup(currentH?.dateTime) || (wxRes.status === 'fulfilled' ? wxRes.value?.current : null) || null;
       renderSnapshot(currentH, currentWx);
       renderSlider(_matrix);
       renderTimeline(_matrix, _wxMatrix);
@@ -4408,8 +4475,7 @@ function buildTunePanel() {
     applyTuneOverrides();
     if (_matrix && _matrix.length) {
       const slot = _matrix[_sliderIdx];
-      const wxKey = (slot?.dateTime || '').replace(' ','T').substring(0,16);
-      renderSnapshot(slot, _wxMatrix[wxKey] || null);
+      renderSnapshot(slot, wxLookup(slot?.dateTime));
       renderTimeline(_matrix, _wxMatrix);
     }
   };
@@ -4508,8 +4574,7 @@ function buildTunePanel() {
     try { buildTunePanel(); }    catch(e) { console.warn('buildTunePanel failed:', e); }
     if (_matrix && _matrix.length) {
       const slot  = _matrix[_sliderIdx];
-      const wxKey = (slot?.dateTime || '').replace(' ','T').substring(0,16);
-      renderSnapshot(slot, _wxMatrix[wxKey] || null);
+      renderSnapshot(slot, wxLookup(slot?.dateTime));
       renderTimeline(_matrix, _wxMatrix);
     }
   })();
@@ -4537,6 +4602,19 @@ function buildTunePanel() {
     var videoWrap = document.getElementById('video-splash');
     var logoSplash = document.getElementById('splash-screen');
     if (!videoWrap || !logoSplash) return;
+
+    // Skip the splash entirely if the app was opened within the last 24h.
+    // (Fresh forecast still loads in the background; we just don't replay the intro.)
+    var SPLASH_KEY = 'swim_splash_seen_v1';
+    try {
+      var last = parseInt(localStorage.getItem(SPLASH_KEY) || '0', 10);
+      if (last && (Date.now() - last) < 86400000) {
+        videoWrap.style.display = 'none';
+        logoSplash.style.display = 'none';
+        return;
+      }
+    } catch (e) {}
+    try { localStorage.setItem(SPLASH_KEY, String(Date.now())); } catch (e) {}
 
     function fadeEl(el, cb) {
       el.classList.add('fade-out');
@@ -5256,7 +5334,7 @@ async function freezeCalibration() {
 
   const h = snap.h, r = snap.result;
   const dt = h.dateTime.replace(' ', 'T').substring(0, 16);
-  const wx = _wxMatrix[dt] || null;
+  const wx = wxLookup(dt);
   const seaTemp = (wx && wx.seaTemp != null) ? wx.seaTemp : (h.seaTemp ?? null);
 
   // Effective wind-wave sensitivity actually used by calcScore.
