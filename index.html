@@ -777,6 +777,41 @@
     color:var(--dim); text-align:center; padding:14px 0;
   }
 
+  /* ── Wind-chop map (above the tide graph) ── */
+  .chop-graph-wrap {
+    background:var(--card);
+    backdrop-filter:blur(12px);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:clamp(12px,4vw,16px) clamp(12px,4vw,16px) clamp(8px,2.5vw,10px);
+    margin-bottom:10px;
+  }
+  .chop-graph-head {
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+  }
+  .chop-graph-title {
+    font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px;
+    font-size:clamp(16px,4.8vw,20px); color:var(--deep); text-transform:uppercase;
+  }
+  .chop-graph-now { text-align:right; line-height:1.05; }
+  .chop-graph-now .h {
+    font-family:'Bebas Neue',sans-serif; font-size:clamp(18px,5.2vw,22px);
+    color:var(--ocean); letter-spacing:1px;
+  }
+  .chop-graph-now .t {
+    font-family:'DM Mono',monospace; font-size:clamp(9px,2.6vw,11px);
+    letter-spacing:0.5px; color:var(--dim);
+  }
+  .chop-graph-canvas { width:100%; height:auto; display:block; border-radius:8px; }
+  .chop-graph-legend {
+    display:flex; align-items:center; gap:8px; margin-top:8px;
+    font-family:'DM Mono',monospace; font-size:clamp(8px,2.4vw,10px); color:var(--dim);
+  }
+  .chop-graph-legend .chop-grad {
+    flex:1; height:6px; border-radius:3px;
+    background:linear-gradient(90deg,#1a9e6e,#8dae2a,#d4900a,#c0392b);
+  }
+
   .slider-ticks {
     display:flex; justify-content:space-between;
     margin-top:6px;
@@ -1622,6 +1657,21 @@
       </div>
       <input type="range" id="timeSlider" min="0" max="0" value="0" oninput="onSlider(this.value)">
       <div class="slider-ticks" id="sliderTicks"></div>
+    </div>
+
+    <!-- Wind-chop map for the selected hour (fed by forecast wind + SWIM) -->
+    <div class="chop-graph-wrap" id="chopGraphWrap">
+      <div class="chop-graph-head">
+        <span class="chop-graph-title">Wind Chop · Cabbage Tree Bay</span>
+        <div class="chop-graph-now">
+          <div class="h" id="chopNowWind">—</div>
+          <div class="t" id="chopNowZone">—</div>
+        </div>
+      </div>
+      <canvas class="chop-graph-canvas" id="chopCanvas" aria-label="Wind chop across Cabbage Tree Bay for the selected hour"></canvas>
+      <div class="chop-graph-legend">
+        <span>Calmer</span><span class="chop-grad"></span><span>Choppier</span>
+      </div>
     </div>
 
     <!-- Tide graph for the selected day -->
@@ -2978,6 +3028,12 @@ function renderSnapshot(h, wx) {
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   _forecastRendered = true;       // real data is on screen — dots have left the 50% default
   hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
+
+  // Wind-chop map: feed it the forecast wind direction + SWIM (q7) for this hour.
+  if (window.chopSet) {
+    chopSet(h.windDir, result.swim.raw, result.swim.label, result.swim.cls,
+            (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14);
+  }
 
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
@@ -5408,6 +5464,209 @@ function closeMetricModal() {
 }
 
 function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
+
+</script>
+
+<script>
+// ── Wind-chop map ───────────────────────────────────────────────
+// Top-down Cabbage Tree Bay. Wind chop drifts in the forecast wind
+// direction; it is sheltered in the lee of headlands and builds with
+// open-water fetch up to a ceiling set by the SWIM (q7) score.
+// Coastline is a vector trace of the real shoreline. Fed by chopSet().
+(function () {
+  var cv = document.getElementById('chopCanvas');
+  var wrap = document.getElementById('chopGraphWrap');
+  if (!cv || !wrap) return;
+  var ctx = cv.getContext('2d');
+
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function hx(h) { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+  function mix(a, b, t) { return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * t) + ',' + Math.round(a[1] + (b[1] - a[1]) * t) + ',' + Math.round(a[2] + (b[2] - a[2]) * t) + ')'; }
+  var STOPS = [[0, hx('#1a9e6e')], [0.4, hx('#8dae2a')], [0.7, hx('#d4900a')], [1, hx('#c0392b')]];
+  function heightColor(r) { r = clamp(r, 0, 1); for (var i = 0; i < STOPS.length - 1; i++) { if (r <= STOPS[i + 1][0]) { var t = (r - STOPS[i][0]) / (STOPS[i + 1][0] - STOPS[i][0]); return mix(STOPS[i][1], STOPS[i + 1][1], t); } } return 'rgb(192,57,43)'; }
+  function dir16(d) { var n = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']; return n[Math.round(d / 22.5) % 16]; }
+
+  var LAND = [[0,0.0902],[0,0.9985],[0.9993,0.9985],[0.9993,0.9837],[0.9913,0.9808],[0.9718,0.9393],[0.9725,0.9112],[0.9624,0.8802],[0.9501,0.8639],[0.9407,0.8609],[0.9306,0.8462],[0.9212,0.8402],[0.9197,0.8328],[0.9205,0.8225],[0.9168,0.8092],[0.914,0.7825],[0.8944,0.7382],[0.8648,0.642],[0.8518,0.6154],[0.8438,0.5814],[0.8395,0.5784],[0.8236,0.5799],[0.8178,0.5769],[0.8069,0.5636],[0.7997,0.5473],[0.7939,0.5222],[0.7816,0.4837],[0.7672,0.4601],[0.7491,0.4527],[0.7072,0.4157],[0.6876,0.4157],[0.6623,0.4231],[0.6522,0.4334],[0.6471,0.4438],[0.6406,0.4704],[0.6385,0.4896],[0.6399,0.5237],[0.6508,0.5385],[0.6667,0.5799],[0.6797,0.5917],[0.6898,0.6183],[0.6913,0.6287],[0.6905,0.6701],[0.684,0.7027],[0.6681,0.7485],[0.6631,0.7559],[0.6573,0.7589],[0.6558,0.7633],[0.6349,0.7633],[0.5727,0.7352],[0.4729,0.7411],[0.4187,0.7678],[0.4013,0.7707],[0.3796,0.7692],[0.3738,0.7633],[0.3449,0.75],[0.3391,0.7382],[0.3369,0.7263],[0.3268,0.6982],[0.3167,0.6908],[0.3095,0.6908],[0.3015,0.676],[0.2936,0.6154],[0.2842,0.5828],[0.2646,0.5473],[0.2495,0.5104],[0.2336,0.4497],[0.2263,0.4098],[0.2176,0.3876],[0.209,0.3787],[0.1967,0.3787],[0.1916,0.3861],[0.1837,0.4068],[0.1786,0.4112],[0.1728,0.4305],[0.1612,0.4423],[0.1547,0.4438],[0.1453,0.4349],[0.1302,0.4275],[0.1114,0.4083],[0.0716,0.3565],[0.0593,0.3254],[0.0484,0.3047],[0.0434,0.2885],[0.0145,0.1169]];
+
+  var W = 0, H = 0, dpr = 1, landPath, waterClip, coastStroke;
+  var gridW = 72, gridH = 35, mask = null, field = null, lastDeg = -999;
+  var _cw = 90, _clevel = 0;   // wind FROM (deg), and SWIM-derived height level 0..1
+
+  function Pn(p) { return [p[0] * W, p[1] * H]; }
+  function borderSeg(p, q) { var e = 0.005; return (p[0] < e && q[0] < e) || (p[0] > 1 - e && q[0] > 1 - e) || (p[1] < e && q[1] < e) || (p[1] > 1 - e && q[1] > 1 - e); }
+  function buildPaths() {
+    var sp = LAND.map(Pn), n = sp.length;
+    landPath = new Path2D(); landPath.moveTo(sp[0][0], sp[0][1]);
+    for (var i = 1; i < n; i++) landPath.lineTo(sp[i][0], sp[i][1]);
+    landPath.closePath();
+    waterClip = new Path2D(); waterClip.rect(-4, -4, W + 8, H + 8); waterClip.addPath(landPath);
+    coastStroke = new Path2D();
+    for (var j = 0; j < n; j++) {
+      var a = LAND[j], b = LAND[(j + 1) % n];
+      if (!borderSeg(a, b)) { coastStroke.moveTo(a[0] * W, a[1] * H); coastStroke.lineTo(b[0] * W, b[1] * H); }
+    }
+  }
+  function buildMask() {
+    mask = new Uint8Array(gridW * gridH);
+    for (var gy = 0; gy < gridH; gy++) for (var gx = 0; gx < gridW; gx++) {
+      var px = (gx + 0.5) * W / gridW, py = (gy + 0.5) * H / gridH;
+      mask[gy * gridW + gx] = ctx.isPointInPath(landPath, px, py) ? 1 : 0;
+    }
+  }
+  function computeField(deg) {
+    field = new Float32Array(gridW * gridH);
+    var th = deg * Math.PI / 180, ux = Math.sin(th), uy = -Math.cos(th);
+    var stepPx = W / gridW, maxSteps = Math.ceil((W + H) / stepPx) + 4, fetchFull = 0.5 * W;
+    for (var gy = 0; gy < gridH; gy++) for (var gx = 0; gx < gridW; gx++) {
+      var idx = gy * gridW + gx;
+      if (mask[idx]) { field[idx] = 0; continue; }
+      var x = (gx + 0.5) * W / gridW, y = (gy + 0.5) * H / gridH, dist = 0, hf = 1, hit = 0;
+      for (var s = 1; s <= maxSteps; s++) {
+        x += ux * stepPx; y += uy * stepPx; dist += stepPx;
+        if (x < 0 || x > W || y < 0 || y > H) {
+          var open = (y < 0) || (x > W && y < 0.55 * H);
+          hf = open ? 1 : clamp(dist / fetchFull, 0, 1); hit = 1; break;
+        }
+        var mgx = Math.floor(x / W * gridW), mgy = Math.floor(y / H * gridH);
+        if (mgx < 0) mgx = 0; if (mgx >= gridW) mgx = gridW - 1; if (mgy < 0) mgy = 0; if (mgy >= gridH) mgy = gridH - 1;
+        if (mask[mgy * gridW + mgx]) { hf = clamp((dist - stepPx) / fetchFull, 0, 1); hit = 1; break; }
+      }
+      if (!hit) hf = 1;
+      field[idx] = hf;
+    }
+    var t = new Float32Array(field.length);
+    for (var gy2 = 0; gy2 < gridH; gy2++) for (var gx2 = 0; gx2 < gridW; gx2++) {
+      var sum = 0, nn = 0;
+      for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) {
+        var xx = gx2 + ox, yy = gy2 + oy; if (xx < 0 || xx >= gridW || yy < 0 || yy >= gridH) continue;
+        sum += field[yy * gridW + xx]; nn++;
+      }
+      t[gy2 * gridW + gx2] = sum / nn;
+    }
+    field = t;
+  }
+  function sampleField(nx, ny) {
+    var fx = nx * gridW - 0.5, fy = ny * gridH - 0.5;
+    var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+    function g(gx, gy) { gx = clamp(gx, 0, gridW - 1); gy = clamp(gy, 0, gridH - 1); return field[gy * gridW + gx]; }
+    var top = lerp(g(x0, y0), g(x0 + 1, y0), tx), bot = lerp(g(x0, y0 + 1), g(x0 + 1, y0 + 1), tx);
+    return lerp(top, bot, ty);
+  }
+  function fit() {
+    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
+    dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
+    cv.style.height = H + 'px';
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    buildPaths(); buildMask(); computeField(_cw); lastDeg = _cw;
+  }
+
+  var POOL = 200, parts = [];
+  for (var i = 0; i < POOL; i++) parts.push({ x: Math.random(), y: Math.random(), s1: Math.random(), s2: Math.random() });
+
+  function drawWave(x, y, crest, len, amp, col, alpha, foam) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(crest);
+    ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, amp * 0.5); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.quadraticCurveTo(0, -amp, len / 2, 0); ctx.stroke();
+    if (foam) {
+      ctx.globalAlpha = alpha * 0.8; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, amp * 0.35);
+      ctx.beginPath(); ctx.moveTo(-len * 0.22, -amp * 0.55); ctx.quadraticCurveTo(0, -amp * 1.05, len * 0.22, -amp * 0.55); ctx.stroke();
+    }
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+  function drawWindArrow(dx, dy) {
+    var ax = 0.45 * W, ay = 0.18 * H, L = 0.12 * W;
+    ctx.save();
+    ctx.fillStyle = 'rgba(6,40,55,0.32)'; ctx.beginPath(); ctx.arc(ax, ay, L * 0.62, 0, Math.PI * 2); ctx.fill();
+    var ex = ax + dx * L * 0.5, ey = ay + dy * L * 0.5, sx = ax - dx * L * 0.5, sy = ay - dy * L * 0.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = Math.max(2, 0.009 * W); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    var ang = Math.atan2(dy, dx), hl = 0.038 * W;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang - 0.4) * hl, ey - Math.sin(ang - 0.4) * hl);
+    ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang + 0.4) * hl, ey - Math.sin(ang + 0.4) * hl);
+    ctx.stroke();
+    ctx.restore();
+  }
+  function drawCompass() {
+    var cx = 0.95 * W, cy = 0.15 * H, r = 0.028 * W;
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.9); ctx.lineTo(cx - r * 0.35, cy); ctx.lineTo(cx + r * 0.35, cy); ctx.closePath(); ctx.fill();
+    var fp = Math.max(11, 0.024 * W);
+    ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('N', cx, cy - r - fp * 0.7); ctx.textBaseline = 'alphabetic';
+  }
+
+  function frame() {
+    requestAnimationFrame(frame);
+    if (!W || document.hidden) return;
+    if (_cw !== lastDeg) { computeField(_cw); lastDeg = _cw; }
+    var level = _clevel;
+    var travel = (_cw + 180) * Math.PI / 180, dx = Math.sin(travel), dy = -Math.cos(travel);
+    var speed = lerp(0.0013, 0.0050, level);
+    var count = Math.round(lerp(90, 200, level));
+    var base = lerp(0.10, 1.0, level), gmax = 0.030 * W;
+
+    ctx.clearRect(0, 0, W, H);
+    var g = ctx.createLinearGradient(W, 0, 0, H);
+    g.addColorStop(0, '#0a3d4f'); g.addColorStop(0.6, '#0e5f78'); g.addColorStop(1, '#1f86a3');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    ctx.save(); ctx.clip(waterClip, 'evenodd');
+    ctx.strokeStyle = 'rgba(110,180,210,0.4)'; ctx.lineWidth = 0.04 * W; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(coastStroke);
+    var crest = Math.atan2(dy, dx) + Math.PI / 2;
+    for (var i = 0; i < count; i++) {
+      var p = parts[i];
+      p.x += dx * speed; p.y += dy * speed;
+      if (p.x < -0.08) { p.x = 1.08; p.y = Math.random(); } else if (p.x > 1.08) { p.x = -0.08; p.y = Math.random(); }
+      if (p.y < -0.08) { p.y = 1.08; p.x = Math.random(); } else if (p.y > 1.08) { p.y = -0.08; p.x = Math.random(); }
+      var hf = sampleField(p.x, p.y);
+      var hgt = clamp(base * hf * (0.55 + 0.5 * p.s1), 0, 1);
+      if (hgt < 0.045) continue;
+      var amp = hgt * gmax;
+      var len = (0.025 + hgt * 0.035) * W;
+      drawWave(p.x * W, p.y * H, crest, len, amp, heightColor(hgt), clamp(hgt * 1.4, 0, 1) * 0.9, hgt > 0.72 && p.s2 > 0.45);
+    }
+    ctx.restore();
+
+    ctx.fillStyle = '#ddcfae'; ctx.fill(landPath);
+    ctx.strokeStyle = '#bfae86'; ctx.lineWidth = Math.max(1.2, 0.005 * W); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke(coastStroke);
+
+    var fp = Math.max(11, 0.026 * W);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
+    ctx.fillText('South Steyne', 0.10 * W, 0.37 * H);
+    ctx.fillText('Shelly Beach', 0.60 * W, 0.69 * H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = 'italic 400 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
+    ctx.fillText('Cabbage Tree Bay', 0.40 * W, 0.34 * H);
+
+    drawWindArrow(dx, dy); drawCompass();
+  }
+
+  // Public: feed the map the forecast wind direction (deg FROM) + SWIM (q7).
+  function chopSet(windDir, q7, zoneLabel, zoneCls, scaleMax) {
+    if (typeof windDir === 'number' && isFinite(windDir)) _cw = ((windDir % 360) + 360) % 360;
+    var sm = scaleMax > 0 ? scaleMax : 14;
+    _clevel = clamp((q7 || 0) / sm, 0, 1);
+    var nowW = document.getElementById('chopNowWind'), nowZ = document.getElementById('chopNowZone');
+    if (nowW) nowW.textContent = dir16(_cw) + ' wind';
+    if (nowZ) {
+      nowZ.textContent = zoneLabel || '';
+      nowZ.style.color = zoneCls === 'green' ? 'var(--green)' : zoneCls === 'amber' ? 'var(--amber)'
+        : zoneCls === 'yellow' ? 'var(--yellow)' : zoneCls === 'red' ? 'var(--red)' : 'var(--dim)';
+    }
+  }
+  window.chopSet = chopSet;
+  window.chopFit = fit;
+
+  window.addEventListener('resize', fit);
+  fit();
+  requestAnimationFrame(frame);
+})();
 
 </script>
 
