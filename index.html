@@ -5906,9 +5906,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 // ── Swell map ───────────────────────────────────────────────────
 // Top-down Cabbage Tree Bay. Swell drifts in the forecast swell
 // direction at a height set by the ENTRY (total) score. No fetch.
-// Around the headland it DIFFRACTS: bend grows with wave period
-// (0° at 4 s, up to 90° at 15 s) and the height drops the more it
-// bends. Coastline is the same vector trace. Fed by swellSet().
+// Rays REFRACT over a coarse depth field (Snell: they bend toward
+// shallower/slower water — the reef off the Bower headland steers
+// S–SE swell around into the lee) and DIFFRACT into the shadow near
+// the coast; height drops the more a ray has to bend. Long-period
+// swell feels the bottom in deeper water, so it bends more. Coastline
+// and bathymetry are vector/grid traces. Fed by swellSet().
 (function () {
   var cv = document.getElementById('swellCanvas');
   var wrap = document.getElementById('swellGraphWrap');
@@ -5927,9 +5930,29 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 
   var W = 0, H = 0, dpr = 1, landPath, waterClip, coastStroke;
   var gridW = 64, gridH = 31, mask = null, fieldH = null, fieldDX = null, fieldDY = null, dist = null, spawns = [], rays = [];
+  var fieldDepth = null, fieldC = null;
   var _stepPx = 1, _maxSteps = 1;
   var _sw = 110, _sp = 10, _hgt = 1, _tx = 0.6;   // swell FROM (deg), period (s), height (m), GEM transmit 0..1
   var _key = '', _lastKey = '~';
+
+  // ── Bathymetry (coarse, digitised from the C-MAP soundings + SEED reef shape) ──
+  // Depths in metres: 0 at the shore, deepening offshore, with a shoal RIDGE on the
+  // SEAWARD flank of the Bower headland — the submarine reef that refracts S–SE swell
+  // around into the lee (Cabbage Tree Bay). The numbers below are a believable sketch,
+  // not survey-grade. To match the chart, nudge REEF_* and DEPTH_*; flip DEPTH_TINT on
+  // to SEE the field you're shaping. REEF_X/Y are normalised (0..1) canvas coords.
+  var G_ACCEL    = 9.81;   // gravity (m/s²)
+  var DEPTH_MAX  = 26;     // m — open-ocean depth reached at the seaward edge of the frame
+  var DEPTH_DIST = 17;     // distance-from-shore (grid cells) at which DEPTH_MAX is reached
+  var DEPTH_CURVE= 1.25;   // >1 = gentle nearshore shoal, steeper drop into deep water
+  var DEPTH_MIN  = 0.4;    // m — floor so wave celerity stays finite right at the shore
+  var REEF_X = 0.85, REEF_Y = 0.53;          // ridge centre — seaward flank of the headland
+  var REEF_ANG = 60 * Math.PI / 180;         // ridge orientation (screen deg, down-right toward open sea)
+  var REEF_LONG = 0.13, REEF_CROSS = 0.05;   // ridge half-length / half-width (normalised)
+  var REEF_RISE = 17;      // m the seabed rises over the reef crest
+  var REFRACT_K  = 2.2;    // how hard rays bend toward shallow water (0 = straight, higher = more)
+  var DEPTH_TINT = true;   // faint depth shading under the rays so the bathymetry is visible
+  var _depthCanvas = document.createElement('canvas'), _dctx = _depthCanvas.getContext('2d');
 
   function Pn(p) { return [p[0] * W, p[1] * H]; }
   function borderSeg(p, q) { var e = 0.005; return (p[0] < e && q[0] < e) || (p[0] > 1 - e && q[0] > 1 - e) || (p[1] < e && q[1] < e) || (p[1] > 1 - e && q[1] > 1 - e); }
@@ -5998,24 +6021,98 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
   }
   function distAt(gx, gy) { gx = gx < 0 ? 0 : gx >= gridW ? gridW - 1 : gx; gy = gy < 0 ? 0 : gy >= gridH ? gridH - 1 : gy; return dist[gy * gridW + gx]; }
+
+  // Depth field (m) — geometry-only, built once per resize. Base profile deepens with
+  // distance from shore; an oriented gaussian ridge raises the seabed over the headland reef.
+  function buildDepth() {
+    fieldDepth = new Float32Array(gridW * gridH);
+    var cosA = Math.cos(REEF_ANG), sinA = Math.sin(REEF_ANG), gx, gy, idx;
+    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
+      idx = gy * gridW + gx;
+      if (mask[idx]) { fieldDepth[idx] = 0; continue; }
+      var base = DEPTH_MAX * Math.pow(clamp(dist[idx] / DEPTH_DIST, 0, 1), DEPTH_CURVE);
+      var nx = (gx + 0.5) / gridW, ny = (gy + 0.5) / gridH;
+      var ex = nx - REEF_X, ey = ny - REEF_Y;
+      var u = (ex * cosA + ey * sinA) / REEF_LONG;     // along the ridge
+      var v = (-ex * sinA + ey * cosA) / REEF_CROSS;   // across the ridge
+      var rise = REEF_RISE * Math.exp(-(u * u + v * v));
+      fieldDepth[idx] = Math.max(DEPTH_MIN, base - rise);
+    }
+    // light smooth (water only) so the contours read as gentle slopes, not steps
+    var t = new Float32Array(fieldDepth.length);
+    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
+      idx = gy * gridW + gx;
+      if (mask[idx]) { t[idx] = 0; continue; }
+      var s = 0, n = 0;
+      for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) {
+        var xx = gx + ox, yy = gy + oy; if (xx < 0 || xx >= gridW || yy < 0 || yy >= gridH) continue;
+        var jj = yy * gridW + xx; if (mask[jj]) continue;
+        s += fieldDepth[jj]; n++;
+      }
+      t[idx] = n ? s / n : fieldDepth[idx];
+    }
+    fieldDepth = t;
+    renderDepthTint();
+  }
+  // Pre-render the depth field to a tiny offscreen canvas; drawn scaled+smoothed each frame.
+  function renderDepthTint() {
+    if (!DEPTH_TINT || !fieldDepth) return;
+    _depthCanvas.width = gridW; _depthCanvas.height = gridH;
+    var img = _dctx.createImageData(gridW, gridH);
+    for (var i = 0; i < gridW * gridH; i++) {
+      if (mask[i]) { img.data[i * 4 + 3] = 0; continue; }
+      var r = clamp(fieldDepth[i] / DEPTH_MAX, 0, 1);   // 0 shallow .. 1 deep
+      img.data[i * 4]     = Math.round(lerp(150, 8, r));
+      img.data[i * 4 + 1] = Math.round(lerp(212, 52, r));
+      img.data[i * 4 + 2] = Math.round(lerp(226, 92, r));
+      img.data[i * 4 + 3] = Math.round(lerp(38, 150, r));
+    }
+    _dctx.putImageData(img, 0, 0);
+  }
   function computeField(fromDeg, period) {
     var R = clamp((period - 4) / (15 - 4), 0, 1), maxBend = R * 90;
-    var influence = R * 16;  // cells over which refraction steers the swell around the coast
+    var influence = R * 12;  // cells over which the near-shore wrap steers swell into the lee
     _stepPx = W / gridW; _maxSteps = Math.ceil((W + H) / _stepPx) + 4;
     fieldH = new Float32Array(gridW * gridH);
     fieldDX = new Float32Array(gridW * gridH);
     fieldDY = new Float32Array(gridW * gridH);
-    buildDist();
-    var bt = (fromDeg + 180) * Math.PI / 180, Tx = Math.sin(bt), Ty = -Math.cos(bt);
+    fieldC  = new Float32Array(gridW * gridH);
     var gx, gy, idx;
+    // Wave celerity from depth (period-dependent): c = cDeep · tanh(√(g·h)/cDeep).
+    //   deep water → c ≈ cDeep (bottom not felt, rays run straight)
+    //   shallow    → c ≈ √(g·h)  (slows, rays bend toward shallow). Long swell feels bottom deeper.
+    var T = Math.max(2, period), cDeep = G_ACCEL * T / (2 * Math.PI);
+    for (idx = 0; idx < fieldC.length; idx++) {
+      if (mask[idx]) { fieldC[idx] = cDeep; continue; }   // land = deep, so ∇c vanishes at the coast face
+      fieldC[idx] = cDeep * Math.tanh(Math.sqrt(G_ACCEL * fieldDepth[idx]) / cDeep);
+    }
+    function cAt(ax, ay) { ax = ax < 0 ? 0 : ax >= gridW ? gridW - 1 : ax; ay = ay < 0 ? 0 : ay >= gridH ? gridH - 1 : ay; return fieldC[ay * gridW + ax]; }
+    var bt = (fromDeg + 180) * Math.PI / 180, Tx = Math.sin(bt), Ty = -Math.cos(bt);
     for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
       idx = gy * gridW + gx;
       if (mask[idx]) { fieldH[idx] = 0; fieldDX[idx] = Tx; fieldDY[idx] = Ty; continue; }
-      // height: incident energy reaching this cell, falling off with the bend it took
+      // height: incident energy reaching this cell, falling off with the bend it took (diffraction shadow)
       fieldH[idx] = refractCell((gx + 0.5) * W / gridW, (gy + 0.5) * H / gridH, fromDeg, maxBend).h;
-      // direction: base travel, steered tangent to the coast near land so the swell
-      // curves AROUND the headland (strength grows with period via `influence`).
       var vx = Tx, vy = Ty;
+      // ── (1) REFRACTION ── Snell: a ray turns toward slower (shallower) water at a rate set by
+      // the cross-ray gradient of celerity. We add the perpendicular part of −∇c to the travel dir.
+      var dcx = (cAt(gx + 1, gy) - cAt(gx - 1, gy)) * 0.5;
+      var dcy = (cAt(gx, gy + 1) - cAt(gx, gy - 1)) * 0.5;
+      var cHere = fieldC[idx];
+      if (cHere > 1e-4) {
+        var sx = -dcx, sy = -dcy;                       // toward shallower water
+        var dotp = sx * vx + sy * vy;                   // strip the part along the ray …
+        var px = sx - dotp * vx, py = sy - dotp * vy;   // … leaving only the turning (perpendicular) part
+        var pm = Math.hypot(px, py);
+        if (pm > 1e-9) {
+          var turn = REFRACT_K * (pm / cHere);          // relative celerity gradient → Snell-like turn rate
+          if (turn > 0.85) turn = 0.85;                 // clamp so a single cell can't flip the ray
+          vx += turn * (px / pm); vy += turn * (py / pm);
+          var vm0 = Math.hypot(vx, vy) || 1; vx /= vm0; vy /= vm0;
+        }
+      }
+      // ── (2) DIFFRACTION wrap ── close to land, graze the coast so energy bends into the lee
+      // behind the headland (the part refraction alone won't fill). Composes on the refracted dir.
       if (influence > 0) {
         var prox = clamp(1 - dist[idx] / influence, 0, 1);
         if (prox > 0) {
@@ -6024,13 +6121,13 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
           var nm = Math.hypot(ndx, ndy);
           if (nm > 1e-6) {
             ndx /= nm; ndy /= nm;
-            var dn = Tx * ndx + Ty * ndy;                       // component of travel along the inward normal
-            var sx = Tx, sy = Ty;
-            if (dn < 0) { sx = Tx - dn * ndx; sy = Ty - dn * ndy; }  // strip the into-land part → tangent
-            var sm = Math.hypot(sx, sy);
-            if (sm < 1e-3) { sx = -ndy; sy = ndx; sm = 1; }     // head-on: pick a coast tangent
-            sx /= sm; sy /= sm;
-            vx = Tx + prox * (sx - Tx); vy = Ty + prox * (sy - Ty);
+            var dn = vx * ndx + vy * ndy;                       // component of travel along the inward normal
+            var qx = vx, qy = vy;
+            if (dn < 0) { qx = vx - dn * ndx; qy = vy - dn * ndy; }  // strip the into-land part → tangent
+            var qm = Math.hypot(qx, qy);
+            if (qm < 1e-3) { qx = -ndy; qy = ndx; qm = 1; }     // head-on: pick a coast tangent
+            qx /= qm; qy /= qm;
+            vx = vx + prox * (qx - vx); vy = vy + prox * (qy - vy);
             var vm = Math.hypot(vx, vy) || 1; vx /= vm; vy /= vm;
           }
         }
@@ -6091,21 +6188,45 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   }
   function buildRays() {
     rays = [];
-    var seeds = [], k;
-    for (k = 0; k < 18; k++) seeds.push([0.04 + 0.92 * k / 17, 0.02]);   // along the open-ocean top
-    for (k = 0; k < 7; k++) seeds.push([0.985, 0.06 + 0.46 * k / 6]);     // along the upper-right edge
+    // Seed along the WHOLE perimeter, but only keep open-water points where the swell is
+    // actually ENTERING (its travel direction points inward). This puts the ray lines on
+    // the correct seaward edge for any swell direction — top/right for N–E, right for E–SE,
+    // etc. — instead of always the top. They then bend through the refraction field.
+    var seeds = [], N = 30, k, f;
+    for (k = 0; k <= N; k++) {
+      f = k / N;
+      seeds.push([f, 0.012]);      // top (north)
+      seeds.push([f, 0.988]);      // bottom (south)
+      seeds.push([0.012, f]);      // left (west)
+      seeds.push([0.988, f]);      // right (east)
+    }
+    var EDGE = 0.05, TOL = 0.02;
     for (var si = 0; si < seeds.length; si++) {
-      var x = seeds[si][0], y = seeds[si][1], path = [];
+      var x = seeds[si][0], y = seeds[si][1];
       if (isLandN(x, y)) continue;
-      for (var s = 0; s < 150; s++) {
+      var vx = samp(fieldDX, x, y), vy = samp(fieldDY, x, y), m = Math.hypot(vx, vy);
+      if (m < 1e-6) continue; vx /= m; vy /= m;
+      // reject seeds on an edge whose flow is heading back out of the frame
+      if (y < EDGE && vy <= TOL) continue;
+      if (y > 1 - EDGE && vy >= -TOL) continue;
+      if (x < EDGE && vx <= TOL) continue;
+      if (x > 1 - EDGE && vx >= -TOL) continue;
+      var path = [];
+      for (var s = 0; s < 175; s++) {
         path.push([x, y]);
-        var vx = samp(fieldDX, x, y), vy = samp(fieldDY, x, y);
-        var m = Math.hypot(vx, vy); if (m < 1e-6) break; vx /= m; vy /= m;
-        var nx2 = x + vx * 0.011, ny2 = y + vy * 0.011;
-        if (nx2 < 0 || nx2 > 1 || ny2 < 0 || ny2 > 1 || isLandN(nx2, ny2)) break;
+        var dvx = samp(fieldDX, x, y), dvy = samp(fieldDY, x, y), mm = Math.hypot(dvx, dvy);
+        if (mm < 1e-6) break; dvx /= mm; dvy /= mm;
+        var nx2 = x + dvx * 0.010, ny2 = y + dvy * 0.010;
+        if (nx2 < -0.02 || nx2 > 1.02 || ny2 < -0.02 || ny2 > 1.02 || isLandN(nx2, ny2)) break;
         x = nx2; y = ny2;
       }
-      if (path.length > 3) rays.push(path);
+      if (path.length > 4) rays.push(path);
+    }
+    // thin out so a busy entry edge doesn't clutter the map
+    if (rays.length > 22) {
+      var kept = [], step = rays.length / 22;
+      for (var t = 0; t < rays.length; t += step) kept.push(rays[Math.floor(t)]);
+      rays = kept;
     }
   }
   function fit() {
@@ -6114,7 +6235,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    buildPaths(); buildMask(); computeField(_sw, _sp); _lastKey = _key;
+    buildPaths(); buildMask(); buildDist(); buildDepth(); computeField(_sw, _sp); _lastKey = _key;
   }
 
   var POOL = 200, parts = [];
@@ -6173,6 +6294,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
     ctx.save(); ctx.clip(waterClip, 'evenodd');
+    // Faint bathymetry under the rays — shallow reads pale teal, deep reads navy. Set
+    // DEPTH_TINT=false to hide it. This is the depth field that bends the rays below.
+    if (DEPTH_TINT && _depthCanvas.width) {
+      ctx.save(); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 0.55;
+      ctx.drawImage(_depthCanvas, 0, 0, W, H); ctx.globalAlpha = 1; ctx.restore();
+    }
     ctx.strokeStyle = 'rgba(110,180,210,0.4)'; ctx.lineWidth = 0.04 * W; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(coastStroke);
     // Directional vectors of the swell — refraction rays curving around the headland.
     ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = Math.max(1, 0.0035 * W); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
