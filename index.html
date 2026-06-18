@@ -360,6 +360,20 @@
   #calib-freeze:active { transform: scale(0.98); }
   #calib-freeze:disabled { opacity: 0.5; cursor: default; }
   #calib-status { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--deep); }
+  #cam-read-btn {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px; letter-spacing: 2px;
+    padding: 8px 16px;
+    border: none; border-radius: 10px;
+    background: var(--deep); color: #fff;
+    cursor: pointer;
+  }
+  #cam-read-btn:active { transform: scale(0.98); }
+  #cam-footage {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 6px 8px; border: 1px solid var(--border);
+    border-radius: 8px; background: #fff; color: var(--text);
+  }
 
 
   /* ── Calibration tab ── */
@@ -1613,6 +1627,9 @@
 
     <!-- Calibration bar (TUNE mode only) -->
     <div id="calib-bar">
+      <input type="file" id="cam-files" accept="image/*" multiple style="display:none" onchange="onCamFiles(this)">
+      <button id="cam-read-btn" type="button" onclick="document.getElementById('cam-files').click()">📷 READ CAM</button>
+      <input type="datetime-local" id="cam-footage" title="Footage time from the cam scrubber" onchange="camGotoFootage()">
       <button id="calib-freeze" onclick="freezeCalibration()">⦿ FREEZE</button>
       <span id="calib-status">Set your three “My call” sliders, then freeze this moment.</span>
     </div>
@@ -5307,6 +5324,131 @@ function onAssess(metric, val) {
   const s = document.getElementById('calib-status');
   if (s && !allSet) s.textContent = 'Set all three “My call” sliders, then freeze.';
   else if (s) s.textContent = 'Ready to freeze.';
+}
+
+// ── Camera-session read → pre-position the three "My call" sliders ───────────
+// Frames are downscaled to a ~1024px JPEG before upload (token cost ∝ pixels,
+// not file size). The Worker /cam-read route returns the ordinal read + the
+// footage time it could see on the cam scrubber. We jump the app to that hour
+// (so the model values FREEZE captures are for the right slot) THEN drop the
+// "My call" dots on the band the eye saw — order matters because navigating
+// re-runs syncAssessSliders().
+const CAM_READ_URL  = 'https://bold-rain-6ded.sticasale.workers.dev/cam-read';
+const CAM_MAX_EDGE  = 1024;
+const CAM_BAND_MID  = { 0: 12.5, 1: 37.5, 2: 62.5, 3: 87.5 };
+const CAM_LABEL_BAND = {
+  entry: { easy: 0, doable: 1, caution: 2, dangerous: 3, danger: 3 },
+  swim:  { glassy: 0, ripply: 1, choppy: 2, messy: 3 },
+  surge: { steady: 0, drifty: 1, surgy: 2, washy: 3 },
+};
+
+function camToken() {
+  const q = new URLSearchParams(location.search).get('token');
+  if (q) { try { localStorage.setItem('swim_admin_token', q); } catch (e) {} return q; }
+  try { return localStorage.getItem('swim_admin_token') || ''; } catch (e) { return ''; }
+}
+
+// File → downscaled JPEG base64 (no data: prefix).
+function camDownscale(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, CAM_MAX_EDGE / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(cv.toDataURL('image/jpeg', 0.82).split(',')[1]);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+    img.src = url;
+  });
+}
+
+async function onCamFiles(input) {
+  const files = Array.from(input.files || []).slice(0, 6);
+  input.value = '';   // let the same files be re-picked later
+  if (!files.length) return;
+  const status = document.getElementById('calib-status');
+  const token = camToken();
+  if (!token) { if (status) status.textContent = '⚠ No admin token — add ?token=… to the URL.'; return; }
+  if (status) status.textContent = `Reading ${files.length} frame(s)…`;
+  try {
+    const frames = await Promise.all(files.map(camDownscale));
+    const res = await fetch(CAM_READ_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ frames }),
+    });
+    const j = await res.json();
+    if (!res.ok || !j.ok) throw new Error(j.error || ('HTTP ' + res.status));
+    applyCamRead(j.read);
+  } catch (e) {
+    if (status) status.textContent = '⚠ Cam read failed: ' + e.message;
+  }
+}
+
+// "7:03am" / "07:03" / "7:03:05am" → { h, m }
+function camParseClock(s) {
+  if (!s) return null;
+  const m = String(s).match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
+  if (!m) return null;
+  let h = parseInt(m[1], 10); const min = parseInt(m[2], 10);
+  const ap = (m[3] || '').toLowerCase();
+  if (ap === 'pm' && h < 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  return { h, m: min };
+}
+
+// Local Sydney date as YYYY-MM-DD (NOT toISOString — avoids the UTC date bug).
+function camTodayLocal() {
+  const d = new Date();
+  return d.getFullYear() + '-' +
+         String(d.getMonth() + 1).padStart(2, '0') + '-' +
+         String(d.getDate()).padStart(2, '0');
+}
+
+// Jump the app to the hour in the footage-time field (nearest matrix row).
+function camGotoFootage() {
+  const fld = document.getElementById('cam-footage');
+  if (!fld || !fld.value || !_matrix.length) return;
+  const targetMs = new Date(fld.value).getTime();
+  let best = -1, bestDiff = Infinity;
+  _matrix.forEach((r, i) => {
+    const rt = new Date(r.dateTime.replace(' ', 'T')).getTime();
+    const d = Math.abs(rt - targetMs);
+    if (d < bestDiff) { bestDiff = d; best = i; }
+  });
+  if (best >= 0) jumpToSlider(best);
+}
+
+function applyCamRead(read) {
+  const status = document.getElementById('calib-status');
+
+  // 1) footage time → field, then navigate to that hour
+  const fld = document.getElementById('cam-footage');
+  const clk = camParseClock(read.footage_clock);
+  if (clk && fld) {
+    fld.value = camTodayLocal() + 'T' + String(clk.h).padStart(2, '0') + ':00';
+  }
+  camGotoFootage();   // renderSnapshot runs here → resets the sliders to auto
+
+  // 2) AFTER navigating, drop the "My call" dots on the band the eye saw
+  [['entry', read.entry], ['swim', read.swim_surface], ['surge', read.surge]].forEach(([key, label]) => {
+    const band = CAM_LABEL_BAND[key][String(label || '').toLowerCase().trim()];
+    if (band == null) return;
+    const pct = CAM_BAND_MID[band];
+    const el = document.getElementById('assess' + key.charAt(0).toUpperCase() + key.slice(1));
+    if (el) { el.value = pct; onAssess(key, pct); }
+  });
+
+  const conf = (read.confidence != null) ? ' · conf ' + read.confidence : '';
+  const ft   = read.footage_clock ? ' · ' + read.footage_clock : ' · time not read — set it ▸';
+  if (status) {
+    status.textContent = `Cam: ${read.entry} / ${read.swim_surface} / ${read.surge}${conf}${ft} — nudge & FREEZE`;
+  }
 }
 
 async function calibDeviceId() {
