@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swim Manly — Refraction (real DEM)</title>
+<style>
+  body{margin:0;background:#0b1f2a;color:#cfe8f2;font:13px system-ui,Segoe UI,Arial;display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px}
+  h1{font-size:15px;letter-spacing:1px;margin:4px 0 0;color:#9fd2e6;text-transform:uppercase}
+  .sub{font-size:11px;color:#6fa3b8}
+  canvas{width:min(92vw,720px);height:auto;border-radius:10px;background:#0b1f2a;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+  .panel{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:center;background:rgba(255,255,255,.05);padding:10px 16px;border-radius:10px}
+  label{display:flex;flex-direction:column;font-size:11px;gap:3px;color:#9fd2e6}
+  input[type=range]{width:200px}
+  .val{font-weight:700;color:#fff}
+  button{background:#0a7ea4;color:#fff;border:0;border-radius:7px;padding:7px 12px;font-weight:700;cursor:pointer}
+  button.off{background:#2a4a58}
+  .cite{font-size:10px;color:#5a8a9f;max-width:720px;text-align:center}
+</style>
+</head>
+<body>
+<h1>Cabbage Tree Bay — Wave Refraction</h1>
+<div class="sub">eikonal solve on NSW 5 m marine-LiDAR DEM · drifting wavefronts</div>
+<canvas id="cv"></canvas>
+<div class="panel">
+  <label>Swell direction (from)
+    <input id="dir" type="range" min="50" max="190" step="1" value="130">
+    <span class="val" id="dirv">130° SE</span>
+  </label>
+  <label>Wave speed
+    <input id="spd" type="range" min="0" max="3" step="0.05" value="1">
+    <span class="val" id="spdv">1.0×</span>
+  </label>
+  <button id="mode">Mode: Wavefronts</button>
+  <button id="play">Pause</button>
+</div>
+<div class="cite">Bathymetry: NSW Marine LiDAR Topo-Bathy 2018 (5 m) © State Government of NSW &amp; DCCEEW, CC-BY 4.0.</div>
+
+<script>
+const COMPASS=d=>["N","NNE","NE","ENE","E","ESE","SE","SSE","S"][Math.round(((d%360)/22.5))]||"";
+let META=null, IDX=null, layers={}, W=0, H=0;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let off, octx, imgData;
+
+// load a direction PNG into a Uint8 RGBA buffer at native grid size
+function loadDir(d){
+  return new Promise((res,rej)=>{
+    if(layers[d]) return res(layers[d]);
+    const im=new Image();
+    im.onload=()=>{
+      if(!off){off=document.createElement('canvas');off.width=W;off.height=H;octx=off.getContext('2d');}
+      octx.clearRect(0,0,W,H); octx.drawImage(im,0,0);
+      layers[d]=octx.getImageData(0,0,W,H).data; res(layers[d]);
+    };
+    im.onerror=rej; im.src=IDX.files[d];
+  });
+}
+function nearest(dir){
+  let best=IDX.dirs[0];
+  for(const d of IDX.dirs) if(Math.abs(d-dir)<Math.abs(best-dir)) best=d;
+  return best;
+}
+
+let mode=0, playing=true, clock=0, spd=1, dir=130;
+async function init(){
+  META=await (await fetch('bay_dem.json')).json();
+  IDX =await (await fetch('refraction_index.json')).json();
+  W=META.nx; H=META.ny; cv.width=W; cv.height=H;
+  imgData=ctx.createImageData(W,H);
+  await loadDir(String(nearest(dir)));
+  requestAnimationFrame(frame);
+}
+function frame(t){
+  if(playing) clock += 0.016*spd/ (IDX.period_s/ IDX.period_s); // advance ~1 cycle / period
+  const key=String(nearest(dir));
+  const L=layers[key]; if(!L){ loadDir(key); requestAnimationFrame(frame); return; }
+  const o=imgData.data;
+  for(let i=0;i<W*H;i++){
+    const r=L[i*4], g=L[i*4+1], b=L[i*4+2], a=L[i*4+3];
+    let R,G,B;
+    if(a<128){ R=189;G=170;B=128; }                 // land / unsurveyed → sand
+    else{
+      const energy=g/255*4, phase=b/255;
+      if(mode===0){                                  // drifting wavefronts
+        const crest=(Math.cos(2*Math.PI*(phase - clock))+1)/2;
+        const e=Math.min(energy/2.5,1);
+        R=(0.10*(1-crest)+0.65*crest)*(0.7+0.6*e)*255;
+        G=(0.42*(1-crest)+0.92*crest)*(0.7+0.6*e)*255;
+        B=(0.55*(1-crest)+0.98*crest)*(0.7+0.6*e)*255;
+      }else{                                         // energy wash
+        const e=Math.min(energy/3,1);
+        R=(0.06*(1-e)+0.95*e)*255; G=(0.30*(1-e)+0.55*e)*255; B=(0.45*(1-e)+0.20*e)*255;
+      }
+    }
+    o[i*4]=R;o[i*4+1]=G;o[i*4+2]=B;o[i*4+3]=255;
+  }
+  ctx.putImageData(imgData,0,0);
+  requestAnimationFrame(frame);
+}
+document.getElementById('dir').oninput=e=>{dir=+e.target.value;
+  document.getElementById('dirv').textContent=dir+'° '+COMPASS(dir); loadDir(String(nearest(dir)));};
+document.getElementById('spd').oninput=e=>{spd=+e.target.value;document.getElementById('spdv').textContent=spd.toFixed(1)+'×';};
+document.getElementById('mode').onclick=e=>{mode=1-mode;e.target.textContent='Mode: '+(mode?'Energy wash':'Wavefronts');};
+document.getElementById('play').onclick=e=>{playing=!playing;e.target.textContent=playing?'Pause':'Play';e.target.className=playing?'':'off';};
+init();
+</script>
+</body>
+</html>
