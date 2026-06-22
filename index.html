@@ -5124,12 +5124,41 @@ async function generateBannerSummary() {
     ? `small ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}`
     : `very little swell to speak of`;
 
+  // How much of that offshore swell actually reaches the bay? The GEM transmit
+  // fraction tells us how well the headland is sheltering the entry point. When
+  // the open-ocean swell is large but transmit is low (and the scores are all
+  // good), the summary must lead with the contrast — "big swell offshore, but
+  // the bay shelters it" — rather than implying the bay itself is rough.
+  const avgTransmit = rows.length
+    ? avg(rows.map(r => gemLookup(r.swell1Dir, r.swell1P)))
+    : 0.5;
+  // "Large offshore swell" worth calling out explicitly.
+  const bigOffshore = avgS1H >= 1.2;
+  // The bay is doing real work knocking it down (<~45% energy through).
+  const wellSheltered = avgTransmit <= 0.45;
+  // The headline contrast case: meaningful swell out wide, but it's not reaching
+  // the swimmer in any troublesome way.
+  const shelteredContrast = bigOffshore && wellSheltered;
+
+  // A standalone opener for the "big swell but sheltered" situation, reused
+  // across the good-conditions variants below.
+  const shelteredOpener =
+    `Large ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir} out wide today, but Cabbage Tree Bay is well sheltered from that direction and very little of it is reaching the entry — conditions at South Steyne are about as good as it gets.`;
+
   if (allGood) {
+    if (shelteredContrast) {
+      waterText = pick([
+        `${shelteredOpener} Entry off the beach and rocks is easy, the surface is ${domSwim === 'Glassy' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
+        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — easy entry, ${domSwim === 'Glassy' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
+        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in is easy, the surface is ${domSwim === 'Glassy' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
+      ]);
+    } else {
     waterText = pick([
       `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach and rocks is easy, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
       `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry is easy, water surface is ${domSwim === 'Glassy' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
       `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry is straightforward, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
     ]);
+    }
   } else {
     const parts = [];
 
@@ -5146,7 +5175,12 @@ async function generateBannerSummary() {
       ]));
     } else {
       // Entry is fine, open with swell context
-      if (avgS1H >= 1.2) {
+      if (shelteredContrast) {
+        parts.push(pick([
+          `Large ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir} offshore, but the bay is sheltered from that direction so the entry stays manageable.`,
+          `Big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell out wide, though the headland knocks most of it down before it reaches the bay.`,
+        ]));
+      } else if (avgS1H >= 1.2) {
         parts.push(pick([
           `${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} giving the bay some energy today.`,
           `There's some movement in the water — ${swellIntroStr}.`,
