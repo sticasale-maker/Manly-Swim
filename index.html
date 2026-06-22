@@ -2969,7 +2969,7 @@ async function fetchOMarine() {
   const cache = loadCache(OM_CACHE_KEY);
   if (cacheIsFresh(cache, OM_CACHE_TTL)) return cache.data;
   try {
-    const res = await fetch(OM_MARINE_URL + '&t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetchWithTimeout(OM_MARINE_URL + '&t=' + Date.now(), 10000, { cache: 'no-store' });
     if (!res.ok) throw new Error(`OM Marine ${res.status}`);
     const j = await res.json();
     const c = j.current || {};
@@ -3091,8 +3091,12 @@ const OM_WX_CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
 async function fetchOMWeather() {
   const cache = loadCache(OM_WX_CACHE_KEY);
   if (cacheIsFresh(cache, OM_WX_CACHE_TTL)) return cache.data;
+  // Two attempts with a real AbortController timeout. On cellular a stalled
+  // socket would otherwise hang forever (plain fetch has no timeout), so weather
+  // silently never arrived while swell — which retries — loaded fine.
+  for (let attempt = 1; attempt <= 2; attempt++) {
   try {
-    const res = await fetch(OM_WEATHER_URL + '&t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetchWithTimeout(OM_WEATHER_URL + '&t=' + Date.now(), 10000, { cache: 'no-store' });
     if (!res.ok) throw new Error(`OM Weather ${res.status}`);
     const j = await res.json();
 
@@ -3141,9 +3145,14 @@ async function fetchOMWeather() {
     saveCache(OM_WX_CACHE_KEY, data);
     return data;
   } catch(e) {
-    console.warn('OM Weather failed:', e.message);
+    console.warn('OM Weather attempt ' + attempt + ' failed:', e.message);
+    if (attempt < 2) { await new Promise(r => setTimeout(r, 1200)); continue; }
+    // Last resort: serve stale cache rather than nothing.
+    if (cache && cache.data) return cache.data;
     return null;
   }
+  }
+  return null;
 }
 
 // =============================================================================
@@ -4035,8 +4044,8 @@ async function loadAndRender(forceRefresh = false) {
     try {
       const withTimeout = (p, ms) => Promise.race([p, new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
       const [omRes, wxRes, bwRes] = await Promise.allSettled([
-        withTimeout(fetchOMarine(),    8000),
-        withTimeout(fetchOMWeather(),  8000),
+        withTimeout(fetchOMarine(),    14000),
+        withTimeout(fetchOMWeather(),  14000),
         withTimeout(fetchBeachwatch(), 6000),
       ]);
 
@@ -5874,7 +5883,13 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     landPath = new Path2D(); landPath.moveTo(sp[0][0], sp[0][1]);
     for (var i = 1; i < n; i++) landPath.lineTo(sp[i][0], sp[i][1]);
     landPath.closePath();
-    waterClip = new Path2D(); waterClip.rect(-4, -4, W + 8, H + 8); waterClip.addPath(landPath);
+    waterClip = new Path2D(); waterClip.rect(-4, -4, W + 8, H + 8);
+    // Safari/iOS ignores Path2D.addPath inside an even-odd clip, so the land
+    // sub-path is lost and waves draw over the headland. Re-trace the polygon
+    // directly into waterClip instead of relying on addPath.
+    waterClip.moveTo(sp[0][0], sp[0][1]);
+    for (var k = 1; k < n; k++) waterClip.lineTo(sp[k][0], sp[k][1]);
+    waterClip.closePath();
     coastStroke = new Path2D();
     for (var j = 0; j < n; j++) {
       var a = LAND[j], b = LAND[(j + 1) % n];
@@ -6103,7 +6118,13 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     landPath = new Path2D(); landPath.moveTo(sp[0][0], sp[0][1]);
     for (var i = 1; i < n; i++) landPath.lineTo(sp[i][0], sp[i][1]);
     landPath.closePath();
-    waterClip = new Path2D(); waterClip.rect(-4, -4, W + 8, H + 8); waterClip.addPath(landPath);
+    waterClip = new Path2D(); waterClip.rect(-4, -4, W + 8, H + 8);
+    // Safari/iOS ignores Path2D.addPath inside an even-odd clip, so the land
+    // sub-path is lost and waves draw over the headland. Re-trace the polygon
+    // directly into waterClip instead of relying on addPath.
+    waterClip.moveTo(sp[0][0], sp[0][1]);
+    for (var k = 1; k < n; k++) waterClip.lineTo(sp[k][0], sp[k][1]);
+    waterClip.closePath();
     coastStroke = new Path2D();
     for (var j = 0; j < n; j++) {
       var a = LAND[j], b = LAND[(j + 1) % n];
