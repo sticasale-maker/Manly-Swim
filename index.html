@@ -6135,7 +6135,11 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
         var d = ds[di]; if (Math.abs(d) > maxBend + 0.001) continue;
         var ang = (fromDeg + d) * Math.PI / 180;
         if (rayClear(cx, cy, Math.sin(ang), -Math.cos(ang))) {
-          return { h: Math.max(0, 1 - Math.abs(d) / 90), delta: d * Math.PI / 180 };
+          // Hard shadow: energy reaching this cell falls off with the bend it needed.
+          // Squared falloff so deep bends into the lee go nearly dark — only a small
+          // diffraction/refraction leak survives behind the headland. 0 bend = full energy.
+          var f = Math.max(0, 1 - Math.abs(d) / 90);
+          return { h: f * f, delta: d * Math.PI / 180 };
         }
       }
     }
@@ -6294,7 +6298,11 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       }
       fieldDX = ax; fieldDY = ay;
     }
-    // smooth the height field; collect open-water spawn cells for respawns
+    // smooth the height field; collect open-water spawn cells for respawns.
+    // Shadow-preserving blur: a cell may be softened but NOT brightened above its own
+    // line-of-sight value — so bright open-water cells can't bleed energy into the
+    // geometric shadow behind the headland. The lee stays dark; only refraction/
+    // diffraction (already baked into fieldH via refractCell) lights it.
     var t = new Float32Array(fieldH.length); spawns = [];
     for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
       var sum = 0, nn = 0;
@@ -6302,7 +6310,9 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
         var xx = gx + ox, yy = gy + oy; if (xx < 0 || xx >= gridW || yy < 0 || yy >= gridH) continue;
         sum += fieldH[yy * gridW + xx]; nn++;
       }
-      var v = sum / nn; t[gy * gridW + gx] = v;
+      var own = fieldH[gy * gridW + gx];
+      var v = Math.min(sum / nn, own);   // never raise a cell above its own shielded value
+      t[gy * gridW + gx] = v;
       if (!mask[gy * gridW + gx] && v > 0.5) spawns.push([(gx + 0.5) / gridW, (gy + 0.5) / gridH]);
     }
     fieldH = t;
@@ -6468,8 +6478,9 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       // Never traverse land: a wave that would step onto the headland terminates and respawns offshore.
       if (nxp < -0.05 || nxp > 1.05 || nyp < -0.05 || nyp > 1.05 || isLandN(nxp, nyp)) { respawn(p); continue; }
       p.x = nxp; p.y = nyp;
-      var fh = samp(fieldH, p.x, p.y);                          // refraction shadow (lee = fainter)
-      var a = baseA * energy * fh * (0.55 + 0.5 * p.s1);        // opacity: height x GEM energy x shadow
+      var fh = samp(fieldH, p.x, p.y);                          // line-of-sight shadow (lee = dark)
+      if (fh < 0.12) { continue; }                              // hard shadow: no crest in the deep lee
+      var a = baseA * energy * (fh * fh) * (0.55 + 0.5 * p.s1);  // opacity: height x GEM energy x shadow²
       if (a < 0.035) continue;
       var amp = (0.006 + hN * 0.010) * W * (0.8 + 0.4 * p.s1);  // crest weight from height
       var len = (0.05 + hN * 0.055) * W;                        // bigger swell = longer crests
