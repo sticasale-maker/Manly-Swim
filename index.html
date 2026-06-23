@@ -4204,14 +4204,24 @@ function refreshVersionLabel() {
 // Fill the small version label in the main header. The service worker may not
 // be controlling the page on the very first load, so wait for it to be ready
 // and retry a few times before settling on a fallback string.
+// Build stamp baked into this file by the GitHub Action on every deploy.
+// If the Action hasn't run (placeholder still present), we fall back to asking
+// the service worker. The baked value is instant and needs no worker.
+var APP_BUILD = '__BUILD__';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
+  if (APP_BUILD && APP_BUILD.indexOf('BUILD') === -1) {   // real stamp, not the placeholder
+    el.textContent = 'v' + APP_BUILD;
+    el.title = 'App build: ' + APP_BUILD;
+    return;
+  }
+  // Fallback: ask the running service worker (works once new sw.js is in control).
   function tryFill(attempt) {
     swGetVersion().then(function (v) {
       if (v) { el.textContent = 'v' + v; el.title = 'Running app version: ' + v; return; }
       if (attempt < 8) { setTimeout(function () { tryFill(attempt + 1); }, 700); return; }
-      el.textContent = navigator.serviceWorker && navigator.serviceWorker.controller ? '' : '';
+      el.textContent = '';
     });
   }
   if (navigator.serviceWorker && navigator.serviceWorker.ready) {
