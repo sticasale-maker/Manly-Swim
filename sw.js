@@ -7,7 +7,7 @@
 //  To force all clients to update: bump CACHE_VERSION below.
 // ─────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = '20260623-214613';
+const CACHE_VERSION = 'v2';
 const CACHE_NAME    = 'swim-manly-' + CACHE_VERSION;
 
 // App shell assets to pre-cache on install
@@ -43,6 +43,19 @@ self.addEventListener('install', event => {
       );
     }).then(() => self.skipWaiting())
   );
+});
+
+// ── Message: allow the page to activate a waiting worker ──────
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  // Reply with the running cache version so the page can display it.
+  if (event.data && event.data.type === 'GET_VERSION') {
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({ version: CACHE_VERSION });
+    }
+  }
 });
 
 // ── Activate: delete old caches ───────────────────────────────

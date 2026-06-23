@@ -1555,6 +1555,7 @@
       <summary>What happened?</summary>
       <pre id="refresh-prompt-log"></pre>
       <button id="refresh-prompt-copy" type="button">Copy diagnostics</button>
+      <div id="refresh-prompt-version" style="margin-top:8px;font-size:10px;opacity:0.55;letter-spacing:0.4px;">version: checking…</div>
     </details>
   </div>
 </div>
@@ -4165,12 +4166,39 @@ function hardRefresh() {
 // surface a popup telling the user to pull down to refresh. It auto-dismisses the
 // moment real data arrives (renderSnapshot calls hideRefreshPrompt).
 // =============================================================================
+var _swVersion = null;   // running service-worker cache version, once known
+function swGetVersion() {
+  return new Promise(function (resolve) {
+    if (_swVersion) { resolve(_swVersion); return; }
+    var sw = navigator.serviceWorker;
+    if (!sw || !sw.controller || typeof MessageChannel === 'undefined') { resolve(null); return; }
+    var ch = new MessageChannel();
+    var done = false;
+    ch.port1.onmessage = function (e) {
+      done = true;
+      _swVersion = (e.data && e.data.version) || null;
+      resolve(_swVersion);
+    };
+    try { sw.controller.postMessage({ type: 'GET_VERSION' }, [ch.port2]); }
+    catch (err) { resolve(null); return; }
+    setTimeout(function () { if (!done) resolve(_swVersion); }, 1500);   // worker silent → give up
+  });
+}
+function refreshVersionLabel() {
+  var el = document.getElementById('refresh-prompt-version');
+  if (!el) return;
+  swGetVersion().then(function (v) {
+    el.textContent = 'version: ' + (v || (navigator.serviceWorker && navigator.serviceWorker.controller ? 'unknown' : 'no service worker'));
+  });
+}
+
 function showRefreshPrompt() {
   if (_forecastRendered) return;            // data is already up — never show
   const el = document.getElementById('refresh-prompt');
   if (el) el.classList.add('visible');
   const pre = document.getElementById('refresh-prompt-log');
   if (pre) pre.textContent = _diagLog.slice(-18).join('\n') || '(no events logged yet)';
+  refreshVersionLabel();
 }
 function hideRefreshPrompt() {
   const el = document.getElementById('refresh-prompt');
@@ -4187,7 +4215,7 @@ function hideRefreshPrompt() {
   });
   const copyBtn = document.getElementById('refresh-prompt-copy');
   if (copyBtn) copyBtn.addEventListener('click', () => {
-    const txt = 'Swim Manly diagnostics\nUA: ' + navigator.userAgent + '\nonline: ' + navigator.onLine + '\n\n' + _diagLog.join('\n');
+    const txt = 'Swim Manly diagnostics\nversion: ' + (_swVersion || 'unknown') + '\nUA: ' + navigator.userAgent + '\nonline: ' + navigator.onLine + '\n\n' + _diagLog.join('\n');
     const done = () => { copyBtn.textContent = 'Copied ✓'; setTimeout(() => copyBtn.textContent = 'Copy diagnostics', 2000); };
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(done).catch(() => { prompt('Copy these diagnostics:', txt); });
