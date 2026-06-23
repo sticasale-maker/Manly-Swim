@@ -5977,14 +5977,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     return lerp(top, bot, ty);
   }
   function fit() {
-    var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
-    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
+    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths(); buildMask(); computeField(_cw); lastDeg = _cw;
-    return true;
   }
 
   var POOL = 200, parts = [];
@@ -6089,15 +6087,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   window.chopFit = fit;
 
   window.addEventListener('resize', fit);
-  // Mobile lays the canvas out late (splash dismiss, font reflow, tab reveal),
-  // so the first fit() can measure 0 width. Watch the wrapper and re-fit when it
-  // gets a real size, and retry until the first successful (non-zero) fit lands.
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(function () { fit(); }).observe(wrap);
-  }
-  (function ensureFit(tries) {
-    if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
-  })(0);
+  fit();
   requestAnimationFrame(frame);
 })();
 
@@ -6447,14 +6437,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
   }
   function fit() {
-    var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
-    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
+    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths(); buildMask(); buildDist(); buildDepth(); computeField(_sw, _sp); _lastKey = _key;
-    return true;
   }
 
   var POOL = 200, parts = [];
@@ -6591,33 +6579,105 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   window.swellFit = fit;
 
   window.addEventListener('resize', fit);
-  // Mobile lays the canvas out late (splash dismiss, font reflow, tab reveal),
-  // so the first fit() can measure 0 width. Watch the wrapper and re-fit when it
-  // gets a real size, and retry until the first successful (non-zero) fit lands.
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(function () { fit(); }).observe(wrap);
-  }
-  (function ensureFit(tries) {
-    if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
-  })(0);
+  fit();
   requestAnimationFrame(frame);
 })();
 
 </script>
 
+<style>
+  /* New-version update toast */
+  #sw-update-toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(140%);
+    z-index: 9999; max-width: 92vw;
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px;
+    background: var(--deep, #064e6e); color: #fff;
+    border-radius: var(--radius, 14px);
+    box-shadow: 0 6px 24px rgba(6,40,55,0.35);
+    font-family: 'DM Mono', ui-monospace, monospace; font-size: 13px; line-height: 1.3;
+    opacity: 0; pointer-events: none;
+    transition: transform .32s ease, opacity .32s ease;
+  }
+  #sw-update-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+  #sw-update-toast button {
+    flex: none; cursor: pointer;
+    border: none; border-radius: 9px;
+    padding: 7px 13px;
+    background: var(--green, #1a9e6e); color: #fff;
+    font-family: inherit; font-size: 13px; font-weight: 700; letter-spacing: .3px;
+  }
+  #sw-update-toast .sw-dismiss {
+    background: transparent; color: rgba(255,255,255,0.6);
+    padding: 7px 4px; font-weight: 400;
+  }
+</style>
+<div id="sw-update-toast" role="status" aria-live="polite">
+  <span>A new version is ready.</span>
+  <button id="sw-update-refresh" type="button">Refresh</button>
+  <button class="sw-dismiss" id="sw-update-dismiss" type="button" aria-label="Dismiss">✕</button>
+</div>
 <script>
-// ── Service Worker registration ──────────────────────────────
+// ── Service Worker registration + update prompt ──────────────
 if ('serviceWorker' in navigator) {
+  var swRefreshing = false;
+
+  // When the freshly-installed worker takes control, reload once so the
+  // page runs the new assets. Guard prevents an infinite reload loop.
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    window.location.reload();
+  });
+
+  var SW_TOAST_SHOWN = false;          // once per session (per page load)
+  var SW_SNOOZE_MS = 4 * 60 * 1000;    // stay quiet this long after a dismiss
+  function swSnoozedUntil() {
+    try { return parseInt(sessionStorage.getItem('sw_toast_snooze') || '0', 10) || 0; }
+    catch (e) { return 0; }
+  }
+  function showSwUpdateToast(waitingWorker) {
+    var toast = document.getElementById('sw-update-toast');
+    var refresh = document.getElementById('sw-update-refresh');
+    var dismiss = document.getElementById('sw-update-dismiss');
+    if (!toast || !refresh) return;
+    if (SW_TOAST_SHOWN) return;            // already shown this session
+    if (Date.now() < swSnoozedUntil()) return;   // dismissed recently — stay quiet
+    SW_TOAST_SHOWN = true;
+    toast.classList.add('show');
+    refresh.onclick = function () {
+      toast.classList.remove('show');
+      // sw.js calls skipWaiting() on install, so the new worker normally
+      // activates by itself; nudge it in case it's still waiting, then the
+      // controllerchange handler above reloads the page.
+      try { if (waitingWorker) waitingWorker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) {}
+      // Fallback: if controllerchange doesn't fire shortly, reload anyway.
+      setTimeout(function () { if (!swRefreshing) { swRefreshing = true; window.location.reload(); } }, 1200);
+    };
+    if (dismiss) dismiss.onclick = function () {
+      toast.classList.remove('show');
+      try { sessionStorage.setItem('sw_toast_snooze', String(Date.now() + SW_SNOOZE_MS)); } catch (e) {}
+    };
+  }
+
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('/sw.js')
       .then(function (reg) {
         console.log('[SW] registered, scope:', reg.scope);
+
+        // A worker may already be waiting from a previous visit.
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          showSwUpdateToast(reg.waiting);
+        }
+
         reg.addEventListener('updatefound', function () {
-          const newWorker = reg.installing;
+          var newWorker = reg.installing;
           if (!newWorker) return;
           newWorker.addEventListener('statechange', function () {
+            // installed + an existing controller => this is an update, not first install
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('[SW] new version ready — will activate on next visit');
+              console.log('[SW] new version ready');
+              showSwUpdateToast(newWorker);
             }
           });
         });
