@@ -1566,7 +1566,7 @@
      
       <div>
         <div class="logo">SWIM <span>MANLY</span></div>
-        <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span></div>
+        <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span><span id="headerVersion" style="margin-left:8px;font-size:9px;opacity:0.5;letter-spacing:0.3px;" title="Running app version"></span></div>
       </div>
     </div>
     <button class="about-link" onclick="openAbout()" aria-label="About this app">
@@ -1997,6 +1997,9 @@
 
       <p style="font-size:12px;color:var(--dim);margin-top:14px;margin-bottom:0;">
         👁 App views: <strong id="visitCount" style="color:var(--ocean);">—</strong>
+      </p>
+      <p style="font-size:11px;color:var(--dim);margin-top:6px;margin-bottom:0;letter-spacing:0.3px;">
+        App version: <strong id="aboutVersion" style="color:var(--ocean);">checking…</strong>
       </p>
     </div>
 
@@ -3208,6 +3211,12 @@ function openAbout() {
   document.body.style.overflow = 'hidden';
   const sheet = ov.querySelector('.about-sheet');
   if (sheet) sheet.scrollTop = 0;
+  const vEl = document.getElementById('aboutVersion');
+  if (vEl && typeof swGetVersion === 'function') {
+    swGetVersion().then(function (v) {
+      vEl.textContent = v || (navigator.serviceWorker && navigator.serviceWorker.controller ? 'unknown' : 'no service worker');
+    });
+  }
   document.addEventListener('keydown', _aboutEsc);
 }
 function closeAbout() {
@@ -4190,6 +4199,31 @@ function refreshVersionLabel() {
   swGetVersion().then(function (v) {
     el.textContent = 'version: ' + (v || (navigator.serviceWorker && navigator.serviceWorker.controller ? 'unknown' : 'no service worker'));
   });
+}
+
+// Fill the small version label in the main header. The service worker may not
+// be controlling the page on the very first load, so wait for it to be ready
+// and retry a few times before settling on a fallback string.
+function refreshHeaderVersion() {
+  var el = document.getElementById('headerVersion');
+  if (!el) return;
+  function tryFill(attempt) {
+    swGetVersion().then(function (v) {
+      if (v) { el.textContent = 'v' + v; el.title = 'Running app version: ' + v; return; }
+      if (attempt < 8) { setTimeout(function () { tryFill(attempt + 1); }, 700); return; }
+      el.textContent = navigator.serviceWorker && navigator.serviceWorker.controller ? '' : '';
+    });
+  }
+  if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready.then(function () { tryFill(0); }).catch(function () { tryFill(0); });
+  } else {
+    tryFill(0);
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', refreshHeaderVersion);
+} else {
+  refreshHeaderVersion();
 }
 
 function showRefreshPrompt() {
