@@ -23,25 +23,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rewrite CACHE_VERSION in sw.js
+      - name: Stamp build version into sw.js and index.html
         run: |
-          if [ ! -f sw.js ]; then
-            echo "sw.js not found - nothing to bump."
-            exit 0
-          fi
           NEW_VERSION="$(TZ='Australia/Sydney' date +'%Y%m%d-%H%M%S')"
-          echo "New cache version: $NEW_VERSION"
-          sed -i "s/const CACHE_VERSION = '[^']*';/const CACHE_VERSION = '${NEW_VERSION}';/" sw.js
-          grep "const CACHE_VERSION" sw.js
+          echo "New build version: $NEW_VERSION"
+
+          # 1) sw.js cache version (controls cache busting)
+          if [ -f sw.js ]; then
+            sed -i "s/const CACHE_VERSION = '[^']*';/const CACHE_VERSION = '${NEW_VERSION}';/" sw.js
+            grep "const CACHE_VERSION" sw.js
+          else
+            echo "sw.js not found - skipping cache bump."
+          fi
+
+          # 2) index.html visible build stamp (header label).
+          #    Matches APP_BUILD = '...': either the placeholder or a previous timestamp.
+          if [ -f index.html ]; then
+            sed -i "s/var APP_BUILD = '[^']*';/var APP_BUILD = '${NEW_VERSION}';/" index.html
+            grep "var APP_BUILD" index.html
+          else
+            echo "index.html not found - skipping stamp."
+          fi
 
       - name: Commit the bump
         run: |
-          if git diff --quiet -- sw.js; then
-            echo "sw.js unchanged - nothing to commit."
+          if git diff --quiet -- sw.js index.html; then
+            echo "Nothing changed - nothing to commit."
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add sw.js
-          git commit -m "chore: bump SW cache version [skip ci]"
+          git add sw.js index.html
+          git commit -m "chore: stamp build version [skip ci]"
           git push
