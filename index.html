@@ -4207,7 +4207,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260623-220046';
+var APP_BUILD = '__BUILD__';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6049,12 +6049,14 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     return lerp(top, bot, ty);
   }
   function fit() {
-    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
+    var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
+    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths(); buildMask(); computeField(_cw); lastDeg = _cw;
+    return true;
   }
 
   var POOL = 200, parts = [];
@@ -6159,7 +6161,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   window.chopFit = fit;
 
   window.addEventListener('resize', fit);
-  fit();
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function () { fit(); }).observe(wrap);
+  }
+  (function ensureFit(tries) {
+    if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
+  })(0);
   requestAnimationFrame(frame);
 })();
 
@@ -6509,12 +6516,14 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
   }
   function fit() {
-    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
+    var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
+    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths(); buildMask(); buildDist(); buildDepth(); computeField(_sw, _sp); _lastKey = _key;
+    return true;
   }
 
   var POOL = 200, parts = [];
@@ -6651,7 +6660,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   window.swellFit = fit;
 
   window.addEventListener('resize', fit);
-  fit();
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function () { fit(); }).observe(wrap);
+  }
+  (function ensureFit(tries) {
+    if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
+  })(0);
   requestAnimationFrame(frame);
 })();
 
