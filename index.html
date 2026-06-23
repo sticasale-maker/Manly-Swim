@@ -5977,12 +5977,14 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     return lerp(top, bot, ty);
   }
   function fit() {
-    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
+    var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
+    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths(); buildMask(); computeField(_cw); lastDeg = _cw;
+    return true;
   }
 
   var POOL = 200, parts = [];
@@ -6087,7 +6089,15 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   window.chopFit = fit;
 
   window.addEventListener('resize', fit);
-  fit();
+  // Mobile lays the canvas out late (splash dismiss, font reflow, tab reveal),
+  // so the first fit() can measure 0 width. Watch the wrapper and re-fit when it
+  // gets a real size, and retry until the first successful (non-zero) fit lands.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function () { fit(); }).observe(wrap);
+  }
+  (function ensureFit(tries) {
+    if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
+  })(0);
   requestAnimationFrame(frame);
 })();
 
@@ -6437,12 +6447,14 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
   }
   function fit() {
-    var cssW = cv.clientWidth || (wrap.clientWidth - 32) || 320;
+    var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
+    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths(); buildMask(); buildDist(); buildDepth(); computeField(_sw, _sp); _lastKey = _key;
+    return true;
   }
 
   var POOL = 200, parts = [];
@@ -6579,7 +6591,15 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   window.swellFit = fit;
 
   window.addEventListener('resize', fit);
-  fit();
+  // Mobile lays the canvas out late (splash dismiss, font reflow, tab reveal),
+  // so the first fit() can measure 0 width. Watch the wrapper and re-fit when it
+  // gets a real size, and retry until the first successful (non-zero) fit lands.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(function () { fit(); }).observe(wrap);
+  }
+  (function ensureFit(tries) {
+    if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
+  })(0);
   requestAnimationFrame(frame);
 })();
 
