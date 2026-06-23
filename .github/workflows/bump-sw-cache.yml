@@ -1,1 +1,47 @@
+name: Bump SW cache version
 
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'index.html'
+      - 'icon_small.png'
+      - 'icon_big_360.png'
+      - 'marco2.png'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-sw-cache
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rewrite CACHE_VERSION in sw.js
+        run: |
+          if [ ! -f sw.js ]; then
+            echo "sw.js not found - nothing to bump."
+            exit 0
+          fi
+          NEW_VERSION="$(TZ='Australia/Sydney' date +'%Y%m%d-%H%M%S')"
+          echo "New cache version: $NEW_VERSION"
+          sed -i "s/const CACHE_VERSION = '[^']*';/const CACHE_VERSION = '${NEW_VERSION}';/" sw.js
+          grep "const CACHE_VERSION" sw.js
+
+      - name: Commit the bump
+        run: |
+          if git diff --quiet -- sw.js; then
+            echo "sw.js unchanged - nothing to commit."
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add sw.js
+          git commit -m "chore: bump SW cache version [skip ci]"
+          git push
