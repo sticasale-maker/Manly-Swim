@@ -4207,7 +4207,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260623-221224';
+var APP_BUILD = '__BUILD__';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5071,9 +5071,17 @@ async function generateBannerSummary() {
   const entryLabels = scored.map(r => r.result.entry.label);
   const swimLabels  = scored.map(r => r.result.swim.label);
   const surgeLabels = scored.map(r => r.result.water.label);
-  const domEntry = dominant(entryLabels);
-  const domSwim  = dominant(swimLabels);
-  const domSurge = dominant(surgeLabels);
+  // The verdict (Entry/Swim/Surge zone the prose describes) must match the rails
+  // the swimmer is actually looking at — NOT the most-common label across every
+  // hour of the day. The sliders render the currently-selected snapshot slot
+  // (_lastSnapshot); the day-long dominant can disagree (e.g. swell builds in the
+  // afternoon → dominant Entry = Caution even though the displayed slot reads
+  // Easy), which is what made the summary contradict the sliders. Read the slot
+  // on screen; fall back to the day-dominant only if no snapshot has rendered yet.
+  const snapRes  = (_lastSnapshot && _lastSnapshot.result) ? _lastSnapshot.result : null;
+  const domEntry = snapRes ? snapRes.entry.label : dominant(entryLabels);
+  const domSwim  = snapRes ? snapRes.swim.label  : dominant(swimLabels);
+  const domSurge = snapRes ? snapRes.water.label : dominant(surgeLabels);
 
   // Entry/swim/surge classes for the worst in period (for colors)
   const clsOrder = ['green','amber','yellow','red'];
