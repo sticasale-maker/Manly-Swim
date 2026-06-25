@@ -246,7 +246,7 @@
     margin: 6px 0 4px;
   }
   .metric-icon img.metric-icon-img {
-    height: 92px;
+    height: 84px;
     width: auto;
     max-width: 100%;
     border-radius: 10px;
@@ -270,12 +270,13 @@
   .metric-track-dot {
     position: absolute;
     top: 50%;
+    left: var(--pos, 50%);
     width: 24px; height: 24px;
     border-radius: 50%;
     transform: translate(-50%, -50%);
     border: 3px solid var(--foam);
     box-shadow: 0 0 0 2px currentColor;
-    transition: left 0.3s ease;
+    transition: left 0.3s ease, top 0.3s ease;
   }
   .metric-track-labels {
     display: flex;
@@ -288,6 +289,53 @@
     white-space: nowrap;
   }
   .metric-track-labels span { text-align:center; }
+
+  /* ── Compact metric layout: illustration left, rail + labels right ──────
+     A (default) keeps the horizontal rail; B (?vrail=1 → body.vrail) makes it
+     vertical with labels beside. Pure layout — setTrackDot drives both via --pos. */
+  .metric-block {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "icon header"
+      "icon track"
+      "icon labels"
+      "assess assess";
+    column-gap: 12px;
+    align-items: center;
+  }
+  .metric-icon { grid-area: icon; margin: 0; align-self: center; }
+  .metric-header { grid-area: header; }
+  .metric-track-wrap { grid-area: track; }
+  .metric-track-labels { grid-area: labels; }
+  .assess-wrap { grid-area: assess; }
+  /* labels live in a narrower column now — keep the four from colliding */
+  .metric-block .metric-track-labels { font-size: clamp(8px, 2.2vw, 10px); letter-spacing: 0; }
+
+  body.vrail .metric-block {
+    grid-template-columns: auto auto 1fr;
+    grid-template-areas:
+      "icon header header"
+      "icon track  labels"
+      "assess assess assess";
+  }
+  body.vrail .metric-track-wrap { width: 14px; height: 62px; margin: 0 auto; align-self: center; }
+  body.vrail .metric-track-rail {
+    flex-direction: column;
+    top: 0; bottom: 0; left: 50%; right: auto;
+    transform: translateX(-50%);
+    width: 10px; height: 100%;
+  }
+  body.vrail .metric-track-dot { top: var(--pos, 50%); left: 50%; }
+  body.vrail .metric-block .metric-track-labels {
+    flex-direction: column;
+    justify-content: space-between;
+    height: 62px;
+    font-size: 13px;
+    margin: 0 0 0 8px;
+    align-self: center;
+  }
+  body.vrail .metric-track-labels span { text-align: left; }
 
   /* ── Calibration assessment slider (TUNE mode only) ───────────────────
      A second track under each metric, same full width as the rail. You drag
@@ -1675,7 +1723,7 @@
               <div class="z" style="background:var(--yellow);flex:1"></div>
               <div class="z" style="background:var(--red);flex:1"></div>
             </div>
-            <div class="metric-track-dot" id="metricEntryDot" style="color:var(--green);left:50%"></div>
+            <div class="metric-track-dot" id="metricEntryDot" style="color:var(--green)"></div>
           </div>
           <div class="metric-track-labels" id="metricEntryLabels">
             <span style="flex:1">Easy</span><span style="flex:1">Doable</span><span style="flex:1">Caution</span><span style="flex:1">Dangerous</span>
@@ -1700,7 +1748,7 @@
               <div class="z" style="background:var(--yellow);flex:1"></div>
               <div class="z" style="background:var(--red);flex:1"></div>
             </div>
-            <div class="metric-track-dot" id="metricSwimDot" style="color:var(--green);left:50%"></div>
+            <div class="metric-track-dot" id="metricSwimDot" style="color:var(--green)"></div>
           </div>
           <div class="metric-track-labels" id="metricSwimLabels">
             <span style="flex:1">Glassy</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
@@ -1725,7 +1773,7 @@
               <div class="z" style="background:var(--yellow);flex:1"></div>
               <div class="z" style="background:var(--red);flex:1"></div>
             </div>
-            <div class="metric-track-dot" id="metricSurgeDot" style="color:var(--green);left:50%"></div>
+            <div class="metric-track-dot" id="metricSurgeDot" style="color:var(--green)"></div>
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
             <span style="flex:1">Steady</span><span style="flex:1">Drifty</span><span style="flex:1">Surgy</span><span style="flex:1">Washy</span>
@@ -2080,6 +2128,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 const GEM_MODEL = !location.search.includes('model=orig');
 const TUNE_PANEL = location.search.includes('tune=1'); // ?tune=1 shows the live sensitivity tuning panel
 const GEM_DEBUG = location.search.includes('debug=1') || TUNE_PANEL; // tune view now also shows the score breakdown (old ?debug=1 page retired)
+const VRAIL = location.search.includes('vrail=1'); // ?vrail=1 → vertical sliders beside each image (B layout); default is horizontal (A)
+if (VRAIL) document.body.classList.add('vrail');
 const TUNE_KEY   = 'swim_tune_overrides_v1';            // localStorage: user's sensitivity overrides
 
 // ── Condition pictograms ─────────────────────────────────────────────────
@@ -3315,7 +3365,7 @@ function renderSnapshot(h, wx) {
     const dot = document.getElementById(dotId);
     if (!dot) return;
     const clamped = Math.min(97, Math.max(3, pct));
-    dot.style.left  = clamped + '%';
+    dot.style.setProperty('--pos', clamped + '%');
     dot.style.color = colorVar;
     dot.style.background = colorVar;
     // Record raw (unclamped) auto position for calibration capture comparison.
@@ -4251,7 +4301,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260625-153728';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
