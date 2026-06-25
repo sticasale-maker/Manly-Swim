@@ -237,6 +237,21 @@
     font-size:10px; color:var(--dim);
     letter-spacing:0.5px; margin-left:auto;
   }
+  /* Condition illustration above each rail — only visible with ?icons=1.
+     JS injects the <img> and sets display:flex; stays hidden (empty) otherwise. */
+  .metric-icon {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    margin: 6px 0 4px;
+  }
+  .metric-icon img.metric-icon-img {
+    height: 92px;
+    width: auto;
+    max-width: 100%;
+    border-radius: 10px;
+    display: block;
+  }
   .metric-track-wrap {
     margin: 4px 0 2px;
     position: relative;
@@ -1652,6 +1667,7 @@
             <div class="metric-value" id="metricEntryVal">—</div>
             <div class="metric-score" id="metricEntryScore">—</div>
           </div>
+          <div class="metric-icon" id="metricEntryIcon" style="display:none"></div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
               <div class="z" style="background:var(--green);flex:1"></div>
@@ -1676,6 +1692,7 @@
             <div class="metric-value" id="metricSwimVal">—</div>
             <div class="metric-score" id="metricSwimScore">—</div>
           </div>
+          <div class="metric-icon" id="metricSwimIcon" style="display:none"></div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
               <div class="z" style="background:var(--green);flex:1"></div>
@@ -1700,6 +1717,7 @@
             <div class="metric-value" id="metricSurgeVal">—</div>
             <div class="metric-score" id="metricSurgeScore">—</div>
           </div>
+          <div class="metric-icon" id="metricSurgeIcon" style="display:none"></div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
               <div class="z" style="background:var(--green);flex:1"></div>
@@ -2062,7 +2080,33 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 const GEM_MODEL = !location.search.includes('model=orig');
 const TUNE_PANEL = location.search.includes('tune=1'); // ?tune=1 shows the live sensitivity tuning panel
 const GEM_DEBUG = location.search.includes('debug=1') || TUNE_PANEL; // tune view now also shows the score breakdown (old ?debug=1 page retired)
+const ICONS_MODE = location.search.includes('icons=1'); // ?icons=1 shows a condition pictogram above each metric rail (additive A/B test; default off)
 const TUNE_KEY   = 'swim_tune_overrides_v1';            // localStorage: user's sensitivity overrides
+
+// ── Condition pictograms (?icons=1) ──────────────────────────────────────
+// Illustrated scene per metric/zone, shown above each rail. Purely additive:
+// nothing renders unless ICONS_MODE is on; the rail and scoring are untouched.
+// Driven by the existing colour band (green/amber/yellow/red -> zone 0-3) so the
+// picture always agrees with the dot. Images are external files in /images
+// (no base64): images/<metric>-<zone>.png.
+const _ICON_ZONE = { green: 0, amber: 1, yellow: 2, red: 3 };
+const _ICON_WORD = {
+  entry: ['easy', 'doable', 'caution', 'dangerous'],
+  swim:  ['glassy', 'ripply', 'choppy', 'messy'],
+  surge: ['steady', 'drifty', 'surgy', 'washy']
+};
+function renderMetricIcon(blockId, cls) {
+  const host = document.getElementById(blockId + 'Icon');
+  if (!host) return;
+  const i = _ICON_ZONE[cls] != null ? _ICON_ZONE[cls] : 0;
+  const key = blockId.replace('metric', '').toLowerCase(); // entry / swim / surge
+  const words = _ICON_WORD[key];
+  if (!words) return;
+  host.innerHTML = '<img class="metric-icon-img" src="images/' + key + '-' + words[i] +
+    '.png" alt="" loading="lazy">';
+  host.style.display = 'flex';
+}
+
 // Optional URL override for the wind-wave route blend (0=arrival/point … 1=route/line).
 // e.g. ?wwblend=1 forces pure route geometry for A/B testing without editing the sheet.
 const WW_BLEND_OVERRIDE = (() => {
@@ -3265,6 +3309,7 @@ function renderSnapshot(h, wx) {
     document.getElementById(valId).textContent   = metric.label;
     const shown = useRaw && (metric.raw != null) ? metric.raw : metric.score;
     document.getElementById(scoreId).textContent = Math.round(shown * 10) / 10;
+    if (ICONS_MODE) renderMetricIcon(id, metric.cls);
   }
 
   function setTrackDot(dotId, pct, colorVar) {
