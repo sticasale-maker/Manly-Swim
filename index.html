@@ -4325,7 +4325,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-145546';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6361,6 +6361,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   var REEF_LONG = 0.13, REEF_CROSS = 0.05;   // ridge half-length / half-width (normalised)
   var REEF_RISE = 17;      // m the seabed rises over the reef crest
   var REFRACT_K  = 5.5;    // how hard rays bend toward shallow water (0 = straight, higher = more). Raised from 2.2 so rays visibly refract around the Bower headland (verified the near-headland bend ~3x without over-bending open water).
+  var CREST_HUG  = 10;     // grid-cells from shore over which crest STROKES rotate to run parallel to the coast (real refracting wavefronts wrap to hug the shoreline). 0 = off (crests stay perpendicular to travel everywhere).
   var DEPTH_TINT = true;   // faint depth shading under the rays so the bathymetry is visible
   var _depthCanvas = document.createElement('canvas'), _dctx = _depthCanvas.getContext('2d');
 
@@ -6784,11 +6785,24 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       if (a < 0.035) continue;
       var amp = (0.006 + hN * 0.010) * W * (0.8 + 0.4 * p.s1);  // crest weight from height
       var len = (0.05 + hN * 0.055) * W;                        // bigger swell = longer crests
-      var ang = Math.atan2(vy, vx);
-      // Crest is drawn perpendicular to the LOCAL travel direction, so it always
-      // reads square to the arrows that follow that same field. (A sideways lean
-      // here made the crest look like it pointed a different way to the arrow.)
-      drawWave(p.x * W, p.y * H, ang + Math.PI / 2, len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6);
+      // Crest line is ⟂ to travel offshore, but ROTATES to run parallel to the
+      // shoreline as it nears the coast/headland — like a real refracting wavefront
+      // wrapping in. Blend is driven by nearness to shore (dist field gradient).
+      var cdx = -vy, cdy = vx;                                   // default crest ⟂ travel
+      var prox = clamp(1 - samp(dist, p.x, p.y) / CREST_HUG, 0, 1);
+      if (prox > 0.001) {
+        var de = 0.02;
+        var ndx = samp(dist, p.x + de, p.y) - samp(dist, p.x - de, p.y);  // ∇dist → coast normal
+        var ndy = samp(dist, p.x, p.y + de) - samp(dist, p.x, p.y - de);
+        var nmm = Math.hypot(ndx, ndy);
+        if (nmm > 1e-6) {
+          var tx = -ndy / nmm, ty = ndx / nmm;                  // coast tangent (⟂ to normal)
+          if (tx * cdx + ty * cdy < 0) { tx = -tx; ty = -ty; }  // keep stroke orientation continuous
+          cdx += prox * (tx - cdx); cdy += prox * (ty - cdy);
+          var cm = Math.hypot(cdx, cdy) || 1; cdx /= cm; cdy /= cm;
+        }
+      }
+      drawWave(p.x * W, p.y * H, Math.atan2(cdy, cdx), len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6);
     }
     ctx.restore();
 
