@@ -1967,6 +1967,9 @@
     <!-- ── "Nice to meet you" — community self-introductions ──────────────── -->
     <style>
       #ntmSection { margin:0 0 10px; }
+      @keyframes ntmPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(10,126,164,0); } 50%{ box-shadow:0 0 0 4px rgba(10,126,164,0.22); } }
+      #ntmSection.ntm-attn .ntm-card { animation:ntmPulse 1.6s ease-in-out infinite; border-color:var(--ocean); }
+      @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-card { animation:none; border-color:var(--ocean); } }
       .ntm-card { background:var(--card); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
       .ntm-head { display:flex; align-items:center; gap:11px; padding:11px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
       .ntm-wave { font-size:20px; line-height:1; flex:none; }
@@ -1985,6 +1988,12 @@
       .ntm-meta { font-size:11px; color:var(--dim); margin:3px 0 7px; }
       .ntm-text { font-size:12.5px; line-height:1.55; color:var(--text); white-space:pre-wrap; word-break:break-word; }
       .ntm-empty { font-size:12.5px; color:var(--dim); padding:4px 0 2px; }
+      .ntm-list { max-height:300px; overflow-y:auto; margin-top:4px; -webkit-overflow-scrolling:touch; }
+      .ntm-litem { display:flex; gap:11px; align-items:flex-start; padding:10px 0; }
+      .ntm-litem + .ntm-litem { border-top:1px solid var(--border); }
+      .ntm-avatar.sm { width:42px; height:42px; font-size:16px; }
+      .ntm-name.sm { font-size:18px; }
+      .ntm-litem .ntm-meta { margin:2px 0 5px; }
       .ntm-introbtn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin-top:12px; padding:9px; border:1px dashed rgba(10,126,164,0.4); border-radius:11px; background:transparent; color:var(--ocean); font-family:'DM Mono',monospace; font-size:12px; cursor:pointer; }
       .ntm-footnote { text-align:center; font-size:10px; color:var(--dim); margin-top:9px; }
       .ntm-form { display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
@@ -4532,7 +4541,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260627-010422';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7051,7 +7060,7 @@ if ('serviceWorker' in navigator) {
       '<div class="admin-head"><h3>Section presets &mdash; admin</h3><button class="admin-x" id="adminX" aria-label="Close">&#10005;</button></div>' +
       '<p class="admin-note">Tick which sections appear in each version. Edits preview live <b>on this device</b>. Press <b>Copy config</b> and paste the result over the <code>SECTIONS</code> array in the code to publish for everyone. Metrics &amp; slider are always shown.</p>' +
       '<div class="admin-grid"><div class="admin-ghead"><span class="gl">Section</span><span class="gc">Essential</span><span class="gc">Complete</span></div>' + rows + '</div>' +
-      '<div class="admin-actions"><button id="adminIntros">Review intros</button><button id="adminCopy">Copy config</button><button id="adminReset">Reset to coded</button><button id="adminClose">Done</button></div>' +
+      '<div class="admin-actions"><button id="adminCopy">Copy config</button><button id="adminReset">Reset to coded</button><button id="adminClose">Done</button></div>' +
       '<div class="admin-msg" id="adminMsg"></div>' +
       '<textarea class="admin-out" id="adminOut" readonly></textarea></div>';
     document.body.appendChild(ov);
@@ -7078,8 +7087,6 @@ if ('serviceWorker' in navigator) {
     var closeA = function () { ov.classList.remove('show'); };
     ov.querySelector('#adminX').addEventListener('click', closeA);
     ov.querySelector('#adminClose').addEventListener('click', closeA);
-    var aIntros = ov.querySelector('#adminIntros');
-    if (aIntros) aIntros.addEventListener('click', function () { if (window.openIntroAdmin) window.openIntroAdmin(); });
     ov.addEventListener('click', function (ev) { if (ev.target === ov) closeA(); });
   }
   function openAdmin(){ buildAdmin(); refreshAdminChecks(); var ov = document.getElementById('adminOverlay'); if (ov) ov.classList.add('show'); }
@@ -7109,7 +7116,7 @@ if ('serviceWorker' in navigator) {
 <script>
 /* ============================================================================
    "NICE TO MEET YOU" — community self-introductions.
-   Backend: Supabase `intros` table + RPCs (submit_intro / get_today_intro /
+   Backend: Supabase `intros` table + RPCs (submit_intro / get_recent_intros /
    admin_list_intros / admin_approve_intro / admin_hide_intro) and the public
    `intro-photos` Storage bucket. Admin actions reuse the ?token= admin key
    (camToken), checked server-side against app_secrets.intro_admin_token.
@@ -7119,6 +7126,7 @@ if ('serviceWorker' in navigator) {
   var KEY  = (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : '';
   var RPC  = SB + '/rest/v1/rpc/';
   var hdrs = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+  var attnId = null;
 
   function $(id){ return document.getElementById(id); }
   function token(){ try { return (typeof camToken === 'function') ? camToken() : (localStorage.getItem('swim_admin_token') || ''); } catch (e) { return ''; } }
@@ -7165,32 +7173,57 @@ if ('serviceWorker' in navigator) {
   /* public: today's featured intro + queue count */
   async function loadToday(){
     try {
-      var r = await fetch(RPC + 'get_today_intro', { method: 'POST', headers: hdrs, body: '{}' });
+      var r = await fetch(RPC + 'get_recent_intros', { method: 'POST', headers: hdrs, body: '{}' });
       if (!r.ok) return;
-      var rows = await r.json(); var row = Array.isArray(rows) ? rows[0] : rows;
-      render(row || {});
+      var data = await r.json();
+      render(data || {});
     } catch (e) {}
   }
-  function render(row){
-    var featured = row && row.name;
-    var queued = (row && row.queued) ? row.queued : 0;
+  function fmtDate(d){
+    try {
+      var p = String(d).split('-'); var dt = new Date(+p[0], +p[1] - 1, +p[2]);
+      var t = new Date(); t.setHours(0, 0, 0, 0);
+      var diff = Math.round((t - dt) / 86400000);
+      if (diff <= 0) return 'today';
+      if (diff === 1) return 'yesterday';
+      if (diff < 7) return diff + ' days ago';
+      return dt.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+    } catch (e) { return ''; }
+  }
+  function render(data){
+    var list = (data && data.intros) ? data.intros : [];
+    var queued = (data && data.queued) ? data.queued : 0;
+    var sec = $('ntmSection');
     var sub = $('ntmSub'), pill = $('ntmPill'), intro = $('ntmIntro'), foot = $('ntmFoot');
-    if (sub) sub.textContent = featured ? (row.name + ' said hello today') : 'Be the first to say hello';
+    var newest = list.length ? list[0].id : null;
+    attnId = newest;
+    if (sec) {
+      var seen = false;
+      try { seen = newest && (localStorage.getItem('swim_intro_seen') === String(newest)); } catch (e) {}
+      sec.classList.toggle('ntm-attn', !!(newest && !seen && !sec.classList.contains('ntm-open')));
+    }
+    if (sub) sub.textContent = list.length
+      ? (list.length === 1 ? (list[0].name + ' said hello') : (list.length + ' recent hellos'))
+      : 'Be the first to say hello';
     if (pill) { if (queued > 0) { pill.textContent = '+' + queued + ' waiting'; pill.hidden = false; } else pill.hidden = true; }
     if (intro) {
-      if (featured) {
-        var av = row.photo_url
-          ? '<img class="ntm-avatar" src="' + esc(row.photo_url) + '" alt="">'
-          : '<div class="ntm-avatar">' + esc(initials(row.name)) + '</div>';
-        intro.innerHTML = '<div class="ntm-intro">' + av +
-          '<div style="flex:1;min-width:0;"><div class="ntm-name">' + esc(row.name) + '</div>' +
-          '<div class="ntm-meta">said hello &middot; today</div>' +
-          '<div class="ntm-text">' + esc(row.body) + '</div></div></div>';
+      if (list.length) {
+        intro.innerHTML = '<div class="ntm-list">' + list.map(function (x) {
+          var av = x.photo_url
+            ? '<img class="ntm-avatar sm" src="' + esc(x.photo_url) + '" alt="">'
+            : '<div class="ntm-avatar sm">' + esc(initials(x.name)) + '</div>';
+          return '<div class="ntm-litem">' + av +
+            '<div style="flex:1;min-width:0;"><div class="ntm-name sm">' + esc(x.name) + '</div>' +
+            '<div class="ntm-meta">' + esc(fmtDate(x.publish_date)) + '</div>' +
+            '<div class="ntm-text">' + esc(x.body) + '</div></div></div>';
+        }).join('') + '</div>';
       } else {
-        intro.innerHTML = '<div class="ntm-empty">No hello yet today &mdash; want to be the first?</div>';
+        intro.innerHTML = '<div class="ntm-empty">No hellos yet &mdash; want to be the first?</div>';
       }
     }
-    if (foot) foot.textContent = queued > 0 ? ('a new hello each day &middot; ' + queued + ' in the queue') : 'a new hello appears here each day';
+    if (foot) foot.textContent = queued > 0
+      ? ('hellos stay for a week \u00B7 ' + queued + ' more in the queue')
+      : 'hellos stay in the list for a week';
   }
 
   /* submit */
@@ -7222,27 +7255,31 @@ if ('serviceWorker' in navigator) {
     css.textContent =
       "#introAdminOverlay{position:fixed;inset:0;z-index:100001;display:none;align-items:flex-start;justify-content:center;background:rgba(6,40,55,.55);overflow:auto;padding:24px 12px;font-family:'DM Mono',ui-monospace,monospace;}" +
       "#introAdminOverlay.show{display:flex;}" +
-      ".ia-modal{background:#fff;color:var(--text,#0d2b3e);border-radius:16px;max-width:520px;width:100%;padding:18px;box-shadow:0 18px 60px rgba(6,40,55,.4);}" +
+      ".ia-modal{background:#fff;color:var(--text,#0d2b3e);border-radius:16px;max-width:520px;width:100%;padding:18px;box-shadow:0 18px 60px rgba(6,40,55,.4);max-height:85vh;overflow:auto;}" +
       ".ia-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}" +
       ".ia-head h3{margin:0;font-size:15px;letter-spacing:.4px;}" +
       ".ia-x{border:none;background:transparent;font-size:18px;color:var(--dim,#5a8a9f);cursor:pointer;line-height:1;}" +
       ".ia-note{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.45;margin:0 0 12px;}" +
       ".ia-note code{background:rgba(10,126,164,.1);padding:1px 4px;border-radius:4px;}" +
+      ".ia-sec-h{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim,#5a8a9f);margin:14px 0 6px;}" +
       ".ia-row{display:flex;gap:10px;align-items:center;border:1px solid var(--border,#e1ecf0);border-radius:12px;padding:10px;margin-bottom:8px;}" +
       ".ia-av{flex:none;width:40px;height:40px;border-radius:50%;object-fit:cover;background:#5a8a9f;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:16px;}" +
       ".ia-tx{flex:1;min-width:0;}" +
       ".ia-nm{font-size:13px;color:var(--deep,#064e6e);}" +
-      ".ia-bd{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.4;margin-top:2px;}" +
-      ".ia-btn{flex:none;width:32px;height:32px;border-radius:9px;font-size:15px;cursor:pointer;}" +
+      ".ia-when{color:var(--dim,#5a8a9f);}" +
+      ".ia-bd{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.4;margin-top:2px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}" +
+      ".ia-acts{display:flex;gap:5px;flex:none;}" +
+      ".ia-btn{flex:none;width:32px;height:32px;border-radius:9px;font-size:14px;cursor:pointer;line-height:1;}" +
       ".ia-ok{border:none;background:var(--green,#1a9e6e);color:#fff;}" +
+      ".ia-now{border:1px solid var(--ocean,#0a7ea4);background:#fff;color:var(--ocean,#0a7ea4);}" +
       ".ia-no{border:1px solid rgba(192,57,43,.4);background:#fff;color:var(--red,#c0392b);}" +
       ".ia-empty{font-size:12px;color:var(--dim,#5a8a9f);text-align:center;padding:18px 0;}";
     document.head.appendChild(css);
     var ov = document.createElement('div'); ov.id = 'introAdminOverlay';
     ov.innerHTML =
       '<div class="ia-modal">' +
-      '<div class="ia-head"><h3>Nice to meet you &mdash; pending</h3><button class="ia-x" id="iaX" aria-label="Close">&#10005;</button></div>' +
-      '<p class="ia-note">Approve to add an intro to the queue (one shows per day). Reject hides it. Needs your admin token in the URL (<code>?token=&hellip;</code>).</p>' +
+      '<div class="ia-head"><h3>Nice to meet you &mdash; manage</h3><button class="ia-x" id="iaX" aria-label="Close">&#10005;</button></div>' +
+      '<p class="ia-note">&#10003; approve (shows on its day) &middot; &#9889; show now (skip the wait) &middot; &#128465; delete. Needs your admin token (<code>?token=&hellip;</code>).</p>' +
       '<div id="iaList"><div class="ia-empty">Loading…</div></div>' +
       '</div>';
     document.body.appendChild(ov);
@@ -7252,44 +7289,113 @@ if ('serviceWorker' in navigator) {
     ov.querySelector('#iaList').addEventListener('click', function (ev) {
       var b = ev.target.closest('.ia-btn'); if (!b) return;
       var rowEl = b.closest('.ia-row'); if (!rowEl) return;
-      act(rowEl.getAttribute('data-id'), b.getAttribute('data-act') === 'ok');
+      act(rowEl.getAttribute('data-id'), b.getAttribute('data-act'));
     });
   }
-  async function loadPending(){
+  function actBtn(a){
+    if (a === 'approve') return '<button class="ia-btn ia-ok" data-act="approve" title="Approve (shows on its day)" aria-label="Approve">&#10003;</button>';
+    if (a === 'force')   return '<button class="ia-btn ia-now" data-act="force" title="Show now" aria-label="Show now">&#9889;</button>';
+    if (a === 'del')     return '<button class="ia-btn ia-no" data-act="del" title="Delete" aria-label="Delete">&#128465;</button>';
+    return '';
+  }
+  function introRow(x, acts){
+    var av = x.photo_url ? '<img class="ia-av" src="' + esc(x.photo_url) + '" alt="">' : '<div class="ia-av">' + esc(initials(x.name)) + '</div>';
+    var when = x.publish_date ? fmtDate(x.publish_date) : 'not scheduled';
+    return '<div class="ia-row" data-id="' + esc(x.id) + '">' + av +
+      '<div class="ia-tx"><div class="ia-nm">' + esc(x.name) + ' <span class="ia-when">&middot; ' + esc(when) + '</span></div>' +
+      '<div class="ia-bd">' + esc(x.body) + '</div></div>' +
+      '<div class="ia-acts">' + acts.map(actBtn).join('') + '</div></div>';
+  }
+  function section(title, items, acts){
+    if (!items.length) return '';
+    return '<div class="ia-sec-h">' + esc(title) + ' (' + items.length + ')</div>' +
+      items.map(function (x) { return introRow(x, acts); }).join('');
+  }
+  async function loadAdminList(){
     var list = $('iaList'); if (!list) return;
     var tk = token();
-    if (!tk) { list.innerHTML = '<div class="ia-empty">No admin token — add <code>?token=…</code> to the URL.</div>'; return; }
+    if (!tk) { list.innerHTML = '<div class="ia-empty">No admin token — add <code>?token=…</code> to the URL.</div>'; updateFab(-1); return; }
     list.innerHTML = '<div class="ia-empty">Loading…</div>';
     try {
-      var r = await fetch(RPC + 'admin_list_intros', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
+      var r = await fetch(RPC + 'admin_all_intros', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
       if (!r.ok) throw new Error('HTTP ' + r.status);
-      var rows = await r.json();
-      if (!rows || !rows.length) { list.innerHTML = '<div class="ia-empty">Nothing waiting.</div>'; return; }
-      list.innerHTML = rows.map(function (x) {
-        var av = x.photo_url ? '<img class="ia-av" src="' + esc(x.photo_url) + '" alt="">' : '<div class="ia-av">' + esc(initials(x.name)) + '</div>';
-        return '<div class="ia-row" data-id="' + esc(x.id) + '">' + av +
-          '<div class="ia-tx"><div class="ia-nm">' + esc(x.name) + '</div><div class="ia-bd">' + esc(x.body) + '</div></div>' +
-          '<button class="ia-btn ia-ok" data-act="ok" aria-label="Approve">&#10003;</button>' +
-          '<button class="ia-btn ia-no" data-act="no" aria-label="Reject">&#10005;</button></div>';
-      }).join('');
-    } catch (e) { list.innerHTML = '<div class="ia-empty">Couldn\u2019t load (token may be wrong).</div>'; }
+      var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
+      var g = { pending: [], live: [], queued: [], past: [], hidden: [] };
+      rows.forEach(function (x) { (g[x.bucket] || g.past).push(x); });
+      updateFab(g.pending.length);
+      var html =
+        section('Pending approval', g.pending, ['approve', 'force', 'del']) +
+        section('Showing now', g.live, ['del']) +
+        section('Queued', g.queued, ['force', 'del']) +
+        section('Past — off the list', g.past, ['force', 'del']) +
+        section('Rejected', g.hidden, ['force', 'del']);
+      list.innerHTML = html || '<div class="ia-empty">No intros yet.</div>';
+    } catch (e) { list.innerHTML = '<div class="ia-empty">Couldn\u2019t load (token may be wrong).</div>'; updateFab(-1); }
   }
-  async function act(id, ok){
+  async function act(id, action){
     var tk = token(); if (!tk) return;
-    var fn = ok ? 'admin_approve_intro' : 'admin_hide_intro';
+    var map = { approve: 'admin_approve_intro', force: 'admin_force_publish', del: 'admin_delete_intro' };
+    var fn = map[action]; if (!fn) return;
+    if (action === 'del' && !window.confirm('Delete this intro permanently?')) return;
     try {
       var r = await fetch(RPC + fn, { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: id }) });
-      if (r.ok) { loadPending(); loadToday(); }
+      if (r.ok) { loadAdminList(); loadToday(); }
     } catch (e) {}
   }
-  function openIntroAdmin(){ buildAdminOverlay(); var ov = $('introAdminOverlay'); if (ov) ov.classList.add('show'); loadPending(); }
+  /* standalone admin entry pill — separate from the section-presets admin.
+     Visible only when an admin token is cached; turns red with a count when
+     intros are waiting for approval. */
+  function ensureFab(){
+    if ($('introAdminFab')) return $('introAdminFab');
+    var css = document.createElement('style');
+    css.textContent =
+      "#introAdminFab{position:fixed;right:14px;bottom:74px;z-index:99990;display:none;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;border:1px solid var(--ocean,#0a7ea4);background:#fff;color:var(--ocean,#0a7ea4);font-family:'DM Mono',ui-monospace,monospace;font-size:12px;letter-spacing:.3px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
+      "#introAdminFab.show{display:inline-flex;}" +
+      "#introAdminFab .fab-dot{display:none;}" +
+      "#introAdminFab.has-pending{background:var(--red,#c0392b);border-color:var(--red,#c0392b);color:#fff;}" +
+      "#introAdminFab.has-pending .fab-dot{display:inline-block;min-width:18px;height:18px;border-radius:999px;background:#fff;color:var(--red,#c0392b);font-size:11px;line-height:18px;text-align:center;padding:0 5px;font-weight:700;}" +
+      "@media (prefers-reduced-motion: no-preference){#introAdminFab.has-pending{animation:ntmPulse 1.6s ease-in-out infinite;}}";
+    document.head.appendChild(css);
+    var b = document.createElement('button'); b.id = 'introAdminFab'; b.type = 'button';
+    b.setAttribute('aria-label', 'Review intros');
+    b.innerHTML = '<span class="fab-dot" id="fabDot">0</span><span id="fabLabel">Review intros</span>';
+    b.addEventListener('click', openIntroAdmin);
+    document.body.appendChild(b);
+    return b;
+  }
+  function updateFab(count){
+    var b = ensureFab();
+    if (count == null || count < 0) { b.classList.remove('show', 'has-pending'); return; }
+    b.classList.add('show');
+    var dot = $('fabDot'), lab = $('fabLabel');
+    if (count > 0) { b.classList.add('has-pending'); if (dot) dot.textContent = count; if (lab) lab.textContent = (count === 1 ? '1 to review' : count + ' to review'); }
+    else { b.classList.remove('has-pending'); if (lab) lab.textContent = 'Review intros'; }
+  }
+  async function refreshAdminFab(){
+    var tk = token(); if (!tk) { updateFab(-1); return; }
+    try {
+      var r = await fetch(RPC + 'admin_list_intros', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
+      if (!r.ok) { updateFab(-1); return; }
+      var rows = await r.json(); updateFab((rows && rows.length) || 0);
+    } catch (e) { updateFab(-1); }
+  }
+
+  function openIntroAdmin(){ buildAdminOverlay(); var ov = $('introAdminOverlay'); if (ov) ov.classList.add('show'); loadAdminList(); }
   window.openIntroAdmin = openIntroAdmin;
 
   /* wire up */
   function init(){
     var head = $('ntmHead'); if (!head) return;
     var sec = $('ntmSection');
-    function toggle(){ sec.classList.toggle('ntm-open'); head.setAttribute('aria-expanded', sec.classList.contains('ntm-open') ? 'true' : 'false'); }
+    function toggle(){
+      var open = !sec.classList.contains('ntm-open');
+      sec.classList.toggle('ntm-open', open);
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open && attnId != null) {
+        try { localStorage.setItem('swim_intro_seen', String(attnId)); } catch (e) {}
+        sec.classList.remove('ntm-attn');
+      }
+    }
     head.addEventListener('click', toggle);
     head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
     var ib = $('ntmIntroBtn'); if (ib) ib.addEventListener('click', function () { sec.classList.add('ntm-form-open'); var n = $('ntmName'); if (n) n.focus(); });
@@ -7304,6 +7410,7 @@ if ('serviceWorker' in navigator) {
     var sb = $('ntmSend'); if (sb) sb.addEventListener('click', submit);
     if (/[?&]intros=1(\b|&|$)/.test(location.search)) openIntroAdmin();
     loadToday();
+    refreshAdminFab();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
