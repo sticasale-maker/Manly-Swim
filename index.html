@@ -4325,7 +4325,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-140316';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6360,7 +6360,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   var REEF_ANG = 60 * Math.PI / 180;         // ridge orientation (screen deg, down-right toward open sea)
   var REEF_LONG = 0.13, REEF_CROSS = 0.05;   // ridge half-length / half-width (normalised)
   var REEF_RISE = 17;      // m the seabed rises over the reef crest
-  var REFRACT_K  = 2.2;    // how hard rays bend toward shallow water (0 = straight, higher = more)
+  var REFRACT_K  = 5.5;    // how hard rays bend toward shallow water (0 = straight, higher = more). Raised from 2.2 so rays visibly refract around the Bower headland (verified the near-headland bend ~3x without over-bending open water).
   var DEPTH_TINT = true;   // faint depth shading under the rays so the bathymetry is visible
   var _depthCanvas = document.createElement('canvas'), _dctx = _depthCanvas.getContext('2d');
 
@@ -6501,7 +6501,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   }
   function computeField(fromDeg, period) {
     var R = clamp((period - 4) / (15 - 4), 0, 1), maxBend = R * 90;
-    var influence = R * 12;  // cells over which the near-shore wrap steers swell into the lee
+    var influence = 3 + R * 16;  // cells over which the near-shore wrap steers swell into the lee. Baseline +3 so even short-period (e.g. 7s ESE) bends near the headland instead of running straight in.
     _stepPx = W / gridW; _maxSteps = Math.ceil((W + H) / _stepPx) + 4;
     fieldH = new Float32Array(gridW * gridH);
     fieldDX = new Float32Array(gridW * gridH);
