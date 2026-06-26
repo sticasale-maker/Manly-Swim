@@ -4325,7 +4325,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-131739';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6130,9 +6130,19 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   }
   function buildMask() {
     mask = new Uint8Array(gridW * gridH);
+    // Land test runs in NORMALISED polygon space (even-odd ray cast against LAND),
+    // not via ctx.isPointInPath. isPointInPath is evaluated under the context's
+    // dpr transform, so on high-DPR phones (devicePixelRatio 2-3) it returned a
+    // wrong/near-empty mask — which flattened the refraction field (straight rays,
+    // no headland shadow → swell appeared to pass through the headland). Pure-JS
+    // polygon test is transform-independent, so every device matches desktop.
     for (var gy = 0; gy < gridH; gy++) for (var gx = 0; gx < gridW; gx++) {
-      var px = (gx + 0.5) * W / gridW, py = (gy + 0.5) * H / gridH;
-      mask[gy * gridW + gx] = ctx.isPointInPath(landPath, px, py) ? 1 : 0;
+      var nx = (gx + 0.5) / gridW, ny = (gy + 0.5) / gridH, inside = false;
+      for (var a = 0, b = LAND.length - 1; a < LAND.length; b = a++) {
+        var xi = LAND[a][0], yi = LAND[a][1], xj = LAND[b][0], yj = LAND[b][1];
+        if (((yi > ny) !== (yj > ny)) && (nx < (xj - xi) * (ny - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      mask[gy * gridW + gx] = inside ? 1 : 0;
     }
   }
   function computeField(deg) {
@@ -6376,9 +6386,19 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   }
   function buildMask() {
     mask = new Uint8Array(gridW * gridH);
+    // Land test runs in NORMALISED polygon space (even-odd ray cast against LAND),
+    // not via ctx.isPointInPath. isPointInPath is evaluated under the context's
+    // dpr transform, so on high-DPR phones (devicePixelRatio 2-3) it returned a
+    // wrong/near-empty mask — which flattened the refraction field (straight rays,
+    // no headland shadow → swell appeared to pass through the headland). Pure-JS
+    // polygon test is transform-independent, so every device matches desktop.
     for (var gy = 0; gy < gridH; gy++) for (var gx = 0; gx < gridW; gx++) {
-      var px = (gx + 0.5) * W / gridW, py = (gy + 0.5) * H / gridH;
-      mask[gy * gridW + gx] = ctx.isPointInPath(landPath, px, py) ? 1 : 0;
+      var nx = (gx + 0.5) / gridW, ny = (gy + 0.5) / gridH, inside = false;
+      for (var a = 0, b = LAND.length - 1; a < LAND.length; b = a++) {
+        var xi = LAND[a][0], yi = LAND[a][1], xj = LAND[b][0], yj = LAND[b][1];
+        if (((yi > ny) !== (yj > ny)) && (nx < (xj - xi) * (ny - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      mask[gy * gridW + gx] = inside ? 1 : 0;
     }
   }
   function rayClear(x, y, ux, uy) {
