@@ -4325,7 +4325,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-141242';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6693,18 +6693,13 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   var POOL = 200, parts = [];
   for (var i = 0; i < POOL; i++) parts.push({ x: Math.random(), y: Math.random(), s1: Math.random(), s2: Math.random() });
 
-  function drawWave(x, y, crest, len, amp, col, alpha, foam, bow) {
-    // bow (signed, ~-1..1) skews the crest apex sideways so the stroke WRAPS with
-    // the local refraction instead of bowing straight downstream. Set at the call
-    // site from the field's turn. 0 = symmetric (straight-running swell).
-    bow = bow || 0;
-    var sk = bow * len * 0.16;
+  function drawWave(x, y, crest, len, amp, col, alpha, foam) {
     ctx.save(); ctx.translate(x, y); ctx.rotate(crest);
     ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, amp * 0.5); ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.quadraticCurveTo(sk, -amp, len / 2, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.quadraticCurveTo(0, -amp, len / 2, 0); ctx.stroke();
     if (foam) {
       ctx.globalAlpha = alpha * 0.8; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, amp * 0.35);
-      ctx.beginPath(); ctx.moveTo(-len * 0.22, -amp * 0.55); ctx.quadraticCurveTo(sk, -amp * 1.05, len * 0.22, -amp * 0.55); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-len * 0.22, -amp * 0.55); ctx.quadraticCurveTo(0, -amp * 1.05, len * 0.22, -amp * 0.55); ctx.stroke();
     }
     ctx.restore(); ctx.globalAlpha = 1;
   }
@@ -6790,15 +6785,10 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       var amp = (0.006 + hN * 0.010) * W * (0.8 + 0.4 * p.s1);  // crest weight from height
       var len = (0.05 + hN * 0.055) * W;                        // bigger swell = longer crests
       var ang = Math.atan2(vy, vx);
-      // Crest WRAPS with the refraction: sample the field a step ahead; the turn
-      // (cross product) decides which way the stroke leans, scaled by how hard the
-      // ray is bending. If crests ever read like they curl the WRONG way, flip the
-      // sign of the 6 below to -6 (single-character change).
-      var fax = samp(fieldDX, p.x + vx * 0.04, p.y + vy * 0.04);
-      var fay = samp(fieldDY, p.x + vx * 0.04, p.y + vy * 0.04);
-      var fam = Math.hypot(fax, fay) || 1; fax /= fam; fay /= fam;
-      var bow = clamp((vx * fay - vy * fax) * 6, -1, 1);
-      drawWave(p.x * W, p.y * H, ang + Math.PI / 2, len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6, bow);
+      // Crest is drawn perpendicular to the LOCAL travel direction, so it always
+      // reads square to the arrows that follow that same field. (A sideways lean
+      // here made the crest look like it pointed a different way to the arrow.)
+      drawWave(p.x * W, p.y * H, ang + Math.PI / 2, len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6);
     }
     ctx.restore();
 
