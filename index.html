@@ -1689,6 +1689,103 @@
   <!-- SNAPSHOT TAB -->
   <div class="view-panel active" id="panel-snapshot">
 
+    <!-- Essential / Complete detail toggle (choice persists across refresh) -->
+    <style>
+      .sec-hidden { display: none !important; }
+      .mode-toggle-row { display: flex; justify-content: center; margin: 2px 0 12px; }
+      .mode-toggle { display: inline-flex; gap: 0; background: var(--card); border: 1px solid var(--border);
+        border-radius: 999px; padding: 3px; font-family: 'DM Mono', ui-monospace, monospace; }
+      .mode-toggle button { border: none; background: transparent; cursor: pointer; padding: 6px 18px;
+        border-radius: 999px; font: inherit; font-size: 12px; letter-spacing: .4px; color: var(--dim);
+        transition: background .15s ease, color .15s ease; }
+      .mode-toggle button.active { background: var(--ocean); color: #fff; }
+      .custom-panel { display: none; max-width: 420px; margin: 0 auto 14px; padding: 10px 14px;
+        background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+        font-family: 'DM Mono', ui-monospace, monospace; }
+      .custom-panel.show { display: block; }
+      .custom-panel h4 { margin: 2px 0 6px; font-size: 10.5px; letter-spacing: .6px; color: var(--dim);
+        text-transform: uppercase; font-weight: 600; }
+      .custom-row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; font-size: 13px; color: var(--text); }
+      .custom-row + .custom-row { border-top: 1px solid var(--border); }
+      .custom-row input { width: 16px; height: 16px; accent-color: var(--ocean); cursor: pointer; flex: none; }
+      .custom-row label { flex: 1; cursor: pointer; }
+      .custom-row.locked { color: var(--dim); }
+      .custom-row.locked input { cursor: not-allowed; }
+      .custom-row .lock-tag { font-size: 10px; color: var(--dim); letter-spacing: .3px; }
+      .custom-head { display: flex; align-items: center; justify-content: space-between; }
+      .custom-x { border: none; background: transparent; color: var(--dim); font-size: 15px; line-height: 1;
+        cursor: pointer; padding: 2px 4px; }
+      .custom-save { display: block; width: 100%; margin-top: 10px; padding: 10px; border: none; border-radius: 10px;
+        background: var(--ocean); color: #fff; font-family: inherit; font-size: 14px; font-weight: 700;
+        letter-spacing: .3px; cursor: pointer; }
+
+      /* "Slider only" metric layout — hides the pictogram, rail spans full width */
+      body.metrics-noicon .metric-icon { display: none !important; }
+      body.metrics-noicon .metric-block {
+        grid-template-columns: 1fr;
+        grid-template-areas: "header" "track" "labels" "assess";
+      }
+      body.vrail.metrics-noicon .metric-block {
+        grid-template-columns: auto 1fr;
+        grid-template-areas: "header header" "track labels" "assess assess";
+      }
+
+      /* indicator-style chooser (two live examples) inside the Custom panel */
+      .ind-head { margin: 14px 0 7px; font-size: 10.5px; letter-spacing: .6px; color: var(--dim); text-transform: uppercase; font-weight: 600; }
+      .ind-choice { display: flex; gap: 10px; }
+      .ind-opt { flex: 1; min-width: 0; background: var(--foam); border: 2px solid var(--border); border-radius: 12px;
+        padding: 10px; cursor: pointer; font-family: inherit; }
+      .ind-opt[aria-pressed="true"] { border-color: var(--ocean); background: #fff; }
+      .ind-label { margin-top: 9px; font-size: 12px; color: var(--text); text-align: center; }
+      .ind-demo { display: grid; align-items: center; gap: 8px; }
+      .ind-demo-pic { grid-template-columns: auto 1fr; }
+      .ind-demo-bar { grid-template-columns: 1fr; }
+      .ind-demo-img { width: 54px; height: 27px; object-fit: cover; border-radius: 6px; display: block; }
+      .ind-demo-track { position: relative; height: 12px; }
+      .ind-demo-rail { position: absolute; top: 50%; left: 0; right: 0; height: 8px; transform: translateY(-50%);
+        border-radius: 4px; overflow: hidden; display: flex; }
+      .ind-demo-rail span { flex: 1; }
+      .ind-demo-dot { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%;
+        transform: translate(-50%, -50%); background: #fff; border: 2px solid var(--green); box-shadow: 0 0 0 1px var(--green); }
+    </style>
+    <div class="mode-toggle-row">
+      <div class="mode-toggle" id="modeToggle" role="group" aria-label="App detail level">
+        <button type="button" data-mode="essential" aria-pressed="false">Essential</button>
+        <button type="button" data-mode="complete" aria-pressed="true">Complete</button>
+        <button type="button" data-mode="custom" aria-pressed="false">Custom</button>
+      </div>
+    </div>
+    <div class="custom-panel" id="customPanel" aria-label="Choose sections">
+      <div class="custom-head"><h4>Choose what to show</h4><button type="button" id="customClose" class="custom-x" aria-label="Close">✕</button></div>
+      <div id="customList"></div>
+
+      <div class="ind-head">Entry / Swim / Surge indicators</div>
+      <div class="ind-choice" id="indChoice" role="group" aria-label="Indicator style">
+        <button type="button" class="ind-opt" data-ind="pic" aria-pressed="true">
+          <div class="ind-demo ind-demo-pic">
+            <img class="ind-demo-img" src="images/entry-easy.png" alt="">
+            <div class="ind-demo-track">
+              <div class="ind-demo-rail"><span style="background:var(--green)"></span><span style="background:var(--amber)"></span><span style="background:var(--yellow)"></span><span style="background:var(--red)"></span></div>
+              <i class="ind-demo-dot" style="left:18%"></i>
+            </div>
+          </div>
+          <div class="ind-label">Picture + slider</div>
+        </button>
+        <button type="button" class="ind-opt" data-ind="bar" aria-pressed="false">
+          <div class="ind-demo ind-demo-bar">
+            <div class="ind-demo-track">
+              <div class="ind-demo-rail"><span style="background:var(--green)"></span><span style="background:var(--amber)"></span><span style="background:var(--yellow)"></span><span style="background:var(--red)"></span></div>
+              <i class="ind-demo-dot" style="left:18%"></i>
+            </div>
+          </div>
+          <div class="ind-label">Slider only</div>
+        </button>
+      </div>
+
+      <button type="button" id="customSave" class="custom-save">Save</button>
+    </div>
+
+
     <!-- Calibration bar (TUNE mode only) -->
     <div id="calib-bar">
       <input type="file" id="cam-files" accept="image/*" multiple style="display:none" onchange="onCamFiles(this)">
@@ -1826,6 +1923,18 @@
       </div>
     </div>
 
+    <!-- Bluebottle reports strip — community reports (Supabase) for the last 24h -->
+    <div id="bbSection">
+      <div class="bb-strip" id="bbStrip">
+        <div class="bb-icon">🪼</div>
+        <div class="bb-body">
+          <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
+          <div class="bb-sub" id="bbSub"></div>
+        </div>
+        <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+      </div>
+    </div>
+
     <!-- Swell map for the selected hour (fed by forecast swell + ENTRY) -->
     <div class="chop-graph-wrap" id="swellGraphWrap">
       <div class="chop-graph-head">
@@ -1837,7 +1946,7 @@
       </div>
       <canvas class="chop-graph-canvas" id="swellCanvas" aria-label="Swell refracting around the headland into Cabbage Tree Bay for the selected hour"></canvas>
       <div class="chop-graph-legend">
-        <span>Sheltered / small</span><span class="chop-grad-swell"></span><span>Exposed / big</span>
+        <span>Arrows trace the swell into the bay &middot; brighter &amp; longer = more energy</span>
       </div>
     </div>
 
@@ -2010,7 +2119,7 @@
     </div>
 
 <!-- Feedback -->
-    <div class="about-panel" style="padding:20px;margin-top:10px;">
+    <div class="about-panel" id="feedbackCard" style="padding:20px;margin-top:10px;">
       <p style="color:var(--dim); font-size:13px; margin-bottom:16px;">Not quite right? Tell us why and help improve the model.</p>
       <form id="feedbackForm" onsubmit="submitFeedback(event)">
         <input id="feedbackContact" type="text" required placeholder="Name or email (required)"
@@ -4325,7 +4434,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-153800';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6329,504 +6438,197 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   var ctx = cv.getContext('2d');
 
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
-  function lerp(a, b, t) { return a + (b - a) * t; }
-  function hx(h) { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
-  function mix(a, b, t) { return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * t) + ',' + Math.round(a[1] + (b[1] - a[1]) * t) + ',' + Math.round(a[2] + (b[2] - a[2]) * t) + ')'; }
-  var STOPS = [[0, hx('#1a9e6e')], [0.4, hx('#8dae2a')], [0.7, hx('#d4900a')], [1, hx('#c0392b')]];
-  function heightColor(r) { r = clamp(r, 0, 1); for (var i = 0; i < STOPS.length - 1; i++) { if (r <= STOPS[i + 1][0]) { var t = (r - STOPS[i][0]) / (STOPS[i + 1][0] - STOPS[i][0]); return mix(STOPS[i][1], STOPS[i + 1][1], t); } } return 'rgb(192,57,43)'; }
-  function dir16(d) { var n = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']; return n[Math.round(d / 22.5) % 16]; }
+  function dir16(d) { var n = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']; return n[Math.round(((d % 360) + 360) % 360 / 22.5) % 16]; }
 
-  var LAND = [[0,0.0902],[0,0.9985],[0.9993,0.9985],[0.9993,0.9837],[0.9913,0.9808],[0.9718,0.9393],[0.9725,0.9112],[0.9624,0.8802],[0.9501,0.8639],[0.9407,0.8609],[0.9306,0.8462],[0.9212,0.8402],[0.9197,0.8328],[0.9205,0.8225],[0.9168,0.8092],[0.914,0.7825],[0.8944,0.7382],[0.8648,0.642],[0.8518,0.6154],[0.8438,0.5814],[0.8395,0.5784],[0.8236,0.5799],[0.8178,0.5769],[0.8069,0.5636],[0.7997,0.5473],[0.7939,0.5222],[0.7816,0.4837],[0.7672,0.4601],[0.7491,0.4527],[0.7072,0.4157],[0.6876,0.4157],[0.6623,0.4231],[0.6522,0.4334],[0.6471,0.4438],[0.6406,0.4704],[0.6385,0.4896],[0.6399,0.5237],[0.6508,0.5385],[0.6667,0.5799],[0.6797,0.5917],[0.6898,0.6183],[0.6913,0.6287],[0.6905,0.6701],[0.684,0.7027],[0.6681,0.7485],[0.6631,0.7559],[0.6573,0.7589],[0.6558,0.7633],[0.6349,0.7633],[0.5727,0.7352],[0.4729,0.7411],[0.4187,0.7678],[0.4013,0.7707],[0.3796,0.7692],[0.3738,0.7633],[0.3449,0.75],[0.3391,0.7382],[0.3369,0.7263],[0.3268,0.6982],[0.3167,0.6908],[0.3095,0.6908],[0.3015,0.676],[0.2936,0.6154],[0.2842,0.5828],[0.2646,0.5473],[0.2495,0.5104],[0.2336,0.4497],[0.2263,0.4098],[0.2176,0.3876],[0.209,0.3787],[0.1967,0.3787],[0.1916,0.3861],[0.1837,0.4068],[0.1786,0.4112],[0.1728,0.4305],[0.1612,0.4423],[0.1547,0.4438],[0.1453,0.4349],[0.1302,0.4275],[0.1114,0.4083],[0.0716,0.3565],[0.0593,0.3254],[0.0484,0.3047],[0.0434,0.2885],[0.0145,0.1169]];
+  // Coastline of Cabbage Tree Bay (normalized 0..1, true geographic aspect 0.4888), traced from the proportionate map.
+  var LAND = [[0.0,0.0888],[0.0,0.9985],[0.9993,0.9985],[0.9993,0.9822],[0.9935,0.9822],[0.9725,0.9379],[0.9732,0.9112],[0.9653,0.8846],[0.9537,0.8654],[0.9407,0.8595],[0.9306,0.8447],[0.9234,0.8417],[0.9212,0.8373],[0.9212,0.821],[0.9168,0.8033],[0.9154,0.784],[0.8944,0.7352],[0.8655,0.6405],[0.8518,0.6124],[0.8445,0.5799],[0.8395,0.5769],[0.8236,0.5784],[0.8178,0.5754],[0.8084,0.5636],[0.8012,0.5488],[0.7961,0.5266],[0.7809,0.4793],[0.7686,0.4601],[0.7491,0.4512],[0.7072,0.4142],[0.6725,0.4172],[0.6573,0.426],[0.6515,0.432],[0.645,0.4467],[0.6377,0.4896],[0.6392,0.5237],[0.6537,0.5473],[0.6667,0.5814],[0.6753,0.5873],[0.6826,0.5991],[0.684,0.6095],[0.6891,0.6183],[0.6913,0.6391],[0.6884,0.6805],[0.6833,0.7027],[0.6681,0.7456],[0.6558,0.7618],[0.6341,0.7618],[0.5712,0.7337],[0.4729,0.7396],[0.4179,0.7678],[0.3977,0.7707],[0.3803,0.7692],[0.3724,0.7618],[0.3456,0.75],[0.3398,0.7382],[0.3268,0.6967],[0.316,0.6893],[0.3087,0.6893],[0.3008,0.6701],[0.2943,0.6154],[0.2842,0.5799],[0.2683,0.5518],[0.2509,0.5118],[0.2372,0.4615],[0.2285,0.4142],[0.2198,0.3891],[0.209,0.3772],[0.2032,0.3757],[0.1931,0.3802],[0.1822,0.4068],[0.1779,0.4098],[0.1714,0.432],[0.1562,0.4438],[0.1323,0.4275],[0.1128,0.4083],[0.0738,0.358],[0.0499,0.3062],[0.0441,0.2885],[0.0152,0.1198]];
+  var ORIGIN = { x: 0.690, y: 0.400 };   // diffraction turning point, just off the Bower headland tip
 
-  var W = 0, H = 0, dpr = 1, landPath, waterClip, coastStroke;
-  var gridW = 64, gridH = 31, mask = null, fieldH = null, fieldDX = null, fieldDY = null, dist = null, spawns = [], rays = [];
-  var fieldDepth = null, fieldC = null;
-  var _stepPx = 1, _maxSteps = 1;
-  var _sw = 110, _sp = 10, _hgt = 1, _tx = 0.6;   // swell FROM (deg), period (s), height (m), GEM transmit 0..1
-  var _key = '', _lastKey = '~';
+  // ---- baked-in arrow-diffraction config (tuned in the standalone simulator) ----
+  var GAIN = 1.70, PINF = 0.50, CUT = 3, DENS = 9, SIZEN = 0.05, THICK = 3.0, HEADBAND = 12, SPEED = 1.0;
+  var SWELL_FULL = 60;   // forecast swellPower (~2 m / 12 s) at which open-water arrows hit full strength; lower = small swells render bigger
+  function swPower(h, p) { return h * h * Math.pow(Math.max(p, 1), 1.1); }
 
-  // ── Bathymetry (coarse, digitised from the C-MAP soundings + SEED reef shape) ──
-  // Depths in metres: 0 at the shore, deepening offshore, with a shoal RIDGE on the
-  // SEAWARD flank of the Bower headland — the submarine reef that refracts S–SE swell
-  // around into the lee (Cabbage Tree Bay). The numbers below are a believable sketch,
-  // not survey-grade. To match the chart, nudge REEF_* and DEPTH_*; flip DEPTH_TINT on
-  // to SEE the field you're shaping. REEF_X/Y are normalised (0..1) canvas coords.
-  var G_ACCEL    = 9.81;   // gravity (m/s²)
-  var DEPTH_MAX  = 26;     // m — open-ocean depth reached at the seaward edge of the frame
-  var DEPTH_DIST = 17;     // distance-from-shore (grid cells) at which DEPTH_MAX is reached
-  var DEPTH_CURVE= 1.25;   // >1 = gentle nearshore shoal, steeper drop into deep water
-  var DEPTH_MIN  = 0.4;    // m — floor so wave celerity stays finite right at the shore
-  var REEF_X = 0.85, REEF_Y = 0.53;          // ridge centre — seaward flank of the headland
-  var REEF_ANG = 60 * Math.PI / 180;         // ridge orientation (screen deg, down-right toward open sea)
-  var REEF_LONG = 0.13, REEF_CROSS = 0.05;   // ridge half-length / half-width (normalised)
-  var REEF_RISE = 17;      // m the seabed rises over the reef crest
-  var REFRACT_K  = 5.5;    // how hard rays bend toward shallow water (0 = straight, higher = more). Raised from 2.2 so rays visibly refract around the Bower headland (verified the near-headland bend ~3x without over-bending open water).
-  var CREST_HUG  = 10;     // grid-cells from shore over which crest STROKES rotate to run parallel to the coast (real refracting wavefronts wrap to hug the shoreline). 0 = off (crests stay perpendicular to travel everywhere).
-  var DEPTH_TINT = true;   // faint depth shading under the rays so the bathymetry is visible
-  var _depthCanvas = document.createElement('canvas'), _dctx = _depthCanvas.getContext('2d');
+  // even-odd land bitmap for fast point-in-polygon
+  var BW = 200, BH = 160, BITS = new Uint8Array(BW * BH);
+  (function () {
+    for (var r = 0; r < BH; r++) for (var c = 0; c < BW; c++) {
+      var nx = (c + 0.5) / BW, ny = (r + 0.5) / BH, ins = false;
+      for (var a = 0, b = LAND.length - 1; a < LAND.length; b = a++) {
+        var xi = LAND[a][0], yi = LAND[a][1], xj = LAND[b][0], yj = LAND[b][1];
+        if (((yi > ny) !== (yj > ny)) && (nx < (xj - xi) * (ny - yi) / (yj - yi) + xi)) ins = !ins;
+      }
+      BITS[r * BW + c] = ins ? 1 : 0;
+    }
+  })();
+  function landBit(nx, ny) { if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return 0; return BITS[((ny * BH) | 0) * BW + ((nx * BW) | 0)]; }
+  function litCell(nx, ny, dx, dy) { var x = nx, y = ny; for (var s = 0; s < 110; s++) { x -= dx * 0.009; y -= dy * 0.009; if (x < 0 || x > 1 || y < 0 || y > 1) return true; if (landBit(x, y)) return false; } return true; }
 
-  function Pn(p) { return [p[0] * W, p[1] * H]; }
-  function borderSeg(p, q) { var e = 0.005; return (p[0] < e && q[0] < e) || (p[0] > 1 - e && q[0] > 1 - e) || (p[1] < e && q[1] < e) || (p[1] > 1 - e && q[1] > 1 - e); }
+  // energy transmitted (0..100) for a swell direction/period — reuses the app's GEM table
+  function hitAt(d, T) { var g = (typeof gemLookup === 'function') ? gemLookup(clamp(d, 0, 180), T) : 0.5; return g * 100; }
+  // fold any swell-from bearing into the table's 0..180 arc (mirrors the western half, as gemLookup does)
+  function foldDir(d) { d = ((d % 360) + 360) % 360; return d > 180 ? 360 - d : d; }
+
+  // ---- normalized phase/energy field (canvas-px independent; rebuilt only when the swell changes) ----
+  var FW = 240, FH = 192;
+  var FS = new Float32Array(FW * FH), FE = new Float32Array(FW * FH), FWATER = new Uint8Array(FW * FH),
+      FLIT = new Uint8Array(FW * FH), FLITF = new Float32Array(FW * FH), FE_S = new Float32Array(FW * FH);
+  var RP = null;
+  var landPath = null, waterClip = null, coastStroke = null;
+  function borderSeg(p, q) { var e = 0.005; return (p[0] < e && q[0] < e) || (p[0] > 1-e && q[0] > 1-e) || (p[1] < e && q[1] < e) || (p[1] > 1-e && q[1] > 1-e); }
   function buildPaths() {
-    var sp = LAND.map(Pn), n = sp.length;
-    landPath = new Path2D(); landPath.moveTo(sp[0][0], sp[0][1]);
-    for (var i = 1; i < n; i++) landPath.lineTo(sp[i][0], sp[i][1]);
+    var n = LAND.length;
+    landPath = new Path2D();
+    landPath.moveTo(LAND[0][0]*W, LAND[0][1]*H);
+    for (var i = 1; i < n; i++) landPath.lineTo(LAND[i][0]*W, LAND[i][1]*H);
     landPath.closePath();
-    waterClip = new Path2D(); waterClip.rect(-4, -4, W + 8, H + 8);
-    // Safari/iOS ignores Path2D.addPath inside an even-odd clip, so the land
-    // sub-path is lost and waves draw over the headland. Re-trace the polygon
-    // directly into waterClip instead of relying on addPath.
-    waterClip.moveTo(sp[0][0], sp[0][1]);
-    for (var k = 1; k < n; k++) waterClip.lineTo(sp[k][0], sp[k][1]);
+    waterClip = new Path2D(); waterClip.rect(-4, -4, W+8, H+8);   // re-trace polygon (Safari drops addPath in even-odd clips)
+    waterClip.moveTo(LAND[0][0]*W, LAND[0][1]*H);
+    for (var k = 1; k < n; k++) waterClip.lineTo(LAND[k][0]*W, LAND[k][1]*H);
     waterClip.closePath();
     coastStroke = new Path2D();
     for (var j = 0; j < n; j++) {
-      var a = LAND[j], b = LAND[(j + 1) % n];
-      if (!borderSeg(a, b)) { coastStroke.moveTo(a[0] * W, a[1] * H); coastStroke.lineTo(b[0] * W, b[1] * H); }
+      var a = LAND[j], b = LAND[(j+1)%n];
+      if (!borderSeg(a, b)) { coastStroke.moveTo(a[0]*W, a[1]*H); coastStroke.lineTo(b[0]*W, b[1]*H); }
     }
   }
-  function buildMask() {
-    mask = new Uint8Array(gridW * gridH);
-    // Land test runs in NORMALISED polygon space (even-odd ray cast against LAND),
-    // not via ctx.isPointInPath. isPointInPath is evaluated under the context's
-    // dpr transform, so on high-DPR phones (devicePixelRatio 2-3) it returned a
-    // wrong/near-empty mask — which flattened the refraction field (straight rays,
-    // no headland shadow → swell appeared to pass through the headland). Pure-JS
-    // polygon test is transform-independent, so every device matches desktop.
-    for (var gy = 0; gy < gridH; gy++) for (var gx = 0; gx < gridW; gx++) {
-      var nx = (gx + 0.5) / gridW, ny = (gy + 0.5) / gridH, inside = false;
-      for (var a = 0, b = LAND.length - 1; a < LAND.length; b = a++) {
-        var xi = LAND[a][0], yi = LAND[a][1], xj = LAND[b][0], yj = LAND[b][1];
-        if (((yi > ny) !== (yj > ny)) && (nx < (xj - xi) * (ny - yi) / (yj - yi) + xi)) inside = !inside;
-      }
-      mask[gy * gridW + gx] = inside ? 1 : 0;
-    }
-  }
-  function rayClear(x, y, ux, uy) {
-    for (var s = 1; s <= _maxSteps; s++) {
-      x += ux * _stepPx; y += uy * _stepPx;
-      if (x < 0 || x > W || y < 0 || y > H) return (y < 0) || (x > W && y < 0.55 * H);
-      var mgx = Math.floor(x / W * gridW), mgy = Math.floor(y / H * gridH);
-      if (mgx < 0) mgx = 0; if (mgx >= gridW) mgx = gridW - 1; if (mgy < 0) mgy = 0; if (mgy >= gridH) mgy = gridH - 1;
-      if (mask[mgy * gridW + mgx]) return false;
-    }
-    return false;
-  }
-  function refractCell(cx, cy, fromDeg, maxBend) {
-    var stepDeg = 6;
-    for (var k = 0; k * stepDeg <= maxBend + 0.001; k++) {
-      var ds = k === 0 ? [0] : [k * stepDeg, -k * stepDeg];
-      for (var di = 0; di < ds.length; di++) {
-        var d = ds[di]; if (Math.abs(d) > maxBend + 0.001) continue;
-        var ang = (fromDeg + d) * Math.PI / 180;
-        if (rayClear(cx, cy, Math.sin(ang), -Math.cos(ang))) {
-          // Hard shadow: energy reaching this cell falls off with the bend it needed.
-          // Squared falloff so deep bends into the lee go nearly dark — only a small
-          // diffraction/refraction leak survives behind the headland. 0 bend = full energy.
-          var f = Math.max(0, 1 - Math.abs(d) / 90);
-          return { h: f * f, delta: d * Math.PI / 180 };
-        }
-      }
-    }
-    return { h: 0, delta: 0 };
-  }
-  function buildDist() {
-    var INF = 1e9, i, gx, gy, idx, d;
-    dist = new Float32Array(gridW * gridH);
-    for (i = 0; i < dist.length; i++) dist[i] = mask[i] ? 0 : INF;
-    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
-      idx = gy * gridW + gx; if (mask[idx]) continue; d = dist[idx];
-      if (gx > 0) d = Math.min(d, dist[idx - 1] + 1);
-      if (gy > 0) d = Math.min(d, dist[idx - gridW] + 1);
-      if (gx > 0 && gy > 0) d = Math.min(d, dist[idx - gridW - 1] + 1.41421);
-      if (gx < gridW - 1 && gy > 0) d = Math.min(d, dist[idx - gridW + 1] + 1.41421);
-      dist[idx] = d;
-    }
-    for (gy = gridH - 1; gy >= 0; gy--) for (gx = gridW - 1; gx >= 0; gx--) {
-      idx = gy * gridW + gx; if (mask[idx]) continue; d = dist[idx];
-      if (gx < gridW - 1) d = Math.min(d, dist[idx + 1] + 1);
-      if (gy < gridH - 1) d = Math.min(d, dist[idx + gridW] + 1);
-      if (gx < gridW - 1 && gy < gridH - 1) d = Math.min(d, dist[idx + gridW + 1] + 1.41421);
-      if (gx > 0 && gy < gridH - 1) d = Math.min(d, dist[idx + gridW - 1] + 1.41421);
-      dist[idx] = d;
-    }
-  }
-  function distAt(gx, gy) { gx = gx < 0 ? 0 : gx >= gridW ? gridW - 1 : gx; gy = gy < 0 ? 0 : gy >= gridH ? gridH - 1 : gy; return dist[gy * gridW + gx]; }
 
-  // Depth field (m) — geometry-only, built once per resize. Base profile deepens with
-  // distance from shore; an oriented gaussian ridge raises the seabed over the headland reef.
-  function buildDepth() {
-    fieldDepth = new Float32Array(gridW * gridH);
-    var cosA = Math.cos(REEF_ANG), sinA = Math.sin(REEF_ANG), gx, gy, idx;
-    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
-      idx = gy * gridW + gx;
-      if (mask[idx]) { fieldDepth[idx] = 0; continue; }
-      var base = DEPTH_MAX * Math.pow(clamp(dist[idx] / DEPTH_DIST, 0, 1), DEPTH_CURVE);
-      var nx = (gx + 0.5) / gridW, ny = (gy + 0.5) / gridH;
-      var ex = nx - REEF_X, ey = ny - REEF_Y;
-      var u = (ex * cosA + ey * sinA) / REEF_LONG;     // along the ridge
-      var v = (-ex * sinA + ey * cosA) / REEF_CROSS;   // across the ridge
-      var rise = REEF_RISE * Math.exp(-(u * u + v * v));
-      fieldDepth[idx] = Math.max(DEPTH_MIN, base - rise);
+  function rebuildField() {
+    var D = foldDir(_sw), T = clamp(_sp, 1, 20);
+    var gainEff = GAIN * (1 - PINF * (T - 1) / 19);
+    var E0 = clamp(swPower(_hgt, T) / SWELL_FULL, 0, 1);   // forecast swell energy 0..1 (drives overall arrow strength)
+    var baseHit = hitAt(D, T);
+    var litE = ((D >= 90) ? 100 : baseHit) * E0;   // non-refracted = forecast swell energy
+    var bt = (D + 180) * Math.PI / 180, dx = Math.sin(bt), dy = -Math.cos(bt);
+    var sOrigin = ORIGIN.x * dx + ORIGIN.y * dy;
+    for (var r = 0; r < FH; r++) for (var c = 0; c < FW; c++) {
+      var nx = (c + 0.5) / FW, ny = (r + 0.5) / FH, idx = r * FW + c;
+      if (landBit(nx, ny)) { FWATER[idx] = 0; continue; }
+      FWATER[idx] = 1;
+      var rx = nx - ORIGIN.x, ry = ny - ORIGIN.y, mm = Math.hypot(rx, ry) || 1, dirx = rx / mm, diry = ry / mm;
+      var cosA = clamp(dirx * dx + diry * dy, -1, 1), div = Math.acos(cosA) * 180 / Math.PI;
+      var eHi = hitAt(clamp(D + div * gainEff, 0, 180), T), eLo = hitAt(clamp(D - div * gainEff, 0, 180), T);
+      var w = clamp(Math.abs(D - 90) / HEADBAND, 0, 1), own = (D >= 90) ? eHi : eLo;
+      var eDiff = (own * w + 0.5 * (eHi + eLo) * (1 - w)) * E0;   // refracted = forecast energy x dispersion-table transmit
+      FE_S[idx] = eDiff;
+      if (litCell(nx, ny, dx, dy)) { FE[idx] = litE; FS[idx] = nx * dx + ny * dy; FLIT[idx] = 1; }
+      else { FE[idx] = eDiff; FS[idx] = sOrigin + mm; FLIT[idx] = 0; }
     }
-    // light smooth (water only) so the contours read as gentle slopes, not steps
-    var t = new Float32Array(fieldDepth.length);
-    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
-      idx = gy * gridW + gx;
-      if (mask[idx]) { t[idx] = 0; continue; }
-      var s = 0, n = 0;
-      for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) {
-        var xx = gx + ox, yy = gy + oy; if (xx < 0 || xx >= gridW || yy < 0 || yy >= gridH) continue;
-        var jj = yy * gridW + xx; if (mask[jj]) continue;
-        s += fieldDepth[jj]; n++;
+    for (var pass = 0; pass < 2; pass++) { var t1 = FE.slice();
+      for (var ra = 0; ra < FH; ra++) for (var ca = 0; ca < FW; ca++) { var i = ra * FW + ca; if (!FWATER[i]) continue;
+        var sum = t1[i], n = 1;
+        if (ca > 0 && FWATER[i-1]) { sum += t1[i-1]; n++; }
+        if (ca < FW-1 && FWATER[i+1]) { sum += t1[i+1]; n++; }
+        if (ra > 0 && FWATER[i-FW]) { sum += t1[i-FW]; n++; }
+        if (ra < FH-1 && FWATER[i+FW]) { sum += t1[i+FW]; n++; }
+        FE[i] = sum / n;
       }
-      t[idx] = n ? s / n : fieldDepth[idx];
     }
-    fieldDepth = t;
-    renderDepthTint();
-  }
-  // Pre-render the depth field to a tiny offscreen canvas; drawn scaled+smoothed each frame.
-  function renderDepthTint() {
-    if (!DEPTH_TINT || !fieldDepth) return;
-    _depthCanvas.width = gridW; _depthCanvas.height = gridH;
-    var img = _dctx.createImageData(gridW, gridH);
-    for (var i = 0; i < gridW * gridH; i++) {
-      if (mask[i]) { img.data[i * 4 + 3] = 0; continue; }
-      var r = clamp(fieldDepth[i] / DEPTH_MAX, 0, 1);   // 0 shallow .. 1 deep
-      img.data[i * 4]     = Math.round(lerp(150, 8, r));
-      img.data[i * 4 + 1] = Math.round(lerp(212, 52, r));
-      img.data[i * 4 + 2] = Math.round(lerp(226, 92, r));
-      img.data[i * 4 + 3] = Math.round(lerp(38, 150, r));
-    }
-    _dctx.putImageData(img, 0, 0);
-  }
-  function computeField(fromDeg, period) {
-    var R = clamp((period - 4) / (15 - 4), 0, 1), maxBend = R * 90;
-    var influence = 3 + R * 16;  // cells over which the near-shore wrap steers swell into the lee. Baseline +3 so even short-period (e.g. 7s ESE) bends near the headland instead of running straight in.
-    _stepPx = W / gridW; _maxSteps = Math.ceil((W + H) / _stepPx) + 4;
-    fieldH = new Float32Array(gridW * gridH);
-    fieldDX = new Float32Array(gridW * gridH);
-    fieldDY = new Float32Array(gridW * gridH);
-    fieldC  = new Float32Array(gridW * gridH);
-    var gx, gy, idx;
-    // Wave celerity from depth (period-dependent): c = cDeep · tanh(√(g·h)/cDeep).
-    //   deep water → c ≈ cDeep (bottom not felt, rays run straight)
-    //   shallow    → c ≈ √(g·h)  (slows, rays bend toward shallow). Long swell feels bottom deeper.
-    var T = Math.max(2, period), cDeep = G_ACCEL * T / (2 * Math.PI);
-    for (idx = 0; idx < fieldC.length; idx++) {
-      if (mask[idx]) { fieldC[idx] = cDeep; continue; }   // land = deep, so ∇c vanishes at the coast face
-      fieldC[idx] = cDeep * Math.tanh(Math.sqrt(G_ACCEL * fieldDepth[idx]) / cDeep);
-    }
-    function cAt(ax, ay) { ax = ax < 0 ? 0 : ax >= gridW ? gridW - 1 : ax; ay = ay < 0 ? 0 : ay >= gridH ? gridH - 1 : ay; return fieldC[ay * gridW + ax]; }
-    var bt = (fromDeg + 180) * Math.PI / 180, Tx = Math.sin(bt), Ty = -Math.cos(bt);
-    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
-      idx = gy * gridW + gx;
-      if (mask[idx]) { fieldH[idx] = 0; fieldDX[idx] = Tx; fieldDY[idx] = Ty; continue; }
-      // height: incident energy reaching this cell, falling off with the bend it took (diffraction shadow)
-      fieldH[idx] = refractCell((gx + 0.5) * W / gridW, (gy + 0.5) * H / gridH, fromDeg, maxBend).h;
-      var vx = Tx, vy = Ty;
-      // ── (1) REFRACTION ── Snell: a ray turns toward slower (shallower) water at a rate set by
-      // the cross-ray gradient of celerity. We add the perpendicular part of −∇c to the travel dir.
-      var dcx = (cAt(gx + 1, gy) - cAt(gx - 1, gy)) * 0.5;
-      var dcy = (cAt(gx, gy + 1) - cAt(gx, gy - 1)) * 0.5;
-      var cHere = fieldC[idx];
-      if (cHere > 1e-4) {
-        var sx = -dcx, sy = -dcy;                       // toward shallower water
-        var dotp = sx * vx + sy * vy;                   // strip the part along the ray …
-        var px = sx - dotp * vx, py = sy - dotp * vy;   // … leaving only the turning (perpendicular) part
-        var pm = Math.hypot(px, py);
-        if (pm > 1e-9) {
-          var turn = REFRACT_K * (pm / cHere);          // relative celerity gradient → Snell-like turn rate
-          if (turn > 0.85) turn = 0.85;                 // clamp so a single cell can't flip the ray
-          vx += turn * (px / pm); vy += turn * (py / pm);
-          var vm0 = Math.hypot(vx, vy) || 1; vx /= vm0; vy /= vm0;
-        }
+    for (var q = 0; q < FW * FH; q++) FLITF[q] = FLIT[q];
+    for (var pass2 = 0; pass2 < 4; pass2++) { var t2 = FLITF.slice();
+      for (var rb = 0; rb < FH; rb++) for (var cb = 0; cb < FW; cb++) { var j = rb * FW + cb; if (!FWATER[j]) continue;
+        var sm = t2[j], nn = 1;
+        if (cb > 0 && FWATER[j-1]) { sm += t2[j-1]; nn++; }
+        if (cb < FW-1 && FWATER[j+1]) { sm += t2[j+1]; nn++; }
+        if (rb > 0 && FWATER[j-FW]) { sm += t2[j-FW]; nn++; }
+        if (rb < FH-1 && FWATER[j+FW]) { sm += t2[j+FW]; nn++; }
+        FLITF[j] = sm / nn;
       }
-      // ── (2) DIFFRACTION wrap ── close to land, graze the coast so energy bends into the lee
-      // behind the headland (the part refraction alone won't fill). Composes on the refracted dir.
-      if (influence > 0) {
-        var prox = clamp(1 - dist[idx] / influence, 0, 1);
-        if (prox > 0) {
-          var ndx = distAt(gx + 1, gy) - distAt(gx - 1, gy);   // gradient of dist → points into water
-          var ndy = distAt(gx, gy + 1) - distAt(gx, gy - 1);
-          var nm = Math.hypot(ndx, ndy);
-          if (nm > 1e-6) {
-            ndx /= nm; ndy /= nm;
-            var dn = vx * ndx + vy * ndy;                       // component of travel along the inward normal
-            var qx = vx, qy = vy;
-            if (dn < 0) { qx = vx - dn * ndx; qy = vy - dn * ndy; }  // strip the into-land part → tangent
-            var qm = Math.hypot(qx, qy);
-            if (qm < 1e-3) { qx = -ndy; qy = ndx; qm = 1; }     // head-on: pick a coast tangent
-            qx /= qm; qy /= qm;
-            vx = vx + prox * (qx - vx); vy = vy + prox * (qy - vy);
-            var vm = Math.hypot(vx, vy) || 1; vx /= vm; vy /= vm;
-          }
-        }
+    }
+    RP = { step: 1 / DENS, dx: dx, dy: dy };
+  }
+
+  function arrowGlyph(cx, cy, tx, ty, px, py, half, W, H) {
+    var X = function (v) { return v * W; }, Y = function (v) { return v * H; }, a = half;
+    ctx.beginPath(); ctx.moveTo(X(cx - tx*a), Y(cy - ty*a)); ctx.lineTo(X(cx + tx*a), Y(cy + ty*a)); ctx.stroke();
+    var hx = cx + tx*a, hy = cy + ty*a, hs = half*0.6;
+    ctx.beginPath();
+    ctx.moveTo(X(hx), Y(hy)); ctx.lineTo(X(hx - tx*hs + px*hs*0.7), Y(hy - ty*hs + py*hs*0.7));
+    ctx.moveTo(X(hx), Y(hy)); ctx.lineTo(X(hx - tx*hs - px*hs*0.7), Y(hy - ty*hs - py*hs*0.7));
+    ctx.stroke();
+  }
+
+  // flow-aligned arrow lattice: straight lanes where lit, concentric rings from the turning point in the lee
+  function rollFlow(W, H) {
+    ctx.lineWidth = THICK; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#ffffff';
+    var S = RP.step, dx = RP.dx, dy = RP.dy, pxx = -dy, pyy = dx, ph = PHASE % 1;
+    var idxf = function (nx, ny) { return (nx < 0 || nx >= 1 || ny < 0 || ny >= 1) ? -1 : ((ny * FH) | 0) * FW + ((nx * FW) | 0); };
+    function draw(nx, ny, tx, ty, e, edge) {
+      var eF = clamp(e / 100, 0, 1), half = SIZEN * clamp(eF, 0.14, 1) * 0.5;
+      ctx.globalAlpha = clamp(eF, 0.12, 1) * edge;
+      arrowGlyph(nx, ny, tx, ty, -ty, tx, half, W, H);
+    }
+    var span = Math.ceil(1.6 / S) + 2;
+    for (var i = -span; i <= span; i++) for (var j = -span; j <= span; j++) {
+      var a = (i + ph) * S, b = j * S, nx = a*dx + b*pxx, ny = a*dy + b*pyy, i0 = idxf(nx, ny);
+      if (i0 < 0 || !FWATER[i0]) continue;
+      var edge = FLITF[i0]; if (edge < 0.02) continue;
+      var e = FE[i0]; if (e >= CUT) draw(nx, ny, dx, dy, e, edge);
+    }
+    var Nang = Math.max(12, Math.round(Math.PI / S)), kmax = Math.ceil(1.7 / S);
+    for (var k = 0; k <= kmax; k++) { var rr = (k + ph) * S; if (rr < S * 0.5) continue;
+      for (var m = 0; m < Nang; m++) { var th = m / Nang * 6.2831853,
+        nx2 = ORIGIN.x + rr * Math.cos(th), ny2 = ORIGIN.y + rr * Math.sin(th), i1 = idxf(nx2, ny2);
+        if (i1 < 0 || !FWATER[i1]) continue;
+        var edge2 = 1 - FLITF[i1]; if (edge2 < 0.02) continue;
+        var e2 = FE_S[i1]; if (e2 >= CUT) draw(nx2, ny2, Math.cos(th), Math.sin(th), e2, edge2);
       }
-      fieldDX[idx] = vx; fieldDY[idx] = vy;
     }
-    // Smooth the direction field (over water only) so the rays sweep around the
-    // headland in wide, graceful arcs instead of kinking at the shoreline.
-    for (var pass = 0; pass < 14; pass++) {
-      var ax = new Float32Array(fieldDX.length), ay = new Float32Array(fieldDY.length);
-      for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
-        idx = gy * gridW + gx;
-        if (mask[idx]) { ax[idx] = fieldDX[idx]; ay[idx] = fieldDY[idx]; continue; }
-        var asx = 0, asy = 0, ac = 0;
-        for (var oyy = -1; oyy <= 1; oyy++) for (var oxx = -1; oxx <= 1; oxx++) {
-          var jx = gx + oxx, jy = gy + oyy; if (jx < 0 || jx >= gridW || jy < 0 || jy >= gridH) continue;
-          var jj = jy * gridW + jx; if (mask[jj]) continue;
-          asx += fieldDX[jj]; asy += fieldDY[jj]; ac++;
-        }
-        if (ac) { var am = Math.hypot(asx, asy) || 1; ax[idx] = asx / am; ay[idx] = asy / am; }
-        else { ax[idx] = fieldDX[idx]; ay[idx] = fieldDY[idx]; }
-      }
-      fieldDX = ax; fieldDY = ay;
-    }
-    // smooth the height field; collect open-water spawn cells for respawns.
-    // Shadow-preserving blur: a cell may be softened but NOT brightened above its own
-    // line-of-sight value — so bright open-water cells can't bleed energy into the
-    // geometric shadow behind the headland. The lee stays dark; only refraction/
-    // diffraction (already baked into fieldH via refractCell) lights it.
-    var t = new Float32Array(fieldH.length); spawns = [];
-    for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++) {
-      var sum = 0, nn = 0;
-      for (var oy = -1; oy <= 1; oy++) for (var ox = -1; ox <= 1; ox++) {
-        var xx = gx + ox, yy = gy + oy; if (xx < 0 || xx >= gridW || yy < 0 || yy >= gridH) continue;
-        sum += fieldH[yy * gridW + xx]; nn++;
-      }
-      var own = fieldH[gy * gridW + gx];
-      var v = Math.min(sum / nn, own);   // never raise a cell above its own shielded value
-      t[gy * gridW + gx] = v;
-      if (!mask[gy * gridW + gx] && v > 0.5) spawns.push([(gx + 0.5) / gridW, (gy + 0.5) / gridH]);
-    }
-    fieldH = t;
-    if (!spawns.length) for (gy = 0; gy < gridH; gy++) for (gx = 0; gx < gridW; gx++)
-      if (!mask[gy * gridW + gx]) spawns.push([(gx + 0.5) / gridW, (gy + 0.5) / gridH]);
-    buildRays();
+    ctx.globalAlpha = 1;
   }
-  function samp(arr, nx, ny) {
-    var fx = nx * gridW - 0.5, fy = ny * gridH - 0.5;
-    var x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-    function g(gx, gy) { gx = clamp(gx, 0, gridW - 1); gy = clamp(gy, 0, gridH - 1); return arr[gy * gridW + gx]; }
-    var top = lerp(g(x0, y0), g(x0 + 1, y0), tx), bot = lerp(g(x0, y0 + 1), g(x0 + 1, y0 + 1), tx);
-    return lerp(top, bot, ty);
+
+  function render() {
+    if (!W || !RP || !waterClip) return;
+    ctx.clearRect(0, 0, W, H);
+    // water (same diagonal gradient as the wind-chop map)
+    var g = ctx.createLinearGradient(W, 0, 0, H);
+    g.addColorStop(0, '#0a3d4f'); g.addColorStop(0.6, '#0e5f78'); g.addColorStop(1, '#1f86a3');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // soft inner shoreline glow + arrows, clipped to water
+    ctx.save(); ctx.clip(waterClip, 'evenodd');
+    ctx.strokeStyle = 'rgba(110,180,210,0.4)'; ctx.lineWidth = 0.04 * W; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(coastStroke);
+    rollFlow(W, H);
+    ctx.restore();
+    // land + crisp coastline border
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#ddcfae'; ctx.fill(landPath);
+    ctx.strokeStyle = '#bfae86'; ctx.lineWidth = Math.max(1.2, 0.005 * W); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke(coastStroke);
+    // place names (matched to the wind-chop map)
+    var fp = Math.max(11, 0.026 * W);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
+    ctx.fillText('South Steyne', 0.03 * W, 0.31 * H);
+    ctx.fillText('Shelly Beach', 0.50 * W, 0.74 * H);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = 'italic 400 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
+    ctx.fillText('Cabbage Tree Bay', 0.38 * W, 0.32 * H);
+    ctx.textAlign = 'left';
   }
-  function isLandN(nx, ny) {
-    if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return false;
-    var gx = Math.floor(nx * gridW), gy = Math.floor(ny * gridH);
-    if (gx < 0) gx = 0; if (gx >= gridW) gx = gridW - 1; if (gy < 0) gy = 0; if (gy >= gridH) gy = gridH - 1;
-    return mask[gy * gridW + gx] === 1;
-  }
-  function respawn(p) {
-    var s = spawns.length ? spawns[(Math.random() * spawns.length) | 0] : [Math.random(), Math.random()];
-    p.x = s[0] + (Math.random() - 0.5) / gridW;
-    p.y = s[1] + (Math.random() - 0.5) / gridH;
-  }
-  function buildRays() {
-    rays = [];
-    // Seed along the WHOLE perimeter, but only keep open-water points where the swell is
-    // actually ENTERING (its travel direction points inward). This puts the ray lines on
-    // the correct seaward edge for any swell direction — top/right for N–E, right for E–SE,
-    // etc. — instead of always the top. They then bend through the refraction field.
-    var seeds = [], N = 30, k, f;
-    for (k = 0; k <= N; k++) {
-      f = k / N;
-      seeds.push([f, 0.012]);      // top (north)
-      seeds.push([f, 0.988]);      // bottom (south)
-      seeds.push([0.012, f]);      // left (west)
-      seeds.push([0.988, f]);      // right (east)
-    }
-    var EDGE = 0.05, TOL = 0.02;
-    for (var si = 0; si < seeds.length; si++) {
-      var x = seeds[si][0], y = seeds[si][1];
-      if (isLandN(x, y)) continue;
-      var vx = samp(fieldDX, x, y), vy = samp(fieldDY, x, y), m = Math.hypot(vx, vy);
-      if (m < 1e-6) continue; vx /= m; vy /= m;
-      // reject seeds on an edge whose flow is heading back out of the frame
-      if (y < EDGE && vy <= TOL) continue;
-      if (y > 1 - EDGE && vy >= -TOL) continue;
-      if (x < EDGE && vx <= TOL) continue;
-      if (x > 1 - EDGE && vx >= -TOL) continue;
-      var path = [];
-      for (var s = 0; s < 175; s++) {
-        path.push([x, y]);
-        var dvx = samp(fieldDX, x, y), dvy = samp(fieldDY, x, y), mm = Math.hypot(dvx, dvy);
-        if (mm < 1e-6) break; dvx /= mm; dvy /= mm;
-        var nx2 = x + dvx * 0.010, ny2 = y + dvy * 0.010;
-        if (nx2 < -0.02 || nx2 > 1.02 || ny2 < -0.02 || ny2 > 1.02 || isLandN(nx2, ny2)) break;
-        x = nx2; y = ny2;
-      }
-      if (path.length > 4) rays.push(path);
-    }
-    // Keep the rays that actually SHOW the refraction (largest heading change from
-    // start to end) plus an even spread of the rest — so the arrows trace the curve
-    // into South Steyne instead of being thinned away with the straight ones.
-    if (rays.length > 26) {
-      var curv = function (pa) {
-        var n = pa.length - 1;
-        var a0 = Math.atan2(pa[1][1] - pa[0][1], pa[1][0] - pa[0][0]);
-        var a1 = Math.atan2(pa[n][1] - pa[n - 1][1], pa[n][0] - pa[n - 1][0]);
-        var d = Math.abs(a1 - a0); if (d > Math.PI) d = 2 * Math.PI - d; return d;
-      };
-      var ranked = rays.map(function (pa, i) { return [i, curv(pa)]; });
-      ranked.sort(function (a, b) { return b[1] - a[1]; });
-      var keep = {}, bent = Math.min(16, ranked.length);
-      for (var bi = 0; bi < bent; bi++) keep[ranked[bi][0]] = 1;   // most-refracted arrows
-      var stp = rays.length / 12;                                  // + an even spread for context
-      for (var tt = 0; tt < rays.length; tt += stp) keep[Math.floor(tt)] = 1;
-      var kept = [];
-      for (var rk = 0; rk < rays.length; rk++) if (keep[rk]) kept.push(rays[rk]);
-      rays = kept;
-    }
-  }
+
+  var W = 0, H = 0, dpr = 1, PHASE = 0, _lastTs = 0;
+  var _sw = 110, _sp = 10, _hgt = 1, _tx = 0.6, _key = '', _lastKey = '';
+
   function fit() {
     var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
-    if (!cssW) return false;   // not laid out yet (hidden tab / pre-splash on mobile) — retry on observer
+    if (!cssW) return false;
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    buildPaths(); buildMask(); buildDist(); buildDepth(); computeField(_sw, _sp); _lastKey = _key;
+    buildPaths();
+    rebuildField(); _lastKey = _key; render();
     return true;
   }
 
-  var POOL = 200, parts = [];
-  for (var i = 0; i < POOL; i++) parts.push({ x: Math.random(), y: Math.random(), s1: Math.random(), s2: Math.random() });
-
-  function drawWave(x, y, crest, len, amp, col, alpha, foam) {
-    ctx.save(); ctx.translate(x, y); ctx.rotate(crest);
-    ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, amp * 0.5); ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.quadraticCurveTo(0, -amp, len / 2, 0); ctx.stroke();
-    if (foam) {
-      ctx.globalAlpha = alpha * 0.8; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, amp * 0.35);
-      ctx.beginPath(); ctx.moveTo(-len * 0.22, -amp * 0.55); ctx.quadraticCurveTo(0, -amp * 1.05, len * 0.22, -amp * 0.55); ctx.stroke();
-    }
-    ctx.restore(); ctx.globalAlpha = 1;
-  }
-  function drawArrow(dx, dy) {
-    var ax = 0.45 * W, ay = 0.18 * H, L = 0.12 * W;
-    ctx.save();
-    ctx.fillStyle = 'rgba(6,40,55,0.32)'; ctx.beginPath(); ctx.arc(ax, ay, L * 0.62, 0, Math.PI * 2); ctx.fill();
-    var ex = ax + dx * L * 0.5, ey = ay + dy * L * 0.5, sx = ax - dx * L * 0.5, sy = ay - dy * L * 0.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = Math.max(2, 0.009 * W); ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-    var ang = Math.atan2(dy, dx), hl = 0.038 * W;
-    ctx.beginPath();
-    ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang - 0.4) * hl, ey - Math.sin(ang - 0.4) * hl);
-    ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang + 0.4) * hl, ey - Math.sin(ang + 0.4) * hl);
-    ctx.stroke();
-    ctx.restore();
-  }
-  function drawCompass() {
-    var cx = 0.95 * W, cy = 0.15 * H, r = 0.028 * W;
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.9); ctx.lineTo(cx - r * 0.35, cy); ctx.lineTo(cx + r * 0.35, cy); ctx.closePath(); ctx.fill();
-    var fp = Math.max(11, 0.024 * W);
-    ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('N', cx, cy - r - fp * 0.7); ctx.textBaseline = 'alphabetic';
-  }
-
-  function frame() {
+  function frame(ts) {
     requestAnimationFrame(frame);
     if (!W || document.hidden) return;
-    if (_key !== _lastKey) { computeField(_sw, _sp); _lastKey = _key; }
-    var perF = clamp((_sp - 4) / 11, 0, 1);          // 0 short-period .. 1 long groundswell
-    var hN = clamp(_hgt / 3, 0, 1.15);               // swell height (m) -> ~0..1.15
-    var energy = clamp(_tx, 0, 1);                   // GEM transmit (energy past the headland)
-    var baseTravel = (_sw + 180) * Math.PI / 180, bdx = Math.sin(baseTravel), bdy = -Math.cos(baseTravel);
-    var speed = lerp(0.0011, 0.0042, perF);          // long period drifts faster
-    var count = Math.round(lerp(170, 95, perF));     // long period = fewer, wider-spaced crests
-    var baseA = clamp(0.16 + hN * 0.32, 0, 0.92);    // crest opacity ceiling from height
-
-    ctx.clearRect(0, 0, W, H);
-    var g = ctx.createLinearGradient(W, 0, 0, H);
-    g.addColorStop(0, '#0a3d4f'); g.addColorStop(0.6, '#0e5f78'); g.addColorStop(1, '#1f86a3');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-
-    ctx.save(); ctx.clip(waterClip, 'evenodd');
-    // Faint bathymetry under the rays — shallow reads pale teal, deep reads navy. Set
-    // DEPTH_TINT=false to hide it. This is the depth field that bends the rays below.
-    if (DEPTH_TINT && _depthCanvas.width) {
-      ctx.save(); ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 0.55;
-      ctx.drawImage(_depthCanvas, 0, 0, W, H); ctx.globalAlpha = 1; ctx.restore();
-    }
-    ctx.strokeStyle = 'rgba(110,180,210,0.4)'; ctx.lineWidth = 0.04 * W; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(coastStroke);
-    // Directional vectors of the swell — refraction rays curving around the headland.
-    ctx.strokeStyle = 'rgba(255,255,255,0.34)'; ctx.lineWidth = Math.max(1.2, 0.0045 * W); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    for (var ri = 0; ri < rays.length; ri++) {
-      var pa = rays[ri]; if (pa.length < 2) continue;
-      ctx.beginPath(); ctx.moveTo(pa[0][0] * W, pa[0][1] * H);
-      for (var pj = 1; pj < pa.length; pj++) ctx.lineTo(pa[pj][0] * W, pa[pj][1] * H);
-      ctx.stroke();
-      var qi = Math.floor(pa.length * 0.66), q2 = Math.min(pa.length - 1, qi + 1);
-      if (q2 > qi) {
-        var hX = pa[qi][0] * W, hY = pa[qi][1] * H;
-        var ha = Math.atan2((pa[q2][1] - pa[qi][1]) * H, (pa[q2][0] - pa[qi][0]) * W), hl = 0.020 * W;
-        ctx.beginPath();
-        ctx.moveTo(hX, hY); ctx.lineTo(hX - Math.cos(ha - 0.5) * hl, hY - Math.sin(ha - 0.5) * hl);
-        ctx.moveTo(hX, hY); ctx.lineTo(hX - Math.cos(ha + 0.5) * hl, hY - Math.sin(ha + 0.5) * hl);
-        ctx.stroke();
-      }
-    }
-    for (var i = 0; i < count; i++) {
-      var p = parts[i];
-      var vx = samp(fieldDX, p.x, p.y), vy = samp(fieldDY, p.x, p.y);
-      var vm = Math.hypot(vx, vy); if (vm < 1e-6) { vx = bdx; vy = bdy; vm = 1; } vx /= vm; vy /= vm;
-      var nxp = p.x + vx * speed, nyp = p.y + vy * speed;
-      // Never traverse land: a wave that would step onto the headland terminates and respawns offshore.
-      if (nxp < -0.05 || nxp > 1.05 || nyp < -0.05 || nyp > 1.05 || isLandN(nxp, nyp)) { respawn(p); continue; }
-      p.x = nxp; p.y = nyp;
-      var fh = samp(fieldH, p.x, p.y);                          // line-of-sight shadow (lee = dark)
-      if (fh < 0.12) { continue; }                              // hard shadow: no crest in the deep lee
-      var a = baseA * energy * (fh * fh) * (0.55 + 0.5 * p.s1);  // opacity: height x GEM energy x shadow²
-      if (a < 0.035) continue;
-      var amp = (0.006 + hN * 0.010) * W * (0.8 + 0.4 * p.s1);  // crest weight from height
-      var len = (0.05 + hN * 0.055) * W;                        // bigger swell = longer crests
-      // Crest line is ⟂ to travel offshore, but ROTATES to run parallel to the
-      // shoreline as it nears the coast/headland — like a real refracting wavefront
-      // wrapping in. Blend is driven by nearness to shore (dist field gradient).
-      var cdx = -vy, cdy = vx;                                   // default crest ⟂ travel
-      var prox = clamp(1 - samp(dist, p.x, p.y) / CREST_HUG, 0, 1);
-      if (prox > 0.001) {
-        var de = 0.02;
-        var ndx = samp(dist, p.x + de, p.y) - samp(dist, p.x - de, p.y);  // ∇dist → coast normal
-        var ndy = samp(dist, p.x, p.y + de) - samp(dist, p.x, p.y - de);
-        var nmm = Math.hypot(ndx, ndy);
-        if (nmm > 1e-6) {
-          var tx = -ndy / nmm, ty = ndx / nmm;                  // coast tangent (⟂ to normal)
-          if (tx * cdx + ty * cdy < 0) { tx = -tx; ty = -ty; }  // keep stroke orientation continuous
-          cdx += prox * (tx - cdx); cdy += prox * (ty - cdy);
-          var cm = Math.hypot(cdx, cdy) || 1; cdx /= cm; cdy /= cm;
-        }
-      }
-      drawWave(p.x * W, p.y * H, Math.atan2(cdy, cdx), len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6);
-    }
-    ctx.restore();
-
-    // Force a fully opaque state before painting land — on WebKit residual
-    // globalAlpha/composite from the wave loop could otherwise make the land
-    // fill translucent, letting crests show through the headland.
-    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#ddcfae'; ctx.fill(landPath);
-    ctx.strokeStyle = '#bfae86'; ctx.lineWidth = Math.max(1.2, 0.005 * W); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke(coastStroke);
-
-    var fp = Math.max(11, 0.026 * W);
-    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
-    ctx.fillText('South Steyne', 0.10 * W, 0.37 * H);
-    ctx.fillText('Shelly Beach', 0.60 * W, 0.69 * H);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = 'italic 400 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
-    ctx.fillText('Cabbage Tree Bay', 0.40 * W, 0.34 * H);
-
-    drawCompass();
+    if (_key !== _lastKey) { rebuildField(); _lastKey = _key; }
+    if (!_lastTs) _lastTs = ts;
+    PHASE = (PHASE + (ts - _lastTs) * 0.0006 * SPEED) % 1; _lastTs = ts;
+    render();
   }
 
-  // Public: feed the map the forecast swell direction (deg FROM), period (s),
-  // and ENTRY (total) score for height.
   function swellSet(swellDir, height, period, transmit, zoneLabel, zoneCls) {
     if (typeof swellDir === 'number' && isFinite(swellDir)) _sw = ((swellDir % 360) + 360) % 360;
     if (typeof height === 'number' && isFinite(height) && height >= 0) _hgt = height;
@@ -6834,7 +6636,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     if (typeof transmit === 'number' && isFinite(transmit)) _tx = clamp(transmit, 0, 1);
     _key = Math.round(_sw) + '|' + (Math.round(_sp * 10) / 10);
     var nowD = document.getElementById('swellNowDir'), nowZ = document.getElementById('swellNowZone');
-    if (nowD) nowD.textContent = dir16(_sw) + ' swell · ' + Math.round(_sp) + 's';
+    if (nowD) nowD.textContent = dir16(_sw) + ' swell \u00b7 ' + Math.round(_sp) + 's';
     if (nowZ) {
       nowZ.textContent = zoneLabel || '';
       nowZ.style.color = zoneCls === 'green' ? 'var(--green)' : zoneCls === 'amber' ? 'var(--amber)'
@@ -6958,6 +6760,250 @@ if ('serviceWorker' in navigator) {
       });
   });
 }
+</script>
+
+<script>
+/* ════════════════════════════════════════════════════════════════════════════
+   APP DETAIL LEVEL  —  "Essential"  vs  "Complete"
+   The user toggles with the pill at the top of the Now view. The choice is saved
+   in localStorage ('swim_app_mode') and restored on refresh / close-and-reopen.
+
+   SECTION VISIBILITY TABLE — set each flag to 1 (show) or 0 (hide) to include or
+   exclude a section from each version. Add/remove rows here to manage sections.
+
+   ┌──────────────────────────────────┬───────────┬──────────┐
+   │ Section                          │ ESSENTIAL │ COMPLETE │
+   ├──────────────────────────────────┼───────────┼──────────┤
+   │ Overall verdict                  │     1     │    1     │
+   │ Metrics (Entry / Swim / Surge)   │     1     │    1     │
+   │ Weather bar (above slider)       │     1     │    1     │
+   │ Time slider                      │     1     │    1     │
+   │ Sea temp + Pollution             │     1     │    1     │
+   │ Swell map                        │     0     │    1     │
+   │ Wind-chop map                    │     0     │    1     │
+   │ Tide graph                       │     1     │    1     │
+   │ Today's news (summary)           │     0     │    1     │
+   │ The week ahead (button)          │     1     │    1     │
+   │ Forecasted values                │     0     │    1     │
+   │ Feedback                         │     0     │    1     │
+   └──────────────────────────────────┴───────────┴──────────┘
+
+   A third "Custom" choice lets the user pick sections individually (seeded from
+   Complete on first use); their picks persist in localStorage ('swim_app_custom').
+   Sections flagged core:1 (metrics, slider) are always shown and cannot be hidden.
+   ════════════════════════════════════════════════════════════════════════════ */
+(function () {
+  var SECTIONS = [
+    { key:'verdict',   label:'Overall verdict',            sel:'#verdictBar',       essential:1, complete:1 },
+    { key:'metrics',   label:'Metrics (Entry/Swim/Surge)', sel:'.metrics-panel',    essential:1, complete:1, core:1 },
+    { key:'wxbar',     label:'Weather bar (above slider)', sel:'#wxBar',            essential:1, complete:1 },
+    { key:'slider',    label:'Time slider',                sel:'.slider-wrap',      essential:1, complete:1, core:1 },
+    { key:'quality',   label:'Sea temp + Pollution',       sel:'.quality-row-slim', essential:1, complete:1 },
+    { key:'bluebottle',label:'Bluebottle reports',         sel:'#bbSection',        essential:1, complete:1 },
+    { key:'swellmap',  label:'Swell map',                  sel:'#swellGraphWrap',   essential:0, complete:1 },
+    { key:'chopmap',   label:'Wind-chop map',              sel:'#chopGraphWrap',    essential:0, complete:1 },
+    { key:'tide',      label:'Tide graph',                 sel:'#tideGraphWrap',    essential:1, complete:1 },
+    { key:'summary',   label:"Today's news (summary)",     sel:'#summary-section',  essential:0, complete:1 },
+    { key:'weekahead', label:'The week ahead (button)',    sel:'.week-ahead-card',  essential:1, complete:1 },
+    { key:'forecast',  label:'Forecasted values',          sel:'.forecast-values',  essential:0, complete:1 },
+    { key:'feedback',  label:'Feedback',                   sel:'#feedbackCard',     essential:0, complete:1 }
+  ];
+  var MODE_KEY = 'swim_app_mode';            // 'essential' | 'complete' | 'custom'
+  var CUSTOM_KEY = 'swim_app_custom';        // JSON map { sectionKey: 0|1 } for Custom mode
+  function getMode(){ try { var m = localStorage.getItem(MODE_KEY); return (m === 'essential' || m === 'complete' || m === 'custom') ? m : 'complete'; } catch (e) { return 'complete'; } }
+  function saveMode(m){ try { localStorage.setItem(MODE_KEY, m); } catch (e) {} }
+  function getCustom(){
+    var map = {};
+    try { var raw = localStorage.getItem(CUSTOM_KEY); if (raw) map = JSON.parse(raw) || {}; } catch (e) { map = {}; }
+    SECTIONS.forEach(function (s) { if (!(s.key in map)) map[s.key] = effFlags(s).complete; });   // seed first-time Custom from Complete
+    return map;
+  }
+  function saveCustom(map){ try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(map)); } catch (e) {} }
+
+  // Admin edits to the two presets — stored per device, used to preview live before publishing to code.
+  var ADMIN_KEY = 'swim_admin_sections';   // JSON { key: { essential:0|1, complete:0|1 } }
+  function getAdmin(){ try { var r = localStorage.getItem(ADMIN_KEY); return r ? (JSON.parse(r) || {}) : {}; } catch (e) { return {}; } }
+  function saveAdmin(m){ try { localStorage.setItem(ADMIN_KEY, JSON.stringify(m)); } catch (e) {} }
+  function effFlags(s){ var a = getAdmin()[s.key] || {};
+    return { essential: ('essential' in a) ? a.essential : s.essential,
+             complete:  ('complete'  in a) ? a.complete  : s.complete }; }
+
+  function visibleIn(sct, mode, custom){
+    if (sct.core) return 1;                                  // core sections always shown
+    var f = effFlags(sct);                                   // admin overrides if present, else coded flags
+    if (mode === 'essential') return f.essential;
+    if (mode === 'custom')    return custom[sct.key] ? 1 : 0;
+    return f.complete;
+  }
+
+  function apply(mode){
+    var custom = getCustom();
+    SECTIONS.forEach(function (sct) {
+      var on = visibleIn(sct, mode, custom);
+      document.querySelectorAll(sct.sel).forEach(function (el) { el.classList.toggle('sec-hidden', !on); });
+    });
+    var t = document.getElementById('modeToggle');
+    if (t) t.querySelectorAll('button').forEach(function (b) {
+      var act = (b.getAttribute('data-mode') === mode);
+      b.classList.toggle('active', act); b.setAttribute('aria-pressed', act ? 'true' : 'false');
+    });
+    try { window.dispatchEvent(new Event('resize')); } catch (e) {}  // re-fit any canvas that just became visible
+  }
+  function setMode(m){ saveMode(m); apply(m); }
+  window.setAppMode = setMode; window.getAppMode = getMode;
+
+  function buildCustomList(){
+    var list = document.getElementById('customList'); if (!list) return;
+    var custom = getCustom();
+    list.innerHTML = '';
+    SECTIONS.forEach(function (s) {
+      var row = document.createElement('div');
+      row.className = 'custom-row' + (s.core ? ' locked' : '');
+      var cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'cs_' + s.key;
+      cb.checked = s.core ? true : !!custom[s.key]; cb.disabled = !!s.core;
+      var lab = document.createElement('label'); lab.setAttribute('for', cb.id); lab.textContent = s.label;
+      row.appendChild(cb); row.appendChild(lab);
+      if (s.core) { var tag = document.createElement('span'); tag.className = 'lock-tag'; tag.textContent = 'always'; row.appendChild(tag); }
+      else cb.addEventListener('change', function () {
+        var map = getCustom(); map[s.key] = cb.checked ? 1 : 0; saveCustom(map);
+        if (getMode() === 'custom') apply('custom');
+      });
+      list.appendChild(row);
+    });
+  }
+
+  var METRIC_KEY = 'swim_metric_style';   // 'pic' (picture + slider)  |  'bar' (slider only)
+  function getMetricStyle(){ try { var v = localStorage.getItem(METRIC_KEY); return v === 'bar' ? 'bar' : 'pic'; } catch (e) { return 'pic'; } }
+  function applyMetricStyle(v){
+    document.body.classList.toggle('metrics-noicon', v === 'bar');
+    var ch = document.getElementById('indChoice');
+    if (ch) ch.querySelectorAll('.ind-opt').forEach(function (o) {
+      o.setAttribute('aria-pressed', o.getAttribute('data-ind') === v ? 'true' : 'false');
+    });
+    try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+  }
+  function setMetricStyle(v){ try { localStorage.setItem(METRIC_KEY, v); } catch (e) {} applyMetricStyle(v); }
+  window.setMetricStyle = setMetricStyle; window.getMetricStyle = getMetricStyle;
+
+  function openCustom(){ var p = document.getElementById('customPanel'); if (p) p.classList.add('show'); }
+  function closeCustom(){ var p = document.getElementById('customPanel'); if (p) p.classList.remove('show'); }
+
+  // ── Admin preset editor (open with ?admin=1 or window.openAdmin()) ──
+  function adminSnippet(){
+    var lines = SECTIONS.map(function (s) {
+      var f = effFlags(s), core = s.core ? ', core:1' : '';
+      return "    { key:'" + s.key + "', label:" + JSON.stringify(s.label) + ", sel:'" + s.sel +
+             "', essential:" + (f.essential ? 1 : 0) + ", complete:" + (f.complete ? 1 : 0) + core + " },";
+    });
+    lines[lines.length - 1] = lines[lines.length - 1].replace(/,\s*$/, '');
+    return "var SECTIONS = [\n" + lines.join("\n") + "\n  ];";
+  }
+  function refreshAdminChecks(){
+    var ov = document.getElementById('adminOverlay'); if (!ov) return;
+    SECTIONS.forEach(function (s) {
+      if (s.core) return;
+      var f = effFlags(s);
+      var e1 = ov.querySelector('input[data-k="' + s.key + '"][data-c="essential"]');
+      var e2 = ov.querySelector('input[data-k="' + s.key + '"][data-c="complete"]');
+      if (e1) e1.checked = !!f.essential;
+      if (e2) e2.checked = !!f.complete;
+    });
+  }
+  function buildAdmin(){
+    if (document.getElementById('adminOverlay')) return;
+    var css = document.createElement('style');
+    css.textContent =
+      ".admin-overlay{position:fixed;inset:0;z-index:100000;display:none;align-items:flex-start;justify-content:center;background:rgba(6,40,55,.55);overflow:auto;padding:24px 12px;font-family:'DM Mono',ui-monospace,monospace;}" +
+      ".admin-overlay.show{display:flex;}" +
+      ".admin-modal{background:#fff;color:var(--text,#0d2b3e);border-radius:16px;max-width:520px;width:100%;padding:18px;box-shadow:0 18px 60px rgba(6,40,55,.4);}" +
+      ".admin-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}" +
+      ".admin-head h3{margin:0;font-size:15px;letter-spacing:.4px;}" +
+      ".admin-x{border:none;background:transparent;font-size:18px;color:var(--dim,#5a8a9f);cursor:pointer;line-height:1;}" +
+      ".admin-note{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.45;margin:0 0 12px;}" +
+      ".admin-note code{background:rgba(10,126,164,.1);padding:1px 4px;border-radius:4px;}" +
+      ".admin-ghead{display:flex;align-items:center;padding-bottom:6px;border-bottom:1px solid var(--border,#e1ecf0);}" +
+      ".admin-ghead .gl{flex:1;}.admin-ghead .gc{width:80px;text-align:center;}" +
+      ".admin-ghead span{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim,#5a8a9f);}" +
+      ".admin-row{display:flex;align-items:center;border-bottom:1px solid var(--border,#eef3f6);}" +
+      ".admin-row .al{flex:1;font-size:13px;padding:9px 0;}" +
+      ".admin-row .ac{width:80px;text-align:center;}" +
+      ".admin-row input{width:17px;height:17px;accent-color:var(--ocean,#0a7ea4);cursor:pointer;}" +
+      ".admin-row.locked .al{color:var(--dim,#5a8a9f);}" +
+      ".admin-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;}" +
+      ".admin-actions button{flex:1;min-width:108px;padding:9px;border-radius:9px;border:1px solid var(--border,#cfe0e6);background:#fff;font-family:inherit;font-size:12px;cursor:pointer;color:var(--text,#0d2b3e);}" +
+      ".admin-actions #adminCopy{background:var(--ocean,#0a7ea4);color:#fff;border-color:var(--ocean,#0a7ea4);}" +
+      ".admin-msg{font-size:11px;color:var(--green,#1a9e6e);margin-top:8px;min-height:14px;}" +
+      ".admin-out{width:100%;box-sizing:border-box;margin-top:8px;height:128px;font-family:ui-monospace,monospace;font-size:10.5px;border:1px solid var(--border,#cfe0e6);border-radius:9px;padding:8px;display:none;white-space:pre;color:var(--text,#0d2b3e);}";
+    document.head.appendChild(css);
+
+    var rows = SECTIONS.map(function (s) {
+      var f = effFlags(s), lock = s.core ? ' locked' : '';
+      var e = s.core ? ' disabled checked' : (f.essential ? ' checked' : '');
+      var c = s.core ? ' disabled checked' : (f.complete  ? ' checked' : '');
+      var tag = s.core ? ' <span style="font-size:10px;color:var(--dim)">(always)</span>' : '';
+      return '<div class="admin-row' + lock + '"><div class="al">' + s.label + tag + '</div>' +
+             '<div class="ac"><input type="checkbox" data-k="' + s.key + '" data-c="essential"' + e + '></div>' +
+             '<div class="ac"><input type="checkbox" data-k="' + s.key + '" data-c="complete"' + c + '></div></div>';
+    }).join('');
+
+    var ov = document.createElement('div'); ov.id = 'adminOverlay'; ov.className = 'admin-overlay';
+    ov.innerHTML =
+      '<div class="admin-modal">' +
+      '<div class="admin-head"><h3>Section presets &mdash; admin</h3><button class="admin-x" id="adminX" aria-label="Close">&#10005;</button></div>' +
+      '<p class="admin-note">Tick which sections appear in each version. Edits preview live <b>on this device</b>. Press <b>Copy config</b> and paste the result over the <code>SECTIONS</code> array in the code to publish for everyone. Metrics &amp; slider are always shown.</p>' +
+      '<div class="admin-grid"><div class="admin-ghead"><span class="gl">Section</span><span class="gc">Essential</span><span class="gc">Complete</span></div>' + rows + '</div>' +
+      '<div class="admin-actions"><button id="adminCopy">Copy config</button><button id="adminReset">Reset to coded</button><button id="adminClose">Done</button></div>' +
+      '<div class="admin-msg" id="adminMsg"></div>' +
+      '<textarea class="admin-out" id="adminOut" readonly></textarea></div>';
+    document.body.appendChild(ov);
+
+    ov.addEventListener('change', function (ev) {
+      var cb = ev.target.closest('input[data-k]'); if (!cb) return;
+      var k = cb.getAttribute('data-k'), which = cb.getAttribute('data-c');
+      var m = getAdmin(); m[k] = m[k] || {}; m[k][which] = cb.checked ? 1 : 0; saveAdmin(m);
+      apply(getMode()); buildCustomList();           // live preview + keep Custom seeds in sync
+    });
+    ov.querySelector('#adminCopy').addEventListener('click', function () {
+      var snip = adminSnippet(), out = document.getElementById('adminOut'), msg = document.getElementById('adminMsg');
+      out.style.display = 'block'; out.value = snip; out.focus(); out.select();
+      var done = function () { msg.textContent = 'Copied — paste this over the SECTIONS array in the code.'; };
+      try { navigator.clipboard.writeText(snip).then(done, function () { try { document.execCommand('copy'); done(); } catch (e) { msg.textContent = 'Select the text below and copy it.'; } }); }
+      catch (e) { try { document.execCommand('copy'); done(); } catch (e2) { msg.textContent = 'Select the text below and copy it.'; } }
+    });
+    ov.querySelector('#adminReset').addEventListener('click', function () {
+      try { localStorage.removeItem(ADMIN_KEY); } catch (e) {}
+      refreshAdminChecks(); apply(getMode()); buildCustomList();
+      var msg = document.getElementById('adminMsg'); if (msg) msg.textContent = 'Reset to the coded defaults.';
+      var out = document.getElementById('adminOut'); if (out) out.style.display = 'none';
+    });
+    var closeA = function () { ov.classList.remove('show'); };
+    ov.querySelector('#adminX').addEventListener('click', closeA);
+    ov.querySelector('#adminClose').addEventListener('click', closeA);
+    ov.addEventListener('click', function (ev) { if (ev.target === ov) closeA(); });
+  }
+  function openAdmin(){ buildAdmin(); refreshAdminChecks(); var ov = document.getElementById('adminOverlay'); if (ov) ov.classList.add('show'); }
+  window.openAdmin = openAdmin;
+
+
+  function init(){
+    buildCustomList();
+    var t = document.getElementById('modeToggle');
+    if (t) t.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-mode]'); if (!b) return;
+      var m = b.getAttribute('data-mode');
+      setMode(m);
+      if (m === 'custom') openCustom(); else closeCustom();   // Custom opens the checklist; other modes close it
+    });
+    var sv = document.getElementById('customSave');  if (sv) sv.addEventListener('click', closeCustom);
+    var cl = document.getElementById('customClose'); if (cl) cl.addEventListener('click', closeCustom);
+    var ch = document.getElementById('indChoice');
+    if (ch) ch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setMetricStyle(o.getAttribute('data-ind')); });
+    applyMetricStyle(getMetricStyle());   // global display preference, applies in every mode
+    apply(getMode());   // panel starts closed even if Custom is the saved mode; picks are still applied
+    if (/[?&]admin=1(\b|&|$)/.test(location.search)) openAdmin();   // ?admin=1 opens the preset editor
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
 </script>
 </body>
 </html>
