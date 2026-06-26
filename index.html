@@ -927,6 +927,30 @@
     border:4px solid white;
     box-shadow:0 3px 12px rgba(10,126,164,0.4);
   }
+  /* ── Snapshot board: metrics + time slider share one light-blue surface ── */
+  .snapshot-board {
+    background:var(--sky);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:10px 10px 12px;
+    margin-bottom:10px;
+  }
+  .snapshot-board .metrics-panel,
+  .snapshot-board .slider-wrap {
+    background:transparent;
+    backdrop-filter:none;
+    border:none;
+    border-radius:0;
+    box-shadow:none;
+    margin-bottom:0;
+  }
+  .snapshot-board .metrics-panel { padding:4px 4px 2px; }
+  .snapshot-board .slider-wrap {
+    padding:14px 6px 4px;
+    margin-top:8px;
+    border-top:1px solid var(--border);
+  }
+
   /* ── Tide graph (below the slider) ── */
   .tide-graph-wrap {
     background:var(--card);
@@ -1347,11 +1371,11 @@
     max-height: 100vh; max-height: 100dvh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: 16px 16px calc(env(safe-area-inset-bottom) + 24px);
+    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
     box-shadow: 0 10px 40px rgba(6,46,62,0.35);
   }
   .about-close {
-    position: sticky; top: 8px;
+    position: sticky; top: calc(env(safe-area-inset-top) + 8px);
     display: flex; align-items: center; justify-content: center;
     margin-left: auto; margin-bottom: 6px;
     z-index: 20;
@@ -1786,6 +1810,18 @@
     </div>
 
 
+    <!-- Thin weather bar (sky + feels-like) — sits directly under the detail buttons -->
+    <div class="wx-bar" id="wxBar">
+      <div class="wx-bar-left">
+        <span class="wx-bar-icon" id="wxBarIcon">☀️</span>
+        <span class="wx-bar-desc" id="wxBarDesc">—</span>
+      </div>
+      <div class="wx-bar-feels">
+        <span class="wx-bar-feels-label">Feels like</span>
+        <span class="wx-bar-feels-val" id="wxBarFeels">—</span>
+      </div>
+    </div>
+
     <!-- Calibration bar (TUNE mode only) -->
     <div id="calib-bar">
       <input type="file" id="cam-files" accept="image/*" multiple style="display:none" onchange="onCamFiles(this)">
@@ -1801,6 +1837,9 @@
       <span class="verdict-text" id="verdictText">Loading&#8230;</span>
       <span class="verdict-time" id="verdictTime">&mdash;</span>
     </div>
+
+    <!-- Metrics + time slider share one light-blue board -->
+    <div class="snapshot-board">
 
     <!-- Metrics panel -->
     <div class="metrics-panel">
@@ -1884,18 +1923,6 @@
       </div>
     </div>
 
-    <!-- Thin weather bar (sky + feels-like) — sits above the slider -->
-    <div class="wx-bar" id="wxBar">
-      <div class="wx-bar-left">
-        <span class="wx-bar-icon" id="wxBarIcon">☀️</span>
-        <span class="wx-bar-desc" id="wxBarDesc">—</span>
-      </div>
-      <div class="wx-bar-feels">
-        <span class="wx-bar-feels-label">Feels like</span>
-        <span class="wx-bar-feels-val" id="wxBarFeels">—</span>
-      </div>
-    </div>
-
     <!-- Time slider -->
     <div class="slider-wrap">
       <div class="day-picker" id="dayPicker"></div>
@@ -1906,6 +1933,8 @@
       <input type="range" id="timeSlider" min="0" max="0" value="0" oninput="onSlider(this.value)">
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
+
+    </div><!-- /snapshot-board -->
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim">
@@ -1932,6 +1961,75 @@
           <div class="bb-sub" id="bbSub"></div>
         </div>
         <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+      </div>
+    </div>
+
+    <!-- ── "Nice to meet you" — community self-introductions ──────────────── -->
+    <style>
+      #ntmSection { margin:0 0 10px; }
+      .ntm-card { background:var(--card); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+      .ntm-head { display:flex; align-items:center; gap:11px; padding:11px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+      .ntm-wave { font-size:20px; line-height:1; flex:none; }
+      .ntm-head-txt { flex:1; min-width:0; }
+      .ntm-title { font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px; font-size:20px; color:var(--deep); line-height:1; }
+      .ntm-sub { font-size:11px; color:var(--dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ntm-pill { background:var(--sky); color:var(--ocean); font-size:10px; letter-spacing:.5px; border-radius:999px; padding:3px 9px; white-space:nowrap; flex:none; }
+      .ntm-pill[hidden] { display:none; }
+      .ntm-chev { color:var(--dim); font-size:13px; flex:none; transition:transform .2s; }
+      #ntmSection.ntm-open .ntm-chev { transform:rotate(180deg); }
+      .ntm-body { display:none; padding:0 14px 13px; }
+      #ntmSection.ntm-open .ntm-body { display:block; }
+      .ntm-intro { display:flex; gap:13px; align-items:flex-start; padding-top:4px; }
+      .ntm-avatar { width:52px; height:52px; border-radius:50%; object-fit:cover; flex:none; background:var(--ocean); color:#fff; display:flex; align-items:center; justify-content:center; font-family:'Bebas Neue',sans-serif; font-size:20px; letter-spacing:1px; }
+      .ntm-name { font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:1px; color:var(--deep); line-height:1; }
+      .ntm-meta { font-size:11px; color:var(--dim); margin:3px 0 7px; }
+      .ntm-text { font-size:12.5px; line-height:1.55; color:var(--text); white-space:pre-wrap; word-break:break-word; }
+      .ntm-empty { font-size:12.5px; color:var(--dim); padding:4px 0 2px; }
+      .ntm-introbtn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin-top:12px; padding:9px; border:1px dashed rgba(10,126,164,0.4); border-radius:11px; background:transparent; color:var(--ocean); font-family:'DM Mono',monospace; font-size:12px; cursor:pointer; }
+      .ntm-footnote { text-align:center; font-size:10px; color:var(--dim); margin-top:9px; }
+      .ntm-form { display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+      #ntmSection.ntm-form-open .ntm-form { display:block; }
+      .ntm-form-title { font-family:'Bebas Neue',sans-serif; font-size:18px; letter-spacing:1.2px; color:var(--deep); }
+      .ntm-photo-row { display:flex; gap:12px; align-items:center; margin-top:11px; }
+      .ntm-photo-btn { width:62px; height:62px; border-radius:50%; border:1.5px dashed rgba(10,126,164,0.45); display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--dim); font-size:9px; gap:2px; background:transparent; cursor:pointer; overflow:hidden; flex:none; line-height:1.2; text-align:center; }
+      .ntm-photo-btn img { width:100%; height:100%; object-fit:cover; }
+      .ntm-photo-hint { font-size:11px; color:var(--dim); line-height:1.5; flex:1; }
+      .ntm-field { width:100%; box-sizing:border-box; margin-top:8px; padding:9px 11px; border:1px solid rgba(10,126,164,0.25); border-radius:10px; background:var(--foam); font-family:'DM Mono',monospace; font-size:12px; color:var(--text); }
+      .ntm-send { width:100%; margin-top:12px; padding:11px; border:none; border-radius:11px; background:var(--ocean); color:#fff; font-family:'DM Mono',monospace; font-size:13px; letter-spacing:.5px; cursor:pointer; }
+      .ntm-send:disabled { opacity:.6; }
+      .ntm-msg { text-align:center; font-size:11px; line-height:1.5; color:var(--dim); margin-top:9px; min-height:14px; }
+      .ntm-msg.ok { color:var(--green); }
+    </style>
+    <div id="ntmSection">
+      <div class="ntm-card">
+        <div class="ntm-head" id="ntmHead" role="button" tabindex="0" aria-expanded="false">
+          <span class="ntm-wave" aria-hidden="true">&#128075;</span>
+          <div class="ntm-head-txt">
+            <div class="ntm-title">Nice to meet you</div>
+            <div class="ntm-sub" id="ntmSub">Say hello to the bay</div>
+          </div>
+          <span class="ntm-pill" id="ntmPill" hidden></span>
+          <span class="ntm-chev" aria-hidden="true">&#9662;</span>
+        </div>
+        <div class="ntm-body">
+          <div id="ntmIntro"></div>
+          <button type="button" class="ntm-introbtn" id="ntmIntroBtn">&#65291; Introduce yourself</button>
+          <div class="ntm-footnote" id="ntmFoot"></div>
+          <div class="ntm-form">
+            <div class="ntm-form-title">Introduce yourself</div>
+            <div class="ntm-photo-row">
+              <button type="button" class="ntm-photo-btn" id="ntmPhotoBtn" aria-label="Add a photo">
+                <span id="ntmPhotoIcon">&#128247;<br>photo</span>
+              </button>
+              <input type="file" id="ntmPhotoInput" accept="image/*" style="display:none">
+              <div class="ntm-photo-hint">A friendly face is optional &mdash; a name and a line are all you need.</div>
+            </div>
+            <input type="text" class="ntm-field" id="ntmName" maxlength="40" placeholder="Your name">
+            <textarea class="ntm-field" id="ntmText" rows="3" maxlength="280" placeholder="Say hi in a sentence or two&#8230;"></textarea>
+            <button type="button" class="ntm-send" id="ntmSend">Send hello</button>
+            <div class="ntm-msg" id="ntmFormMsg"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4434,7 +4532,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260627-000531';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6796,7 +6894,7 @@ if ('serviceWorker' in navigator) {
   var SECTIONS = [
     { key:'verdict',   label:'Overall verdict',            sel:'#verdictBar',       essential:1, complete:1 },
     { key:'metrics',   label:'Metrics (Entry/Swim/Surge)', sel:'.metrics-panel',    essential:1, complete:1, core:1 },
-    { key:'wxbar',     label:'Weather bar (above slider)', sel:'#wxBar',            essential:1, complete:1 },
+    { key:'wxbar',     label:'Weather bar (sky + feels)',  sel:'#wxBar',            essential:1, complete:1 },
     { key:'slider',    label:'Time slider',                sel:'.slider-wrap',      essential:1, complete:1, core:1 },
     { key:'quality',   label:'Sea temp + Pollution',       sel:'.quality-row-slim', essential:1, complete:1 },
     { key:'bluebottle',label:'Bluebottle reports',         sel:'#bbSection',        essential:1, complete:1 },
@@ -6806,6 +6904,7 @@ if ('serviceWorker' in navigator) {
     { key:'summary',   label:"Today's news (summary)",     sel:'#summary-section',  essential:0, complete:1 },
     { key:'weekahead', label:'The week ahead (button)',    sel:'.week-ahead-card',  essential:1, complete:1 },
     { key:'forecast',  label:'Forecasted values',          sel:'.forecast-values',  essential:0, complete:1 },
+    { key:'intros',    label:'Nice to meet you',           sel:'#ntmSection',       essential:0, complete:1 },
     { key:'feedback',  label:'Feedback',                   sel:'#feedbackCard',     essential:0, complete:1 }
   ];
   var MODE_KEY = 'swim_app_mode';            // 'essential' | 'complete' | 'custom'
@@ -6952,7 +7051,7 @@ if ('serviceWorker' in navigator) {
       '<div class="admin-head"><h3>Section presets &mdash; admin</h3><button class="admin-x" id="adminX" aria-label="Close">&#10005;</button></div>' +
       '<p class="admin-note">Tick which sections appear in each version. Edits preview live <b>on this device</b>. Press <b>Copy config</b> and paste the result over the <code>SECTIONS</code> array in the code to publish for everyone. Metrics &amp; slider are always shown.</p>' +
       '<div class="admin-grid"><div class="admin-ghead"><span class="gl">Section</span><span class="gc">Essential</span><span class="gc">Complete</span></div>' + rows + '</div>' +
-      '<div class="admin-actions"><button id="adminCopy">Copy config</button><button id="adminReset">Reset to coded</button><button id="adminClose">Done</button></div>' +
+      '<div class="admin-actions"><button id="adminIntros">Review intros</button><button id="adminCopy">Copy config</button><button id="adminReset">Reset to coded</button><button id="adminClose">Done</button></div>' +
       '<div class="admin-msg" id="adminMsg"></div>' +
       '<textarea class="admin-out" id="adminOut" readonly></textarea></div>';
     document.body.appendChild(ov);
@@ -6979,6 +7078,8 @@ if ('serviceWorker' in navigator) {
     var closeA = function () { ov.classList.remove('show'); };
     ov.querySelector('#adminX').addEventListener('click', closeA);
     ov.querySelector('#adminClose').addEventListener('click', closeA);
+    var aIntros = ov.querySelector('#adminIntros');
+    if (aIntros) aIntros.addEventListener('click', function () { if (window.openIntroAdmin) window.openIntroAdmin(); });
     ov.addEventListener('click', function (ev) { if (ev.target === ov) closeA(); });
   }
   function openAdmin(){ buildAdmin(); refreshAdminChecks(); var ov = document.getElementById('adminOverlay'); if (ov) ov.classList.add('show'); }
@@ -7001,6 +7102,208 @@ if ('serviceWorker' in navigator) {
     applyMetricStyle(getMetricStyle());   // global display preference, applies in every mode
     apply(getMode());   // panel starts closed even if Custom is the saved mode; picks are still applied
     if (/[?&]admin=1(\b|&|$)/.test(location.search)) openAdmin();   // ?admin=1 opens the preset editor
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+<script>
+/* ============================================================================
+   "NICE TO MEET YOU" — community self-introductions.
+   Backend: Supabase `intros` table + RPCs (submit_intro / get_today_intro /
+   admin_list_intros / admin_approve_intro / admin_hide_intro) and the public
+   `intro-photos` Storage bucket. Admin actions reuse the ?token= admin key
+   (camToken), checked server-side against app_secrets.intro_admin_token.
+   ========================================================================== */
+(function () {
+  var SB   = (typeof BB_SUPABASE_URL !== 'undefined') ? BB_SUPABASE_URL : '';
+  var KEY  = (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : '';
+  var RPC  = SB + '/rest/v1/rpc/';
+  var hdrs = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+
+  function $(id){ return document.getElementById(id); }
+  function token(){ try { return (typeof camToken === 'function') ? camToken() : (localStorage.getItem('swim_admin_token') || ''); } catch (e) { return ''; } }
+  function deviceId(){
+    try {
+      var id = localStorage.getItem('swim_intro_device');
+      if (!id) { id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)); localStorage.setItem('swim_intro_device', id); }
+      return id;
+    } catch (e) { return 'unknown'; }
+  }
+  function initials(name){
+    var p = (name || '').trim().split(/\s+/).filter(Boolean);
+    return ((p[0] ? p[0][0] : '') + (p[1] ? p[1][0] : '')).toUpperCase() || '?';
+  }
+  function esc(s){ return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+
+  /* photo: centre-crop to a 512px square JPEG Blob */
+  function photoBlob(file){
+    return new Promise(function (resolve, reject) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () {
+        var S = 512, side = Math.min(img.width, img.height);
+        var sx = (img.width - side) / 2, sy = (img.height - side) / 2;
+        var cv = document.createElement('canvas'); cv.width = S; cv.height = S;
+        cv.getContext('2d').drawImage(img, sx, sy, side, side, 0, 0, S, S);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? resolve(b) : reject(new Error('encode failed')); }, 'image/jpeg', 0.82);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+      img.src = url;
+    });
+  }
+  async function uploadPhoto(blob){
+    var nm = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))) + '.jpg';
+    var res = await fetch(SB + '/storage/v1/object/intro-photos/' + nm, {
+      method: 'POST',
+      headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
+      body: blob
+    });
+    if (!res.ok) throw new Error('photo upload failed (' + res.status + ')');
+    return SB + '/storage/v1/object/public/intro-photos/' + nm;
+  }
+
+  /* public: today's featured intro + queue count */
+  async function loadToday(){
+    try {
+      var r = await fetch(RPC + 'get_today_intro', { method: 'POST', headers: hdrs, body: '{}' });
+      if (!r.ok) return;
+      var rows = await r.json(); var row = Array.isArray(rows) ? rows[0] : rows;
+      render(row || {});
+    } catch (e) {}
+  }
+  function render(row){
+    var featured = row && row.name;
+    var queued = (row && row.queued) ? row.queued : 0;
+    var sub = $('ntmSub'), pill = $('ntmPill'), intro = $('ntmIntro'), foot = $('ntmFoot');
+    if (sub) sub.textContent = featured ? (row.name + ' said hello today') : 'Be the first to say hello';
+    if (pill) { if (queued > 0) { pill.textContent = '+' + queued + ' waiting'; pill.hidden = false; } else pill.hidden = true; }
+    if (intro) {
+      if (featured) {
+        var av = row.photo_url
+          ? '<img class="ntm-avatar" src="' + esc(row.photo_url) + '" alt="">'
+          : '<div class="ntm-avatar">' + esc(initials(row.name)) + '</div>';
+        intro.innerHTML = '<div class="ntm-intro">' + av +
+          '<div style="flex:1;min-width:0;"><div class="ntm-name">' + esc(row.name) + '</div>' +
+          '<div class="ntm-meta">said hello &middot; today</div>' +
+          '<div class="ntm-text">' + esc(row.body) + '</div></div></div>';
+      } else {
+        intro.innerHTML = '<div class="ntm-empty">No hello yet today &mdash; want to be the first?</div>';
+      }
+    }
+    if (foot) foot.textContent = queued > 0 ? ('a new hello each day &middot; ' + queued + ' in the queue') : 'a new hello appears here each day';
+  }
+
+  /* submit */
+  function setMsg(t, ok){ var m = $('ntmFormMsg'); if (m) { m.textContent = t || ''; m.className = 'ntm-msg' + (ok ? ' ok' : ''); } }
+  async function submit(){
+    var nameEl = $('ntmName'), textEl = $('ntmText'), fileEl = $('ntmPhotoInput'), btn = $('ntmSend');
+    var name = (nameEl.value || '').trim(), body = (textEl.value || '').trim();
+    if (!name || !body) { setMsg('Add your name and a short hello.'); return; }
+    btn.disabled = true; setMsg('Sending…');
+    try {
+      var photo_url = null;
+      if (fileEl.files && fileEl.files[0]) { photo_url = await uploadPhoto(await photoBlob(fileEl.files[0])); }
+      var r = await fetch(RPC + 'submit_intro', { method: 'POST', headers: hdrs,
+        body: JSON.stringify({ p_name: name, p_body: body, p_photo_url: photo_url, p_device: deviceId() }) });
+      if (!r.ok) { var t = await r.text(); throw new Error(t || ('HTTP ' + r.status)); }
+      setMsg('Thanks! Your hello is in the queue for approval.', true);
+      nameEl.value = ''; textEl.value = ''; fileEl.value = ''; var ic = $('ntmPhotoIcon'); if (ic) ic.innerHTML = '\uD83D\uDCF7<br>photo';
+    } catch (e) {
+      var msg = '' + ((e && e.message) || '');
+      if (msg.indexOf('already have an intro') >= 0) setMsg('You already have an intro waiting to be approved.');
+      else setMsg('Could not send — please try again.');
+    } finally { btn.disabled = false; }
+  }
+
+  /* admin review overlay */
+  function buildAdminOverlay(){
+    if ($('introAdminOverlay')) return;
+    var css = document.createElement('style');
+    css.textContent =
+      "#introAdminOverlay{position:fixed;inset:0;z-index:100001;display:none;align-items:flex-start;justify-content:center;background:rgba(6,40,55,.55);overflow:auto;padding:24px 12px;font-family:'DM Mono',ui-monospace,monospace;}" +
+      "#introAdminOverlay.show{display:flex;}" +
+      ".ia-modal{background:#fff;color:var(--text,#0d2b3e);border-radius:16px;max-width:520px;width:100%;padding:18px;box-shadow:0 18px 60px rgba(6,40,55,.4);}" +
+      ".ia-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}" +
+      ".ia-head h3{margin:0;font-size:15px;letter-spacing:.4px;}" +
+      ".ia-x{border:none;background:transparent;font-size:18px;color:var(--dim,#5a8a9f);cursor:pointer;line-height:1;}" +
+      ".ia-note{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.45;margin:0 0 12px;}" +
+      ".ia-note code{background:rgba(10,126,164,.1);padding:1px 4px;border-radius:4px;}" +
+      ".ia-row{display:flex;gap:10px;align-items:center;border:1px solid var(--border,#e1ecf0);border-radius:12px;padding:10px;margin-bottom:8px;}" +
+      ".ia-av{flex:none;width:40px;height:40px;border-radius:50%;object-fit:cover;background:#5a8a9f;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:16px;}" +
+      ".ia-tx{flex:1;min-width:0;}" +
+      ".ia-nm{font-size:13px;color:var(--deep,#064e6e);}" +
+      ".ia-bd{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.4;margin-top:2px;}" +
+      ".ia-btn{flex:none;width:32px;height:32px;border-radius:9px;font-size:15px;cursor:pointer;}" +
+      ".ia-ok{border:none;background:var(--green,#1a9e6e);color:#fff;}" +
+      ".ia-no{border:1px solid rgba(192,57,43,.4);background:#fff;color:var(--red,#c0392b);}" +
+      ".ia-empty{font-size:12px;color:var(--dim,#5a8a9f);text-align:center;padding:18px 0;}";
+    document.head.appendChild(css);
+    var ov = document.createElement('div'); ov.id = 'introAdminOverlay';
+    ov.innerHTML =
+      '<div class="ia-modal">' +
+      '<div class="ia-head"><h3>Nice to meet you &mdash; pending</h3><button class="ia-x" id="iaX" aria-label="Close">&#10005;</button></div>' +
+      '<p class="ia-note">Approve to add an intro to the queue (one shows per day). Reject hides it. Needs your admin token in the URL (<code>?token=&hellip;</code>).</p>' +
+      '<div id="iaList"><div class="ia-empty">Loading…</div></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var close = function () { ov.classList.remove('show'); };
+    ov.querySelector('#iaX').addEventListener('click', close);
+    ov.addEventListener('click', function (ev) { if (ev.target === ov) close(); });
+    ov.querySelector('#iaList').addEventListener('click', function (ev) {
+      var b = ev.target.closest('.ia-btn'); if (!b) return;
+      var rowEl = b.closest('.ia-row'); if (!rowEl) return;
+      act(rowEl.getAttribute('data-id'), b.getAttribute('data-act') === 'ok');
+    });
+  }
+  async function loadPending(){
+    var list = $('iaList'); if (!list) return;
+    var tk = token();
+    if (!tk) { list.innerHTML = '<div class="ia-empty">No admin token — add <code>?token=…</code> to the URL.</div>'; return; }
+    list.innerHTML = '<div class="ia-empty">Loading…</div>';
+    try {
+      var r = await fetch(RPC + 'admin_list_intros', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var rows = await r.json();
+      if (!rows || !rows.length) { list.innerHTML = '<div class="ia-empty">Nothing waiting.</div>'; return; }
+      list.innerHTML = rows.map(function (x) {
+        var av = x.photo_url ? '<img class="ia-av" src="' + esc(x.photo_url) + '" alt="">' : '<div class="ia-av">' + esc(initials(x.name)) + '</div>';
+        return '<div class="ia-row" data-id="' + esc(x.id) + '">' + av +
+          '<div class="ia-tx"><div class="ia-nm">' + esc(x.name) + '</div><div class="ia-bd">' + esc(x.body) + '</div></div>' +
+          '<button class="ia-btn ia-ok" data-act="ok" aria-label="Approve">&#10003;</button>' +
+          '<button class="ia-btn ia-no" data-act="no" aria-label="Reject">&#10005;</button></div>';
+      }).join('');
+    } catch (e) { list.innerHTML = '<div class="ia-empty">Couldn\u2019t load (token may be wrong).</div>'; }
+  }
+  async function act(id, ok){
+    var tk = token(); if (!tk) return;
+    var fn = ok ? 'admin_approve_intro' : 'admin_hide_intro';
+    try {
+      var r = await fetch(RPC + fn, { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: id }) });
+      if (r.ok) { loadPending(); loadToday(); }
+    } catch (e) {}
+  }
+  function openIntroAdmin(){ buildAdminOverlay(); var ov = $('introAdminOverlay'); if (ov) ov.classList.add('show'); loadPending(); }
+  window.openIntroAdmin = openIntroAdmin;
+
+  /* wire up */
+  function init(){
+    var head = $('ntmHead'); if (!head) return;
+    var sec = $('ntmSection');
+    function toggle(){ sec.classList.toggle('ntm-open'); head.setAttribute('aria-expanded', sec.classList.contains('ntm-open') ? 'true' : 'false'); }
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    var ib = $('ntmIntroBtn'); if (ib) ib.addEventListener('click', function () { sec.classList.add('ntm-form-open'); var n = $('ntmName'); if (n) n.focus(); });
+    var pb = $('ntmPhotoBtn'), pi = $('ntmPhotoInput');
+    if (pb && pi) {
+      pb.addEventListener('click', function () { pi.click(); });
+      pi.addEventListener('change', function () {
+        var f = pi.files && pi.files[0]; var ic = $('ntmPhotoIcon');
+        if (f && ic) { ic.innerHTML = '<img src="' + URL.createObjectURL(f) + '" alt="">'; }
+      });
+    }
+    var sb = $('ntmSend'); if (sb) sb.addEventListener('click', submit);
+    if (/[?&]intros=1(\b|&|$)/.test(location.search)) openIntroAdmin();
+    loadToday();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
