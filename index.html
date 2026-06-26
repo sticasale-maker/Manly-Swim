@@ -4000,53 +4000,48 @@ async function fetchBeachwatch() {
 }
 
 function renderPollution(bw) {
-  const txt  = document.getElementById('pollutionText');
-  const sub  = document.getElementById('pollutionSub');
+  // Decide the verdict ONCE, then paint whichever elements actually exist.
+  // The full-width strip (pollutionText/Sub) was retired in favour of the slim
+  // quality card (pollutionTextSlim/Sub) — referencing the old IDs unconditionally
+  // threw "Cannot set properties of null", which aborted the whole secondary
+  // render (taking the weather re-render down with it). Every lookup is now guarded.
+  let cls, label, full, sub;
 
   if (!bw) {
-    // Fetch completely failed (CORS or network)
-    txt.className = 'pollution-text unknown';
-    txt.textContent = 'Check Beachwatch';
-    sub.textContent = 'Tap ↗ for today\'s forecast';
-    const ts = document.getElementById('pollutionTextSlim'); const ss = document.getElementById('pollutionSubSlim');
-    if (ts) { ts.className = 'pollution-text unknown'; ts.textContent = 'Unknown'; }
-    if (ss) ss.textContent = '';
-    return;
-  }
-  if (!bw.forecast) {
-    // API worked but no forecast issued yet (e.g. before 6am update)
-    txt.className = 'pollution-text unknown';
-    txt.textContent = 'Not yet issued';
-    sub.textContent = 'Updated 6am & 1:30pm · Tap ↗ for details';
-    const ts = document.getElementById('pollutionTextSlim'); const ss = document.getElementById('pollutionSubSlim');
-    if (ts) { ts.className = 'pollution-text unknown'; ts.textContent = 'Unknown'; }
-    if (ss) ss.textContent = 'Updated 6am & 1:30pm';
-    return;
-  }
-
-  const f = bw.forecast.toLowerCase();
-  let cls, label;
-
-  if (f.includes('not available') || f.includes('not forecast')) {
-    cls = 'unknown'; label = 'No forecast';
-  } else if (f.includes('unlikely') || f.includes('good')) {
-    cls = 'good';    label = 'Unlikely';
-  } else if (f.includes('possible') || f.includes('fair')) {
-    cls = 'fair';    label = 'Possible';
-  } else if (f.includes('likely') || f.includes('poor')) {
-    cls = 'poor';    label = 'Likely';
+    // Fetch completely failed (network / worker down)
+    cls = 'unknown'; label = 'Unknown'; full = 'Check Beachwatch'; sub = 'Tap ↗ for today\'s forecast';
+  } else if (!bw.forecast) {
+    // API worked but no forecast issued yet (e.g. before the 6am update)
+    cls = 'unknown'; label = 'Unknown'; full = 'Not yet issued'; sub = 'Updated 6am & 1:30pm · Tap ↗ for details';
   } else {
-    cls = 'unknown'; label = bw.forecast;
+    const f = bw.forecast.toLowerCase();
+    if (f.includes('not available') || f.includes('not forecast')) {
+      cls = 'unknown'; label = 'No forecast';
+    } else if (f.includes('unlikely') || f.includes('good')) {
+      cls = 'good';    label = 'Unlikely';
+    } else if (f.includes('possible') || f.includes('fair')) {
+      cls = 'fair';    label = 'Possible';
+    } else if (f.includes('likely') || f.includes('poor')) {
+      cls = 'poor';    label = 'Likely';
+    } else {
+      cls = 'unknown'; label = bw.forecast;
+    }
+    full = 'POLLUTION: ' + label;
+    sub  = '';
   }
 
-  txt.className  = `pollution-text ${cls}`;
-  txt.textContent = 'POLLUTION: ' + label;
-  sub.textContent = '';
-  // Also update the slim quality card above the slider
+  // Slim quality card (the live UI) — guarded.
   const txtSlim = document.getElementById('pollutionTextSlim');
   const subSlim = document.getElementById('pollutionSubSlim');
-  if (txtSlim) { txtSlim.className = `pollution-text ${cls}`; txtSlim.textContent = label.toUpperCase(); }
-  if (subSlim) subSlim.textContent = sub.textContent;
+  if (txtSlim) { txtSlim.className = `pollution-text ${cls}`; txtSlim.textContent = (label || '').toUpperCase(); }
+  if (subSlim) subSlim.textContent = (bw && bw.forecast) ? '' : sub;
+
+  // Legacy full-width strip — only if it's still in the DOM (guarded, so a
+  // missing element can never throw again).
+  const txt = document.getElementById('pollutionText');
+  const sb  = document.getElementById('pollutionSub');
+  if (txt) { txt.className = `pollution-text ${cls}`; txt.textContent = full; }
+  if (sb)  sb.textContent = sub;
 }
 
 // =============================================================================
@@ -4189,7 +4184,8 @@ async function loadAndRender(forceRefresh = false) {
         _wxMatrix = wxRes.value.hourly || {};
         _wxDaily  = wxRes.value.daily  || {};
       }
-      renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null);
+      try { renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null); }
+      catch (pErr) { diag('renderPollution error (isolated): ' + pErr.message); console.warn('renderPollution failed (isolated):', pErr); }
 
       // ── Re-render with full merged data ────────────────────────────────────────
       const currentH  = _matrix[_sliderIdx] || wwData || null;
@@ -4329,7 +4325,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-130805';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
