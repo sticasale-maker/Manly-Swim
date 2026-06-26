@@ -4325,7 +4325,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260626-133227';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6658,10 +6658,24 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       }
       if (path.length > 4) rays.push(path);
     }
-    // thin out so a busy entry edge doesn't clutter the map
-    if (rays.length > 22) {
-      var kept = [], step = rays.length / 22;
-      for (var t = 0; t < rays.length; t += step) kept.push(rays[Math.floor(t)]);
+    // Keep the rays that actually SHOW the refraction (largest heading change from
+    // start to end) plus an even spread of the rest — so the arrows trace the curve
+    // into South Steyne instead of being thinned away with the straight ones.
+    if (rays.length > 26) {
+      var curv = function (pa) {
+        var n = pa.length - 1;
+        var a0 = Math.atan2(pa[1][1] - pa[0][1], pa[1][0] - pa[0][0]);
+        var a1 = Math.atan2(pa[n][1] - pa[n - 1][1], pa[n][0] - pa[n - 1][0]);
+        var d = Math.abs(a1 - a0); if (d > Math.PI) d = 2 * Math.PI - d; return d;
+      };
+      var ranked = rays.map(function (pa, i) { return [i, curv(pa)]; });
+      ranked.sort(function (a, b) { return b[1] - a[1]; });
+      var keep = {}, bent = Math.min(16, ranked.length);
+      for (var bi = 0; bi < bent; bi++) keep[ranked[bi][0]] = 1;   // most-refracted arrows
+      var stp = rays.length / 12;                                  // + an even spread for context
+      for (var tt = 0; tt < rays.length; tt += stp) keep[Math.floor(tt)] = 1;
+      var kept = [];
+      for (var rk = 0; rk < rays.length; rk++) if (keep[rk]) kept.push(rays[rk]);
       rays = kept;
     }
   }
@@ -6679,13 +6693,18 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   var POOL = 200, parts = [];
   for (var i = 0; i < POOL; i++) parts.push({ x: Math.random(), y: Math.random(), s1: Math.random(), s2: Math.random() });
 
-  function drawWave(x, y, crest, len, amp, col, alpha, foam) {
+  function drawWave(x, y, crest, len, amp, col, alpha, foam, bow) {
+    // bow (signed, ~-1..1) skews the crest apex sideways so the stroke WRAPS with
+    // the local refraction instead of bowing straight downstream. Set at the call
+    // site from the field's turn. 0 = symmetric (straight-running swell).
+    bow = bow || 0;
+    var sk = bow * len * 0.16;
     ctx.save(); ctx.translate(x, y); ctx.rotate(crest);
     ctx.globalAlpha = alpha; ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, amp * 0.5); ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.quadraticCurveTo(0, -amp, len / 2, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-len / 2, 0); ctx.quadraticCurveTo(sk, -amp, len / 2, 0); ctx.stroke();
     if (foam) {
       ctx.globalAlpha = alpha * 0.8; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = Math.max(1, amp * 0.35);
-      ctx.beginPath(); ctx.moveTo(-len * 0.22, -amp * 0.55); ctx.quadraticCurveTo(0, -amp * 1.05, len * 0.22, -amp * 0.55); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-len * 0.22, -amp * 0.55); ctx.quadraticCurveTo(sk, -amp * 1.05, len * 0.22, -amp * 0.55); ctx.stroke();
     }
     ctx.restore(); ctx.globalAlpha = 1;
   }
@@ -6740,7 +6759,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
     ctx.strokeStyle = 'rgba(110,180,210,0.4)'; ctx.lineWidth = 0.04 * W; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(coastStroke);
     // Directional vectors of the swell — refraction rays curving around the headland.
-    ctx.strokeStyle = 'rgba(255,255,255,0.20)'; ctx.lineWidth = Math.max(1, 0.0035 * W); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,0.34)'; ctx.lineWidth = Math.max(1.2, 0.0045 * W); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     for (var ri = 0; ri < rays.length; ri++) {
       var pa = rays[ri]; if (pa.length < 2) continue;
       ctx.beginPath(); ctx.moveTo(pa[0][0] * W, pa[0][1] * H);
@@ -6749,7 +6768,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       var qi = Math.floor(pa.length * 0.66), q2 = Math.min(pa.length - 1, qi + 1);
       if (q2 > qi) {
         var hX = pa[qi][0] * W, hY = pa[qi][1] * H;
-        var ha = Math.atan2((pa[q2][1] - pa[qi][1]) * H, (pa[q2][0] - pa[qi][0]) * W), hl = 0.016 * W;
+        var ha = Math.atan2((pa[q2][1] - pa[qi][1]) * H, (pa[q2][0] - pa[qi][0]) * W), hl = 0.020 * W;
         ctx.beginPath();
         ctx.moveTo(hX, hY); ctx.lineTo(hX - Math.cos(ha - 0.5) * hl, hY - Math.sin(ha - 0.5) * hl);
         ctx.moveTo(hX, hY); ctx.lineTo(hX - Math.cos(ha + 0.5) * hl, hY - Math.sin(ha + 0.5) * hl);
@@ -6771,7 +6790,15 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       var amp = (0.006 + hN * 0.010) * W * (0.8 + 0.4 * p.s1);  // crest weight from height
       var len = (0.05 + hN * 0.055) * W;                        // bigger swell = longer crests
       var ang = Math.atan2(vy, vx);
-      drawWave(p.x * W, p.y * H, ang + Math.PI / 2, len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6);
+      // Crest WRAPS with the refraction: sample the field a step ahead; the turn
+      // (cross product) decides which way the stroke leans, scaled by how hard the
+      // ray is bending. If crests ever read like they curl the WRONG way, flip the
+      // sign of the 6 below to -6 (single-character change).
+      var fax = samp(fieldDX, p.x + vx * 0.04, p.y + vy * 0.04);
+      var fay = samp(fieldDY, p.x + vx * 0.04, p.y + vy * 0.04);
+      var fam = Math.hypot(fax, fay) || 1; fax /= fam; fay /= fam;
+      var bow = clamp((vx * fay - vy * fax) * 6, -1, 1);
+      drawWave(p.x * W, p.y * H, ang + Math.PI / 2, len, amp, '#eaf6fb', clamp(a, 0, 0.92), hN > 0.55 && fh > 0.6 && p.s2 > 0.6, bow);
     }
     ctx.restore();
 
