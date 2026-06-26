@@ -2197,7 +2197,7 @@ const OM_WEATHER_URL = `https://api.open-meteo.com/v1/forecast`
   + `,cloud_cover,precipitation_probability,weather_code`
   + `&daily=sunrise,sunset,weather_code`
   + `&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
-  + `,cloud_cover,precipitation_probability,weather_code`
+  + `,cloud_cover,weather_code`
   + `&forecast_days=7&wind_speed_unit=kmh&timezone=Australia%2FSydney`;
 
 // =============================================================================
@@ -3183,7 +3183,60 @@ function mergeOMarineMatrix(matrix, omData) {
 // FETCH OPEN-METEO WEATHER (temp, wind chill, cloud, rain, sunrise/sunset)
 // =============================================================================
 const OM_WX_CACHE_KEY = 'swim_omwx_cache_v3';
-const OM_WX_CACHE_TTL = 3 * 60 * 60 * 1000; // 3 hours
+const OM_WX_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours (matches marine — weather changes slowly; halves live API hits)
+
+// Stripped-down request: just the variables the temp / feels-like / sun cards
+// actually need. If the full request ever 400s because Open-Meteo rejects one
+// optional variable (cloud_cover, weather_code, a renamed field, …), this still
+// brings back air temp + feels-like so the cards never go blank.
+const OM_WEATHER_CORE_URL = `https://api.open-meteo.com/v1/forecast`
+  + `?latitude=${MANLY_LAT}&longitude=${MANLY_LNG}`
+  + `&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
+  + `&daily=sunrise,sunset`
+  + `&current=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
+  + `&forecast_days=7&wind_speed_unit=kmh&timezone=Australia%2FSydney`;
+
+function parseOMWeather(j) {
+  // Current conditions
+  const c = j.current || {};
+  const current = {
+    temp:      c.temperature_2m          ?? null,
+    feelsLike: c.apparent_temperature    ?? null,
+    windKmh:   c.wind_speed_10m          ?? null,
+    windDir:   c.wind_direction_10m      ?? null,
+    cloud:     c.cloud_cover             ?? null,
+    rainProb:  c.precipitation_probability ?? null, // not requested in current; filled from hourly at display time
+    wxCode:    c.weather_code            ?? 0,
+  };
+  // Hourly
+  const times = j.hourly?.time || [];
+  const hourly = {};
+  const hKeys = {
+    temp:     'temperature_2m',
+    feelsLike:'apparent_temperature',
+    windKmh:  'wind_speed_10m',
+    windDir:  'wind_direction_10m',
+    cloud:    'cloud_cover',
+    rainProb: 'precipitation_probability',
+    wxCode:   'weather_code',
+  };
+  times.forEach((dt, i) => {
+    hourly[dt] = {};
+    Object.entries(hKeys).forEach(([key, field]) => {
+      hourly[dt][key] = j.hourly?.[field]?.[i] ?? null;
+    });
+  });
+  // Daily sunrise/sunset
+  const dTimes = j.daily?.time || [];
+  const daily  = {};
+  dTimes.forEach((date, i) => {
+    daily[date] = {
+      sunrise: j.daily?.sunrise?.[i] ?? null,
+      sunset:  j.daily?.sunset?.[i]  ?? null,
+    };
+  });
+  return { current, hourly, daily };
+}
 
 async function fetchOMWeather() {
   const cache = loadCache(OM_WX_CACHE_KEY);
@@ -3191,63 +3244,31 @@ async function fetchOMWeather() {
   // Two attempts with a real AbortController timeout. On cellular a stalled
   // socket would otherwise hang forever (plain fetch has no timeout), so weather
   // silently never arrived while swell — which retries — loaded fine.
+  // Attempt 1 = full URL; attempt 2 = the trimmed core URL, so a single bad
+  // variable can never keep air temp off the screen.
+  const urls = [OM_WEATHER_URL, OM_WEATHER_CORE_URL];
   for (let attempt = 1; attempt <= 2; attempt++) {
-  try {
-    const res = await fetchWithTimeout(OM_WEATHER_URL + '&t=' + Date.now(), 10000, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`OM Weather ${res.status}`);
-    const j = await res.json();
-
-    // Current conditions
-    const c = j.current || {};
-    const current = {
-      temp:      c.temperature_2m          ?? null,
-      feelsLike: c.apparent_temperature    ?? null,
-      windKmh:   c.wind_speed_10m          ?? null,
-      windDir:   c.wind_direction_10m      ?? null,
-      cloud:     c.cloud_cover             ?? null,
-      rainProb:  c.precipitation_probability ?? null,
-      wxCode:    c.weather_code            ?? 0,
-    };
-
-    // Hourly
-    const times = j.hourly?.time || [];
-    const hourly = {};
-    const hKeys = {
-      temp:     'temperature_2m',
-      feelsLike:'apparent_temperature',
-      windKmh:  'wind_speed_10m',
-      windDir:  'wind_direction_10m',
-      cloud:    'cloud_cover',
-      rainProb: 'precipitation_probability',
-      wxCode:   'weather_code',
-    };
-    times.forEach((dt, i) => {
-      hourly[dt] = {};
-      Object.entries(hKeys).forEach(([key, field]) => {
-        hourly[dt][key] = j.hourly?.[field]?.[i] ?? null;
-      });
-    });
-
-    // Daily sunrise/sunset
-    const dTimes = j.daily?.time || [];
-    const daily  = {};
-    dTimes.forEach((date, i) => {
-      daily[date] = {
-        sunrise: j.daily?.sunrise?.[i] ?? null,
-        sunset:  j.daily?.sunset?.[i]  ?? null,
-      };
-    });
-
-    const data = { current, hourly, daily };
-    saveCache(OM_WX_CACHE_KEY, data);
-    return data;
-  } catch(e) {
-    console.warn('OM Weather attempt ' + attempt + ' failed:', e.message);
-    if (attempt < 2) { await new Promise(r => setTimeout(r, 1200)); continue; }
-    // Last resort: serve stale cache rather than nothing.
-    if (cache && cache.data) return cache.data;
-    return null;
-  }
+    const url = urls[attempt - 1] || urls[urls.length - 1];
+    try {
+      const res = await fetchWithTimeout(url + '&t=' + Date.now(), 7000, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const j = await res.json();
+      if (j && j.error) throw new Error('API: ' + (j.reason || 'error'));
+      const data = parseOMWeather(j);
+      if (data.current.temp == null && !Object.keys(data.hourly).length) {
+        throw new Error('empty payload');
+      }
+      saveCache(OM_WX_CACHE_KEY, data);
+      diag('weather ok (attempt ' + attempt + (attempt === 2 ? ', core' : '') + ')');
+      return data;
+    } catch(e) {
+      diag('weather attempt ' + attempt + ' failed: ' + e.message);
+      console.warn('OM Weather attempt ' + attempt + ' failed:', e.message);
+      if (attempt < 2) { await new Promise(r => setTimeout(r, 800)); continue; }
+      // Last resort: serve stale cache rather than nothing.
+      if (cache && cache.data) { diag('weather → stale cache'); return cache.data; }
+      return null;
+    }
   }
   return null;
 }
@@ -3939,32 +3960,39 @@ async function fetchBeachwatch() {
 
   async function tryFetch(url) {
     const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`BW HTTP ${res.status}`);
-    let j = await res.json();
-    // worker returns clean JSON passthrough
-    // API returns FeatureCollection; find South Steyne feature
-    const feature = (j?.features || []).find(f =>
-      (f.properties?.siteName || '').toLowerCase().includes('south steyne')
-    ) || j?.features?.[0];
-    if (!feature) throw new Error('BW: no features in response');
-    const props = feature.properties || {};
-    console.log('Beachwatch raw props:', JSON.stringify(props));
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const j = await res.json();
+    // Accept either a GeoJSON FeatureCollection or a bare array of sites.
+    const feats = j?.features || (Array.isArray(j) ? j : []);
+    const matchName = (o) =>
+      ((o?.siteName || o?.name || o?.site_name || '') + '').toLowerCase().includes('south steyne');
+    const feature = feats.find(f => matchName(f.properties || f)) || feats[0];
+    if (!feature) throw new Error('no features');
+    const p = feature.properties || feature;
+    // Log the property keys so a renamed field is obvious in the on-device popup.
+    diag('BW keys: ' + Object.keys(p).slice(0, 10).join(','));
+    // Tolerate a few likely field-name variants for the forecast text.
+    const forecast =
+      p.pollutionForecast ?? p.pollution_forecast ?? p.pollutionForecastText ?? p.forecast ?? null;
     return {
-      forecast:  props.pollutionForecast           || null,
-      timestamp: props.pollutionForecastTimeStamp  || null,
-      latest:    props.latestResult                || null,
-      latestDate:props.latestResultObservationDate || null,
+      forecast,
+      timestamp:  p.pollutionForecastTimeStamp ?? p.pollutionForecastTimestamp ?? p.timestamp ?? null,
+      latest:     p.latestResult                ?? null,
+      latestDate: p.latestResultObservationDate ?? null,
     };
   }
 
-  // Try direct first, fall back to CORS proxy
-  for (const url of [BW_API_DIRECT, BW_API_PROXY]) {
+  // Proxy (Cloudflare Worker) FIRST — the direct NSW endpoint is cross-origin and
+  // gets CORS-blocked in the browser, so the worker is the real data path.
+  for (const url of [BW_API_PROXY, BW_API_DIRECT]) {
     try {
       const data = await tryFetch(url);
       saveCache(BW_CACHE_KEY, data);
-      console.log('Beachwatch loaded from', url);
+      diag('BW ok via ' + (url === BW_API_PROXY ? 'proxy' : 'direct') +
+           ' (' + (data.forecast ? 'forecast present' : 'no forecast field') + ')');
       return data;
     } catch(e) {
+      diag('BW fail ' + (url === BW_API_PROXY ? 'proxy' : 'direct') + ': ' + e.message);
       console.warn('Beachwatch attempt failed:', url, e.message);
     }
   }
@@ -4149,7 +4177,7 @@ async function loadAndRender(forceRefresh = false) {
       const withTimeout = (p, ms) => Promise.race([p, new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
       const [omRes, wxRes, bwRes] = await Promise.allSettled([
         withTimeout(fetchOMarine(),    14000),
-        withTimeout(fetchOMWeather(),  14000),
+        withTimeout(fetchOMWeather(),  16000),
         withTimeout(fetchBeachwatch(), 6000),
       ]);
 
@@ -4301,7 +4329,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260625-160805';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
