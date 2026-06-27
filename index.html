@@ -1967,9 +1967,14 @@
     <!-- ── "Nice to meet you" — community self-introductions ──────────────── -->
     <style>
       #ntmSection { margin:0 0 10px; }
-      @keyframes ntmPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(10,126,164,0); } 50%{ box-shadow:0 0 0 4px rgba(10,126,164,0.22); } }
-      #ntmSection.ntm-attn .ntm-card { animation:ntmPulse 1.6s ease-in-out infinite; border-color:var(--ocean); }
-      @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-card { animation:none; border-color:var(--ocean); } }
+      @keyframes ntmPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(10,126,164,0); } 50%{ box-shadow:0 0 0 6px rgba(10,126,164,0.30); } }
+      #ntmSection.ntm-attn .ntm-card { animation:ntmPulse 1.5s ease-in-out infinite; border-color:var(--ocean); }
+      @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-card { animation:none; border-color:var(--ocean); box-shadow:0 0 0 2px rgba(10,126,164,0.30); } }
+      /* persistent "new hello" dot in the header — stays visible even when motion is reduced */
+      .ntm-newdot { width:9px; height:9px; border-radius:50%; background:var(--ocean); flex:none; display:none; }
+      #ntmSection.ntm-attn .ntm-newdot { display:block; animation:ntmDot 1.5s ease-in-out infinite; }
+      @keyframes ntmDot { 0%{ box-shadow:0 0 0 0 rgba(10,126,164,0.5); } 70%,100%{ box-shadow:0 0 0 6px rgba(10,126,164,0); } }
+      @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-newdot { animation:none; } }
       .ntm-card { background:var(--card); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
       .ntm-head { display:flex; align-items:center; gap:11px; padding:11px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
       .ntm-wave { font-size:20px; line-height:1; flex:none; }
@@ -2018,6 +2023,7 @@
             <div class="ntm-sub" id="ntmSub">Say hello to the bay</div>
           </div>
           <span class="ntm-pill" id="ntmPill" hidden></span>
+          <span class="ntm-newdot" id="ntmNewDot" aria-hidden="true"></span>
           <span class="ntm-chev" aria-hidden="true">&#9662;</span>
         </div>
         <div class="ntm-body">
@@ -4541,7 +4547,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260627-021635';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7195,7 +7201,18 @@ if ('serviceWorker' in navigator) {
     var queued = (data && data.queued) ? data.queued : 0;
     var sec = $('ntmSection');
     var sub = $('ntmSub'), pill = $('ntmPill'), intro = $('ntmIntro'), foot = $('ntmFoot');
-    var newest = list.length ? list[0].id : null;
+    // Robust "newest" — don't trust list[0]'s position; pick the highest id (numeric)
+    // or the latest publish_date, so a new intro is detected no matter how the RPC orders rows.
+    var newest = null;
+    if (list.length) {
+      var top = list.reduce(function (best, x) {
+        if (!best) return x;
+        var bi = Number(best.id), xi = Number(x.id);
+        if (!isNaN(bi) && !isNaN(xi) && bi !== xi) return xi > bi ? x : best;
+        return (String(x.publish_date) > String(best.publish_date)) ? x : best;
+      }, null);
+      newest = top ? top.id : null;
+    }
     attnId = newest;
     if (sec) {
       var seen = false;
