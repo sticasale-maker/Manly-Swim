@@ -2313,6 +2313,12 @@
 
   <div id="tl-tooltip"></div>
 
+  <!-- Send to a friend — permanent. Intentionally NOT in the SECTIONS array,
+       so the Essential / Complete / Custom mode toggle can never hide it. -->
+  <div id="shareAppBar" style="margin:22px 0 6px;">
+    <button type="button" onclick="shareApp()" style="width:100%;padding:13px;background:var(--ocean);color:#fff;border:none;border-radius:12px;font-size:15px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 14px rgba(10,126,164,0.22);"><span aria-hidden="true">📲</span> Send this app to a friend</button>
+  </div>
+
   <!-- Footer -->
   <div class="page-footer">
     <div class="last-updated" id="lastUpdated">Loading…</div>
@@ -4550,7 +4556,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260627-143017';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5771,6 +5777,36 @@ function submitFeedback(e) {
     // Fallback: open mail client
     window.location.href = mailtoLink;
   });
+}
+
+// ============================================================
+// SHARE — "Send this app to a friend". Opens the native share sheet
+// (SMS / WhatsApp / email / …) via the Web Share API, with the app link +
+// home-screen install steps pre-filled. Falls back to mailto on desktop
+// browsers without navigator.share. The shared URL is origin+pathname, so any
+// ?token=… in the address bar is stripped out.
+// ============================================================
+function shareApp() {
+  var url = location.origin + location.pathname;
+  var title = 'Swim Manly — Forecast App';
+  var body =
+    'Swim Manly — ocean swim conditions for South Steyne ↔ Shelly Beach:\n' +
+    url + '\n\n' +
+    'To add tile on your phone and use it in full screen mode (recommended)\n' +
+    'iPhone:\n\n' +
+    '1. From within the app, tap the three dots at the bottom right and select "Share".\n' +
+    '2. scroll down till you see "Add to Home Screen" and tap it.\n' +
+    '3. Check that "Open as Web App" is ON, tap on Add.\n' +
+    'Android:\n\n' +
+    '1. From within the app, tap the three vertical dots in the top right corner.\n' +
+    '2. Select "Add to Home screen" (or "Install app" if available).\n' +
+    '3. Confirm by tapping "Add".';
+  if (navigator.share) {
+    navigator.share({ title: title, text: body }).catch(function () {});
+  } else {
+    window.location.href = 'mailto:?subject=' + encodeURIComponent(title) +
+      '&body=' + encodeURIComponent(body);
+  }
 }
 
 // ============================================================
