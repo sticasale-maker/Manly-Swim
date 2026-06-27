@@ -4547,7 +4547,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260627-115353';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7245,6 +7245,21 @@ if ('serviceWorker' in navigator) {
 
   /* submit */
   function setMsg(t, ok){ var m = $('ntmFormMsg'); if (m) { m.textContent = t || ''; m.className = 'ntm-msg' + (ok ? ' ok' : ''); } }
+
+  /* Email the moderator when a new hello lands, so it can be approved.
+     Routed through the Cloudflare Worker (/notify-intro): the approval link and
+     admin token live server-side in the Worker and never appear in this public
+     bundle. Fire-and-forget — never blocks the submitter or shows them an error. */
+  function notifyAdmin(name, body, photo){
+    try {
+      fetch('https://bold-rain-6ded.sticasale.workers.dev/notify-intro', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ name: name || '', hello: body || '', photo: photo || '' })
+      }).catch(function(){});
+    } catch (e) {}
+  }
+
   async function submit(){
     var nameEl = $('ntmName'), textEl = $('ntmText'), fileEl = $('ntmPhotoInput'), btn = $('ntmSend');
     var name = (nameEl.value || '').trim(), body = (textEl.value || '').trim();
@@ -7257,6 +7272,7 @@ if ('serviceWorker' in navigator) {
         body: JSON.stringify({ p_name: name, p_body: body, p_photo_url: photo_url, p_device: deviceId() }) });
       if (!r.ok) { var t = await r.text(); throw new Error(t || ('HTTP ' + r.status)); }
       setMsg('Thanks! Your hello is in the queue for approval.', true);
+      notifyAdmin(name, body, photo_url);   // email the moderator via Worker (fire-and-forget)
       nameEl.value = ''; textEl.value = ''; fileEl.value = ''; var ic = $('ntmPhotoIcon'); if (ic) ic.innerHTML = '\uD83D\uDCF7<br>photo';
     } catch (e) {
       var msg = '' + ((e && e.message) || '');
