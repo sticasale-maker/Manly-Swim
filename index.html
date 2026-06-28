@@ -1969,15 +1969,23 @@
       #ntmSection { margin:0 0 10px; }
       @keyframes ntmPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(10,126,164,0); } 50%{ box-shadow:0 0 0 6px rgba(10,126,164,0.30); } }
       @keyframes ntmGlow {
-        0%,100% { box-shadow:0 0 0 1px rgba(10,126,164,0.35), 0 0 12px 2px rgba(10,126,164,0.28); }
-        50%     { box-shadow:0 0 0 3px rgba(10,126,164,0.45), 0 0 34px 10px rgba(10,126,164,0.60); }
+        0%,100% {
+          box-shadow:0 0 6px 0 rgba(10,126,164,0.45), 0 0 0 1px rgba(64,224,255,0.55);
+          border-color:rgba(64,224,255,0.6);
+          transform:scale(1);
+        }
+        50% {
+          box-shadow:0 0 11px 2px rgba(120,240,255,0.95), 0 0 32px 9px rgba(10,126,164,0.9), 0 0 0 2px rgba(64,224,255,1);
+          border-color:rgba(150,245,255,1);
+          transform:scale(1.045);
+        }
       }
-      #ntmSection.ntm-attn .ntm-card { animation:ntmGlow 1.6s ease-in-out infinite; border-color:var(--ocean); }
-      @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-card { animation:none; border-color:var(--ocean); box-shadow:0 0 0 3px rgba(10,126,164,0.40), 0 0 22px 6px rgba(10,126,164,0.45); } }
+      #ntmSection.ntm-attn .ntm-card { animation:ntmGlow 1.1s ease-in-out infinite; border-color:#40e0ff; transform-origin:center; will-change:transform,box-shadow; }
+      @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-card { animation:none; border-color:#40e0ff; transform:none; box-shadow:0 0 0 2px rgba(64,224,255,0.85), 0 0 10px 2px rgba(120,240,255,0.7), 0 0 30px 8px rgba(10,126,164,0.7); } }
       /* persistent "new hello" dot in the header — stays visible even when motion is reduced */
-      .ntm-newdot { width:9px; height:9px; border-radius:50%; background:var(--ocean); flex:none; display:none; }
+      .ntm-newdot { width:9px; height:9px; border-radius:50%; background:#40e0ff; box-shadow:0 0 8px 2px rgba(64,224,255,0.85); flex:none; display:none; }
       #ntmSection.ntm-attn .ntm-newdot { display:block; animation:ntmDot 1.5s ease-in-out infinite; }
-      @keyframes ntmDot { 0%{ box-shadow:0 0 0 0 rgba(10,126,164,0.5); } 70%,100%{ box-shadow:0 0 0 6px rgba(10,126,164,0); } }
+      @keyframes ntmDot { 0%{ box-shadow:0 0 8px 2px rgba(64,224,255,0.9), 0 0 0 0 rgba(64,224,255,0.6); } 70%,100%{ box-shadow:0 0 8px 2px rgba(64,224,255,0.45), 0 0 0 7px rgba(64,224,255,0); } }
       @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-newdot { animation:none; } }
       .ntm-card { background:var(--card); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
       .ntm-head { display:flex; align-items:center; gap:11px; padding:11px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
@@ -2451,14 +2459,14 @@ const OM_WEATHER_URL = `https://api.open-meteo.com/v1/forecast`
 // =============================================================================
 const SITE_DEFAULTS = {
   windSens:       0.2,
-  swellSens:      1.8,
+  swellSens:      2.5,
   periodPower:    20,
   swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
-  wwSens:         null,  // wind-wave demerit scale; null → falls back to swellSens (keeps existing calibration untouched)
+  wwSens:         1.8,   // wind-wave demerit scale (held at 1.8 so chop is unaffected by swellSens 2.5; sheet 'WW sens' overrides)
   wwRouteBlend:   0,     // wind-wave DIRECTION filter geometry: 0 = arrival (point, into S Steyne) … 1 = route (line, S Steyne→Shelly). Blend in between.
-  periodExp:      1.1,    // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
-  tideGateStart:  90,     // sheet col R r25 — tide/headland effect begins above this swell direction (°)
-  tideGateFull:   135,    // sheet col R r26 — tide/headland effect reaches full strength at this direction (°), flat beyond
+  periodExp:      1.15,   // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
+  tideGateStart:  75,     // sheet col R r25 — tide/headland effect begins above this swell direction (°)
+  tideGateFull:   90,     // sheet col R r26 — tide/headland effect reaches full strength at this direction (°), flat beyond
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
   // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
   // three band edges + an explicit scaleMax (4th cell) that sets the rail's total
@@ -2483,10 +2491,10 @@ const SITE_DEFAULTS = {
   // BOWER LANE (CTB) — Surge source. Sheet-loaded in applySwimConfig (CTB cols
   // C/D/E for the tables; label-matched tuning cells for the scalars). These are
   // the fallbacks used until the sheet loads or if a cell is left blank.
-  bowerSwellSens:     1.4,   // sheet col S label "Bower swell sens", value in col T
-  bowerSpm:           4.05,  // sheet col S label "Bower spm", value in col T
-  bowerTideGateStart: 20,    // sheet col S label "Bower tide gate start" (°), value in col T — no tide below this swell dir
-  bowerTideGateFull:  90,    // sheet col S label "Bower tide gate full" (°),  value in col T — full tide at/above this dir
+  bowerSwellSens:     1.65,  // sheet col S label "Bower swell sens", value in col T
+  bowerSpm:           4.35,  // sheet col S label "Bower spm", value in col T
+  bowerTideGateStart: 30,    // sheet col S label "Bower tide gate start" (°), value in col T — no tide below this swell dir
+  bowerTideGateFull:  45,    // sheet col S label "Bower tide gate full" (°),  value in col T — full tide at/above this dir
   bowerLookup: {
     wind: [100,100,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,30,60,70,85],
     sea:  [20,50,100,100,100,90,80,60,30,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2506,8 +2514,8 @@ let SITE = {
   tideGate: function(dirDeg) {
     const a = ((dirDeg % 360) + 360) % 360;
     const dir = a > 180 ? 360 - a : a;
-    const start = this.tideGateStart ?? 90;
-    const full  = this.tideGateFull ?? 135;
+    const start = this.tideGateStart ?? 75;
+    const full  = this.tideGateFull ?? 90;
     const span  = Math.max(1, full - start);
     const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
@@ -2518,8 +2526,8 @@ let SITE = {
   bowerTideGate: function(dirDeg) {
     const a = ((dirDeg % 360) + 360) % 360;
     const dir = a > 180 ? 360 - a : a;
-    const start = this.bowerTideGateStart ?? 20;
-    const full  = this.bowerTideGateFull ?? 90;
+    const start = this.bowerTideGateStart ?? 30;
+    const full  = this.bowerTideGateFull ?? 45;
     const span  = Math.max(1, full - start);
     const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
@@ -2696,7 +2704,7 @@ async function loadConfig() {
       if (c.periodExp     != null) SITE.periodExp     = c.periodExp;
       if (c.tideGateStart != null) SITE.tideGateStart = c.tideGateStart;
       if (c.tideGateFull  != null) SITE.tideGateFull  = c.tideGateFull;
-      SITE.wwSens          = (c.wwSens != null) ? c.wwSens : null;
+      SITE.wwSens          = (c.wwSens != null) ? c.wwSens : SITE_DEFAULTS.wwSens;
       SITE.wwRouteBlend    = c.wwRouteBlend || 0;
       // Merge over defaults so any key absent from an older cache (e.g. scaleMax)
       // falls back to a sane value rather than undefined breaking the rail math.
