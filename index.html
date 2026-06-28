@@ -2946,7 +2946,10 @@ async function retryGemTable() {
 // =============================================================================
 
 // Raw Bower surge swell-energy (demerit units). Chop excluded by construction.
-function bowerSurgeRaw(d) {
+// Bower surge breakdown — demerit components in Bower (CTB) terms. These are the
+// numbers the SURGE detail popup shows, so they reconcile with the score (they
+// are NOT the entry-point swell demerits). Chop excluded by construction.
+function bowerSurgeParts(d) {
   const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM } = d;
   const bl   = SITE.bowerLookup;
   const sens = SITE.bowerSwellSens, spm = SITE.bowerSpm;
@@ -2961,17 +2964,22 @@ function bowerSurgeRaw(d) {
   const tmult  = (tideM != null ? tideM : 1.0) - 0.2;
   const tide_d = tmult * ( s1_d * SITE.bowerTideGate(swell1Dir || 0)
                          + s2_d * SITE.bowerTideGate(swell2Dir || 0) );
-  return s1_d + s2_d + tide_d;
+  return { s1_d, s2_d, tide_d, raw: s1_d + s2_d + tide_d };
 }
 
-// Bower surge metric: { label, cls, score } — score is v6 (higher = better).
+function bowerSurgeRaw(d) { return bowerSurgeParts(d).raw; }
+
+// Bower surge metric: { label, cls, score, parts } — score is v6 (higher=better),
+// parts = { s1_d, s2_d, tide_d, raw } for the detail popup.
 function bowerSurgeWater(d) {
-  const v6 = Math.max(0, Math.round(60 - bowerSurgeRaw(d)));
+  const p  = bowerSurgeParts(d);
+  const v6 = Math.max(0, Math.round(60 - p.raw));
   const t  = SITE.surgeThresholds;
-  if (v6 >  t.steady) return { label:'Steady', cls:'green',  score: v6 };
-  if (v6 >  t.drifty) return { label:'Drifty', cls:'amber',  score: v6 };
-  if (v6 >= t.surgy)  return { label:'Surgy',  cls:'yellow', score: v6 };
-  return                     { label:'Washy',  cls:'red',     score: v6 };
+  const z  = v6 >  t.steady ? ['Steady', 'green']
+           : v6 >  t.drifty ? ['Drifty', 'amber']
+           : v6 >= t.surgy  ? ['Surgy',  'yellow']
+           :                  ['Washy',  'red'];
+  return { label: z[0], cls: z[1], score: v6, parts: p };
 }
 
 function calcScore(d, modelOverride) {
@@ -4659,7 +4667,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260628-195217';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6426,10 +6434,17 @@ function metricBreakdownHTML(key) {
     );
   }
   if (key === 'surge') {
+    // Bower (CTB) components — sourced from r.water.parts so they reconcile with
+    // the score, unlike the entry-point dm.swell1/swell2 used elsewhere.
+    const w = r.water.parts || { s1_d: 0, s2_d: 0, tide_d: 0, raw: r.water.score };
     return wrap(
-      row('Primary swell', f(dm.swell1)) +
-      row('Secondary swell', f(dm.swell2)) +
+      row('Primary swell', f(w.s1_d)) +
+      row('Secondary swell', f(w.s2_d)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
+      row('Subtotal (before tide)', f(w.s1_d + w.s2_d)) +
+      row('Tide effect', f(w.tide_d), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
+      `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
+      row('Surge demerits', f(w.raw)) +
       row('Surge score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
     );
   }
