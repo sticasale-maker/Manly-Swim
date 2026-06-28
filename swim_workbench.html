@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Swim Manly · Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=Playfair+Display:ital@1&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ocean:#0a7ea4;--deep:#064e6e;--foam:#e8f4f8;
+    --green:#1a9e6e;--amber:#8dae2a;--yellow:#d4900a;--red:#c0392b;
+    --dim:#7fb0c4;--line:rgba(127,176,196,0.2);--panel:rgba(8,52,74,0.6);--panel2:rgba(4,38,56,0.62);
+    --s1:#19b3e6;--s2:#e0a64d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'DM Mono',monospace;color:var(--foam);
+    background:radial-gradient(1200px 600px at 18% -8%,rgba(10,126,164,0.2),transparent 60%),linear-gradient(180deg,#04364d,#03293b 60%,#021e2c);}
+  .workbench{display:flex;align-items:stretch;min-height:100vh}
+  .col{flex:1 1 50%;min-width:660px;height:100vh;overflow:auto;padding:16px 16px 40px}
+  .col-map{border-right:1px solid var(--line)}
+  @media (max-width:980px){.workbench{flex-wrap:wrap}.col{height:auto;min-width:100%}.col-map{border-right:none;border-bottom:1px solid var(--line)}}
+
+  h1{font-family:'Bebas Neue';font-size:26px;letter-spacing:3px;color:#fff;line-height:1}
+  .ttl{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:13px}
+  .ttl small{color:var(--dim);font-size:10px;letter-spacing:1px}
+  .ttl em{font-family:'Playfair Display';font-style:italic}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:13px;backdrop-filter:blur(4px)}
+  .panel h2{font-family:'Bebas Neue';font-size:16px;letter-spacing:2px;color:#cfe9f3;margin-bottom:9px;display:flex;justify-content:space-between;align-items:baseline}
+  .panel h2 small{font-family:'DM Mono';font-size:10px;color:var(--dim);font-weight:400;letter-spacing:0.4px}
+  .grp-t{font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;font-weight:500;margin:10px 0 6px;border-left:2px solid var(--ocean);padding-left:7px;color:var(--ocean)}
+  .ctl{display:grid;grid-template-columns:74px 1fr 52px;gap:8px;align-items:center;margin-bottom:6px}
+  .ctl.p{grid-template-columns:108px 1fr 52px}
+  .ctl label{font-size:11px;color:var(--dim)}
+  .ctl input[type=range]{width:100%;height:3px}
+  .ctl .val{font-size:12px;color:#fff;text-align:right;font-variant-numeric:tabular-nums}
+  .ctl .val input{width:48px;background:rgba(0,0,0,0.25);border:1px solid var(--line);color:#fff;font-family:'DM Mono';font-size:12px;text-align:right;border-radius:5px;padding:2px 4px}
+  .unit{color:var(--dim);font-size:10px}
+  .rowflex{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px}
+  .rowflex input[type=checkbox]{accent-color:var(--ocean);width:15px;height:15px}
+  .swatch{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .presets button,.btns button{background:rgba(10,126,164,0.2);border:1px solid var(--line);color:#cfe9f3;font-family:'DM Mono';font-size:10.5px;border-radius:18px;padding:5px 11px;cursor:pointer}
+  .presets button:hover,.btns button:hover{background:rgba(10,126,164,0.4);border-color:var(--ocean)}
+  .btns{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+  details.adv summary{cursor:pointer;font-family:'Bebas Neue';font-size:16px;letter-spacing:2px;color:#cfe9f3;list-style:none}
+  details.adv summary::-webkit-details-marker{display:none}
+  details.adv summary::before{content:'▸ ';color:var(--ocean)}
+  details.adv[open] summary::before{content:'▾ '}
+
+  /* map */
+  .map{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0b1f2b;line-height:0;margin-bottom:12px}
+  .map img{width:100%;display:block;-webkit-user-drag:none}
+  .map svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0;z-index:6;
+    background:linear-gradient(180deg,rgba(3,30,44,0.96),rgba(3,30,44,0.9));backdrop-filter:blur(6px);
+    padding:10px 10px 11px;border:1px solid var(--line);border-radius:13px;box-shadow:0 6px 18px rgba(0,0,0,0.3)}
+  .chipcard{flex:1;min-width:140px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:9px 11px}
+  .chiptop{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+  .chipcard .n{font-family:'Bebas Neue';font-size:15px;letter-spacing:1.5px;color:#cfe9f3}
+  .chipcard .lab{font-family:'Bebas Neue';font-size:16px;letter-spacing:1px}
+  .chipcard .sc{font-family:'DM Mono';font-size:11px;color:var(--dim);letter-spacing:0}
+  .chipcard .rail{height:13px;margin:5px 0 2px}
+  .chipcard .rail-scale{display:flex;justify-content:space-between;font-size:8px;color:var(--dim)}
+
+  /* metric cards (bench) */
+  .metric{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px}
+  .metric-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .metric-name{font-family:'Bebas Neue';font-size:19px;letter-spacing:2px;color:#fff}
+  .metric-name span{font-family:'DM Mono';font-size:10px;color:var(--dim);margin-left:6px}
+  .chip{font-family:'Bebas Neue';font-size:16px;letter-spacing:1.5px;padding:3px 12px;border-radius:18px;color:#fff}
+  .chip small{font-family:'DM Mono';font-size:11px;opacity:0.85;margin-left:6px}
+  .rail{position:relative;height:15px;border-radius:8px;overflow:hidden;display:flex;margin:7px 0 3px;border:1px solid rgba(0,0,0,0.25)}
+  .rail .seg{height:100%}
+  .rail .marker{position:absolute;top:-3px;bottom:-3px;width:3px;background:#fff;border-radius:2px;box-shadow:0 0 5px rgba(0,0,0,0.7);transform:translateX(-50%)}
+  .rail-scale{display:flex;justify-content:space-between;font-size:9px;color:var(--dim)}
+  .brk{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}
+  .brk .r{display:flex;justify-content:space-between;font-size:11px;padding:1.5px 0;color:var(--dim)}
+  .brk .r b{color:#eaf6fb;font-variant-numeric:tabular-nums}
+  .brk .r.tot{color:#cfe9f3;border-top:1px dashed var(--line);margin-top:3px;padding-top:4px}
+  .brk .r.tot b{color:#fff}
+  .readout{display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:11px}
+  .readout .r{display:flex;justify-content:space-between;color:var(--dim);padding:1px 0}
+  .readout .r b{color:#eaf6fb;font-variant-numeric:tabular-nums}
+  .note{font-size:10.5px;color:var(--dim);line-height:1.55;margin-top:7px}
+  .note b{color:#cfe9f3}.warn{color:var(--yellow)}
+  select{background:rgba(0,0,0,0.25);border:1px solid var(--line);color:#fff;font-family:'DM Mono';font-size:11px;border-radius:6px;padding:5px 8px}
+  .sweep-ctl{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:8px}
+  svg.plot{width:100%;height:auto;display:block}
+  .legend{display:flex;gap:13px;font-size:10px;margin-top:5px;color:var(--dim);flex-wrap:wrap}
+  .legend i{width:13px;height:3px;border-radius:2px;display:inline-block}
+  .transmit-strip{height:7px;border-radius:4px;margin:3px 0 1px;background:linear-gradient(90deg,var(--red),var(--yellow),var(--amber),var(--green))}
+  .tlbl{display:flex;justify-content:space-between;font-size:9px;color:var(--dim)}
+  /* model-parameter sliders: default tick + delta */
+  .phint{font-size:9.5px;color:var(--dim);margin-bottom:9px;line-height:1.4}
+  .param{margin-bottom:11px}
+  .param-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+  .plabel{font-size:11px;color:var(--dim)}
+  .pval input{width:54px;background:rgba(0,0,0,0.25);border:1px solid var(--line);color:#fff;font-family:'DM Mono';font-size:12px;text-align:right;border-radius:5px;padding:2px 4px}
+  .slider-wrap{position:relative;height:18px;display:flex;align-items:center}
+  .slider-wrap input[type=range]{width:100%;height:3px;margin:0;position:relative;z-index:2;accent-color:#19b3e6}
+  .def-mark{position:absolute;top:1px;bottom:1px;width:0;border-left:2px dashed #f0c674;z-index:1;transform:translateX(-1px);pointer-events:none}
+  .pdelta{font-size:10px;color:var(--dim);margin-top:5px;font-variant-numeric:tabular-nums}
+  .pdelta b{font-variant-numeric:tabular-nums}
+  .pdelta.up b{color:#f0c674}
+  .pdelta.down b{color:#7fc8a9}
+  .pdelta.zero{opacity:0.55}
+  .datein{background:rgba(0,0,0,0.25);border:1px solid var(--line);color:#fff;font-family:'DM Mono';font-size:12px;border-radius:6px;padding:4px 6px;width:100%}
+  .datein::-webkit-calendar-picker-indicator{filter:invert(0.8)}
+  .note.ok{color:#9fe0c4}
+  .note.err{color:#f0a0a0}
+  .past-h{display:flex;justify-content:space-between;font-size:12px;color:#fff}
+  .note2{color:#9fc4d4}
+  #sheetStatus.ok{color:#37d39b}
+  #sheetStatus.warn{color:#e3a93a}
+</style>
+</head>
+<body>
+<div class="workbench">
+
+  <!-- ================= MAP COLUMN ================= -->
+  <div class="col col-map">
+    <div class="ttl"><h1>Seabed &amp; Swell</h1><small><em>draw it on the bathymetry</em> · north up</small></div>
+
+    <div class="chips" id="chips"></div>
+
+    <div class="map" id="map">
+      <img id="bg" src="seabed_map.png" alt="Manly / Cabbage Tree Bay seabed">
+      <svg id="ov" viewBox="0 0 1545 791" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <div class="panel">
+      <h2>On the map <small>drag ○ pivot · drag ◑ handles to set direction</small></h2>
+      <div class="rowflex"><span class="swatch" style="background:var(--s1)"></span> Primary swell — drag its handle or use the bench slider</div>
+      <div class="rowflex" id="s2hint" style="display:none"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
+      <div class="grp-t">Display</div>
+      <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
+      <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
+      <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
+      <div class="btns">
+        <button id="pivEntry">Pivot: S Steyne entry</button>
+        <button id="pivBower">Pivot: the Bower</button>
+        <button id="snap">Save PNG</button>
+      </div>
+      <div class="ctl p" style="margin-top:8px"><label>North offset</label><input type="range" id="north" min="-30" max="30" step="1"><div class="val"><input id="north_n"> <span class="unit">°</span></div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Energy at this bearing <small>geometry → model</small></h2>
+      <div class="readout" id="readout"></div>
+      <div class="transmit-strip"></div>
+      <div class="tlbl"><span>0% transmit</span><span>100%</span></div>
+      <div class="note" id="rnote"></div>
+    </div>
+  </div>
+
+  <!-- ================= BENCH COLUMN ================= -->
+  <div class="col col-bench">
+    <div class="ttl"><h1>Model Bench</h1><small><em>entry · chop · surge</em> · live GEM + Bower</small></div>
+
+    <div class="panel">
+      <h2>Load from the past <small>Open-Meteo history</small></h2>
+      <div class="rowflex"><input type="checkbox" id="pastOn"> Use a recorded day &amp; time</div>
+      <div id="pastBox" style="display:none">
+        <div class="ctl" style="grid-template-columns:74px 1fr"><label>Date</label><input type="date" id="pastDate" class="datein"></div>
+        <div class="ctl"><label>Hour</label><input type="range" id="pastHour" min="0" max="23" step="1"><div class="val"><span id="pastHour_n"></span><span class="unit">:00</span></div></div>
+        <div class="btns"><button id="pastLoad">Load swell + wind</button></div>
+        <div class="note" id="pastStatus">Pulls primary &amp; secondary swell, wind wave, wind <b>and tide</b> for the chosen hour, then fills the bench (and the map). Tide is Open-Meteo's modelled sea level shifted to the local datum — approximate, so sanity-check it.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Conditions <small>direction syncs with the map</small></h2>
+      <div class="grp-t" style="border-color:var(--s1);color:var(--s1)">Primary swell</div>
+      <div class="ctl"><label>Height</label><input type="range" id="s1H" min="0" max="4" step="0.1"><div class="val"><input id="s1H_n"> <span class="unit">m</span></div></div>
+      <div class="ctl"><label>Direction</label><input type="range" id="s1D" min="0" max="360" step="1"><div class="val"><input id="s1D_n"> <span class="unit">°</span></div></div>
+      <div class="ctl"><label>Period</label><input type="range" id="s1P" min="4" max="20" step="0.5"><div class="val"><input id="s1P_n"> <span class="unit">s</span></div></div>
+
+      <div class="rowflex"><input type="checkbox" id="s2on"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
+      <div id="s2box" style="display:none">
+        <div class="ctl"><label>Height</label><input type="range" id="s2H" min="0" max="3" step="0.1"><div class="val"><input id="s2H_n"> <span class="unit">m</span></div></div>
+        <div class="ctl"><label>Direction</label><input type="range" id="s2D" min="0" max="360" step="1"><div class="val"><input id="s2D_n"> <span class="unit">°</span></div></div>
+        <div class="ctl"><label>Period</label><input type="range" id="s2P" min="4" max="20" step="0.5"><div class="val"><input id="s2P_n"> <span class="unit">s</span></div></div>
+      </div>
+
+      <div class="grp-t">Wind</div>
+      <div class="ctl"><label>Speed</label><input type="range" id="wK" min="0" max="50" step="1"><div class="val"><input id="wK_n"> <span class="unit">km/h</span></div></div>
+      <div class="ctl"><label>Direction</label><input type="range" id="wD" min="0" max="360" step="1"><div class="val"><input id="wD_n"> <span class="unit">°</span></div></div>
+
+      <div class="grp-t">Wind wave</div>
+      <div class="ctl"><label>Height</label><input type="range" id="wwH" min="0" max="2" step="0.05"><div class="val"><input id="wwH_n"> <span class="unit">m</span></div></div>
+      <div class="ctl"><label>Direction</label><input type="range" id="wwD" min="0" max="360" step="1"><div class="val"><input id="wwD_n"> <span class="unit">°</span></div></div>
+      <div class="ctl"><label>Period</label><input type="range" id="wwP" min="2" max="12" step="0.5"><div class="val"><input id="wwP_n"> <span class="unit">s</span></div></div>
+
+      <div class="grp-t">Tide</div>
+      <div class="ctl"><label>Height</label><input type="range" id="tide" min="0" max="2.1" step="0.05"><div class="val"><input id="tide_n"> <span class="unit">m</span></div></div>
+
+      <div class="presets" id="presets"></div>
+    </div>
+
+    <div class="panel">
+      <details class="adv"><summary>Model parameters</summary>
+        <div style="margin-top:10px">
+          <div class="phint">Dashed amber tick = live default (from the sheet) · blue thumb = your value · Δ = offset from live.</div>
+          <div id="paramHost"></div>
+          <div class="presets"><button id="resetParams">Reset to live defaults</button><button id="reloadSheet">Reload from sheet</button></div>
+          <div id="sheetStatus" class="note" style="margin-top:7px"></div>
+        </div>
+      </details>
+    </div>
+
+    <div id="metrics"></div>
+
+    <div class="panel">
+      <h2>Energy transmit <small>what reaches the swimmer</small></h2>
+      <div class="readout" id="transmit"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Sensitivity sweep <small>vary one input, hold the rest</small></h2>
+      <div class="sweep-ctl">
+        <select id="sweepAxis"></select>
+        <select id="sweepY"><option value="score">Y: score (0–60, higher=better)</option><option value="raw">Y: demerits (higher=worse)</option></select>
+      </div>
+      <div id="sweepPlot"></div>
+      <div class="legend"><span><i style="background:var(--ocean)"></i> Entry</span><span><i style="background:#7fc8a9"></i> Swim</span><span><i style="background:#e0a64d"></i> Surge</span><span><i style="background:#fff"></i> current</span></div>
+    </div>
+  </div>
+</div>
+
+<canvas id="exportCanvas" style="display:none"></canvas>
+
+<script>
+/* ===================== EMBEDDED MODEL DATA ===================== */
+let GEM_TABLE=[
+[100,100,100,100,100,100,100,100,95,85,78,70,62,55,50,46,43,40,38,36],
+[100,100,100,100,100,100,98,92,80,68,58,50,42,35,30,26,23,20,18,17],
+[100,100,100,98,94,85,74,62,50,38,28,20,14,9,6,4,3,2,1,1],
+[100,100,95,88,78,65,52,40,28,16,9,4,1,0,0,0,0,0,0,0],
+[95,88,78,65,52,38,25,14,5,1,0,0,0,0,0,0,0,0,0,0],
+[75,65,52,38,25,13,4,1,0,0,0,0,0,0,0,0,0,0,0,0],
+[20,12,6,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[45,35,25,15,5,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+[95,90,85,80,70,60,50,40,30,15,8,4,2,1,0.5,0.2,0.1,0,0,0],
+[100,100,100,100,98,95,90,82,74,55,44,34,25,18,12,8,5,3,1.5,0.5],
+[100,100,100,100,100,100,100,98,95,82,72,61,50,41,32,25,19,14,10,7],
+[100,100,100,100,100,100,100,100,100,96,90,83,75,67,58,50,43,36,30,25],
+[100,100,100,100,100,100,100,100,100,100,98,95,91,86,80,74,68,62,56,50],
+[100,100,100,100,100,100,100,100,100,100,100,100,99,97,95,92,89,85,81,76],
+[100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,99,98,97,95,93],
+[100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100]];
+let LK_WIND=[100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90];
+let BOWER_SEA=[20,50,100,100,100,90,80,60,30,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+let BOWER_RIF=[100,50,0,0,0,10,20,40,60,60,60,53,45,35,15,10,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+const WIND_WEIGHT=[[0,0],[1,0.07],[2,0.29],[3,0.64],[4,1.14],[5,1.79],[6,2.57],[7,3.50],[8,4.57],[9,5.79],[10,7.14],[11,8.64],[12,10.29],[13,12.07],[14,14.00],[15,16.07],[16,18.29],[17,20.64],[18,23.14],[19,25.79],[20,28.57],[21,31.50],[22,34.57],[23,37.79],[24,41.14],[25,44.64],[26,48.29],[27,52.07],[28,56.00],[29,60.07],[30,64.29],[35,87.50],[40,114.29],[50,178.57]];
+
+/* ===================== PARAMS ===================== */
+const DEFAULTS={windSens:0.2,swellSens:2.5,wwSens:1.8,periodExp:1.15,tideGateStart:75,tideGateFull:90,bowerSwellSens:1.65,bowerSpm:4.35,bowerTideGateStart:30,bowerTideGateFull:45};
+const ENTRY_TH={easy:15,doable:30,caution:50,scaleMax:60}, SWIM_TH={glassy:1,ripply:3,choppy:9,scaleMax:14}, SURGE_TH={steady:50,drifty:30,surgy:10,scaleMax:0};
+let LIVE={...DEFAULTS};
+let M={...LIVE};
+
+/* ===================== SHEET CONFIG (live, mirrors the app) ===================== */
+const SHEET_CSV_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
+const GEM_SHEET_URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
+const COL_P=15, COL_R=17, COL_S=18, COL_STEYNE_DIR=41, COL_BOWER_DIR=2;
+function csvRows(text){return text.split('\n').map(line=>{const cols=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inQ=!inQ;else if(c===','&&!inQ){cols.push(cur);cur='';}else cur+=c;}cols.push(cur);return cols;});}
+function parseGem(text){const rows=csvRows(text);const num=v=>parseFloat(v)||0;const t=[];for(let r=2;r<=20;r++){const row=rows[r]||[];const p=[];for(let c=1;c<=20;c++)p.push(num(row[c]));t.push(p);}return t.length===19?t:null;}
+function parseParams(rows){
+  const num=v=>parseFloat(v)||0, out={};
+  if(rows[23]&&String(rows[23][1]||'').includes('Wind sens')) out.windSens=num(rows[23][COL_P]);
+  if(rows[24]&&String(rows[24][1]||'').includes('Swell sens')) out.swellSens=num(rows[24][COL_P]);
+  const numR=ri=>{const raw=rows[ri]&&rows[ri][COL_R];if(raw==null||String(raw).trim()==='')return null;const v=parseFloat(raw);return Number.isFinite(v)?v:null;};
+  const pExp=numR(23),tgS=numR(24),tgF=numR(25);
+  if(pExp!=null)out.periodExp=pExp; if(tgS!=null)out.tideGateStart=tgS; if(tgF!=null)out.tideGateFull=tgF;
+  for(let r=0;r<rows.length;r++){
+    const label=(rows[r]&&rows[r][1])||'';
+    if(label.includes('WW sens')||label.includes('Wind wave sens')){const v=num(rows[r][COL_P]);if(v>0)out.wwSens=v;}
+    const sL=(rows[r]&&rows[r][COL_S])||'', sV=rows[r]&&rows[r][COL_S+1];
+    if(sL.includes('Bower swell sens')){const v=num(sV);if(v>0)out.bowerSwellSens=v;}
+    if(sL.includes('Bower spm')){const v=num(sV);if(v>0)out.bowerSpm=v;}
+    if(sL.includes('Bower tide gate start')){const v=parseFloat(sV);if(Number.isFinite(v))out.bowerTideGateStart=v;}
+    if(sL.includes('Bower tide gate full')){const v=parseFloat(sV);if(Number.isFinite(v))out.bowerTideGateFull=v;}
+  }
+  const wind=[],bSea=[],bRif=[];
+  for(let r=31;r<=62;r++){wind.push(num(rows[r]&&rows[r][COL_STEYNE_DIR]));bSea.push(num(rows[r]&&rows[r][COL_BOWER_DIR+1]));bRif.push(num(rows[r]&&rows[r][COL_BOWER_DIR+2]));}
+  return {params:out, lkWind:wind.length===32?wind:null, bowerSea:(bSea.length===32&&bSea.some(v=>v>0))?bSea:null, bowerRif:bRif.length===32?bRif:null};
+}
+function setSheet(msg,cls){const el=document.getElementById('sheetStatus');if(el){el.className='note'+(cls?' '+cls:'');el.innerHTML=msg;}}
+async function loadFromSheet(){
+  setSheet('Loading config from sheet \u2026','');
+  try{
+    const [cfgT,gemT]=await Promise.all([
+      fetch(SHEET_CSV_URL+'&t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('cfg '+r.status);return r.text();}),
+      fetch(GEM_SHEET_URL+'&t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('gem '+r.status);return r.text();})
+    ]);
+    const {params,lkWind,bowerSea,bowerRif}=parseParams(csvRows(cfgT));
+    const gem=parseGem(gemT);
+    Object.assign(LIVE,params);
+    if(lkWind)LK_WIND=lkWind;
+    if(bowerSea){BOWER_SEA=bowerSea; if(bowerRif)BOWER_RIF=bowerRif;}
+    if(gem)GEM_TABLE=gem;
+    M={...LIVE};
+    buildParams(); render();
+    const t=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+    const bits=[Object.keys(params).length+' params']; if(gem)bits.push('GEM table'); if(lkWind)bits.push('dir tables');
+    setSheet('\u2713 Loaded from sheet '+t+' \u00b7 '+bits.join(' \u00b7 '),'ok');
+  }catch(err){
+    setSheet('\u26a0 Sheet fetch failed ('+err.message+') \u2014 using built-in defaults. Serve over http(s), not file://.','warn');
+  }
+}
+/* ============================================================================== */
+
+
+/* ===================== SHARED STATE ===================== */
+const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
+  wK:12,wD:200, wwH:0.3,wwD:200,wwP:4, tide:1.0,
+  pivot:{x:600,y:590}, crests:true, fan:false, rose:true, north:0};
+const MW=1545, MH=791;
+
+/* ===================== MODEL ===================== */
+function windPower(k){if(k<=0)return 0;for(let i=1;i<WIND_WEIGHT.length;i++){if(WIND_WEIGHT[i][0]>=k){const f=(k-WIND_WEIGHT[i-1][0])/(WIND_WEIGHT[i][0]-WIND_WEIGHT[i-1][0]);return WIND_WEIGHT[i-1][1]*(1-f)+WIND_WEIGHT[i][1]*f;}}return WIND_WEIGHT[WIND_WEIGHT.length-1][1];}
+function swellPower(h,p){return h*h*Math.pow(Math.max(p,1),M.periodExp);}
+function dirLookup(a,d){const x=((d%360)+360)%360;return a[Math.round(x/11.25)%32];}
+function gemTransmit(dirDeg,periodS){const a=((dirDeg%360)+360)%360,fold=a>180?360-a:a,dir=Math.max(0,Math.min(180,fold)),per=Math.max(1,Math.min(20,periodS||8));const ri=dir/10,r0=Math.floor(ri),r1=Math.min(18,r0+1),rf=ri-r0,ci=per-1,c0=Math.floor(ci),c1=Math.min(19,c0+1),cf=ci-c0;const loss=GEM_TABLE[r0][c0]*(1-rf)*(1-cf)+GEM_TABLE[r0][c1]*(1-rf)*cf+GEM_TABLE[r1][c0]*rf*(1-cf)+GEM_TABLE[r1][c1]*rf*cf;return Math.max(0,(100-loss)/100);}
+function smoothGate(dirDeg,start,full){const a=((dirDeg%360)+360)%360,dir=a>180?360-a:a,span=Math.max(1,full-start),t=Math.max(0,Math.min(1,(dir-start)/span));return t*t*(3-2*t);}
+function bowerParts(I){const s1p=swellPower(I.s1H||0,I.s1P||8),s2p=swellPower(I.s2H||0,I.s2P||8),sens=M.bowerSwellSens,spm=M.bowerSpm;
+  const s1_d=s1p*(Math.max(0,dirLookup(BOWER_SEA,I.s1D||0))/100)*sens+(dirLookup(BOWER_RIF,I.s1D||0)*s1p*spm)/1000;
+  const s2_d=s2p*(Math.max(0,dirLookup(BOWER_SEA,I.s2D||0))/100)*sens+(dirLookup(BOWER_RIF,I.s2D||0)*s2p*spm)/1000;
+  const tm=(I.tideM!=null?I.tideM:1)-0.2, tide_d=tm*(s1_d*smoothGate(I.s1D||0,M.bowerTideGateStart,M.bowerTideGateFull)+s2_d*smoothGate(I.s2D||0,M.bowerTideGateStart,M.bowerTideGateFull));
+  return {s1_d,s2_d,tide_d,raw:s1_d+s2_d+tide_d};}
+function calc(I){
+  const windHit=dirLookup(LK_WIND,I.windD), wind_d=windPower(I.windKmh)*(windHit/100)*M.windSens;
+  const wwSens=M.wwSens, wwP=I.wwP||5, wwArrival=Math.max(0,gemTransmit(I.wwD!=null?I.wwD:I.windD,wwP));
+  const s1Tx=Math.max(0,gemTransmit(I.s1D,I.s1P)), s2Tx=Math.max(0,gemTransmit(I.s2D||0,I.s2P||8));
+  const ww_d=swellPower(I.wwH||0,wwP)*wwArrival*wwSens, s1_d=swellPower(I.s1H,I.s1P)*s1Tx*M.swellSens, s2_d=swellPower(I.s2H||0,I.s2P||8)*s2Tx*M.swellSens;
+  const o=wind_d+ww_d+s1_d+s2_d, tmult=I.tideM-0.2;
+  const tide_d=tmult*(s1_d*smoothGate(I.s1D,M.tideGateStart,M.tideGateFull)+s2_d*smoothGate(I.s2D||0,M.tideGateStart,M.tideGateFull)+ww_d*smoothGate(I.wwD!=null?I.wwD:I.windD,M.tideGateStart,M.tideGateFull));
+  const total=o+tide_d;
+  const eS=Math.max(0,Math.round(60-total)),e=ENTRY_TH; let entry;
+  if(total<=e.easy)entry={label:'Easy',cls:'green'};else if(total<=e.doable)entry={label:'Doable',cls:'amber'};else if(total<=e.caution)entry={label:'Caution',cls:'yellow'};else entry={label:'Dangerous',cls:'red'};
+  entry.score=eS;entry.raw=total;
+  const q7=wind_d+ww_d,sw=SWIM_TH,cap=sw.scaleMax>0?sw.scaleMax:14,sS=Math.max(0,Math.round(60-Math.min(q7,cap)*(60/cap))); let swim;
+  if(q7<sw.glassy)swim={label:'Glassy',cls:'green'};else if(q7<=sw.ripply)swim={label:'Ripply',cls:'amber'};else if(q7<=sw.choppy)swim={label:'Choppy',cls:'yellow'};else swim={label:'Messy',cls:'red'};
+  swim.score=sS;swim.raw=q7;
+  const bp=bowerParts(I),v6=Math.max(0,Math.round(60-bp.raw)),su=SURGE_TH; let surge;
+  if(v6>su.steady)surge={label:'Steady',cls:'green'};else if(v6>su.drifty)surge={label:'Drifty',cls:'amber'};else if(v6>=su.surgy)surge={label:'Surgy',cls:'yellow'};else surge={label:'Washy',cls:'red'};
+  surge.score=v6;surge.raw=bp.raw;surge.parts=bp;
+  return {wind_d,ww_d,s1_d,s2_d,o,tide_d,total,entry,swim,surge,q7,s1Tx,s2Tx,wwArrival,windHit,bSea1:dirLookup(BOWER_SEA,I.s1D||0),eGate1:smoothGate(I.s1D,M.tideGateStart,M.tideGateFull),bGate1:smoothGate(I.s1D||0,M.bowerTideGateStart,M.bowerTideGateFull)};
+}
+function inputObj(){return {s1H:ST.s1H,s1D:ST.s1D,s1P:ST.s1P,s2H:ST.s2on?ST.s2H:0,s2D:ST.s2D,s2P:ST.s2P,windKmh:ST.wK,windD:ST.wD,wwH:ST.wwH,wwD:ST.wwD,wwP:ST.wwP,tideM:ST.tide};}
+
+/* ===================== MAP DRAW ===================== */
+const SVGNS='http://www.w3.org/2000/svg', ov=document.getElementById('ov');
+const COL={green:'var(--green)',amber:'var(--amber)',yellow:'var(--yellow)',red:'var(--red)'};
+const CSSv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const F=(x,d=1)=>(Math.round((x||0)*Math.pow(10,d))/Math.pow(10,d)).toFixed(d);
+function el(t,a){const e=document.createElementNS(SVGNS,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+function vecFrom(b){const t=(b-ST.north)*Math.PI/180;return{x:Math.sin(t),y:-Math.cos(t)};}
+function transmitColor(tx){const r=tx<0.5?255:Math.round(255*(1-(tx-0.5)*2*0.85)),g=tx<0.5?Math.round(180*tx*2):170;return `rgb(${r},${g},${tx<0.5?40:90})`;}
+const HANDLE_R=320; // px from pivot for the direction handle
+let handlePos={}; // store for hit-test
+
+function drawSwellLine(g,bearing,period,color,width,key){
+  const v=vecFrom(bearing), perp={x:-v.y,y:v.x}, px=ST.pivot.x,py=ST.pivot.y, L=2400;
+  g.appendChild(el('line',{x1:px-v.x*L,y1:py-v.y*L,x2:px+v.x*L,y2:py+v.y*L,stroke:color,'stroke-width':width,'stroke-linecap':'round',opacity:0.95}));
+  const ah=26,aw=13,tipX=px-v.x*110,tipY=py-v.y*110,bx=tipX+v.x*ah,by=tipY+v.y*ah;
+  g.appendChild(el('polygon',{points:`${tipX},${tipY} ${bx+perp.x*aw},${by+perp.y*aw} ${bx-perp.x*aw},${by-perp.y*aw}`,fill:color}));
+  if(ST.crests){const ch=40;for(let i=1;i<=9;i++){const d=i*150,cx=px+v.x*d,cy=py+v.y*d,op=Math.max(0.12,0.72-i*0.07);
+    g.appendChild(el('line',{x1:cx-perp.x*ch,y1:cy-perp.y*ch,x2:cx+perp.x*ch,y2:cy+perp.y*ch,stroke:color,'stroke-width':4,'stroke-linecap':'round',opacity:op}));}}
+  // direction handle (offshore)
+  const hx=px+v.x*HANDLE_R, hy=py+v.y*HANDLE_R; handlePos[key]={x:hx,y:hy};
+  g.appendChild(el('circle',{cx:hx,cy:hy,r:13,fill:color,stroke:'#fff','stroke-width':2,opacity:0.95}));
+  const lx=px+v.x*(HANDLE_R+60),ly=py+v.y*(HANDLE_R+60);
+  const txt=el('text',{x:lx,y:ly,fill:color,'font-size':24,'font-family':'DM Mono','font-weight':600,'text-anchor':'middle','paint-order':'stroke',stroke:'rgba(0,0,0,0.55)','stroke-width':5});
+  txt.textContent=Math.round(bearing)+'°'; g.appendChild(txt);
+}
+function drawFan(g){const px=ST.pivot.x,py=ST.pivot.y;for(let d=0;d<360;d+=8){const tx=gemTransmit(d,ST.s1P);if(tx<0.02)continue;const v=vecFrom(d),L=70+tx*470;
+  g.appendChild(el('line',{x1:px,y1:py,x2:px+v.x*L,y2:py+v.y*L,stroke:transmitColor(tx),'stroke-width':2+tx*5,opacity:0.26+tx*0.5,'stroke-linecap':'round'}));}}
+function drawRose(g){const cx=1450,cy=72,R=42;g.appendChild(el('circle',{cx,cy,r:R,fill:'rgba(3,30,44,0.72)',stroke:'rgba(127,176,196,0.5)','stroke-width':1}));
+  ['N','E','S','W'].forEach((lab,i)=>{const ang=(i*90-ST.north)*Math.PI/180,vx=Math.sin(ang),vy=-Math.cos(ang);
+    g.appendChild(el('line',{x1:cx,y1:cy,x2:cx+vx*R,y2:cy+vy*R,stroke:lab==='N'?'#e85d5d':'rgba(207,233,243,0.7)','stroke-width':lab==='N'?2.5:1.4}));
+    const t=el('text',{x:cx+vx*(R+11),y:cy+vy*(R+11)+4,fill:'#cfe9f3','font-size':13,'text-anchor':'middle','font-family':'DM Mono'});t.textContent=lab;g.appendChild(t);});}
+
+function drawMap(){
+  while(ov.firstChild)ov.removeChild(ov.firstChild); handlePos={};
+  const g=el('g',{});ov.appendChild(g);
+  if(ST.fan)drawFan(g);
+  drawSwellLine(g,ST.s1D,ST.s1P,CSSv('--s1')||'#19b3e6',5,'s1');
+  if(ST.s2on)drawSwellLine(g,ST.s2D,ST.s2P,CSSv('--s2')||'#e0a64d',4,'s2');
+  g.appendChild(el('circle',{cx:ST.pivot.x,cy:ST.pivot.y,r:11,fill:'rgba(255,255,255,0.15)',stroke:'#fff','stroke-width':2.5}));
+  g.appendChild(el('circle',{cx:ST.pivot.x,cy:ST.pivot.y,r:3,fill:'#fff'}));
+  if(ST.rose)drawRose(g);
+}
+
+/* ===================== RENDER (both columns) ===================== */
+function railHTML(m){let segs=[],mk=0;
+  if(m.kind==='lowGood'){const max=m.scaleMax,b=m.bounds,st=[0,b[0],b[1],b[2],max],cl=['green','amber','yellow','red'];
+    for(let i=0;i<4;i++)segs.push({w:(st[i+1]-st[i])/max*100,c:COL[cl[i]]});mk=Math.max(0,Math.min(1,m.value/max));}
+  else{const cl=['green','amber','yellow','red'],st=[60,m.bounds[0],m.bounds[1],m.bounds[2],0];
+    for(let i=0;i<4;i++)segs.push({w:(st[i]-st[i+1])/60*100,c:COL[cl[i]]});mk=Math.max(0,Math.min(1,(60-m.value)/60));}
+  return `<div class="rail">${segs.map(s=>`<div class="seg" style="width:${s.w}%;background:${s.c}"></div>`).join('')}<div class="marker" style="left:${mk*100}%"></div></div>`;}
+
+function render(){
+  const I=inputObj(), R=calc(I);
+  drawMap();
+
+  // map chips
+  const chipRail={
+    entry:{kind:'lowGood',value:R.entry.raw,scaleMax:ENTRY_TH.scaleMax,bounds:[ENTRY_TH.easy,ENTRY_TH.doable,ENTRY_TH.caution]},
+    swim:{kind:'lowGood',value:R.swim.raw,scaleMax:SWIM_TH.scaleMax,bounds:[SWIM_TH.glassy,SWIM_TH.ripply,SWIM_TH.choppy]},
+    surge:{kind:'highGood',value:R.surge.score,bounds:[SURGE_TH.steady,SURGE_TH.drifty,SURGE_TH.surgy]},
+  };
+  const chip=(n,m,sub,rc)=>`<div class="chipcard">
+    <div class="chiptop"><span class="n">${n}</span><span class="lab" style="color:${COL[m.cls]}">${m.label} <span class="sc">${sub}</span></span></div>
+    ${railHTML(rc)}
+    <div class="rail-scale">${rc.kind==='highGood'?'<span>best</span><span>worst</span>':'<span>best</span><span>worst</span>'}</div></div>`;
+  document.getElementById('chips').innerHTML=
+    chip('Entry',R.entry,R.entry.score,chipRail.entry)+
+    chip('Swim',R.swim,R.swim.score,chipRail.swim)+
+    chip('Surge',R.surge,'v6 '+R.surge.score,chipRail.surge);
+
+  // map readout
+  const tx1=R.s1Tx*100;
+  const rrows=[['Primary · from',Math.round(ST.s1D)+'°'],['Travels toward',Math.round((ST.s1D+180)%360)+'°'],['GEM transmit',tx1.toFixed(0)+'%'],['Bower sea-hit',R.bSea1+'%']];
+  if(ST.s2on)rrows.push(['Secondary · from',Math.round(ST.s2D)+'°'],['Secondary transmit',(R.s2Tx*100).toFixed(0)+'%']);
+  document.getElementById('readout').innerHTML=rrows.map(r=>`<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+  document.getElementById('rnote').innerHTML = tx1<10
+    ? `<span class="warn">From ${Math.round(ST.s1D)}° at ${ST.s1P}s only ${tx1.toFixed(0)}% reaches the break — the headlands shadow the bay. This is the geometry behind a quiet reading.</span>`
+    : `From ${Math.round(ST.s1D)}° at ${ST.s1P}s, ${tx1.toFixed(0)}% transmits. The window peaks at due-E (90°) and shuts toward N and S.`;
+
+  // bench metric cards
+  const cards=[
+    {name:'Entry',sub:'getting in',m:R.entry,rail:{kind:'lowGood',value:R.entry.raw,scaleMax:ENTRY_TH.scaleMax,bounds:[ENTRY_TH.easy,ENTRY_TH.doable,ENTRY_TH.caution]},
+     rows:[['Wind chop',R.wind_d],['Wind-wave',R.ww_d],['Primary swell',R.s1_d],['Secondary swell',R.s2_d],['Subtotal (before tide)',R.o,'mid'],['Tide effect',R.tide_d],['Total demerits',R.total,'tot']]},
+    {name:'Swim',sub:'chop',m:R.swim,rail:{kind:'lowGood',value:R.swim.raw,scaleMax:SWIM_TH.scaleMax,bounds:[SWIM_TH.glassy,SWIM_TH.ripply,SWIM_TH.choppy]},
+     rows:[['Wind chop',R.wind_d],['Wind-wave',R.ww_d],['q7 = wind + wind-wave',R.q7,'tot']]},
+    {name:'Surge',sub:'bay push (Bower)',m:R.surge,rail:{kind:'highGood',value:R.surge.score,bounds:[SURGE_TH.steady,SURGE_TH.drifty,SURGE_TH.surgy]},
+     rows:[['Primary swell',R.surge.parts.s1_d],['Secondary swell',R.surge.parts.s2_d],['Tide effect',R.surge.parts.tide_d],['Surge demerits',R.surge.raw,'mid'],['v6 score (60=best)',R.surge.score,'tot']]},
+  ];
+  document.getElementById('metrics').innerHTML=cards.map(c=>`<div class="metric">
+    <div class="metric-head"><div class="metric-name">${c.name}<span>${c.sub}</span></div>
+      <div class="chip" style="background:${COL[c.m.cls]}">${c.m.label}<small>${c.name==='Surge'?'v6 '+c.m.score:c.m.score}</small></div></div>
+    ${railHTML(c.rail)}
+    <div class="rail-scale">${c.rail.kind==='highGood'?'<span>60 · best</span><span>worst · 0</span>':'<span>0 · best</span><span>worst · '+c.rail.scaleMax+'</span>'}</div>
+    <div class="brk">${c.rows.map(r=>`<div class="r ${r[2]==='tot'?'tot':''}" ${r[2]==='mid'?'style="color:#9fc4d4"':''}><span>${r[0]}</span><b>${F(r[1])}</b></div>`).join('')}</div></div>`).join('');
+
+  document.getElementById('transmit').innerHTML=[
+    ['Primary · GEM transmit',(R.s1Tx*100).toFixed(0)+'%'],['Secondary · GEM transmit',(R.s2Tx*100).toFixed(0)+'%'],
+    ['Wind-wave · GEM transmit',(R.wwArrival*100).toFixed(0)+'%'],['Wind · hit (AP)',R.windHit+'%'],
+    ['Primary · Bower sea-hit',R.bSea1+'%'],['Primary · entry tide gate',(R.eGate1*100).toFixed(0)+'%'],['Primary · Bower tide gate',(R.bGate1*100).toFixed(0)+'%']
+  ].map(r=>`<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
+
+  drawSweep(I);
+}
+
+/* ===================== SWEEP ===================== */
+const SWEEP_AXES=[
+  {id:'s1D',label:'Primary swell direction',min:0,max:180,set:(I,v)=>I.s1D=v,cur:()=>ST.s1D,unit:'°'},
+  {id:'s1P',label:'Primary swell period',min:4,max:20,set:(I,v)=>I.s1P=v,cur:()=>ST.s1P,unit:'s'},
+  {id:'s1H',label:'Primary swell height',min:0,max:4,set:(I,v)=>I.s1H=v,cur:()=>ST.s1H,unit:'m'},
+  {id:'tide',label:'Tide height',min:0,max:2.1,set:(I,v)=>I.tideM=v,cur:()=>ST.tide,unit:'m'},
+  {id:'wK',label:'Wind speed',min:0,max:50,set:(I,v)=>I.windKmh=v,cur:()=>ST.wK,unit:'km/h'},
+  {id:'wD',label:'Wind direction',min:0,max:360,set:(I,v)=>I.windD=v,cur:()=>ST.wD,unit:'°'},
+  {id:'wwH',label:'Wind-wave height',min:0,max:2,set:(I,v)=>I.wwH=v,cur:()=>ST.wwH,unit:'m'},
+  {id:'s2D',label:'Secondary swell direction',min:0,max:180,set:(I,v)=>I.s2D=v,cur:()=>ST.s2D,unit:'°'},
+];
+const axSel=document.getElementById('sweepAxis');
+SWEEP_AXES.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.label;axSel.appendChild(o);});
+axSel.value=0;axSel.onchange=render;document.getElementById('sweepY').onchange=render;
+function drawSweep(baseI){
+  const axis=SWEEP_AXES[+axSel.value],ymode=document.getElementById('sweepY').value;
+  const N=120,W=560,H=250,padL=40,padR=10,padT=12,padB=28,xs=[],se={entry:[],swim:[],surge:[]};
+  for(let i=0;i<=N;i++){const v=axis.min+(axis.max-axis.min)*i/N,I=Object.assign({},baseI);axis.set(I,v);const R=calc(I);xs.push(v);
+    if(ymode==='score'){se.entry.push(R.entry.score);se.swim.push(R.swim.score);se.surge.push(R.surge.score);}
+    else{se.entry.push(R.entry.raw);se.swim.push(R.swim.raw);se.surge.push(R.surge.raw);}}
+  let ymax=ymode==='score'?60:Math.max(10,...se.entry,...se.swim,...se.surge)*1.08,ymin=0;
+  const X=v=>padL+(W-padL-padR)*(v-axis.min)/(axis.max-axis.min),Y=v=>padT+(H-padT-padB)*(1-(v-ymin)/(ymax-ymin));
+  const path=a=>a.map((y,i)=>(i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y(y).toFixed(1)).join(' ');
+  let grid='';(ymode==='score'?[0,15,30,45,60]:[0,ymax*0.25,ymax*0.5,ymax*0.75,ymax]).forEach(t=>{grid+=`<line x1="${padL}" y1="${Y(t)}" x2="${W-padR}" y2="${Y(t)}" stroke="rgba(127,176,196,0.15)"/><text x="${padL-5}" y="${Y(t)+3}" fill="#7fb0c4" font-size="9" text-anchor="end">${t.toFixed(0)}</text>`;});
+  let xg='';for(let i=0;i<=5;i++){const v=axis.min+(axis.max-axis.min)*i/5;xg+=`<text x="${X(v)}" y="${H-padB+13}" fill="#7fb0c4" font-size="9" text-anchor="middle">${v.toFixed(axis.max>20?0:1)}</text>`;}
+  const cv=axis.cur(),cx=X(Math.max(axis.min,Math.min(axis.max,cv)));
+  document.getElementById('sweepPlot').innerHTML=`<svg class="plot" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}${xg}
+    <line x1="${cx}" y1="${padT}" x2="${cx}" y2="${H-padB}" stroke="#fff" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.8"/>
+    <path d="${path(se.entry)}" fill="none" stroke="var(--ocean)" stroke-width="2"/>
+    <path d="${path(se.swim)}" fill="none" stroke="#7fc8a9" stroke-width="2"/>
+    <path d="${path(se.surge)}" fill="none" stroke="#e0a64d" stroke-width="2"/>
+    <text x="${padL}" y="${H-3}" fill="#7fb0c4" font-size="9">${axis.label} (${axis.unit})</text></svg>`;
+}
+
+/* ===================== INPUT WIRING ===================== */
+const FIELDS=[['s1H',1],['s1D',0],['s1P',1],['s2H',1],['s2D',0],['s2P',1],['wK',0],['wD',0],['wwH',2],['wwD',0],['wwP',1],['tide',2]];
+function setField(key,v,dec){const r=document.getElementById(key);if(r){v=Math.max(+r.min,Math.min(+r.max,v));}ST[key]=v;syncField(key,dec);render();}
+function syncField(key,dec){const r=document.getElementById(key),n=document.getElementById(key+'_n');if(!r)return;r.value=ST[key];n.value=dec!=null?(+ST[key]).toFixed(dec):ST[key];}
+FIELDS.forEach(([key,dec])=>{const r=document.getElementById(key),n=document.getElementById(key+'_n');
+  r.addEventListener('input',()=>setField(key,+r.value,dec));n.addEventListener('change',()=>setField(key,parseFloat(n.value)||0,dec));});
+
+// model params — each slider carries a live-default tick + a live delta readout
+const PARAM_DEFS=[
+  {g:'Sensitivities & power'},
+  {id:'windSens',label:'windSens',min:0,max:1,step:0.01,dec:2},
+  {id:'swellSens',label:'swellSens',min:0,max:4,step:0.05,dec:2},
+  {id:'wwSens',label:'wwSens',min:0,max:4,step:0.05,dec:2},
+  {id:'periodExp',label:'periodExp',min:0.5,max:2,step:0.05,dec:2},
+  {g:'Entry tide gate (headland)'},
+  {id:'tideGateStart',label:'gate start °',min:0,max:180,step:5,dec:0},
+  {id:'tideGateFull',label:'gate full °',min:0,max:180,step:5,dec:0},
+  {g:'Bower surge'},
+  {id:'bowerSwellSens',label:'swellSens',min:0,max:4,step:0.05,dec:2},
+  {id:'bowerSpm',label:'spm',min:0,max:10,step:0.05,dec:2},
+  {id:'bowerTideGateStart',label:'gate start °',min:0,max:180,step:5,dec:0},
+  {id:'bowerTideGateFull',label:'gate full °',min:0,max:180,step:5,dec:0},
+];
+const THUMB=14, paramHost=document.getElementById('paramHost');
+const paramUpd={}; // id -> function to refresh its row's thumb/value/delta
+function buildParams(){
+  paramHost.innerHTML=''; for(const k in paramUpd) delete paramUpd[k];
+  PARAM_DEFS.forEach(d=>{
+    if(d.g){const h=document.createElement('div');h.className='grp-t';h.textContent=d.g;paramHost.appendChild(h);return;}
+    const def=LIVE[d.id], frac=(def-d.min)/(d.max-d.min);
+    const row=document.createElement('div'); row.className='param';
+    row.innerHTML=`<div class="param-top"><span class="plabel">${d.label}</span><span class="pval"><input id="pn_${d.id}"></span></div>
+      <div class="slider-wrap"><span class="def-mark" style="left:calc(${frac}*(100% - ${THUMB}px) + ${THUMB/2}px)" title="live default ${def}"></span>
+      <input type="range" id="pr_${d.id}" min="${d.min}" max="${d.max}" step="${d.step}"></div>
+      <div class="pdelta" id="pd_${d.id}"></div>`;
+    paramHost.appendChild(row);
+    const r=row.querySelector('#pr_'+d.id), n=row.querySelector('#pn_'+d.id), pd=row.querySelector('#pd_'+d.id);
+    const upd=()=>{ r.value=M[d.id]; n.value=(+M[d.id]).toFixed(d.dec);
+      const delta=M[d.id]-def, at=Math.abs(delta)<1e-9;
+      pd.className='pdelta '+(at?'zero':(delta>0?'up':'down'));
+      pd.innerHTML=`default <b>${(+def).toFixed(d.dec)}</b>`+(at?' · at default':` · Δ <b>${delta>0?'+':''}${delta.toFixed(d.dec)}</b>`);
+    };
+    paramUpd[d.id]=upd;
+    const set=v=>{v=Math.max(d.min,Math.min(d.max,v));M[d.id]=v;upd();render();};
+    r.addEventListener('input',()=>set(+r.value));
+    n.addEventListener('change',()=>set(parseFloat(n.value)||0));
+    upd();
+  });
+}
+buildParams();
+document.getElementById('resetParams').onclick=()=>{M={...LIVE};buildParams();render();};
+
+// toggles
+document.getElementById('s2on').addEventListener('change',e=>{ST.s2on=e.target.checked;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';render();});
+['crests','fan','rose'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{ST[id]=e.target.checked;render();}));
+document.getElementById('crests').checked=ST.crests;document.getElementById('rose').checked=ST.rose;
+// north offset
+{const r=document.getElementById('north'),n=document.getElementById('north_n');const set=v=>{ST.north=v;r.value=v;n.value=v;render();};r.addEventListener('input',()=>set(+r.value));n.addEventListener('change',()=>set(parseFloat(n.value)||0));}
+// pivots
+document.getElementById('pivEntry').onclick=()=>{ST.pivot={x:600,y:590};render();};
+document.getElementById('pivBower').onclick=()=>{ST.pivot={x:700,y:625};render();};
+
+// presets
+const PRESETS={
+  'S/SE now (quiet)':{s1H:0.6,s1D:160,s1P:8,s2on:false,wK:10,wD:180,wwH:0.2,wwD:180,wwP:4,tide:1.0},
+  'Classic E groundswell':{s1H:1.6,s1D:90,s1P:13,s2on:true,s2H:0.4,s2D:110,s2P:9,wK:8,wD:250,wwH:0.2,wwD:250,wwP:4,tide:1.2},
+  'NE wind swell':{s1H:1.2,s1D:55,s1P:8,s2on:false,wK:25,wD:45,wwH:0.7,wwD:45,wwP:5,tide:1.4},
+  'Big E + high tide':{s1H:2.4,s1D:95,s1P:14,s2on:true,s2H:0.6,s2D:120,s2P:10,wK:15,wD:200,wwH:0.4,wwD:200,wwP:5,tide:1.9},
+  'Onshore mess':{s1H:1.0,s1D:100,s1P:9,s2on:false,wK:32,wD:110,wwH:1.0,wwD:110,wwP:6,tide:1.3},
+  'Glass calm':{s1H:0.3,s1D:90,s1P:8,s2on:false,wK:4,wD:250,wwH:0.05,wwD:250,wwP:3,tide:1.0},
+};
+const pc=document.getElementById('presets');
+Object.keys(PRESETS).forEach(name=>{const b=document.createElement('button');b.textContent=name;
+  b.onclick=()=>{const p=PRESETS[name];Object.assign(ST,p);
+    document.getElementById('s2on').checked=ST.s2on;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';
+    FIELDS.forEach(([k,d])=>syncField(k,d));render();};
+  pc.appendChild(b);});
+
+/* ===================== MAP DRAG (pivot + direction handles) ===================== */
+function svgPoint(evt){const rect=ov.getBoundingClientRect(),sx=MW/rect.width,sy=MH/rect.height;
+  const cx=(evt.touches?evt.touches[0].clientX:evt.clientX)-rect.left,cy=(evt.touches?evt.touches[0].clientY:evt.clientY)-rect.top;
+  return {x:cx*sx,y:cy*sy};}
+function bearingFromPoint(p){const dx=p.x-ST.pivot.x,dy=p.y-ST.pivot.y;let b=Math.atan2(dx,-dy)*180/Math.PI+ST.north;return ((Math.round(b)%360)+360)%360;}
+let drag=null;
+ov.addEventListener('pointerdown',e=>{const p=svgPoint(e);
+  const dPiv=Math.hypot(p.x-ST.pivot.x,p.y-ST.pivot.y);
+  const dH1=handlePos.s1?Math.hypot(p.x-handlePos.s1.x,p.y-handlePos.s1.y):1e9;
+  const dH2=handlePos.s2?Math.hypot(p.x-handlePos.s2.x,p.y-handlePos.s2.y):1e9;
+  const m=Math.min(dPiv<32?dPiv:1e9, dH1<40?dH1:1e9, dH2<40?dH2:1e9);
+  if(m>1e8)return;
+  if(m===dH1)drag='s1';else if(m===dH2)drag='s2';else drag='pivot';
+  ov.setPointerCapture(e.pointerId);e.preventDefault();});
+ov.addEventListener('pointermove',e=>{if(!drag)return;const p=svgPoint(e);
+  if(drag==='pivot'){ST.pivot={x:Math.max(0,Math.min(MW,p.x)),y:Math.max(0,Math.min(MH,p.y))};render();}
+  else if(drag==='s1'){setField('s1D',bearingFromPoint(p),0);}
+  else if(drag==='s2'){setField('s2D',bearingFromPoint(p),0);}});
+ov.addEventListener('pointerup',()=>drag=null);
+ov.addEventListener('pointercancel',()=>drag=null);
+
+/* ===================== PNG EXPORT ===================== */
+document.getElementById('snap').onclick=()=>{const img=document.getElementById('bg'),cv=document.getElementById('exportCanvas');cv.width=MW;cv.height=MH;const ctx=cv.getContext('2d');
+  try{ctx.drawImage(img,0,0,MW,MH);}catch(err){alert('Open via a local server or hosted page so the image can be read for export.');return;}
+  const blob=new Blob([`<svg xmlns="${SVGNS}" width="${MW}" height="${MH}" viewBox="0 0 ${MW} ${MH}">${ov.innerHTML}</svg>`],{type:'image/svg+xml'});
+  const url=URL.createObjectURL(blob),im=new Image();
+  im.onload=()=>{ctx.drawImage(im,0,0);URL.revokeObjectURL(url);const a=document.createElement('a');a.download='swell_'+Math.round(ST.s1D)+'deg.png';a.href=cv.toDataURL('image/png');a.click();};
+  im.onerror=()=>alert('Export needs a hosted page (file:// blocks canvas export).');im.src=url;};
+
+/* ===================== LOAD FROM THE PAST (Open-Meteo) ===================== */
+const LAT=-33.7969, LNG=151.2877, TZ='Australia/Sydney';
+// Open-Meteo sea_level_height_msl is referenced to global mean sea level (≈ 0).
+// Manly tide on the app's datum runs ~0.3–1.8 m, mean ≈ 1.0 m, so shift MSL up by
+// the local mean-level-above-datum. Tune this if it disagrees with a known reading.
+const TIDE_MSL_OFFSET=0.95;
+const pad=n=>String(n).padStart(2,'0');
+const pastOn=document.getElementById('pastOn'), pastBox=document.getElementById('pastBox'),
+      pastDate=document.getElementById('pastDate'), pastHour=document.getElementById('pastHour'),
+      pastHourN=document.getElementById('pastHour_n'), pastStatus=document.getElementById('pastStatus');
+(function initPast(){
+  const iso=dt=>dt.getFullYear()+'-'+pad(dt.getMonth()+1)+'-'+pad(dt.getDate());
+  const today=new Date(), wk=new Date(today.getTime()-7*86400000);
+  pastDate.value=iso(wk); pastDate.max=iso(today); pastDate.min='2022-01-01';
+  pastHour.value=8; pastHourN.textContent=pad(8);
+})();
+pastOn.addEventListener('change',e=>{pastBox.style.display=e.target.checked?'block':'none';});
+pastHour.addEventListener('input',()=>pastHourN.textContent=pad(+pastHour.value));
+function setStatus(msg,cls){pastStatus.className='note'+(cls?' '+cls:'');pastStatus.innerHTML=msg;}
+function findIdx(times,date,hour){
+  if(!times||!times.length) return -1;
+  const t=date+'T'+pad(hour)+':00'; let i=times.indexOf(t);
+  if(i<0) i=times.findIndex(x=>x&&x.slice(0,10)===date&&x.slice(11,13)===pad(hour));
+  return i<0 ? Math.min(hour,times.length-1) : i;
+}
+// clamp a loaded value into the matching slider's range, set state, sync display
+function clampSet(key,v,dec){const r=document.getElementById(key);if(r){v=Math.max(+r.min,Math.min(+r.max,v));}ST[key]=v;syncField(key,dec);}
+async function fetchWind(date){
+  // forecast endpoint covers ~last 92 days + ahead; archive endpoint (ERA5) covers
+  // older dates. Different hosts use different paths (/v1/forecast vs /v1/archive).
+  const params='latitude='+LAT+'&longitude='+LNG+'&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kmh&start_date='+date+'&end_date='+date+'&timezone='+encodeURIComponent(TZ);
+  const urls=['https://api.open-meteo.com/v1/forecast?'+params,'https://archive-api.open-meteo.com/v1/archive?'+params];
+  for(const u of urls){
+    try{const r=await fetch(u); if(!r.ok) continue; const j=await r.json();
+      if(j.hourly && j.hourly.wind_speed_10m && j.hourly.wind_speed_10m.some(v=>v!=null)) return j;
+    }catch(e){}
+  }
+  return null;
+}
+async function loadPast(){
+  const date=pastDate.value, hour=+pastHour.value;
+  setStatus('Loading '+date+' '+pad(hour)+':00 …');
+  const marineQ='https://marine-api.open-meteo.com/v1/marine?latitude='+LAT+'&longitude='+LNG
+    +'&hourly=swell_wave_height,swell_wave_direction,swell_wave_period,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period,wind_wave_height,wind_wave_direction,wind_wave_period,sea_level_height_msl'
+    +'&cell_selection=sea&start_date='+date+'&end_date='+date+'&timezone='+encodeURIComponent(TZ);
+  try{
+    const [mres,wres]=await Promise.all([
+      fetch(marineQ).then(r=>{if(!r.ok)throw new Error('marine '+r.status);return r.json();}),
+      fetchWind(date)
+    ]);
+    const mh=mres.hourly||{};
+    if(!mh.time||!mh.time.length) throw new Error('no marine data for that date');
+    const mi=findIdx(mh.time,date,hour);
+    const g=(a,d=0)=> (a&&a[mi]!=null)?a[mi]:d;
+    clampSet('s1H',g(mh.swell_wave_height),1);
+    clampSet('s1D',Math.round(g(mh.swell_wave_direction)),0);
+    clampSet('s1P',g(mh.swell_wave_period,8),1);
+    const s2h=g(mh.secondary_swell_wave_height);
+    ST.s2on = s2h>0.05;
+    document.getElementById('s2on').checked=ST.s2on;
+    document.getElementById('s2box').style.display=ST.s2on?'block':'none';
+    document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';
+    clampSet('s2H',s2h,1);
+    clampSet('s2D',Math.round(g(mh.secondary_swell_wave_direction)),0);
+    clampSet('s2P',g(mh.secondary_swell_wave_period,8),1);
+    clampSet('wwH',g(mh.wind_wave_height),2);
+    clampSet('wwD',Math.round(g(mh.wind_wave_direction)),0);
+    clampSet('wwP',g(mh.wind_wave_period,4),1);
+    // Tide — Open-Meteo SMOC sea level (referenced to MSL) shifted to the app datum
+    const slh=g(mh.sea_level_height_msl,null);
+    let tidetxt='tide n/a — set manually';
+    if(slh!=null){ const tideM=slh+TIDE_MSL_OFFSET; clampSet('tide',tideM,2); tidetxt='tide '+F(tideM,2)+'m (msl '+F(slh,2)+')'; }
+    let wtxt='wind n/a';
+    if(wres&&wres.hourly){
+      const wh=wres.hourly, wi=findIdx(wh.time,date,hour);
+      const wk=(wh.wind_speed_10m&&wh.wind_speed_10m[wi]!=null)?wh.wind_speed_10m[wi]:null;
+      const wd=(wh.wind_direction_10m&&wh.wind_direction_10m[wi]!=null)?wh.wind_direction_10m[wi]:null;
+      if(wk!=null){clampSet('wK',Math.round(wk),0);wtxt='wind '+Math.round(wk)+'km/h';}
+      if(wd!=null){clampSet('wD',Math.round(wd),0);wtxt+='@'+Math.round(wd)+'\u00B0';}
+    }
+    render();
+    setStatus('Loaded <b>'+date+' '+pad(hour)+':00</b> · swell '+F(ST.s1H)+'m@'+Math.round(ST.s1D)+'\u00B0 '+F(ST.s1P)+'s · '+wtxt+' · '+tidetxt
+      +'. <span class="note2">Tide = Open-Meteo SMOC sea level (8&nbsp;km, modelled), shifted +'+TIDE_MSL_OFFSET+'m to the local datum — verify against a known reading and tell me if the offset needs tuning.</span>','ok');
+  }catch(err){
+    setStatus('Load failed: '+err.message+'. Open-Meteo marine covers roughly the last 3 months; older days may be empty.','err');
+  }
+}
+document.getElementById('pastLoad').onclick=loadPast;
+document.getElementById('reloadSheet').onclick=loadFromSheet;
+loadFromSheet();
+
+/* ===================== INIT ===================== */
+FIELDS.forEach(([k,d])=>syncField(k,d));
+document.getElementById('north_n').value=ST.north;document.getElementById('north').value=ST.north;
+render();
+</script>
+</body>
+</html>
