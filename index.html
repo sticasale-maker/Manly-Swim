@@ -2466,7 +2466,8 @@ const SITE_DEFAULTS = {
   wwRouteBlend:   0,     // wind-wave DIRECTION filter geometry: 0 = arrival (point, into S Steyne) … 1 = route (line, S Steyne→Shelly). Blend in between.
   periodExp:      1.15,   // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  75,     // sheet col R r25 — tide/headland effect begins above this swell direction (°)
-  tideGateFull:   90,     // sheet col R r26 — tide/headland effect reaches full strength at this direction (°), flat beyond
+  tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
+  tideGain:       0.35,   // sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × max(0,tideM−0.2) × (s1_d+s2_d)
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
   // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
   // three band edges + an explicit scaleMax (4th cell) that sets the rail's total
@@ -2494,7 +2495,8 @@ const SITE_DEFAULTS = {
   bowerSwellSens:     1.65,  // sheet col S label "Bower swell sens", value in col T
   bowerSpm:           4.35,  // sheet col S label "Bower spm", value in col T
   bowerTideGateStart: 30,    // sheet col S label "Bower tide gate start" (°), value in col T — no tide below this swell dir
-  bowerTideGateFull:  45,    // sheet col S label "Bower tide gate full" (°),  value in col T — full tide at/above this dir
+  bowerTideGateFull:  45,    // retired (gate no longer used for Bower tide; kept for back-compat)
+  bowerTideGain:      0.35,  // sheet col S label "Bower tide gain", value col T — Bower surge tide scale (gate retired)
   bowerLookup: {
     wind: [100,100,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,30,60,70,85],
     sea:  [20,50,100,100,100,90,80,60,30,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2535,11 +2537,12 @@ let SITE = {
   // Direction-gated, per-source tide demerit. Only swell + wind-wave terms are
   // amplified (each by its own arrival direction); wind chop is never tide-amplified.
   tideDir: function(tideM, parts) {
-    const mult = tideM - 0.2;
-    const w = (parts.s1_d || 0) * this.tideGate(parts.s1Dir || 0)
-            + (parts.s2_d || 0) * this.tideGate(parts.s2Dir || 0)
-            + (parts.ww_d || 0) * this.tideGate(parts.wwDir || 0);
-    return mult * w;
+    // Tide rides on the arriving swell energy (already direction-weighted by GEM
+    // transmit inside s1_d/s2_d). No separate gate — that double-counted direction
+    // and made equal swell read worse from 90° than 60°. Chop excluded.
+    const mult = Math.max(0, tideM - 0.2);
+    const w = (parts.s1_d || 0) + (parts.s2_d || 0);
+    return (this.tideGain ?? 0.35) * mult * w;
   },
   get spm() { return 81 / this.periodPower; },
   ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
@@ -2603,6 +2606,10 @@ function applySwimConfig(rows) {
       const v = n(rows[r][STEYNE_TUNE_COL]);
       if (v > 0) SITE.wwSens = v;
     }
+    if (label.includes('Tide gain')) {
+      const v = n(rows[r][STEYNE_TUNE_COL]);
+      if (v > 0) SITE.tideGain = v;
+    }
     if (label.includes('Route blend') || label.includes('WW route') || label.includes('WW blend')) {
       SITE.wwRouteBlend = Math.max(0, Math.min(1, n(rows[r][STEYNE_TUNE_COL])));
     }
@@ -2618,6 +2625,9 @@ function applySwimConfig(rows) {
     }
     if (sLabel.includes('Bower spm')) {
       const v = n(sVal); if (v > 0) SITE.bowerSpm = v;
+    }
+    if (sLabel.includes('Bower tide gain')) {
+      const v = n(sVal); if (v > 0) SITE.bowerTideGain = v;
     }
     if (sLabel.includes('Bower tide gate start')) {
       const v = parseFloat(sVal); if (Number.isFinite(v)) SITE.bowerTideGateStart = v;
@@ -2705,6 +2715,7 @@ async function loadConfig() {
       if (c.tideGateStart != null) SITE.tideGateStart = c.tideGateStart;
       if (c.tideGateFull  != null) SITE.tideGateFull  = c.tideGateFull;
       SITE.wwSens          = (c.wwSens != null) ? c.wwSens : SITE_DEFAULTS.wwSens;
+      SITE.tideGain        = (c.tideGain != null) ? c.tideGain : SITE_DEFAULTS.tideGain;
       SITE.wwRouteBlend    = c.wwRouteBlend || 0;
       // Merge over defaults so any key absent from an older cache (e.g. scaleMax)
       // falls back to a sane value rather than undefined breaking the rail math.
@@ -2717,6 +2728,7 @@ async function loadConfig() {
       if (c.bowerLookup)              SITE.bowerLookup        = c.bowerLookup;
       if (c.bowerSwellSens != null)   SITE.bowerSwellSens     = c.bowerSwellSens;
       if (c.bowerSpm != null)         SITE.bowerSpm           = c.bowerSpm;
+      if (c.bowerTideGain != null)    SITE.bowerTideGain      = c.bowerTideGain;
       if (c.bowerTideGateStart != null) SITE.bowerTideGateStart = c.bowerTideGateStart;
       if (c.bowerTideGateFull  != null) SITE.bowerTideGateFull  = c.bowerTideGateFull;
       console.log('Swim config: loaded from cache');
@@ -2740,6 +2752,7 @@ async function loadConfig() {
         tideGateStart:   SITE.tideGateStart,
         tideGateFull:    SITE.tideGateFull,
         wwSens:          SITE.wwSens,
+        tideGain:        SITE.tideGain,
         wwRouteBlend:    SITE.wwRouteBlend,
         swimThresholds:  SITE.swimThresholds,
         entryThresholds: SITE.entryThresholds,
@@ -2748,6 +2761,7 @@ async function loadConfig() {
         bowerLookup:        SITE.bowerLookup,
         bowerSwellSens:     SITE.bowerSwellSens,
         bowerSpm:           SITE.bowerSpm,
+        bowerTideGain:      SITE.bowerTideGain,
         bowerTideGateStart: SITE.bowerTideGateStart,
         bowerTideGateFull:  SITE.bowerTideGateFull,
       }
@@ -2764,6 +2778,7 @@ async function loadConfig() {
     SITE.tideGateStart   = SITE_DEFAULTS.tideGateStart;
     SITE.tideGateFull    = SITE_DEFAULTS.tideGateFull;
     SITE.wwSens          = SITE_DEFAULTS.wwSens;
+    SITE.tideGain        = SITE_DEFAULTS.tideGain;
     SITE.wwRouteBlend    = SITE_DEFAULTS.wwRouteBlend;
     SITE.swimThresholds  = JSON.parse(JSON.stringify(SITE_DEFAULTS.swimThresholds));
     SITE.entryThresholds = JSON.parse(JSON.stringify(SITE_DEFAULTS.entryThresholds));
@@ -2772,6 +2787,7 @@ async function loadConfig() {
     SITE.bowerLookup        = JSON.parse(JSON.stringify(SITE_DEFAULTS.bowerLookup));
     SITE.bowerSwellSens     = SITE_DEFAULTS.bowerSwellSens;
     SITE.bowerSpm           = SITE_DEFAULTS.bowerSpm;
+    SITE.bowerTideGain      = SITE_DEFAULTS.bowerTideGain;
     SITE.bowerTideGateStart = SITE_DEFAULTS.bowerTideGateStart;
     SITE.bowerTideGateFull  = SITE_DEFAULTS.bowerTideGateFull;
   }
@@ -2974,10 +2990,10 @@ function bowerSurgeParts(d) {
              + (dirLookup(bl.rif, swell1Dir || 0) * s1p * spm) / 1000;
   const s2_d = s2p * (Math.max(0, dirLookup(bl.sea, swell2Dir || 0)) / 100) * sens
              + (dirLookup(bl.rif, swell2Dir || 0) * s2p * spm) / 1000;
-  // direction-gated tide: amplify each train by its own arrival gate (<20° = none)
-  const tmult  = (tideM != null ? tideM : 1.0) - 0.2;
-  const tide_d = tmult * ( s1_d * SITE.bowerTideGate(swell1Dir || 0)
-                         + s2_d * SITE.bowerTideGate(swell2Dir || 0) );
+  // Tide rides on the arriving surge energy (already direction-weighted by the Bower
+  // sea/rif tables inside s1_d/s2_d). No separate gate — same de-double-count as entry.
+  const tmult  = Math.max(0, (tideM != null ? tideM : 1.0) - 0.2);
+  const tide_d = (SITE.bowerTideGain ?? 0.35) * tmult * (s1_d + s2_d);
   return { s1_d, s2_d, tide_d, raw: s1_d + s2_d + tide_d };
 }
 
@@ -4681,7 +4697,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-012511';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;

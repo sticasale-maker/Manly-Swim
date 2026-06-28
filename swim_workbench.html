@@ -260,7 +260,7 @@ let BOWER_RIF=[100,50,0,0,0,10,20,40,60,60,60,53,45,35,15,10,5,0,0,0,0,0,0,0,0,0
 const WIND_WEIGHT=[[0,0],[1,0.07],[2,0.29],[3,0.64],[4,1.14],[5,1.79],[6,2.57],[7,3.50],[8,4.57],[9,5.79],[10,7.14],[11,8.64],[12,10.29],[13,12.07],[14,14.00],[15,16.07],[16,18.29],[17,20.64],[18,23.14],[19,25.79],[20,28.57],[21,31.50],[22,34.57],[23,37.79],[24,41.14],[25,44.64],[26,48.29],[27,52.07],[28,56.00],[29,60.07],[30,64.29],[35,87.50],[40,114.29],[50,178.57]];
 
 /* ===================== PARAMS ===================== */
-const DEFAULTS={windSens:0.2,swellSens:2.5,wwSens:1.8,periodExp:1.15,tideGain:0.35,tideGateStart:75,tideGateFull:90,bowerSwellSens:1.65,bowerSpm:4.35,bowerTideGateStart:30,bowerTideGateFull:45};
+const DEFAULTS={windSens:0.2,swellSens:2.5,wwSens:1.8,periodExp:1.15,tideGain:0.35,tideGateStart:75,tideGateFull:90,bowerSwellSens:1.65,bowerSpm:4.35,bowerTideGain:0.35,bowerTideGateStart:30,bowerTideGateFull:45};
 const ENTRY_TH={easy:15,doable:30,caution:50,scaleMax:60}, SWIM_TH={glassy:1,ripply:3,choppy:9,scaleMax:14}, SURGE_TH={steady:50,drifty:30,surgy:10,scaleMax:0};
 let LIVE={...DEFAULTS};
 let M={...LIVE};
@@ -285,6 +285,7 @@ function parseParams(rows){
     const sL=(rows[r]&&rows[r][COL_S])||'', sV=rows[r]&&rows[r][COL_S+1];
     if(sL.includes('Bower swell sens')){const v=num(sV);if(v>0)out.bowerSwellSens=v;}
     if(sL.includes('Bower spm')){const v=num(sV);if(v>0)out.bowerSpm=v;}
+    if(sL.includes('Bower tide gain')){const v=num(sV);if(v>0)out.bowerTideGain=v;}
     if(sL.includes('Bower tide gate start')){const v=parseFloat(sV);if(Number.isFinite(v))out.bowerTideGateStart=v;}
     if(sL.includes('Bower tide gate full')){const v=parseFloat(sV);if(Number.isFinite(v))out.bowerTideGateFull=v;}
   }
@@ -335,10 +336,15 @@ function tideCheck(I,dir){
   const oldTide=tm*(R.s1_d*smoothGate(dir,M.tideGateStart,M.tideGateFull)+R.s2_d*smoothGate(J.s2D||0,M.tideGateStart,M.tideGateFull)+R.ww_d*smoothGate(J.wwD!=null?J.wwD:J.windD,M.tideGateStart,M.tideGateFull));
   return {nw:R.total, old:R.o+oldTide};
 }
+function bowerTideCheck(I,dir){
+  const J=Object.assign({},I,{s1D:dir}), bp=bowerParts(J), tm=(J.tideM!=null?J.tideM:1)-0.2;
+  const oldTide=tm*(bp.s1_d*smoothGate(dir,M.bowerTideGateStart,M.bowerTideGateFull)+bp.s2_d*smoothGate(J.s2D||0,M.bowerTideGateStart,M.bowerTideGateFull));
+  return {nw:bp.raw, old:bp.s1_d+bp.s2_d+oldTide};
+}
 function bowerParts(I){const s1p=swellPower(I.s1H||0,I.s1P||8),s2p=swellPower(I.s2H||0,I.s2P||8),sens=M.bowerSwellSens,spm=M.bowerSpm;
   const s1_d=s1p*(Math.max(0,dirLookup(BOWER_SEA,I.s1D||0))/100)*sens+(dirLookup(BOWER_RIF,I.s1D||0)*s1p*spm)/1000;
   const s2_d=s2p*(Math.max(0,dirLookup(BOWER_SEA,I.s2D||0))/100)*sens+(dirLookup(BOWER_RIF,I.s2D||0)*s2p*spm)/1000;
-  const tm=(I.tideM!=null?I.tideM:1)-0.2, tide_d=tm*(s1_d*smoothGate(I.s1D||0,M.bowerTideGateStart,M.bowerTideGateFull)+s2_d*smoothGate(I.s2D||0,M.bowerTideGateStart,M.bowerTideGateFull));
+  const tm=(I.tideM!=null?I.tideM:1)-0.2, tide_d=M.bowerTideGain*Math.max(0,tm)*(s1_d+s2_d);
   return {s1_d,s2_d,tide_d,raw:s1_d+s2_d+tide_d};}
 function calc(I){
   const windHit=dirLookup(LK_WIND,I.windD), wind_d=windPower(I.windKmh)*(windHit/100)*M.windSens;
@@ -456,11 +462,11 @@ function render(){
     <div class="rail-scale">${c.rail.kind==='highGood'?'<span>60 · best</span><span>worst · 0</span>':'<span>0 · best</span><span>worst · '+c.rail.scaleMax+'</span>'}</div>
     <div class="brk">${c.rows.map(r=>`<div class="r ${r[2]==='tot'?'tot':''}" ${r[2]==='mid'?'style="color:#9fc4d4"':''}><span>${r[0]}</span><b>${F(r[1])}</b></div>`).join('')}</div></div>`).join('');
 
-  const _tc60=tideCheck(I,60),_tc90=tideCheck(I,90);
+  const _tc60=tideCheck(I,60),_tc90=tideCheck(I,90),_bc60=bowerTideCheck(I,60),_bc90=bowerTideCheck(I,90);
   document.getElementById('transmit').innerHTML=[
     ['Primary · GEM transmit',(R.s1Tx*100).toFixed(0)+'%'],['Secondary · GEM transmit',(R.s2Tx*100).toFixed(0)+'%'],
     ['Wind-wave · GEM transmit',(R.wwArrival*100).toFixed(0)+'%'],['Wind · hit (AP)',R.windHit+'%'],
-    ['Primary · Bower sea-hit',R.bSea1+'%'],['Entry @60° · new (was gate)',F(_tc60.nw)+' ('+F(_tc60.old)+')'],['Entry @90° · new (was gate)',F(_tc90.nw)+' ('+F(_tc90.old)+')'],['Primary · Bower tide gate',(R.bGate1*100).toFixed(0)+'%']
+    ['Primary · Bower sea-hit',R.bSea1+'%'],['Entry @60° · new (was gate)',F(_tc60.nw)+' ('+F(_tc60.old)+')'],['Entry @90° · new (was gate)',F(_tc90.nw)+' ('+F(_tc90.old)+')'],['Surge @60°/90° · new (gate)',F(_bc60.nw)+'/'+F(_bc90.nw)+' ('+F(_bc60.old)+'/'+F(_bc90.old)+')']
   ].map(r=>`<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
 
   drawSweep(I);
@@ -519,8 +525,7 @@ const PARAM_DEFS=[
   {g:'Bower surge'},
   {id:'bowerSwellSens',label:'swellSens',min:0,max:4,step:0.05,dec:2},
   {id:'bowerSpm',label:'spm',min:0,max:10,step:0.05,dec:2},
-  {id:'bowerTideGateStart',label:'gate start °',min:0,max:180,step:5,dec:0},
-  {id:'bowerTideGateFull',label:'gate full °',min:0,max:180,step:5,dec:0},
+  {id:'bowerTideGain',label:'tide gain ×',min:0,max:1,step:0.01,dec:2},
 ];
 const THUMB=14, paramHost=document.getElementById('paramHost');
 const paramUpd={}; // id -> function to refresh its row's thumb/value/delta
