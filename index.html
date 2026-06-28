@@ -1872,7 +1872,7 @@
         </div>
         <div class="metric-block green" id="metricSwim" onclick="openMetricModal('swim')">
           <div class="metric-header">
-            <div class="metric-name">Swim: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-name">Chop: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSwimVal">—</div>
             <div class="metric-score" id="metricSwimScore">—</div>
           </div>
@@ -1887,7 +1887,7 @@
             <div class="metric-track-dot" id="metricSwimDot" style="color:var(--green)"></div>
           </div>
           <div class="metric-track-labels" id="metricSwimLabels">
-            <span style="flex:1">Glassy</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
+            <span style="flex:1">Smooth</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
           </div>
           <div class="assess-wrap" onclick="event.stopPropagation()">
             <div class="assess-label">My call ▸ drag to where the dot should be</div>
@@ -2384,9 +2384,12 @@ const TUNE_KEY   = 'swim_tune_overrides_v1';            // localStorage: user's 
 const _ICON_ZONE = { green: 0, amber: 1, yellow: 2, red: 3 };
 const _ICON_WORD = {
   entry: ['easy', 'doable', 'caution', 'dangerous'],
-  swim:  ['glassy', 'ripply', 'choppy', 'messy'],
+  swim:  ['smooth', 'ripply', 'choppy', 'messy'],
   surge: ['steady', 'drifty', 'surgy', 'washy']
 };
+// Image filename prefix per metric. Internal key stays 'swim' (DOM ids, modal,
+// thresholds all keyed on it) but the on-disk pictograms are named chop-*.png.
+const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'surge' };
 function renderMetricIcon(blockId, cls) {
   const host = document.getElementById(blockId + 'Icon');
   if (!host) return;
@@ -2394,7 +2397,8 @@ function renderMetricIcon(blockId, cls) {
   const key = blockId.replace('metric', '').toLowerCase(); // entry / swim / surge
   const words = _ICON_WORD[key];
   if (!words) return;
-  host.innerHTML = '<img class="metric-icon-img" src="images/' + key + '-' + words[i] +
+  const prefix = _ICON_PREFIX[key] || key;
+  host.innerHTML = '<img class="metric-icon-img" src="images/' + prefix + '-' + words[i] +
     '.png" alt="" loading="lazy">';
   host.style.display = 'flex';
 }
@@ -3112,7 +3116,7 @@ function calcScore(d, modelOverride) {
       // q7 is capped at the Messy edge for scale purposes (beyond that is fully Messy).
       const cap = t.scaleMax > 0 ? t.scaleMax : 14;
       const s60 = Math.max(0, Math.round(60 - Math.min(q7, cap) * (60 / cap)));
-      if (q7 <  t.glassy) return { label:'Glassy', cls:'green',  score: s60, raw: q7 };
+      if (q7 <  t.glassy) return { label:'Smooth', cls:'green',  score: s60, raw: q7 };
       if (q7 <= t.ripply) return { label:'Ripply', cls:'amber',  score: s60, raw: q7 };
       if (q7 <= t.choppy) return { label:'Choppy', cls:'yellow', score: s60, raw: q7 };
       return                     { label:'Messy',  cls:'red',     score: s60, raw: q7 };
@@ -4697,7 +4701,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-020706';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5434,7 +5438,7 @@ function runCalibration() {
       return val <= t.easy ? {l:'Easy',c:'green'} : val <= t.doable ? {l:'Doable',c:'amber'} : val <= t.caution ? {l:'Caution',c:'yellow'} : {l:'Dangerous',c:'red'};
     } else if (metric === 'swim') {
       const t = SITE.swimThresholds;
-      return val < t.glassy ? {l:'Glassy',c:'green'} : val <= t.ripply ? {l:'Ripply',c:'amber'} : val <= t.choppy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
+      return val < t.glassy ? {l:'Smooth',c:'green'} : val <= t.ripply ? {l:'Ripply',c:'amber'} : val <= t.choppy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
     } else {
       const t = SITE.surgeThresholds;  // val = v6, higher=better
       return val > t.steady ? {l:'Steady',c:'green'} : val > t.drifty ? {l:'Drifty',c:'amber'} : val >= t.surgy ? {l:'Surgy',c:'yellow'} : {l:'Washy',c:'red'};
@@ -5445,7 +5449,7 @@ function runCalibration() {
   const gz = zoneLabel('surge', v6);
   document.getElementById('calMetrics').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-      ${[['Entry', app_score, ez], ['Swim q7', q7.toFixed(1), sz], ['Surge v6', v6, gz]].map(([name, val, z]) => `
+      ${[['Entry', app_score, ez], ['Chop q7', q7.toFixed(1), sz], ['Surge v6', v6, gz]].map(([name, val, z]) => `
         <div class="cal-metric-row" style="flex-direction:column;align-items:center;background:rgba(${z.c==='green'?'26,158,110':z.c==='amber'?'74,168,204':z.c==='yellow'?'224,124,42':'192,57,43'},0.1);border:1px solid var(--${z.c});">
           <span class="cal-metric-label">${name}</span>
           <span class="cal-metric-val" style="color:var(--${z.c})">${z.l}</span>
@@ -5632,7 +5636,7 @@ async function generateBannerSummary() {
   const allGood  = !entryBad && !swimBad && !surgeBad;
 
   function emphasise(t) {
-    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Glassy|Ripply|Choppy|Messy|Steady|Drifty|Surgy|Washy)\b/g, '<em>$1</em>');
+    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy|Steady|Drifty|Surgy|Washy)\b/g, '<em>$1</em>');
   }
 
   // ── PARAGRAPH 1: Weather ──────────────────────────────────────────────────
@@ -5718,14 +5722,14 @@ async function generateBannerSummary() {
   if (allGood) {
     if (shelteredContrast) {
       waterText = pick([
-        `${shelteredOpener} Entry off the beach and rocks is easy, the surface is ${domSwim === 'Glassy' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
-        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — easy entry, ${domSwim === 'Glassy' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
-        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in is easy, the surface is ${domSwim === 'Glassy' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
+        `${shelteredOpener} Entry off the beach and rocks is easy, the surface is ${domSwim === 'Smooth' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
+        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — easy entry, ${domSwim === 'Smooth' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
+        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in is easy, the surface is ${domSwim === 'Smooth' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
       ]);
     } else {
     waterText = pick([
       `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach and rocks is easy, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
-      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry is easy, water surface is ${domSwim === 'Glassy' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
+      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry is easy, water surface is ${domSwim === 'Smooth' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
       `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry is straightforward, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
     ]);
     }
@@ -5981,7 +5985,7 @@ const CAM_MAX_EDGE  = 1024;
 const CAM_BAND_MID  = { 0: 12.5, 1: 37.5, 2: 62.5, 3: 87.5 };
 const CAM_LABEL_BAND = {
   entry: { easy: 0, doable: 1, caution: 2, dangerous: 3, danger: 3 },
-  swim:  { glassy: 0, ripply: 1, choppy: 2, messy: 3 },
+  swim:  { smooth: 0, glassy: 0, ripply: 1, choppy: 2, messy: 3 },
   surge: { steady: 0, drifty: 1, surgy: 2, washy: 3 },
 };
 
@@ -6396,8 +6400,8 @@ const METRIC_INFO = {
     text: "How rough it'll be getting in and out. Everyone has a different scale, see how this applies to you and always play safe!"
   },
   swim: {
-    title: 'Swim',
-    text: "How choppy the surface is once you're swimming. Wind and wind-waves are what turn a glassy bay into a face-full of chop."
+    title: 'Chop',
+    text: "How much the wind is roughing up the surface. Small wind-waves slap your face and get water in your mouth when you go to breathe \u2014 the more chop, the harder it is to get a clean breath."
   },
   surge: {
     title: 'Surge',
