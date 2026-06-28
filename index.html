@@ -2411,6 +2411,7 @@ const STEYNE_TUNE_COL = 15;
 const STEYNE_TUNE_COL_R = 17; // col R — periodExp (r24), tideGateStart (r25), tideGateFull (r26)
 const STEYNE_DIR_COL  = 41; // wind=41, sea=42, rif=43
 const BOWER_DIR_COL   = 2;  // CTB cols C/D/E — Bower surge: wind=2, sea=3, rif=4
+const BOWER_PARAM_COL = 18; // col S — Bower surge param LABELS; values read from col T (19)
 const STEYNE_SWIM_COL = 36; // col AK — Swim metric thresholds, rows 9–12 (indices 8–11)
 
 // Manly Beach coordinates
@@ -2482,10 +2483,10 @@ const SITE_DEFAULTS = {
   // BOWER LANE (CTB) — Surge source. Sheet-loaded in applySwimConfig (CTB cols
   // C/D/E for the tables; label-matched tuning cells for the scalars). These are
   // the fallbacks used until the sheet loads or if a cell is left blank.
-  bowerSwellSens:     1.4,   // sheet tuning label "Bower swell sens"
-  bowerSpm:           4.05,  // sheet tuning label "Bower spm"
-  bowerTideGateStart: 20,    // sheet tuning label "Bower tide gate start" (°) — no tide below this swell dir
-  bowerTideGateFull:  90,    // sheet tuning label "Bower tide gate full" (°)  — full tide at/above this dir
+  bowerSwellSens:     1.4,   // sheet col S label "Bower swell sens", value in col T
+  bowerSpm:           4.05,  // sheet col S label "Bower spm", value in col T
+  bowerTideGateStart: 20,    // sheet col S label "Bower tide gate start" (°), value in col T — no tide below this swell dir
+  bowerTideGateFull:  90,    // sheet col S label "Bower tide gate full" (°),  value in col T — full tide at/above this dir
   bowerLookup: {
     wind: [100,100,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,30,60,70,85],
     sea:  [20,50,100,100,100,90,80,60,30,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -2597,19 +2598,24 @@ function applySwimConfig(rows) {
     if (label.includes('Route blend') || label.includes('WW route') || label.includes('WW blend')) {
       SITE.wwRouteBlend = Math.max(0, Math.min(1, n(rows[r][STEYNE_TUNE_COL])));
     }
-    // Bower surge scalars — label-matched anywhere in the tuning column, fall
-    // back to SITE_DEFAULTS if the label is absent or the cell is blank.
-    if (label.includes('Bower swell sens')) {
-      const v = n(rows[r][STEYNE_TUNE_COL]); if (v > 0) SITE.bowerSwellSens = v;
+    // Bower surge scalars — dedicated block: LABEL in col S, VALUE in col T.
+    // Place the four rows anywhere in the free tuning area (S/T rows ~20-29);
+    // matched by label so the exact row doesn't matter, and col S/T below row 31
+    // is Chowder Bay data whose labels never contain "Bower ...", so no collision.
+    // Falls back to SITE_DEFAULTS if the label is absent or the value cell is blank.
+    const sLabel = (rows[r] && rows[r][BOWER_PARAM_COL]) || '';
+    const sVal   = rows[r] && rows[r][BOWER_PARAM_COL + 1];
+    if (sLabel.includes('Bower swell sens')) {
+      const v = n(sVal); if (v > 0) SITE.bowerSwellSens = v;
     }
-    if (label.includes('Bower spm')) {
-      const v = n(rows[r][STEYNE_TUNE_COL]); if (v > 0) SITE.bowerSpm = v;
+    if (sLabel.includes('Bower spm')) {
+      const v = n(sVal); if (v > 0) SITE.bowerSpm = v;
     }
-    if (label.includes('Bower tide gate start')) {
-      const v = parseFloat(rows[r][STEYNE_TUNE_COL]); if (Number.isFinite(v)) SITE.bowerTideGateStart = v;
+    if (sLabel.includes('Bower tide gate start')) {
+      const v = parseFloat(sVal); if (Number.isFinite(v)) SITE.bowerTideGateStart = v;
     }
-    if (label.includes('Bower tide gate full')) {
-      const v = parseFloat(rows[r][STEYNE_TUNE_COL]); if (Number.isFinite(v)) SITE.bowerTideGateFull = v;
+    if (sLabel.includes('Bower tide gate full')) {
+      const v = parseFloat(sVal); if (Number.isFinite(v)) SITE.bowerTideGateFull = v;
     }
   }
 
@@ -4667,7 +4673,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260628-195822';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
