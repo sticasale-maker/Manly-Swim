@@ -2410,6 +2410,7 @@ const GEM_CONFIG_KEY = 'swim_gem_config_v2'; // bumped to v2 — forces fresh fe
 const STEYNE_TUNE_COL = 15;
 const STEYNE_TUNE_COL_R = 17; // col R — periodExp (r24), tideGateStart (r25), tideGateFull (r26)
 const STEYNE_DIR_COL  = 41; // wind=41, sea=42, rif=43
+const BOWER_DIR_COL   = 2;  // CTB cols C/D/E — Bower surge: wind=2, sea=3, rif=4
 const STEYNE_SWIM_COL = 36; // col AK — Swim metric thresholds, rows 9–12 (indices 8–11)
 
 // Manly Beach coordinates
@@ -2477,6 +2478,18 @@ const SITE_DEFAULTS = {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
     rif:  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  },
+  // BOWER LANE (CTB) — Surge source. Sheet-loaded in applySwimConfig (CTB cols
+  // C/D/E for the tables; label-matched tuning cells for the scalars). These are
+  // the fallbacks used until the sheet loads or if a cell is left blank.
+  bowerSwellSens:     1.4,   // sheet tuning label "Bower swell sens"
+  bowerSpm:           4.05,  // sheet tuning label "Bower spm"
+  bowerTideGateStart: 20,    // sheet tuning label "Bower tide gate start" (°) — no tide below this swell dir
+  bowerTideGateFull:  90,    // sheet tuning label "Bower tide gate full" (°)  — full tide at/above this dir
+  bowerLookup: {
+    wind: [100,100,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,15,30,60,70,85],
+    sea:  [20,50,100,100,100,90,80,60,30,15,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    rif:  [100,50,0,0,0,10,20,40,60,60,60,53,45,35,15,10,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
   }
 };
 
@@ -2494,6 +2507,18 @@ let SITE = {
     const dir = a > 180 ? 360 - a : a;
     const start = this.tideGateStart ?? 90;
     const full  = this.tideGateFull ?? 135;
+    const span  = Math.max(1, full - start);
+    const t = Math.max(0, Math.min(1, (dir - start) / span));
+    return t * t * (3 - 2 * t);
+  },
+  // Bower-surge tide gate. Same smoothstep shape as tideGate but with its own
+  // bounds: 0 (no tide) below bowerTideGateStart°, smoothstep ramp to 1 by
+  // bowerTideGateFull°, then held flat. Direction folded to 0–180°.
+  bowerTideGate: function(dirDeg) {
+    const a = ((dirDeg % 360) + 360) % 360;
+    const dir = a > 180 ? 360 - a : a;
+    const start = this.bowerTideGateStart ?? 20;
+    const full  = this.bowerTideGateFull ?? 90;
     const span  = Math.max(1, full - start);
     const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
@@ -2572,6 +2597,20 @@ function applySwimConfig(rows) {
     if (label.includes('Route blend') || label.includes('WW route') || label.includes('WW blend')) {
       SITE.wwRouteBlend = Math.max(0, Math.min(1, n(rows[r][STEYNE_TUNE_COL])));
     }
+    // Bower surge scalars — label-matched anywhere in the tuning column, fall
+    // back to SITE_DEFAULTS if the label is absent or the cell is blank.
+    if (label.includes('Bower swell sens')) {
+      const v = n(rows[r][STEYNE_TUNE_COL]); if (v > 0) SITE.bowerSwellSens = v;
+    }
+    if (label.includes('Bower spm')) {
+      const v = n(rows[r][STEYNE_TUNE_COL]); if (v > 0) SITE.bowerSpm = v;
+    }
+    if (label.includes('Bower tide gate start')) {
+      const v = parseFloat(rows[r][STEYNE_TUNE_COL]); if (Number.isFinite(v)) SITE.bowerTideGateStart = v;
+    }
+    if (label.includes('Bower tide gate full')) {
+      const v = parseFloat(rows[r][STEYNE_TUNE_COL]); if (Number.isFinite(v)) SITE.bowerTideGateFull = v;
+    }
   }
 
   // Rows 32–63 (indices 31–62) — direction table cols AP/AQ/AR
@@ -2583,6 +2622,18 @@ function applySwimConfig(rows) {
   }
   // Only apply if we got 32 values (sanity check)
   if (wind.length === 32) SITE.lookup = { wind, sea, rif };
+
+  // Bower (CTB) direction tables — same rows 32–63, CTB cols C/D/E (idx 2/3/4).
+  // Guard: keep the default if the column is empty/misaligned (all zero) so a
+  // malformed CSV never silently zeroes the surge source.
+  const bWind=[], bSea=[], bRif=[];
+  for (let r = 31; r <= 62; r++) {
+    bWind.push(n(rows[r]?.[BOWER_DIR_COL]));
+    bSea.push( n(rows[r]?.[BOWER_DIR_COL + 1]));
+    bRif.push( n(rows[r]?.[BOWER_DIR_COL + 2]));
+  }
+  if (bSea.length === 32 && bSea.some(v => v > 0))
+    SITE.bowerLookup = { wind: bWind, sea: bSea, rif: bRif };
 
   // SWIM band edges — col AK (index 36), rows 9–12 (indices 8–11):
   //   AK9 = Glassy edge, AK10 = Ripply edge, AK11 = Choppy edge, AK12 = Messy edge / display cap.
@@ -2647,6 +2698,13 @@ async function loadConfig() {
       if (c.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...c.entryThresholds };
       if (c.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...c.surgeThresholds };
       SITE.lookup      = c.lookup;
+      // Bower surge — guarded so an older cache (without these keys) keeps the
+      // SITE_DEFAULTS values rather than going undefined.
+      if (c.bowerLookup)              SITE.bowerLookup        = c.bowerLookup;
+      if (c.bowerSwellSens != null)   SITE.bowerSwellSens     = c.bowerSwellSens;
+      if (c.bowerSpm != null)         SITE.bowerSpm           = c.bowerSpm;
+      if (c.bowerTideGateStart != null) SITE.bowerTideGateStart = c.bowerTideGateStart;
+      if (c.bowerTideGateFull  != null) SITE.bowerTideGateFull  = c.bowerTideGateFull;
       console.log('Swim config: loaded from cache');
       return;
     }
@@ -2673,6 +2731,11 @@ async function loadConfig() {
         entryThresholds: SITE.entryThresholds,
         surgeThresholds: SITE.surgeThresholds,
         lookup:      SITE.lookup,
+        bowerLookup:        SITE.bowerLookup,
+        bowerSwellSens:     SITE.bowerSwellSens,
+        bowerSpm:           SITE.bowerSpm,
+        bowerTideGateStart: SITE.bowerTideGateStart,
+        bowerTideGateFull:  SITE.bowerTideGateFull,
       }
     }));
     console.log(`Swim config: loaded from sheet (windSens=${SITE.windSens}, swellSens=${SITE.swellSens}, periodPower=${SITE.periodPower}, swellPeriodMult=${SITE.swellPeriodMult})`);
@@ -2692,6 +2755,11 @@ async function loadConfig() {
     SITE.entryThresholds = JSON.parse(JSON.stringify(SITE_DEFAULTS.entryThresholds));
     SITE.surgeThresholds = JSON.parse(JSON.stringify(SITE_DEFAULTS.surgeThresholds));
     SITE.lookup      = JSON.parse(JSON.stringify(SITE_DEFAULTS.lookup));
+    SITE.bowerLookup        = JSON.parse(JSON.stringify(SITE_DEFAULTS.bowerLookup));
+    SITE.bowerSwellSens     = SITE_DEFAULTS.bowerSwellSens;
+    SITE.bowerSpm           = SITE_DEFAULTS.bowerSpm;
+    SITE.bowerTideGateStart = SITE_DEFAULTS.bowerTideGateStart;
+    SITE.bowerTideGateFull  = SITE_DEFAULTS.bowerTideGateFull;
   }
 }
 
@@ -2861,6 +2929,51 @@ async function retryGemTable() {
 //   rif_d    = 0 (combined into gemLookup)
 //   tide_d   = o*(t-0.2)
 // =============================================================================
+// =============================================================================
+// BOWER LANE SURGE — physically distinct from the S Steyne entry point.
+// Surge = the swell wash felt at the Bower / Shelly end of Cabbage Tree Bay,
+// sourced from the CTB ("Bower") directional tables (SITE.bowerLookup), NOT the
+// S Steyne entry tables. Own swellSens + spm, a DIRECTION-GATED tide amplifier
+// (SITE.bowerTideGate: no tide below bowerTideGateStart°, smoothstep ramp to
+// full by bowerTideGateFull°, held flat beyond), and EXCLUDES all chop (wind +
+// wind-wave). Higher v6 = steadier water.
+//   s_d  = swellPower·(bowerSea/100)·bowerSwellSens + bowerRif·sp·bowerSpm/1000
+//   tide = (tideM − 0.2) · Σ s_d · bowerTideGate(sDir)   (each train, own dir)
+//   v6   = 60 − (s1_d + s2_d + tide)   (inverted rail: best on left)
+// All tables + scalars are sheet-loaded in applySwimConfig (CTB cols C/D/E for
+// the tables; label-matched tuning cells for the scalars); SITE_DEFAULTS holds
+// the fallbacks used until the sheet loads or if a cell is blank.
+// =============================================================================
+
+// Raw Bower surge swell-energy (demerit units). Chop excluded by construction.
+function bowerSurgeRaw(d) {
+  const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM } = d;
+  const bl   = SITE.bowerLookup;
+  const sens = SITE.bowerSwellSens, spm = SITE.bowerSpm;
+  const s1p  = swellPower(swell1H || 0, swell1P || 8);
+  const s2p  = swellPower(swell2H || 0, swell2P || 8);
+  // per-train demerit = swell energy through Bower sea-hit + that train's refraction
+  const s1_d = s1p * (Math.max(0, dirLookup(bl.sea, swell1Dir || 0)) / 100) * sens
+             + (dirLookup(bl.rif, swell1Dir || 0) * s1p * spm) / 1000;
+  const s2_d = s2p * (Math.max(0, dirLookup(bl.sea, swell2Dir || 0)) / 100) * sens
+             + (dirLookup(bl.rif, swell2Dir || 0) * s2p * spm) / 1000;
+  // direction-gated tide: amplify each train by its own arrival gate (<20° = none)
+  const tmult  = (tideM != null ? tideM : 1.0) - 0.2;
+  const tide_d = tmult * ( s1_d * SITE.bowerTideGate(swell1Dir || 0)
+                         + s2_d * SITE.bowerTideGate(swell2Dir || 0) );
+  return s1_d + s2_d + tide_d;
+}
+
+// Bower surge metric: { label, cls, score } — score is v6 (higher = better).
+function bowerSurgeWater(d) {
+  const v6 = Math.max(0, Math.round(60 - bowerSurgeRaw(d)));
+  const t  = SITE.surgeThresholds;
+  if (v6 >  t.steady) return { label:'Steady', cls:'green',  score: v6 };
+  if (v6 >  t.drifty) return { label:'Drifty', cls:'amber',  score: v6 };
+  if (v6 >= t.surgy)  return { label:'Surgy',  cls:'yellow', score: v6 };
+  return                     { label:'Washy',  cls:'red',     score: v6 };
+}
+
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
@@ -2966,25 +3079,11 @@ function calcScore(d, modelOverride) {
       if (q7 <= t.choppy) return { label:'Choppy', cls:'yellow', score: s60, raw: q7 };
       return                     { label:'Messy',  cls:'red',     score: s60, raw: q7 };
     })(),
-    // Metric 3: Surge — v6 = 60 - rawSwell (HIGHER = better), edges from sheet col AK rows 13–16.
-    //   steady = v6>AK13, drifty = v6>AK14, surgy = v6>=AK15, else washy.
-    water: (() => {
-      const rawSwell = useGem
-        ? s1_d / SITE.swellSens + s2_d / SITE.swellSens  // GEM: use computed demerits scaled back
-        : (() => {
-            const s1p2 = swellPower(swell1H, swell1P);
-            const s2p2 = swellPower(swell2H || 0, swell2P || 8);
-            const s1sea2 = Math.max(0, dirLookup(lk.sea, swell1Dir));
-            const s2sea2 = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
-            return s1p2 * (s1sea2/100) + s2p2 * (s2sea2/100);
-          })();
-      const v6 = Math.max(0, Math.round(60 - rawSwell));
-      const t  = SITE.surgeThresholds;
-      if (v6 >  t.steady) return { label:'Steady', cls:'green',  score: v6 };
-      if (v6 >  t.drifty) return { label:'Drifty', cls:'amber',  score: v6 };
-      if (v6 >= t.surgy)  return { label:'Surgy',  cls:'yellow', score: v6 };
-      return                     { label:'Washy',  cls:'red',     score: v6 };
-    })(),
+    // Metric 3: Surge — sourced from Bower Lane (CTB) tables, NOT the entry point.
+    //   See bowerSurgeWater(): own sea/rif tables, swellSens 1.4, spm 4.05, flat
+    //   tide amplifier, chop excluded. v6 = 60 − rawSwell (HIGHER = better).
+    //   Independent of the entry-point GEM/Original swell path above.
+    water: bowerSurgeWater(d),
   };
 }
 
@@ -5289,8 +5388,8 @@ function runCalibration() {
 
   // Metric zones
   const q7 = app_wind_d + app_ww_d;
-  const rawSwell = s1p * (s1_sea/100) + s2p * (s2_sea/100);
-  const v6 = Math.max(0, Math.round(60 - rawSwell));
+  // Surge uses Bower Lane (CTB) source — same as the live metric, not entry-point swell.
+  const v6 = bowerSurgeWater({ swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM }).score;
   function zoneLabel(metric, val) {
     if (metric === 'entry') {
       const t = SITE.entryThresholds;  // val = total demerits, lower=better
