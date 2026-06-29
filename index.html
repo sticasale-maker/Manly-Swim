@@ -2356,6 +2356,109 @@ const SWIM_CONFIG_KEY  = 'swim_config_cache_v9';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
+// USAGE ANALYTICS — anonymous engagement logging (privacy-first).
+// Batches events to the Worker /log route, which forwards to Supabase
+// log_events(). No PII: device id is a random UUID held in localStorage; no
+// names, emails or free text are ever sent — only which features get used.
+// Fire-and-forget via sendBeacon as text/plain (a "simple" request, so no CORS
+// preflight). Never throws — analytics must never break or slow the app.
+// =============================================================================
+(function () {
+  var LOG_URL = 'https://bold-rain-6ded.sticasale.workers.dev/log';
+
+  function uuid() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  function deviceId() {
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) { id = uuid(); localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return uuid(); }
+  }
+
+  var DEVICE  = deviceId();
+  var SESSION = uuid();
+
+  var PWA = false;
+  try {
+    PWA = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          (navigator.standalone === true);
+  } catch (e) {}
+
+  var REFERRER = '';
+  try { REFERRER = document.referrer || ''; } catch (e) {}
+
+  var UTM = {};
+  try {
+    var sp = new URLSearchParams(location.search);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) {
+      var v = sp.get(k); if (v) UTM[k.replace('utm_', '')] = String(v).slice(0, 120);
+    });
+  } catch (e) {}
+
+  var queue = [];
+  var flushTimer = null;
+
+  function flush() {
+    if (!queue.length) return;
+    var batch = queue.splice(0, 50);
+    var build = (typeof APP_BUILD !== 'undefined') ? APP_BUILD : null;
+    var events = batch.map(function (ev) {
+      return {
+        device_id:  DEVICE,
+        session_id: SESSION,
+        event:      ev.event,
+        props:      ev.props || {},
+        referrer:   REFERRER,
+        utm:        UTM,
+        app_build:  build,
+        pwa:        PWA
+      };
+    });
+    var payload = JSON.stringify({ events: events });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(LOG_URL, new Blob([payload], { type: 'text/plain' }));
+      } else {
+        fetch(LOG_URL, { method: 'POST', body: payload,
+          headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(function () {});
+      }
+    } catch (e) {}
+    if (queue.length) { if (flushTimer) clearTimeout(flushTimer); flushTimer = setTimeout(flush, 4000); }
+  }
+
+  function track(event, props) {
+    try {
+      if (!event) return;
+      queue.push({ event: String(event), props: props || {} });
+      if (queue.length >= 20) { flush(); return; }
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = setTimeout(flush, 4000);
+    } catch (e) {}
+  }
+  window.track = track;
+
+  try {
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') flush();
+    });
+    window.addEventListener('pagehide', flush);
+  } catch (e) {}
+
+  try { window.addEventListener('appinstalled', function () { track('install_pwa', {}); }); } catch (e) {}
+
+  function open() { track('app_open', {}); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open);
+  else open();
+})();
+
+
+// =============================================================================
 // MODEL FLAG — GEM is the live default model.
 // GEM: swell1, swell2, windWave use the Gem-Cla50-50 tab 2D lookup
 // (19 dir rows × 20 period cols, % energy loss). Wind chop unchanged.
@@ -3682,6 +3785,7 @@ function switchTab(tab) {
     b.classList.toggle('active', on);
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
+  if (tab === 'timeline') { try { if (window.track) window.track('open_timeline', {}); } catch (e) {} }
 }
 
 // About — overlay popup (not a tab)
@@ -4718,7 +4822,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-163010';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5965,6 +6069,7 @@ function submitFeedback(e) {
   }).then(function(r) {
     document.getElementById('feedbackContact').value = '';
     document.getElementById('feedbackText').value = '';
+    try { if (window.track) window.track('feedback', {}); } catch (e) {}
     msg.textContent = 'Thank you! Your feedback has been sent.';
     msg.style.color = 'var(--green)';
     msg.style.display = 'block';
@@ -5983,6 +6088,7 @@ function submitFeedback(e) {
 // ?token=… in the address bar is stripped out.
 // ============================================================
 function shareApp() {
+  try { if (window.track) window.track('share', {}); } catch (e) {}
   var url = location.origin + location.pathname;
   var title = 'Swim Manly — Forecast App';
   var body =
@@ -6463,6 +6569,7 @@ const METRIC_INFO = {
 function openMetricModal(key) {
   const info = METRIC_INFO[key];
   if (!info) return;
+  try { if (window.track) window.track('view_metric', { metric: key }); } catch (e) {}
   const overlay = document.getElementById('metric-modal');
   const title   = document.getElementById('metric-modal-title');
   const body    = document.getElementById('metric-modal-summary');
@@ -7205,7 +7312,7 @@ if ('serviceWorker' in navigator) {
     });
     try { window.dispatchEvent(new Event('resize')); } catch (e) {}  // re-fit any canvas that just became visible
   }
-  function setMode(m){ saveMode(m); apply(m); }
+  function setMode(m){ saveMode(m); apply(m); try { if (window.track) window.track('mode_change', { mode: m }); } catch (e) {} }
   window.setAppMode = setMode; window.getAppMode = getMode;
 
   function buildCustomList(){
@@ -7514,6 +7621,7 @@ if ('serviceWorker' in navigator) {
         body: JSON.stringify({ p_name: name, p_body: body, p_photo_url: photo_url, p_device: deviceId() }) });
       if (!r.ok) { var t = await r.text(); throw new Error(t || ('HTTP ' + r.status)); }
       setMsg('Thanks! Your hello is in the queue for approval.', true);
+      try { if (window.track) window.track('submit_intro', {}); } catch (e) {}
       notifyAdmin(name, body, photo_url);   // email the moderator via Worker (fire-and-forget)
       nameEl.value = ''; textEl.value = ''; fileEl.value = ''; var ic = $('ntmPhotoIcon'); if (ic) ic.innerHTML = '\uD83D\uDCF7<br>photo';
     } catch (e) {
