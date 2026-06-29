@@ -2457,6 +2457,217 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
   else open();
 })();
 
+// =============================================================================
+// USAGE DASHBOARD — in-app analytics reports (admin only).
+// Opens on ?stats=1 ; token via ?token=… or the cached swim_admin_token (same
+// gate as the intros admin). Reads two security-definer RPCs guarded
+// server-side by intro_is_admin(): analytics_summary() and analytics_retention().
+// Anon key only — no privileged secret is in this bundle.
+// =============================================================================
+(function () {
+  function tok() { try { return localStorage.getItem('swim_admin_token') || ''; } catch (e) { return ''; } }
+  function sbURL() { return (typeof BB_SUPABASE_URL !== 'undefined') ? BB_SUPABASE_URL : ''; }
+  function sbKEY() { return (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : ''; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function el(id) { return document.getElementById(id); }
+
+  async function rpc(fn, body) {
+    var r = await fetch(sbURL() + '/rest/v1/rpc/' + fn, {
+      method: 'POST',
+      headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  var built = false;
+  function build() {
+    if (built) return; built = true;
+
+    var css = document.createElement('style');
+    css.textContent =
+      "#statsOverlay{position:fixed;inset:0;z-index:100002;display:none;align-items:flex-start;justify-content:center;background:rgba(6,40,55,.55);overflow:auto;padding:18px 10px;font-family:'DM Mono',ui-monospace,monospace;}" +
+      "#statsOverlay.show{display:flex;}" +
+      "#statsOverlay .st-modal{background:var(--foam,#f0faff);color:var(--text,#0d2b3e);border-radius:16px;max-width:560px;width:100%;padding:16px;box-shadow:0 18px 60px rgba(6,40,55,.4);max-height:92vh;overflow:auto;}" +
+      ".st-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}" +
+      ".st-head h3{margin:0;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep,#064e6e);}" +
+      ".st-x{border:none;background:transparent;font-size:20px;color:var(--dim,#5a8a9f);cursor:pointer;line-height:1;}" +
+      ".st-status{font-size:11px;color:var(--dim,#5a8a9f);min-height:14px;margin-bottom:8px;}" +
+      ".st-ranges{display:flex;gap:6px;margin-bottom:10px;}" +
+      ".st-range{flex:1;border:1px solid var(--border,#cfe3ea);background:#fff;color:var(--dim,#5a8a9f);border-radius:8px;padding:6px 0;font-size:11px;cursor:pointer;font-family:inherit;}" +
+      ".st-range.on{background:var(--ocean,#0a7ea4);color:#fff;border-color:var(--ocean,#0a7ea4);}" +
+      ".st-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:6px;}" +
+      ".st-tile{background:#fff;border:1px solid var(--border,#cfe3ea);border-radius:10px;padding:8px 4px;text-align:center;}" +
+      ".st-tval{font-family:'Bebas Neue',sans-serif;font-size:22px;line-height:1;color:var(--deep,#064e6e);}" +
+      ".st-tlab{font-size:8.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim,#5a8a9f);margin-top:3px;}" +
+      ".st-stick{font-size:10px;color:var(--dim,#5a8a9f);text-align:center;margin:2px 0 12px;}" +
+      ".st-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--deep,#064e6e);margin:14px 0 6px;}" +
+      ".st-card{background:#fff;border:1px solid var(--border,#cfe3ea);border-radius:12px;padding:10px;}" +
+      ".st-axis{display:flex;justify-content:space-between;font-size:9px;color:var(--dim,#5a8a9f);margin-top:4px;}" +
+      ".st-bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11px;}" +
+      ".st-bl{flex:none;width:64px;color:var(--text,#0d2b3e);}" +
+      ".st-bt{flex:1;height:12px;background:rgba(10,126,164,.12);border-radius:6px;overflow:hidden;}" +
+      ".st-bf{display:block;height:100%;background:var(--ocean,#0a7ea4);border-radius:6px;}" +
+      ".st-bn{flex:none;width:84px;text-align:right;color:var(--dim,#5a8a9f);}" +
+      ".st-lr{display:flex;justify-content:space-between;gap:10px;font-size:11px;padding:3px 0;border-bottom:1px solid rgba(10,126,164,.07);}" +
+      ".st-lr span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}" +
+      ".st-empty{font-size:11px;color:var(--dim,#5a8a9f);padding:6px 0;}" +
+      ".st-ret{display:flex;gap:8px;align-items:center;margin-bottom:8px;}" +
+      ".st-ret input{font-family:inherit;font-size:12px;padding:6px;border:1px solid var(--border,#cfe3ea);border-radius:8px;color:var(--text,#0d2b3e);}" +
+      ".st-ret button{font-family:inherit;font-size:12px;padding:6px 12px;border:none;border-radius:8px;background:var(--ocean,#0a7ea4);color:#fff;cursor:pointer;}" +
+      ".st-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}" +
+      "@media(max-width:480px){#statsOverlay .st-tiles{grid-template-columns:repeat(3,1fr);}#statsOverlay .st-grid2{grid-template-columns:1fr;}}";
+    document.head.appendChild(css);
+
+    var ov = document.createElement('div');
+    ov.id = 'statsOverlay';
+    ov.innerHTML =
+      '<div class="st-modal">' +
+      '  <div class="st-head"><h3>Usage</h3><button class="st-x" id="statsClose" aria-label="Close">\u2715</button></div>' +
+      '  <div class="st-status" id="stStatus"></div>' +
+      '  <div class="st-ranges">' +
+      '    <button class="st-range" data-d="7">7 days</button>' +
+      '    <button class="st-range on" data-d="30">30 days</button>' +
+      '    <button class="st-range" data-d="90">90 days</button>' +
+      '  </div>' +
+      '  <div class="st-tiles" id="stTiles"></div>' +
+      '  <div class="st-stick" id="stStick"></div>' +
+      '  <div class="st-sec">New vs returning, by day</div>' +
+      '  <div class="st-card" id="stDaily"></div>' +
+      '  <div class="st-sec">Retention after a date (cohort first seen that week)</div>' +
+      '  <div class="st-card">' +
+      '    <div class="st-ret"><input type="date" id="stRetDate"><button id="stRetRun">Run</button></div>' +
+      '    <div id="stRetOut"><div class="st-empty">Pick your ad date, then Run.</div></div>' +
+      '  </div>' +
+      '  <div class="st-grid2">' +
+      '    <div><div class="st-sec">Metric opened</div><div class="st-card" id="stMetrics"></div></div>' +
+      '    <div><div class="st-sec">View mode</div><div class="st-card" id="stModes"></div></div>' +
+      '  </div>' +
+      '  <div class="st-grid2">' +
+      '    <div><div class="st-sec">Acquisition source</div><div class="st-card" id="stSources"></div></div>' +
+      '    <div><div class="st-sec">Top events</div><div class="st-card" id="stEvents"></div></div>' +
+      '  </div>' +
+      '</div>';
+    document.body.appendChild(ov);
+
+    el('statsClose').addEventListener('click', closePanel);
+    Array.prototype.forEach.call(ov.querySelectorAll('.st-range'), function (b) {
+      b.addEventListener('click', function () {
+        Array.prototype.forEach.call(ov.querySelectorAll('.st-range'), function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        loadSummary(parseInt(b.getAttribute('data-d'), 10));
+      });
+    });
+    el('stRetRun').addEventListener('click', runRetention);
+    var d = new Date(Date.now() - 7 * 864e5);
+    el('stRetDate').value = d.toISOString().slice(0, 10);
+  }
+
+  function openPanel() { build(); el('statsOverlay').classList.add('show'); document.body.style.overflow = 'hidden'; loadSummary(30); }
+  function closePanel() { if (el('statsOverlay')) el('statsOverlay').classList.remove('show'); document.body.style.overflow = ''; }
+  window.openStats = openPanel;
+
+  function setStatus(t) { var n = el('stStatus'); if (n) n.textContent = t || ''; }
+
+  async function loadSummary(days) {
+    setStatus('Loading\u2026');
+    try {
+      var data = await rpc('analytics_summary', { p_token: tok(), p_days: days });
+      if (!data || Object.keys(data).length === 0) {
+        setStatus('Not authorised. Open with  ?stats=1&token=YOUR_ADMIN_TOKEN');
+        return;
+      }
+      setStatus('');
+      renderSummary(data);
+    } catch (e) { setStatus('Could not load (' + ((e && e.message) || e) + ')'); }
+  }
+
+  function tile(label, val) {
+    return '<div class="st-tile"><div class="st-tval">' + esc(val) + '</div><div class="st-tlab">' + esc(label) + '</div></div>';
+  }
+
+  function renderSummary(d) {
+    var t = d.totals || {}, s = d.stickiness || {};
+    var ratio = (s.mau ? Math.round(100 * (s.dau || 0) / s.mau) : 0);
+    el('stTiles').innerHTML =
+      tile('Devices', t.devices || 0) + tile('Sessions', t.sessions || 0) +
+      tile('Events', t.events || 0) + tile('New', t.new_devices || 0) +
+      tile('Sticky', ratio + '%');
+    el('stStick').textContent = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU)';
+    el('stDaily').innerHTML = dailyChart(d.daily || []);
+    el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Surge' });
+    el('stModes').innerHTML = mixBars(d.modes || [], 'mode', null);
+    el('stSources').innerHTML = listRows(d.sources || [], 'source', 'devices');
+    el('stEvents').innerHTML = listRows(d.top_events || [], 'event', 'n');
+  }
+
+  function dailyChart(rows) {
+    if (!rows.length) return '<div class="st-empty">No data yet.</div>';
+    var W = 320, H = 120, gap = 1.5;
+    var max = rows.reduce(function (m, r) { return Math.max(m, r.devices || 0); }, 1);
+    var bw = W / rows.length;
+    var bars = rows.map(function (r, i) {
+      var dev = r.devices || 0, nd = r.new_devices || 0, ret = Math.max(0, dev - nd);
+      var x = i * bw, w = Math.max(1, bw - gap);
+      var hRet = (ret / max) * H, hNew = (nd / max) * H;
+      var yRet = H - hRet, yNew = yRet - hNew;
+      var ttl = r.day + ' \u2014 ' + dev + ' devices (' + nd + ' new), ' + (r.sessions || 0) + ' sessions';
+      return '<rect x="' + x.toFixed(1) + '" y="' + yRet.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + hRet.toFixed(1) + '" fill="var(--ocean,#0a7ea4)" opacity="0.42"><title>' + esc(ttl) + '</title></rect>' +
+             '<rect x="' + x.toFixed(1) + '" y="' + yNew.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + hNew.toFixed(1) + '" fill="var(--deep,#064e6e)"><title>' + esc(ttl) + '</title></rect>';
+    }).join('');
+    var first = rows[0].day, last = rows[rows.length - 1].day;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + bars + '</svg>' +
+           '<div class="st-axis"><span>' + esc(first) + '</span><span>\u25ae new \u00b7 \u25ae returning</span><span>' + esc(last) + '</span></div>';
+  }
+
+  function mixBars(rows, key, labelMap) {
+    if (!rows.length) return '<div class="st-empty">\u2014</div>';
+    var max = rows.reduce(function (m, r) { return Math.max(m, r.n || 0); }, 1);
+    return rows.map(function (r) {
+      var lab = (labelMap && labelMap[r[key]]) ? labelMap[r[key]] : (r[key] || '\u2014');
+      var pct = Math.round(100 * (r.n || 0) / max);
+      return '<div class="st-bar"><span class="st-bl">' + esc(lab) + '</span><span class="st-bt"><span class="st-bf" style="width:' + pct + '%"></span></span><span class="st-bn">' + (r.n || 0) + '</span></div>';
+    }).join('');
+  }
+
+  function listRows(rows, key, valKey) {
+    if (!rows.length) return '<div class="st-empty">\u2014</div>';
+    return rows.slice(0, 8).map(function (r) {
+      return '<div class="st-lr"><span>' + esc(r[key]) + '</span><b>' + (r[valKey] || 0) + '</b></div>';
+    }).join('');
+  }
+
+  async function runRetention() {
+    var anchor = el('stRetDate').value;
+    if (!anchor) { el('stRetOut').innerHTML = '<div class="st-empty">Pick a date first.</div>'; return; }
+    el('stRetOut').innerHTML = '<div class="st-empty">Loading\u2026</div>';
+    try {
+      var rows = await rpc('analytics_retention', { p_token: tok(), p_anchor: anchor, p_weeks: 4 });
+      if (!rows || !rows.length) { el('stRetOut').innerHTML = '<div class="st-empty">No cohort first seen that week yet.</div>'; return; }
+      el('stRetOut').innerHTML = rows.map(function (r) {
+        var pct = (r.pct == null ? 0 : r.pct);
+        return '<div class="st-bar"><span class="st-bl">Wk ' + r.week_offset + '</span><span class="st-bt"><span class="st-bf" style="width:' + pct + '%"></span></span><span class="st-bn">' + pct + '% (' + r.devices + ')</span></div>';
+      }).join('');
+    } catch (e) { el('stRetOut').innerHTML = '<div class="st-empty">Could not load.</div>'; }
+  }
+
+  // trigger: ?stats=1 (+ optional &token=)
+  try {
+    var sp = new URLSearchParams(location.search);
+    if (sp.get('stats') === '1') {
+      var qt = sp.get('token');
+      if (qt) { try { localStorage.setItem('swim_admin_token', qt); } catch (e) {} }
+      var go = function () { openPanel(); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go();
+    }
+  } catch (e) {}
+})();
+
 
 // =============================================================================
 // MODEL FLAG — GEM is the live default model.
@@ -4822,7 +5033,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-180849';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
