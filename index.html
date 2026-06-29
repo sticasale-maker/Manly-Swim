@@ -1641,7 +1641,6 @@
 </div>
 
 <div id="splash-screen">
-  <img src="images/logos/icon-512.png" alt="Swim Manly">
   <p class="splash-title">SWIM <span>MANLY</span></p>
   <p class="splash-sub">Ocean swim forecast</p>
   <div class="splash-warning">
@@ -5073,7 +5072,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-231608';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5601,12 +5600,13 @@ function buildTunePanel() {
     var logoSplash = document.getElementById('splash-screen');
     if (!videoWrap || !logoSplash) return;
 
-    // Skip the splash entirely if the app was opened within the last 24h.
-    // (Fresh forecast still loads in the background; we just don't replay the intro.)
+    // Replay the splash only if it's been more than 2h since it last showed;
+    // within that window, reloads skip straight to the app.
     var SPLASH_KEY = 'swim_splash_seen_v1';
+    var SPLASH_TTL = 2 * 60 * 60 * 1000; // 2 hours
     try {
       var last = parseInt(localStorage.getItem(SPLASH_KEY) || '0', 10);
-      if (last && (Date.now() - last) < 86400000) {
+      if (last && (Date.now() - last) < SPLASH_TTL) {
         videoWrap.style.display = 'none';
         logoSplash.style.display = 'none';
         return;
