@@ -1041,6 +1041,44 @@
     background:linear-gradient(90deg,rgba(234,246,251,0.16),#eaf6fb);
   }
 
+  /* ── Best swim window (3-line day chart) ── */
+  .window-graph-wrap {
+    background:var(--card);
+    backdrop-filter:blur(12px);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:clamp(12px,4vw,16px) clamp(12px,4vw,16px) clamp(10px,3vw,12px);
+    margin-bottom:10px;
+  }
+  .window-graph-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:2px; }
+  .window-graph-title {
+    font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px;
+    font-size:clamp(16px,4.8vw,20px); color:var(--deep); text-transform:uppercase;
+  }
+  .window-graph-best {
+    font-family:'DM Mono',monospace; font-size:clamp(9px,2.7vw,11px);
+    color:var(--ocean); font-weight:600; letter-spacing:0.3px; text-align:right; line-height:1.2; white-space:nowrap;
+  }
+  .window-graph-sub {
+    font-family:'DM Mono',monospace; font-size:clamp(9px,2.5vw,10px);
+    color:var(--dim); margin:0 0 6px; letter-spacing:0.3px;
+  }
+  .window-graph-svg { width:100%; height:auto; display:block; }
+  .window-graph-svg .wg-axis { font-family:'DM Mono',monospace; font-size:9px; fill:var(--dim); }
+  .window-graph-svg .wg-zone { opacity:1; }
+  .window-graph-svg .wg-now  { stroke:var(--dim); stroke-width:1; stroke-dasharray:3 3; opacity:0.7; }
+  .window-graph-svg .wg-band { fill:none; stroke:var(--deep); stroke-width:1.5; stroke-dasharray:4 3; opacity:0.8; }
+  .window-graph-legend {
+    display:flex; flex-wrap:wrap; gap:14px; margin-top:8px;
+    font-family:'DM Mono',monospace; font-size:clamp(9px,2.5vw,11px); color:var(--text);
+  }
+  .window-graph-legend span { display:flex; align-items:center; gap:5px; }
+  .window-graph-legend i { width:14px; height:3px; border-radius:2px; display:inline-block; }
+  .window-graph-empty {
+    font-family:'DM Mono',monospace; font-size:clamp(10px,2.8vw,12px);
+    color:var(--dim); text-align:center; padding:14px 0;
+  }
+
   .slider-ticks {
     display:flex; justify-content:space-between;
     margin-top:6px;
@@ -1959,6 +1997,23 @@
     </div>
 
     </div><!-- /snapshot-board -->
+
+    <!-- Best swim window — 3-line day chart (Entry / Chop / Surge), updates with the selected day -->
+    <div class="window-graph-wrap" id="dayWindowWrap">
+      <div class="window-graph-head">
+        <span class="window-graph-title">Best Swim Window of the Day</span>
+        <span class="window-graph-best" id="dayWindowBest">—</span>
+      </div>
+      <div class="window-graph-sub">Each row shaded by value · best window boxed</div>
+      <svg class="window-graph-svg" id="dayWindowSvg" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="Entry, Chop and Surge conditions across the selected day"></svg>
+      <div class="window-graph-legend">
+        <span style="display:flex;align-items:center;gap:8px;width:100%">
+          <span style="color:var(--dim)">Worst</span>
+          <i style="flex:1;height:8px;border-radius:4px;background:linear-gradient(90deg,#c0392b,#d4900a,#8dae2a,#1a9e6e)"></i>
+          <span style="color:var(--dim)">Best</span>
+        </span>
+      </div>
+    </div>
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim">
@@ -4063,6 +4118,142 @@ function closeAbout() {
 }
 function _aboutEsc(e) { if (e.key === 'Escape') closeAbout(); }
 
+// =============================================================================
+// BEST SWIM WINDOW — 3-line day chart (Entry / Chop / Surge)
+// Draws all three swimmer metrics (each 0–60, higher = better) across every
+// forecast hour of the selected day, shades the strongest contiguous window and
+// marks the currently selected hour. Re-rendered from renderSnapshot so it tracks
+// the slider (current-hour marker) and the day-picker (whole curve).
+// =============================================================================
+var WG = { entry:'#0a7ea4', chop:'#d4900a', surge:'#1a9e6e' };
+
+// 10-step colour ramp built by interpolating the four zone hues (worst→best:
+// red → yellow → amber → green). Gives the heat ribbon finer resolution of the
+// underlying 0–60 metric scores than the 4 hard zone colours.
+var WG_ANCHORS = [[192,57,43],[212,144,10],[141,174,42],[26,158,110]];
+var WG_STEPS   = 10;
+function _wgHex(c){ return '#'+c.map(function(x){ var h=Math.round(x).toString(16); return h.length<2?'0'+h:h; }).join(''); }
+function _wgMix(a,b,f){ return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f]; }
+var WG_RAMP = (function(){
+  var out = [];
+  for (var i=0;i<WG_STEPS;i++){
+    var t   = (i+0.5)/WG_STEPS;             // bucket centre, 0..1
+    var seg = t*(WG_ANCHORS.length-1);      // position across the 3 segments
+    var k   = Math.min(WG_ANCHORS.length-2, Math.floor(seg));
+    out.push(_wgHex(_wgMix(WG_ANCHORS[k], WG_ANCHORS[k+1], seg-k)));
+  }
+  return out;
+})();
+function _wgColor(score){
+  var t = Math.max(0, Math.min(1, score/60));
+  return WG_RAMP[ Math.min(WG_STEPS-1, Math.floor(t*WG_STEPS)) ];
+}
+
+function _wgFmt(hhmm){
+  var h = parseInt(hhmm.substring(0,2),10);
+  var m = hhmm.substring(3,5);
+  var ap = h < 12 ? 'AM' : 'PM';
+  var h12 = h % 12; if (h12 === 0) h12 = 12;
+  return (m === '00') ? (h12 + ' ' + ap) : (h12 + ':' + m + ' ' + ap);
+}
+
+function renderDayWindow(dateTimeStr){
+  var svg    = document.getElementById('dayWindowSvg');
+  var bestEl = document.getElementById('dayWindowBest');
+  if (!svg) return;
+  var day = (dateTimeStr || '').substring(0, 10);
+  if (!day || !_matrix || !_matrix.length){
+    svg.innerHTML = ''; if (bestEl) bestEl.textContent = '—'; return;
+  }
+
+  var rows = _matrix.filter(function(r){ return r.dateTime && r.dateTime.indexOf(day) === 0; });
+  if (rows.length < 2){
+    svg.innerHTML = '<text x="180" y="92" text-anchor="middle" class="wg-axis">No forecast for this day</text>';
+    if (bestEl) bestEl.textContent = '—'; return;
+  }
+
+  // Per-hour: each metric's 0–60 score (window math) + its zone class (cell colour).
+  var pts = rows.map(function(r){
+    var res = calcScore(r);
+    return {
+      t:     parseInt(r.dateTime.substring(11,13),10) + (parseInt(r.dateTime.substring(14,16),10)||0)/60,
+      hhmm:  r.dateTime.substring(11,16),
+      entry: res.entry.score, entryCls: res.entry.cls,
+      chop:  res.swim.score,  chopCls:  res.swim.cls,
+      surge: res.water.score, surgeCls: res.water.cls
+    };
+  });
+
+  // Daylight bounds bias the "best window" search toward swim hours.
+  var sun = (typeof _wxDaily !== 'undefined') ? _wxDaily[day] : null;
+  function sunH(srt){ if (!srt) return null; var hm = srt.substring(srt.indexOf('T')+1);
+    return parseInt(hm.substring(0,2),10) + (parseInt(hm.substring(3,5),10)||0)/60; }
+  var up = sun ? sunH(sun.sunrise) : null;
+  var dn = sun ? sunH(sun.sunset)  : null;
+  function daylight(t){ return (up == null || dn == null) ? true : (t >= up - 0.5 && t <= dn + 0.5); }
+
+  // Combined swimmability = weakest of the three; find the peak, grow a window around it.
+  function combo(p){ return Math.min(p.entry, p.chop, p.surge); }
+  var peakIdx = -1, peakVal = -1;
+  pts.forEach(function(p, i){ if (!daylight(p.t)) return; var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
+  if (peakIdx < 0) pts.forEach(function(p, i){ var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
+
+  var lo = peakIdx, hi = peakIdx, bandTxt = '—';
+  if (peakIdx >= 0){
+    var tol = 6;
+    while (lo - 1 >= 0 && combo(pts[lo-1]) >= peakVal - tol && daylight(pts[lo-1].t)) lo--;
+    while (hi + 1 < pts.length && combo(pts[hi+1]) >= peakVal - tol && daylight(pts[hi+1].t)) hi++;
+    bandTxt = (lo === hi) ? ('Best ≈ ' + _wgFmt(pts[lo].hhmm))
+                          : ('Best ≈ ' + _wgFmt(pts[lo].hhmm) + '–' + _wgFmt(pts[hi].hhmm));
+  }
+  if (bestEl) bestEl.textContent = bandTxt;
+
+  // ── Heat ribbon: 3 zone-coloured rows (Entry / Chop / Surge), one cell per hour ──
+  var W = 360, L = 46, R = 8, top = 8, rowH = 26, gap = 5, cols = pts.length;
+  var cellW = (W - L - R) / cols;
+  var ribH  = top + 3*rowH + 2*gap;
+  var fullH = ribH + 18;
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + fullH);
+
+  var ROWS = [['Entry','entry'], ['Chop','chop'], ['Surge','surge']];
+  var cells = '', labels = '';
+  ROWS.forEach(function(row, r){
+    var ry = top + r*(rowH + gap);
+    labels += '<text x="6" y="'+(ry + rowH/2 + 4)+'" font-size="12" font-weight="600" fill="#0d2b3e">'+row[0]+'</text>';
+    pts.forEach(function(p, i){
+      var col = _wgColor(p[row[1]]);
+      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+col+'"/>';
+    });
+  });
+
+  // Hour ticks every 3h (only on whole hours)
+  var ticks = '';
+  pts.forEach(function(p, i){
+    var hh = Math.round(p.t);
+    if (Math.abs(p.t - hh) > 0.01 || hh % 3 !== 0) return;
+    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 12)+'" font-size="11" fill="#5a8a9f" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
+  });
+
+  // Best-window box (dashed deep blue) spanning all three rows
+  var box = '';
+  if (peakIdx >= 0){
+    var bx = L + lo*cellW, bw = (hi - lo + 1)*cellW;
+    box = '<rect x="'+(bx-1).toFixed(1)+'" y="'+(top-3)+'" width="'+bw.toFixed(1)+'" height="'+(3*rowH + 2*gap + 6)+'" rx="3" fill="none" stroke="#064e6e" stroke-width="2" stroke-dasharray="4 3"/>';
+  }
+
+  // Current-hour caret above the top row (nearest cell to the selected hour)
+  var nowH = parseInt((dateTimeStr||'').substring(11,13),10) + (parseInt((dateTimeStr||'').substring(14,16),10)||0)/60;
+  var nowIdx = -1, bestD = 1e9;
+  pts.forEach(function(p, i){ var d = Math.abs(p.t - nowH); if (d < bestD){ bestD = d; nowIdx = i; } });
+  var caret = '';
+  if (nowIdx >= 0){
+    var cx = L + nowIdx*cellW + cellW/2;
+    caret = '<path d="M'+(cx-4).toFixed(1)+' '+(top-4)+' L'+(cx+4).toFixed(1)+' '+(top-4)+' L'+cx.toFixed(1)+' '+(top+1)+' Z" fill="#0d2b3e"/>';
+  }
+
+  svg.innerHTML = cells + box + caret + labels + ticks;
+}
+
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) {
     diag('renderSnapshot BAILED — ' + (!h ? 'no row object' : 'row has no dateTime'));
@@ -4286,6 +4477,8 @@ function renderSnapshot(h, wx) {
   }
   // Update GEM comparison card whenever the snapshot updates
   renderGemComparison(h);
+  // Best swim window — redraw the 3-line day chart for this day / hour
+  try { renderDayWindow(h.dateTime); } catch (e) {}
   return true;
 }
 
@@ -5072,7 +5265,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-232206';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7517,6 +7710,7 @@ if ('serviceWorker' in navigator) {
     { key:'metrics', label:"Metrics (Entry/Swim/Surge)", sel:'.metrics-panel', essential:1, complete:1, core:1 },
     { key:'wxbar', label:"Weather bar (sky + feels)", sel:'#wxBar', essential:1, complete:1 },
     { key:'slider', label:"Time slider", sel:'.slider-wrap', essential:1, complete:1, core:1 },
+    { key:'daywindow', label:"Best swim window (day chart)", sel:'#dayWindowWrap', essential:1, complete:1 },
     { key:'quality', label:"Sea temp + Pollution", sel:'.quality-row-slim', essential:1, complete:1 },
     { key:'bluebottle', label:"Bluebottle reports", sel:'#bbSection', essential:1, complete:1 },
     { key:'swellmap', label:"Swell map", sel:'#swellGraphWrap', essential:0, complete:1 },
