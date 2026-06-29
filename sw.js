@@ -4,21 +4,27 @@
 //  API calls (WillyWeather, Open-Meteo, Supabase, Beachwatch)
 //  are never cached — always pass through to network.
 //
-//  To force all clients to update: bump CACHE_VERSION below.
+//  Paths are RELATIVE so they resolve against this worker's own
+//  location (…/Manly-Swim/sw.js) — i.e. the app folder, not the
+//  domain root. Register it from index.html with './sw.js'.
+//
+//  CACHE_VERSION is stamped automatically by CI — do not edit by hand.
 // ─────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = '20260629-201819';
+const CACHE_VERSION = '20260629-200446';
 const CACHE_NAME    = 'swim-manly-' + CACHE_VERSION;
 
-// App shell assets to pre-cache on install
+// App shell assets to pre-cache on install (relative to /Manly-Swim/)
 const SHELL_ASSETS = [
-  '/',
-  '/index.html',
-  '/icon_small.png',
-  '/icon_big_360.png',
-  '/marco2.png',
-  // Google Fonts — cached so the app looks right offline
-  'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Playfair+Display:ital,wght@0,700;1,400&display=swap',
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './images/logos/splash.png',
+  './images/logos/icon-180.png',
+  './images/logos/favicon-32.png',
+  './images/marco2.png',
+  // Google Fonts — must match the exact URL index.html requests, or it won't hit
+  'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap',
 ];
 
 // Hostnames whose requests should NEVER be cached (API traffic)
@@ -78,6 +84,18 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
+  // Ignore non-http(s) schemes (e.g. chrome-extension://) — they can't be cached
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
+  // Don't intercept media or range requests. A network-first SW mishandles the
+  // HTTP Range / 206 responses that <video>/<audio> rely on, which stalls or
+  // breaks playback (notably the splash video on iOS Safari). Let the browser
+  // stream these natively.
+  if (event.request.headers.has('range') ||
+      /\.(mp4|webm|ogg|ogv|mov|m4v|m4a|mp3|wav|aac)$/i.test(url.pathname)) {
+    return;
+  }
+
   // Always pass through API calls — never cache
   if (PASSTHROUGH_HOSTS.some(h => url.hostname.includes(h))) {
     return; // let browser handle normally
@@ -105,9 +123,9 @@ self.addEventListener('fetch', event => {
         // Network failed — serve from cache (offline fallback)
         return caches.match(event.request).then(cached => {
           if (cached) return cached;
-          // If it's a navigation request and we have no cache, serve index.html
+          // If it's a navigation request and we have no cache, serve the app shell
           if (event.request.mode === 'navigate') {
-            return caches.match('/index.html');
+            return caches.match('./index.html');
           }
           return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
         });
