@@ -3889,7 +3889,7 @@ function renderSnapshot(h, wx) {
   const seaTempEl = document.getElementById('seaTempVal');
   const seaTempSlim = document.getElementById('seaTempValSlim');
   if (seaTempEl || seaTempSlim) {
-    const st = h.seaTemp;
+    const st = (window._communitySeaTemp != null) ? window._communitySeaTemp : h.seaTemp;
     const stTxt = (st != null && st > 1) ? st.toFixed(1) : '—';
     if (seaTempEl)   seaTempEl.textContent   = stTxt;
     if (seaTempSlim) seaTempSlim.textContent = stTxt;
@@ -4706,7 +4706,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-100558';
+var APP_BUILD = '20260625-084209';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -4808,6 +4808,40 @@ document.getElementById('timeSlider').addEventListener('input', function() {
 // =============================================================================
 const BB_SUPABASE_URL  = 'https://gkspukabnfbzrvjoewpc.supabase.co';
 const BB_SUPABASE_KEY  = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
+
+// ── Community morning water temperature ───────────────────────────────────────
+// Read-only here (anon key, same as the bluebottle reads). The PC pipeline writes
+// water_temp_now via the service role. When a reading exists for TODAY (Sydney) it
+// transparently stands in for the Open-Meteo sea temp — same tile, same .toFixed(1)
+// formatting, no label, no timestamp. If there's none, the Open-Meteo value shows.
+window._communitySeaTemp = null;
+function _sydTodayStr() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney',
+    year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+async function fetchCommunitySeaTemp() {
+  try {
+    const r = await fetch(
+      `${BB_SUPABASE_URL}/rest/v1/water_temp_now?select=temp_c,day&id=eq.1`,
+      { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY },
+        cache: 'no-store' }
+    );
+    if (!r.ok) return;
+    const rows = await r.json();
+    const row  = Array.isArray(rows) ? rows[0] : null;
+    const val  = (row && row.day === _sydTodayStr()) ? Number(row.temp_c) : NaN;
+    window._communitySeaTemp = (isFinite(val) && val > 1) ? val : null;
+    if (window._communitySeaTemp != null) {
+      const txt = window._communitySeaTemp.toFixed(1);
+      const a = document.getElementById('seaTempVal');
+      const b = document.getElementById('seaTempValSlim');
+      if (a) a.textContent = txt;
+      if (b) b.textContent = txt;
+    }
+  } catch (_) { /* leave the Open-Meteo value in place */ }
+}
+window.addEventListener('load', fetchCommunitySeaTemp);
+setInterval(fetchCommunitySeaTemp, 5 * 60 * 1000);
 const BB_COOLDOWN      = 4 * 60 * 60 * 1000; // 4 hours (stored locally per device)
 const BB_CACHE_TTL     = 5 * 60 * 1000;       // re-fetch from Supabase every 5 min
 
