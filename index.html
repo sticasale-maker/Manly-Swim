@@ -2093,6 +2093,9 @@
       <div class="chop-graph-legend">
         <span>Calmer</span><span class="chop-grad"></span><span>Choppier</span>
       </div>
+      <div class="chop-graph-legend">
+        <span>Wind builds chop from its speed and its runway over open water &mdash; the fetch</span>
+      </div>
     </div>
 
     <!-- Tide graph for the selected day -->
@@ -4117,11 +4120,32 @@ function renderTideGraph() {
   const plotW = VB_W - PAD_L - PAD_R;
   const plotH = VB_H - PAD_T - PAD_B;
 
-  // Sample the curve across the day (every 10 min)
-  const STEP = 10 * 60 * 1000;
-  const samples = [];
-  for (let ts = dayStart; ts <= dayEnd + 1; ts += STEP) {
-    samples.push({ ts, h: tideHeightAtTs(ts) });
+  // Build the curve by cosine-interpolating between consecutive turning points,
+  // then clip to the visible day. Because _tidePts carries the turning points from
+  // the day before and after, the curve keeps its true slope across midnight
+  // instead of flat-lining from 12a to the day's first high/low.
+  const sortedTide = _tidePts;            // already ts-sorted
+  const SEG_STEPS  = 120;                 // sub-samples per high↔low segment
+  const dense = [];
+  for (let i = 0; i < sortedTide.length - 1; i++) {
+    const t0 = sortedTide[i].ts, t1 = sortedTide[i+1].ts;
+    const h0 = sortedTide[i].h,  h1 = sortedTide[i+1].h;
+    for (let s = 0; s < SEG_STEPS; s++) {
+      const frac = s / SEG_STEPS;
+      dense.push({ ts: t0 + frac * (t1 - t0), h: (h0 + h1) / 2 - (h1 - h0) / 2 * Math.cos(Math.PI * frac) });
+    }
+  }
+  if (sortedTide.length) dense.push({ ts: sortedTide[sortedTide.length-1].ts, h: sortedTide[sortedTide.length-1].h });
+
+  // Clip the drawn curve to the visible day window.
+  let samples = dense.filter(p => p.ts >= dayStart && p.ts <= dayEnd);
+
+  // Degenerate fallback (≤1 turning point, or all points outside the window):
+  // sample the full day so the chart never renders empty.
+  if (samples.length < 2) {
+    const STEP = 10 * 60 * 1000;
+    samples = [];
+    for (let ts = dayStart; ts <= dayEnd + 1; ts += STEP) samples.push({ ts, h: tideHeightAtTs(ts) });
   }
   const heights = samples.map(s => s.h);
   let hMin = Math.min(...heights), hMax = Math.max(...heights);
@@ -4159,9 +4183,12 @@ function renderTideGraph() {
   });
   curve = curve.trim();
 
-  // filled area under curve
-  const baseY = PAD_T + plotH;
-  parts.push(`<path d="${curve} L${xOf(dayEnd).toFixed(1)} ${baseY} L${xOf(dayStart).toFixed(1)} ${baseY} Z" fill="url(#tideFillGrad)" stroke="none"/>`);
+  // filled area under curve — close at the curve's actual endpoints (not the full
+  // day) so the fill doesn't stretch flat to the left edge before the curve starts.
+  const baseY  = PAD_T + plotH;
+  const firstX = xOf(samples[0].ts);
+  const lastX  = xOf(samples[samples.length-1].ts);
+  parts.push(`<path d="${curve} L${lastX.toFixed(1)} ${baseY} L${firstX.toFixed(1)} ${baseY} Z" fill="url(#tideFillGrad)" stroke="none"/>`);
   // the tide line
   parts.push(`<path d="${curve}" fill="none" stroke="var(--ocean)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`);
 
@@ -4706,7 +4733,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-144519';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5761,15 +5788,15 @@ async function generateBannerSummary() {
   if (allGood) {
     if (shelteredContrast) {
       waterText = pick([
-        `${shelteredOpener} Entry off the beach and rocks is easy, the surface is ${domSwim === 'Smooth' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
-        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — easy entry, ${domSwim === 'Smooth' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
-        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in is easy, the surface is ${domSwim === 'Smooth' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
+        `${shelteredOpener} Entry off the beach at South Steyne is easy, the surface is ${domSwim === 'Smooth' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
+        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — easy entry off the beach at South Steyne, ${domSwim === 'Smooth' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
+        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in off the beach at South Steyne is easy, the surface is ${domSwim === 'Smooth' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
       ]);
     } else {
     waterText = pick([
-      `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach and rocks is easy, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
-      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry is easy, water surface is ${domSwim === 'Smooth' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
-      `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry is straightforward, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
+      `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach at South Steyne is easy, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
+      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry off the beach at South Steyne is easy, water surface is ${domSwim === 'Smooth' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
+      `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry off the beach at South Steyne is straightforward, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
     ]);
     }
   } else {
@@ -5778,13 +5805,13 @@ async function generateBannerSummary() {
     // Opening — swell/entry context
     if (domEntry === 'Dangerous') {
       parts.push(pick([
-        `The entry is genuinely tough today — ${swellIntroStr} is making getting in off the rocks pretty hairy. Shore break is dumping and the wash is messy; pick your moment carefully or use the beach entry if you can.`,
-        `Big conditions at the entry points today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} and it's creating a washing-machine effect near the rocks. Not the day to rush in — watch a few sets and time it, or give it a miss.`,
+        `The entry is genuinely tough today — ${swellIntroStr} out wide is dumping shore break onto the beach at South Steyne and the wash is messy. If you're getting in at all, evaluate a more sheltered entry further inside the bay; otherwise it's a day to stay on the sand.`,
+        `Big conditions at the South Steyne entry today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} out wide is creating a washing-machine effect at the beach. If anything, weigh up an entry from inside the bay where it's more sheltered — or give it a miss entirely.`,
       ]));
     } else if (domEntry === 'Caution') {
       parts.push(pick([
-        `Entry needs a bit of care today — ${swellIntroStr} means the rocks are a little lively. Nothing unmanageable, but watch a few waves before you commit and choose your spot wisely.`,
-        `Worth being a bit patient getting in today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} and the entry is a bit bouncy. Have a look before you leap — the sandy beach entry is usually the safest option on days like this.`,
+        `Entry needs a bit of care today — ${swellIntroStr} out wide means the beach at South Steyne is a little lively. Nothing unmanageable, but be careful: watch a few waves before you commit, and if you're unsure use the steps instead.`,
+        `Worth being a bit patient getting in today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} out wide and the beach entry at South Steyne is a bit bouncy. Be careful and have a look before you leap — if you're unsure, the steps are the safer option.`,
       ]));
     } else {
       // Entry is fine, open with swell context
@@ -6440,7 +6467,7 @@ const METRIC_INFO = {
   },
   swim: {
     title: 'Chop',
-    text: "How much the wind is roughing up the surface. Small wind-waves slap your face and get water in your mouth when you go to breathe \u2014 the more chop, the harder it is to get a clean breath."
+    text: "How much the wind is roughing up the surface. Small wind-waves slap your face and get water in your mouth when you go to breathe \u2014 the more chop, the harder it is to get a clean breath. Wind builds chop from its speed and its runway over open water \u2014 the fetch."
   },
   surge: {
     title: 'Surge',
@@ -7674,6 +7701,347 @@ if ('serviceWorker' in navigator) {
     if (/[?&]intros=1(\b|&|$)/.test(location.search)) openIntroAdmin();
     loadToday();
     refreshAdminFab();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+<script>
+/* ============================================================================
+   ANNOUNCEMENTS — one-off broadcasts.
+   Public: popup on app open (once per device, keyed by id+updated_at) + a
+   persistent "What's new" pill to re-open while an announcement is live.
+   Admin: editor at ?announce=1&token=…  with a WYSIWYG toolbar.
+   Backend: Supabase `announcements` table + RPCs (get_active_announcement /
+   admin_list_announcements / admin_save_announcement / admin_delete_announcement)
+   and the public `announce-images` Storage bucket. Same anon key + ?token= admin
+   pattern as the intros feature.
+   ========================================================================== */
+(function () {
+  var SB   = (typeof BB_SUPABASE_URL !== 'undefined') ? BB_SUPABASE_URL : '';
+  var KEY  = (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : '';
+  var RPC  = SB + '/rest/v1/rpc/';
+  var hdrs = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+  var SEEN_KEY = 'swim_ann_seen';
+  var ADMIN_MODE = /[?&]announce=1(\b|&|$)/.test(location.search);
+
+  var _active = null;   // the live announcement (or null)
+  var _editId = null;   // admin: id being edited (null = new)
+  var _imgUrl = '';     // admin: image url currently in the form
+  var _rows   = [];     // admin: last loaded list (for edit)
+
+  function $(id){ return document.getElementById(id); }
+  function token(){ try { return (typeof camToken === 'function') ? camToken() : (localStorage.getItem('swim_admin_token') || ''); } catch (e) { return ''; } }
+  function escText(s){ return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+
+  /* ---- rich-text sanitizer: rebuild a clean tree from an allowlist --------- */
+  var ALLOW = { B:1, STRONG:1, I:1, EM:1, U:1, UL:1, OL:1, LI:1, A:1, BR:1, P:1, DIV:1, SPAN:1 };
+  function clean(src){
+    var tmp = document.createElement('div'); tmp.innerHTML = (src == null ? '' : String(src));
+    var out = document.createElement('div');
+    (function copy(node, dest){
+      Array.prototype.forEach.call(node.childNodes, function (ch) {
+        if (ch.nodeType === 3) { dest.appendChild(document.createTextNode(ch.nodeValue)); return; }
+        if (ch.nodeType !== 1) return;                       // drop comments / others
+        var tag = ch.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE') return;     // drop entirely
+        if (ALLOW[tag]) {
+          var el = document.createElement(tag.toLowerCase());
+          if (tag === 'A') {
+            var href = ch.getAttribute('href') || '';
+            if (/^(https?:|mailto:)/i.test(href)) {
+              el.setAttribute('href', href);
+              el.setAttribute('target', '_blank');
+              el.setAttribute('rel', 'noopener noreferrer');
+            }
+          }
+          copy(ch, el);
+          dest.appendChild(el);
+        } else {
+          copy(ch, dest);                                    // unwrap: keep contents
+        }
+      });
+    })(tmp, out);
+    return out.innerHTML;
+  }
+
+  /* ---- seen tracking ------------------------------------------------------- */
+  function seenVal(a){ return a.id + '|' + (a.updated_at || ''); }
+  function isSeen(a){ try { return localStorage.getItem(SEEN_KEY) === seenVal(a); } catch (e) { return false; } }
+  function markSeen(a){ try { localStorage.setItem(SEEN_KEY, seenVal(a)); } catch (e) {} }
+
+  /* ---- popup + pill -------------------------------------------------------- */
+  function buildPopup(){
+    if ($('annOverlay')) return;
+    var css = document.createElement('style');
+    css.textContent =
+      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
+      "#annOverlay.show{display:flex;}" +
+      "#annPopup{background:#fff;border-radius:14px;max-width:340px;width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:86dvh;display:flex;flex-direction:column;}" +
+      "#annImg{width:100%;max-height:200px;object-fit:cover;display:none;}" +
+      "#annBody{padding:16px 18px 6px;overflow-y:auto;}" +
+      "#annTitle{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:26px;line-height:1.05;color:var(--deep,#064e6e);margin-bottom:9px;}" +
+      "#annText{font-size:14px;line-height:1.55;color:var(--text,#0d2b3e);}" +
+      "#annText a{color:var(--ocean,#0a7ea4);}" +
+      "#annText ul,#annText ol{margin:7px 0;padding-left:20px;}#annText li{margin-bottom:3px;}" +
+      "#annText p{margin:0 0 7px;}" +
+      "#annHint{text-align:center;color:var(--dim,#5a8a9f);font-size:11px;padding:11px 0 14px;}" +
+      "#annWhatsNew{position:fixed;left:14px;bottom:74px;z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#0a7ea4);background:#fff;color:var(--ocean,#0a7ea4);font-family:'DM Mono',ui-monospace,monospace;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
+      "#annWhatsNew.show{display:inline-flex;}" +
+      "#annWhatsNew .ann-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red,#c0392b);}" +
+      "#annWhatsNew.unseen .ann-dot{display:inline-block;}";
+    document.head.appendChild(css);
+    var ov = document.createElement('div'); ov.id = 'annOverlay';
+    ov.innerHTML =
+      '<div id="annPopup" role="dialog" aria-modal="true" aria-label="Announcement">' +
+        '<img id="annImg" alt="">' +
+        '<div id="annBody"><div id="annTitle"></div><div id="annText"></div></div>' +
+        '<div id="annHint">tap anywhere to dismiss</div>' +
+      '</div>';
+    ov.addEventListener('click', dismissPopup);   // tap anywhere closes
+    document.body.appendChild(ov);
+  }
+  function showPopup(a){
+    buildPopup();
+    var img = $('annImg');
+    if (a.image_url) { img.src = a.image_url; img.style.display = 'block'; }
+    else { img.style.display = 'none'; img.removeAttribute('src'); }
+    $('annTitle').textContent = a.title || '';
+    $('annText').innerHTML = clean(a.body_html || '');
+    $('annOverlay').classList.add('show');
+  }
+  function dismissPopup(){
+    var ov = $('annOverlay'); if (ov) ov.classList.remove('show');
+    if (_active) { markSeen(_active); var p = $('annWhatsNew'); if (p) p.classList.remove('unseen'); }
+  }
+  function ensurePill(){
+    if ($('annWhatsNew')) return $('annWhatsNew');
+    buildPopup();   // ensures the pill CSS is present
+    var b = document.createElement('button'); b.id = 'annWhatsNew'; b.type = 'button';
+    b.setAttribute('aria-label', 'See the latest announcement');
+    b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>What\u2019s new</span>';
+    b.addEventListener('click', function () { if (_active) showPopup(_active); });
+    document.body.appendChild(b);
+    return b;
+  }
+  function refreshPill(){
+    var b = ensurePill();
+    if (!_active) { b.classList.remove('show', 'unseen'); return; }
+    b.classList.add('show');
+    b.classList.toggle('unseen', !isSeen(_active));
+  }
+  async function loadActive(){
+    try {
+      var r = await fetch(RPC + 'get_active_announcement', { method: 'POST', headers: hdrs, body: '{}' });
+      if (!r.ok) return;
+      var rows = await r.json();
+      _active = (Array.isArray(rows) && rows.length) ? rows[0] : null;
+      if (_active && !isSeen(_active) && !ADMIN_MODE) showPopup(_active);
+      refreshPill();
+    } catch (e) {}
+  }
+
+  /* ---- date helpers -------------------------------------------------------- */
+  function dtLocalToISO(v){ if (!v) return null; var d = new Date(v); return isNaN(d) ? null : d.toISOString(); }
+  function isoToDtLocal(iso){
+    if (!iso) return ''; var d = new Date(iso); if (isNaN(d)) return '';
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /* ---- image upload (downscale to 1280px, JPEG) ---------------------------- */
+  async function uploadImage(file){
+    var blob = await new Promise(function (resolve, reject) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () {
+        var MAX = 1280, sc = Math.min(1, MAX / Math.max(img.width, img.height));
+        var cw = Math.round(img.width * sc), chh = Math.round(img.height * sc);
+        var cv = document.createElement('canvas'); cv.width = cw; cv.height = chh;
+        cv.getContext('2d').drawImage(img, 0, 0, cw, chh);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? resolve(b) : reject(new Error('encode failed')); }, 'image/jpeg', 0.85);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
+      img.src = url;
+    });
+    var nm = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))) + '.jpg';
+    var res = await fetch(SB + '/storage/v1/object/announce-images/' + nm, {
+      method: 'POST',
+      headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
+      body: blob
+    });
+    if (!res.ok) throw new Error('image upload failed (' + res.status + ')');
+    return SB + '/storage/v1/object/public/announce-images/' + nm;
+  }
+
+  /* ---- admin overlay ------------------------------------------------------- */
+  function buildAdminOverlay(){
+    if ($('annAdminOverlay')) return;
+    try { document.execCommand('styleWithCSS', false, false); } catch (e) {}   // emit <b>/<i> tags, not inline styles
+    var css = document.createElement('style');
+    css.textContent =
+      "#annAdminOverlay{position:fixed;inset:0;z-index:99996;display:none;background:rgba(6,30,46,0.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow-y:auto;padding:max(env(safe-area-inset-top),16px) 14px 30px;}" +
+      "#annAdminOverlay.show{display:block;}" +
+      "#annAdminCard{max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:16px;}" +
+      ".aa-h{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:22px;color:var(--deep,#064e6e);}" +
+      ".aa-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim,#5a8a9f);margin:12px 0 5px;display:block;}" +
+      ".aa-in{width:100%;border:1px solid rgba(10,126,164,.25);border-radius:10px;padding:9px 10px;font-size:14px;color:var(--text,#0d2b3e);background:#fff;font-family:inherit;}" +
+      ".aa-tb{display:flex;gap:6px;}" +
+      ".aa-tbbtn{width:36px;height:34px;border:1px solid rgba(10,126,164,.25);background:#f0faff;border-radius:8px;color:var(--deep,#064e6e);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;}" +
+      ".aa-tbbtn:active{transform:scale(.95);}" +
+      "#annEdBody{border:1px solid rgba(10,126,164,.25);border-radius:0 0 10px 10px;border-top:none;min-height:90px;padding:10px 11px;font-size:14px;line-height:1.5;color:var(--text,#0d2b3e);outline:none;}" +
+      "#annEdBody:empty:before{content:attr(data-ph);color:var(--dim,#5a8a9f);}" +
+      ".aa-row{display:flex;gap:10px;}.aa-row>div{flex:1;}" +
+      ".aa-btn{border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;}" +
+      ".aa-pub{background:var(--ocean,#0a7ea4);color:#fff;width:100%;margin-top:14px;}" +
+      ".aa-sec{background:#eef6f9;color:var(--deep,#064e6e);width:100%;}" +
+      ".aa-listrow{display:flex;align-items:center;gap:9px;padding:9px 10px;background:#f0faff;border-radius:9px;margin-bottom:6px;font-size:13px;}" +
+      ".aa-close{float:right;font-size:24px;color:var(--dim,#5a8a9f);background:none;border:none;cursor:pointer;line-height:1;}" +
+      ".aa-imgwrap{margin-top:8px;position:relative;display:none;}.aa-imgwrap img{width:100%;border-radius:10px;max-height:160px;object-fit:cover;display:block;}" +
+      ".aa-imgrm{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:999px;width:26px;height:26px;cursor:pointer;}";
+    document.head.appendChild(css);
+    var ov = document.createElement('div'); ov.id = 'annAdminOverlay';
+    ov.innerHTML =
+      '<div id="annAdminCard">' +
+        '<button class="aa-close" id="annAdminClose" aria-label="Close">\u00d7</button>' +
+        '<div class="aa-h" id="annFormTitle">Publish announcement</div>' +
+        '<label class="aa-lbl">Title</label>' +
+        '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
+        '<label class="aa-lbl">Message</label>' +
+        '<div class="aa-tb">' +
+          '<button type="button" class="aa-tbbtn" data-cmd="bold" aria-label="Bold"><b>B</b></button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="italic" aria-label="Italic"><i>I</i></button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="insertUnorderedList" aria-label="Bullet list">\u2022</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="createLink" aria-label="Link">\u{1F517}</button>' +
+        '</div>' +
+        '<div id="annEdBody" contenteditable="true" data-ph="Write the announcement\u2026"></div>' +
+        '<label class="aa-lbl">Picture (optional)</label>' +
+        '<button type="button" class="aa-btn aa-sec" id="annImgBtn">Upload picture</button>' +
+        '<input type="file" id="annImgInput" accept="image/*" style="display:none;">' +
+        '<div class="aa-imgwrap" id="annImgWrap"><img id="annImgPrev" alt=""><button type="button" class="aa-imgrm" id="annImgRm" aria-label="Remove picture">\u00d7</button></div>' +
+        '<div class="aa-row">' +
+          '<div><label class="aa-lbl">Starts</label><input class="aa-in" id="annInStart" type="datetime-local"></div>' +
+          '<div><label class="aa-lbl">Ends</label><input class="aa-in" id="annInEnd" type="datetime-local"></div>' +
+        '</div>' +
+        '<button type="button" class="aa-btn aa-pub" id="annPubBtn">Publish</button>' +
+        '<div id="annPubMsg" style="font-size:12px;text-align:center;margin-top:8px;min-height:14px;color:var(--dim,#5a8a9f);"></div>' +
+        '<label class="aa-lbl" style="margin-top:16px;">Live &amp; scheduled</label>' +
+        '<div id="annAdminList"></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+
+    $('annAdminClose').addEventListener('click', closeAnnounceAdmin);
+    ov.addEventListener('click', function (e) { if (e.target === ov) closeAnnounceAdmin(); });
+
+    Array.prototype.forEach.call(ov.querySelectorAll('.aa-tbbtn'), function (btn) {
+      btn.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep editor focus
+      btn.addEventListener('click', function () {
+        var cmd = btn.getAttribute('data-cmd');
+        $('annEdBody').focus();
+        if (cmd === 'createLink') { var u = window.prompt('Link URL', 'https://'); if (u) document.execCommand('createLink', false, u); }
+        else document.execCommand(cmd, false, null);
+      });
+    });
+    $('annImgBtn').addEventListener('click', function () { $('annImgInput').click(); });
+    $('annImgInput').addEventListener('change', async function () {
+      var f = $('annImgInput').files && $('annImgInput').files[0]; if (!f) return;
+      $('annPubMsg').textContent = 'Uploading picture\u2026';
+      try { _imgUrl = await uploadImage(f); $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; $('annPubMsg').textContent = ''; }
+      catch (e) { $('annPubMsg').textContent = 'Picture upload failed.'; }
+    });
+    $('annImgRm').addEventListener('click', function () { _imgUrl = ''; $('annImgWrap').style.display = 'none'; $('annImgPrev').removeAttribute('src'); });
+    $('annPubBtn').addEventListener('click', publish);
+  }
+
+  function resetForm(){
+    _editId = null; _imgUrl = '';
+    if ($('annInTitle')) $('annInTitle').value = '';
+    if ($('annEdBody'))  $('annEdBody').innerHTML = '';
+    if ($('annInStart')) $('annInStart').value = '';
+    if ($('annInEnd'))   $('annInEnd').value = '';
+    if ($('annImgWrap')) $('annImgWrap').style.display = 'none';
+    if ($('annFormTitle')) $('annFormTitle').textContent = 'Publish announcement';
+    if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
+  }
+
+  async function publish(){
+    var tk = token(); if (!tk) { $('annPubMsg').textContent = 'No admin token.'; return; }
+    var title = ($('annInTitle').value || '').trim();
+    var bodyHtml = clean($('annEdBody').innerHTML || '');
+    var starts = dtLocalToISO($('annInStart').value);
+    var ends   = dtLocalToISO($('annInEnd').value);
+    if (!title) { $('annPubMsg').textContent = 'Add a title.'; return; }
+    if (!starts || !ends) { $('annPubMsg').textContent = 'Set start and end.'; return; }
+    if (new Date(ends) <= new Date(starts)) { $('annPubMsg').textContent = 'End must be after start.'; return; }
+    $('annPubMsg').textContent = 'Publishing\u2026';
+    try {
+      var r = await fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({
+        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends
+      }) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published.';
+      resetForm();
+      loadAdminList();
+      loadActive();
+    } catch (e) { $('annPubMsg').textContent = 'Save failed (token may be wrong).'; }
+  }
+
+  async function loadAdminList(){
+    var box = $('annAdminList'); if (!box) return;
+    var tk = token();
+    if (!tk) { box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">No admin token \u2014 add <code>?token=\u2026</code> to the URL.</div>'; return; }
+    box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">Loading\u2026</div>';
+    try {
+      var r = await fetch(RPC + 'admin_list_announcements', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
+      _rows = rows;
+      if (!rows.length) { box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">No announcements yet.</div>'; return; }
+      box.innerHTML = rows.map(function (x) {
+        var color = x.status === 'live' ? '#1a9e6e' : (x.status === 'scheduled' ? '#d4900a' : '#5a8a9f');
+        var lab   = x.status === 'live' ? 'LIVE'    : (x.status === 'scheduled' ? 'SCHEDULED' : 'PAST');
+        return '<div class="aa-listrow">' +
+          '<span style="width:7px;height:7px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>' +
+          '<span style="flex:1;color:var(--text,#0d2b3e);">' + escText(x.title) + '</span>' +
+          '<span style="font-size:10px;font-weight:700;letter-spacing:.4px;color:' + color + ';">' + lab + '</span>' +
+          '<button type="button" data-edit="' + escText(x.id) + '" aria-label="Edit" style="background:none;border:none;cursor:pointer;color:var(--dim,#5a8a9f);font-size:15px;">\u270e</button>' +
+          '<button type="button" data-del="' + escText(x.id) + '" aria-label="Delete" style="background:none;border:none;cursor:pointer;color:var(--red,#c0392b);font-size:15px;">\u2716</button>' +
+        '</div>';
+      }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('[data-edit]'), function (b) { b.addEventListener('click', function () { editRow(b.getAttribute('data-edit')); }); });
+      Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),  function (b) { b.addEventListener('click', function () { delRow(b.getAttribute('data-del')); }); });
+    } catch (e) { box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">Couldn\u2019t load (token may be wrong).</div>'; }
+  }
+
+  function editRow(id){
+    var x = _rows.filter(function (r) { return r.id === id; })[0]; if (!x) return;
+    _editId = x.id; _imgUrl = x.image_url || '';
+    $('annInTitle').value = x.title || '';
+    $('annEdBody').innerHTML = clean(x.body_html || '');
+    $('annInStart').value = isoToDtLocal(x.starts_at);
+    $('annInEnd').value   = isoToDtLocal(x.ends_at);
+    if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; } else { $('annImgWrap').style.display = 'none'; }
+    $('annFormTitle').textContent = 'Edit announcement';
+    $('annPubBtn').textContent = 'Save changes';
+    $('annPubMsg').textContent = '';
+    var ov = $('annAdminOverlay'); if (ov) ov.scrollTop = 0;
+  }
+
+  async function delRow(id){
+    var tk = token(); if (!tk) return;
+    if (!window.confirm('Delete this announcement?')) return;
+    try {
+      var r = await fetch(RPC + 'admin_delete_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: id }) });
+      if (r.ok) { if (_editId === id) resetForm(); loadAdminList(); loadActive(); }
+    } catch (e) {}
+  }
+
+  function openAnnounceAdmin(){ if (!token()) return; buildAdminOverlay(); var ov = $('annAdminOverlay'); if (ov) ov.classList.add('show'); loadAdminList(); }
+  function closeAnnounceAdmin(){ var ov = $('annAdminOverlay'); if (ov) ov.classList.remove('show'); }
+  window.openAnnounceAdmin = openAnnounceAdmin;
+
+  function init(){
+    loadActive();
+    if (ADMIN_MODE) openAnnounceAdmin();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
