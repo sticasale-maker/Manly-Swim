@@ -4733,7 +4733,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-154642';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7977,12 +7977,12 @@ if ('serviceWorker' in navigator) {
       var r = await fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({
         p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends
       }) });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
       $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published.';
       resetForm();
       loadAdminList();
       loadActive();
-    } catch (e) { $('annPubMsg').textContent = 'Save failed (token may be wrong).'; }
+    } catch (e) { $('annPubMsg').textContent = 'Save failed: ' + ((e && e.message) ? e.message : 'unknown'); }
   }
 
   async function loadAdminList(){
@@ -7992,7 +7992,7 @@ if ('serviceWorker' in navigator) {
     box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">Loading\u2026</div>';
     try {
       var r = await fetch(RPC + 'admin_list_announcements', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) { var lt = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + lt.slice(0, 180)); }
       var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
       _rows = rows;
       if (!rows.length) { box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">No announcements yet.</div>'; return; }
@@ -8009,7 +8009,7 @@ if ('serviceWorker' in navigator) {
       }).join('');
       Array.prototype.forEach.call(box.querySelectorAll('[data-edit]'), function (b) { b.addEventListener('click', function () { editRow(b.getAttribute('data-edit')); }); });
       Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),  function (b) { b.addEventListener('click', function () { delRow(b.getAttribute('data-del')); }); });
-    } catch (e) { box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">Couldn\u2019t load (token may be wrong).</div>'; }
+    } catch (e) { box.innerHTML = '<div style="color:var(--dim,#5a8a9f);font-size:13px;">Couldn\u2019t load: ' + escText((e && e.message) ? e.message : 'unknown') + '</div>'; }
   }
 
   function editRow(id){
