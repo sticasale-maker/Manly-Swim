@@ -19,7 +19,7 @@ const SHELL_ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './images/logos/splash.png',
+  './images/logos/icon-512.png',
   './images/logos/icon-180.png',
   './images/logos/favicon-32.png',
   './images/marco2.png',
