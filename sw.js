@@ -7,7 +7,7 @@
 //  To force all clients to update: bump CACHE_VERSION below.
 // ─────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = '20260629-201807';
+const CACHE_VERSION = '20260629-201819';
 const CACHE_NAME    = 'swim-manly-' + CACHE_VERSION;
 
 // App shell assets to pre-cache on install
