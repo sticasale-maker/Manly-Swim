@@ -5073,7 +5073,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260629-205650';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7408,10 +7408,16 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 if ('serviceWorker' in navigator) {
   var swRefreshing = false;
 
-  // When the freshly-installed worker takes control, reload once so the
-  // page runs the new assets. Guard prevents an infinite reload loop.
+  // Was this page already controlled by a SW when it loaded? On a first install
+  // the SW calls clients.claim() and takes control of the open page, firing
+  // controllerchange — reloading then would cut the splash video mid-play and
+  // skip the logo splash on the reload. So only auto-reload on a genuine UPDATE
+  // (a worker was already in control at load), never on the first claim.
+  var swHadController = !!navigator.serviceWorker.controller;
+
   navigator.serviceWorker.addEventListener('controllerchange', function () {
     if (swRefreshing) return;
+    if (!swHadController) return;   // first claim — don't reload (would cut the splash)
     swRefreshing = true;
     window.location.reload();
   });
