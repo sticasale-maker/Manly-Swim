@@ -2751,6 +2751,7 @@ const GEM_MODEL = !location.search.includes('model=orig');
 const TUNE_PANEL = location.search.includes('tune=1'); // ?tune=1 shows the live sensitivity tuning panel
 const GEM_DEBUG = location.search.includes('debug=1') || TUNE_PANEL; // tune view now also shows the score breakdown (old ?debug=1 page retired)
 const VRAIL = location.search.includes('vrail=1'); // ?vrail=1 → vertical sliders beside each image (B layout); default is horizontal (A)
+const FORCE_FRESH = location.search.includes('fresh=1'); // ?fresh=1 → bypass the 1h config + GEM-table cache and re-pull the sheet now. This device/load only; everyone else keeps the full SWIM_CONFIG_TTL.
 if (VRAIL) document.body.classList.add('vrail');
 const TUNE_KEY   = 'swim_tune_overrides_v1';            // localStorage: user's sensitivity overrides
 
@@ -3087,7 +3088,7 @@ function applySwimConfig(rows) {
 async function loadConfig() {
   try {
     const cached = JSON.parse(localStorage.getItem(SWIM_CONFIG_KEY) || 'null');
-    if (cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
+    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
       // Restore tuning params from cache (lookup arrays + scalars)
       const c = cached.config;
       SITE.windSens       = c.windSens;
@@ -3274,7 +3275,7 @@ async function loadGemConfig(force) {
   if (!GEM_MODEL && !force) return;
   try {
     const cached = JSON.parse(localStorage.getItem(GEM_CONFIG_KEY) || 'null');
-    if (cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.gemTable) {
+    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.gemTable) {
       SITE.gemTable = cached.gemTable;
       diag('GEM table: cache hit (' + cached.gemTable.length + ' rows)');
       return;
@@ -5268,7 +5269,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260630-013554';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
