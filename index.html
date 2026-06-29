@@ -4184,25 +4184,28 @@ function renderDayWindow(dateTimeStr){
     };
   });
 
-  // Daylight bounds bias the "best window" search toward swim hours.
-  var sun = (typeof _wxDaily !== 'undefined') ? _wxDaily[day] : null;
-  function sunH(srt){ if (!srt) return null; var hm = srt.substring(srt.indexOf('T')+1);
-    return parseInt(hm.substring(0,2),10) + (parseInt(hm.substring(3,5),10)||0)/60; }
-  var up = sun ? sunH(sun.sunrise) : null;
-  var dn = sun ? sunH(sun.sunset)  : null;
-  function daylight(t){ return (up == null || dn == null) ? true : (t >= up - 0.5 && t <= dn + 0.5); }
+  // Only show / score swimmable hours: 5am–9pm. Everything else is dropped from the ribbon.
+  pts = pts.filter(function(p){ return p.t >= 5 && p.t <= 21; });
+  if (!pts.length){
+    svg.innerHTML = '<text x="180" y="40" text-anchor="middle" font-size="12" fill="#5a8a9f">No 5am–9pm forecast for this day</text>';
+    svg.setAttribute('viewBox','0 0 360 70');
+    if (bestEl) bestEl.textContent = '—'; return;
+  }
 
-  // Combined swimmability = weakest of the three; find the peak, grow a window around it.
-  function combo(p){ return Math.min(p.entry, p.chop, p.surge); }
+  // Window eligibility: hard-clamped to 5am-9pm (swimmable hours), season-independent.
+  function inWindow(t){ return t >= 5 && t <= 21; }
+
+  // Combined swimmability — weighted: Entry 3, Chop 2, Surge 1.
+  function combo(p){ return (3*p.entry + 2*p.chop + 1*p.surge) / 6; }
   var peakIdx = -1, peakVal = -1;
-  pts.forEach(function(p, i){ if (!daylight(p.t)) return; var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
+  pts.forEach(function(p, i){ if (!inWindow(p.t)) return; var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
   if (peakIdx < 0) pts.forEach(function(p, i){ var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
 
   var lo = peakIdx, hi = peakIdx, bandTxt = '—';
   if (peakIdx >= 0){
     var tol = 6;
-    while (lo - 1 >= 0 && combo(pts[lo-1]) >= peakVal - tol && daylight(pts[lo-1].t)) lo--;
-    while (hi + 1 < pts.length && combo(pts[hi+1]) >= peakVal - tol && daylight(pts[hi+1].t)) hi++;
+    while (lo - 1 >= 0 && combo(pts[lo-1]) >= peakVal - tol && inWindow(pts[lo-1].t)) lo--;
+    while (hi + 1 < pts.length && combo(pts[hi+1]) >= peakVal - tol && inWindow(pts[hi+1].t)) hi++;
     bandTxt = (lo === hi) ? ('Best ≈ ' + _wgFmt(pts[lo].hhmm))
                           : ('Best ≈ ' + _wgFmt(pts[lo].hhmm) + '–' + _wgFmt(pts[hi].hhmm));
   }
@@ -4246,7 +4249,7 @@ function renderDayWindow(dateTimeStr){
   var nowIdx = -1, bestD = 1e9;
   pts.forEach(function(p, i){ var d = Math.abs(p.t - nowH); if (d < bestD){ bestD = d; nowIdx = i; } });
   var caret = '';
-  if (nowIdx >= 0){
+  if (nowIdx >= 0 && nowH >= 5 && nowH <= 21){
     var cx = L + nowIdx*cellW + cellW/2;
     caret = '<path d="M'+(cx-4).toFixed(1)+' '+(top-4)+' L'+(cx+4).toFixed(1)+' '+(top-4)+' L'+cx.toFixed(1)+' '+(top+1)+' Z" fill="#0d2b3e"/>';
   }
@@ -5265,7 +5268,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260630-012510';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
