@@ -135,6 +135,7 @@
       <h2>On the map <small>drag ○ pivot · drag ◑ handles to set direction</small></h2>
       <div class="rowflex"><span class="swatch" style="background:var(--s1)"></span> Primary swell — drag its handle or use the bench slider</div>
       <div class="rowflex" id="s2hint" style="display:none"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
+      <div class="rowflex"><span class="swatch" style="background:#ff3df0"></span> Forecast point — NSW Nearshore node 103218 (bay mouth)</div>
       <div class="grp-t">Display</div>
       <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
       <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
@@ -325,6 +326,33 @@ const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
   pivot:{x:600,y:590}, crests:true, fan:false, rose:true, north:0};
 const MW=1545, MH=791;
 
+/* ---- Forecast point (NSW Nearshore Wave Tool node 103218) ----
+   Georeferenced onto seabed_map.png from two known pivot landmarks.
+   north-up map, so a simple affine (scale+offset per axis) is enough.
+   To refine: correct an anchor's lat/lng, or the node lat/lng. */
+const GEOREF={
+  a:{px:600,py:590, lat:-33.7989,lng:151.2899},  // "S Steyne entry" pivot
+  b:{px:700,py:625, lat:-33.8008,lng:151.2943}    // "the Bower" pivot
+};
+const FCST_NODE={id:'103218', lat:-33.798084, lng:151.2955};
+function latlngToPx(lat,lng){
+  const {a,b}=GEOREF;
+  const sx=(b.px-a.px)/(b.lng-a.lng), tx=a.px-sx*a.lng;
+  const sy=(b.py-a.py)/(b.lat-a.lat), ty=a.py-sy*a.lat;
+  return {x:sx*lng+tx, y:sy*lat+ty};
+}
+function drawForecastPoint(g){
+  const p=latlngToPx(FCST_NODE.lat,FCST_NODE.lng), s=16;
+  const fg=el('g',{'pointer-events':'none'});
+  fg.appendChild(el('path',{d:`M ${p.x} ${p.y-s} L ${p.x+s} ${p.y} L ${p.x} ${p.y+s} L ${p.x-s} ${p.y} Z`,
+    fill:'#ff3df0',stroke:'#fff','stroke-width':2.5,opacity:0.95}));
+  fg.appendChild(el('circle',{cx:p.x,cy:p.y,r:3,fill:'#fff'}));
+  const t=el('text',{x:p.x+s+6,y:p.y+6,fill:'#ff3df0','font-size':22,'font-family':'DM Mono','font-weight':600,
+    'paint-order':'stroke',stroke:'rgba(0,0,0,0.6)','stroke-width':5});
+  t.textContent='FORECAST '+FCST_NODE.id; fg.appendChild(t);
+  g.appendChild(fg);
+}
+
 /* ===================== MODEL ===================== */
 function windPower(k){if(k<=0)return 0;for(let i=1;i<WIND_WEIGHT.length;i++){if(WIND_WEIGHT[i][0]>=k){const f=(k-WIND_WEIGHT[i-1][0])/(WIND_WEIGHT[i][0]-WIND_WEIGHT[i-1][0]);return WIND_WEIGHT[i-1][1]*(1-f)+WIND_WEIGHT[i][1]*f;}}return WIND_WEIGHT[WIND_WEIGHT.length-1][1];}
 function swellPower(h,p){return h*h*Math.pow(Math.max(p,1),M.periodExp);}
@@ -407,6 +435,7 @@ function drawMap(){
   if(ST.s2on)drawSwellLine(g,ST.s2D,ST.s2P,CSSv('--s2')||'#e0a64d',4,'s2');
   g.appendChild(el('circle',{cx:ST.pivot.x,cy:ST.pivot.y,r:11,fill:'rgba(255,255,255,0.15)',stroke:'#fff','stroke-width':2.5}));
   g.appendChild(el('circle',{cx:ST.pivot.x,cy:ST.pivot.y,r:3,fill:'#fff'}));
+  drawForecastPoint(g);
   if(ST.rose)drawRose(g);
 }
 
