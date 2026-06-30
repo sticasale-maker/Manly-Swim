@@ -2025,10 +2025,10 @@
     <!-- Best swim window — 3-line day chart (Entry / Chop / Surge), updates with the selected day -->
     <div class="window-graph-wrap" id="dayWindowWrap">
       <div class="window-graph-head">
-        <span class="window-graph-title">Best Swim Window of the Day</span>
+        <span class="window-graph-title" id="dayWindowTitle">Best Swim Window of the Day</span>
         <span class="window-graph-best" id="dayWindowBest">—</span>
       </div>
-      <div class="window-graph-sub">Each row shaded by value · best window boxed</div>
+      <div class="window-graph-sub" id="dayWindowSub">Each row shaded by value · best window boxed</div>
       <svg class="window-graph-svg" id="dayWindowSvg" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="Entry, Chop and Surge conditions across the selected day"></svg>
       <div class="window-graph-legend">
         <span style="display:flex;align-items:center;gap:8px;width:100%">
@@ -4222,22 +4222,67 @@ function renderDayWindow(dateTimeStr){
 
   // Combined swimmability — weighted: Entry 3, Chop 2, Surge 1.
   function combo(p){ return (3*p.entry + 2*p.chop + 1*p.surge) / 6; }
-  var peakIdx = -1, peakVal = -1;
-  pts.forEach(function(p, i){ if (!inWindow(p.t)) return; var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
-  if (peakIdx < 0) pts.forEach(function(p, i){ var c = combo(p); if (c > peakVal){ peakVal = c; peakIdx = i; } });
+  var combos = pts.map(combo);
+  var bestVal = -1;
+  pts.forEach(function(p,i){ if (inWindow(p.t) && combos[i] > bestVal) bestVal = combos[i]; });
+  if (bestVal < 0) bestVal = Math.max.apply(null, combos);
 
-  var lo = peakIdx, hi = peakIdx, bandTxt = '—';
-  if (peakIdx >= 0){
-    var tol = 6;
-    while (lo - 1 >= 0 && combo(pts[lo-1]) >= peakVal - tol && inWindow(pts[lo-1].t)) lo--;
-    while (hi + 1 < pts.length && combo(pts[hi+1]) >= peakVal - tol && inWindow(pts[hi+1].t)) hi++;
-    bandTxt = (lo === hi) ? ('Best ≈ ' + _wgFmt(pts[lo].hhmm))
-                          : ('Best ≈ ' + _wgFmt(pts[lo].hhmm) + '–' + _wgFmt(pts[hi].hhmm));
+  // ── Multi-window detection ────────────────────────────────────────────────
+  var tol = 6;
+  var floor = bestVal - tol;
+  var peaks = [];
+  pts.forEach(function(p, i){
+    if (!inWindow(p.t)) return;
+    if (combos[i] < floor) return;
+    var prevOk = (i === 0) || combos[i-1] <= combos[i];
+    var nextOk = (i === pts.length-1) || combos[i+1] <= combos[i];
+    if (prevOk && nextOk) peaks.push(i);
+  });
+  if (!peaks.length){
+    var fbIdx = -1, fbVal = -1;
+    pts.forEach(function(p,i){ if (combos[i] > fbVal){ fbVal = combos[i]; fbIdx = i; } });
+    peaks = [fbIdx];
+  }
+
+  // Grow each peak into a window, merge overlapping/touching windows, cap at 3.
+  var windows = peaks.map(function(pk){
+    var lo = pk, hi = pk;
+    while (lo - 1 >= 0 && combos[lo-1] >= floor && inWindow(pts[lo-1].t)) lo--;
+    while (hi + 1 < pts.length && combos[hi+1] >= floor && inWindow(pts[hi+1].t)) hi++;
+    return { lo: lo, hi: hi };
+  }).sort(function(a,b){ return a.lo - b.lo; });
+
+  var merged = [];
+  windows.forEach(function(w){
+    var last = merged[merged.length - 1];
+    if (last && w.lo <= last.hi + 1) { last.hi = Math.max(last.hi, w.hi); }
+    else merged.push({ lo: w.lo, hi: w.hi });
+  });
+  merged.forEach(function(w){
+    var pk = -1; for (var i=w.lo;i<=w.hi;i++) pk = Math.max(pk, combos[i]); w.peak = pk;
+  });
+  if (merged.length > 3){
+    merged = merged.sort(function(a,b){ return b.peak-a.peak; }).slice(0,3)
+                   .sort(function(a,b){ return a.lo-b.lo; });
+  }
+
+  var titleEl = document.getElementById('dayWindowTitle');
+  var subEl   = document.getElementById('dayWindowSub');
+  var plural  = merged.length > 1;
+  if (titleEl) titleEl.textContent = plural ? 'Best Swim Windows of the Day' : 'Best Swim Window of the Day';
+  if (subEl)   subEl.textContent   = plural ? 'Each row shaded by value · best windows boxed'
+                                             : 'Each row shaded by value · best window boxed';
+  var bandTxt = '—';
+  if (merged.length){
+    bandTxt = (plural ? 'Best: ' : 'Best ≈ ') + merged.map(function(w){
+      return (w.lo === w.hi) ? _wgFmt(pts[w.lo].hhmm)
+                              : (_wgFmt(pts[w.lo].hhmm) + '–' + _wgFmt(pts[w.hi].hhmm));
+    }).join('  ·  ');
   }
   if (bestEl) bestEl.textContent = bandTxt;
 
   // ── Heat ribbon: 3 zone-coloured rows (Entry / Chop / Surge), one cell per hour ──
-  var W = 360, L = 46, R = 8, top = 8, rowH = 26, gap = 5, cols = pts.length;
+  var W = 360, L = 46, R = 8, top = 16, rowH = 26, gap = 5, cols = pts.length;
   var cellW = (W - L - R) / cols;
   var ribH  = top + 3*rowH + 2*gap;
   var fullH = ribH + 18;
@@ -4262,12 +4307,19 @@ function renderDayWindow(dateTimeStr){
     ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 12)+'" font-size="11" fill="#5a8a9f" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
   });
 
-  // Best-window box (dashed deep blue) spanning all three rows
+  // Best-window box(es) — bold outline + soft fill wash + index badge when plural
   var box = '';
-  if (peakIdx >= 0){
-    var bx = L + lo*cellW, bw = (hi - lo + 1)*cellW;
-    box = '<rect x="'+(bx-1).toFixed(1)+'" y="'+(top-3)+'" width="'+bw.toFixed(1)+'" height="'+(3*rowH + 2*gap + 6)+'" rx="3" fill="none" stroke="#064e6e" stroke-width="2" stroke-dasharray="4 3"/>';
-  }
+  merged.forEach(function(w, wi){
+    var bx = L + w.lo*cellW, bw = (w.hi - w.lo + 1)*cellW;
+    var by = top - 4, bh = 3*rowH + 2*gap + 8;
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="#064e6e" fill-opacity="0.07"/>';
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="#064e6e" stroke-width="3" stroke-dasharray="5 3"/>';
+    if (plural){
+      var bcx = bx + (bw+1)/2;
+      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-7)+'" r="8" fill="#064e6e"/>';
+      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-3.5)+'" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">'+(wi+1)+'</text>';
+    }
+  });
 
   // Current-hour caret above the top row (nearest cell to the selected hour)
   var nowH = parseInt((dateTimeStr||'').substring(11,13),10) + (parseInt((dateTimeStr||'').substring(14,16),10)||0)/60;
@@ -5293,7 +5345,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260630-103948';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
