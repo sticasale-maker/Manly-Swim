@@ -3867,7 +3867,7 @@ function parseWillyWeather(j) {
     }));
     if (closest) tideM = closest.height ?? 1.0;
   }
-  return {
+  const wwData = {
     dateTime:  new Date().toISOString().replace('T',' ').substring(0,19),
     windKmh:   wfc.speed     ?? 0,
     windDir:   wfc.direction ?? 0,
@@ -3878,6 +3878,13 @@ function parseWillyWeather(j) {
     windWaveH: 0, windWaveDir: 0, windWaveP: 0,
     tideM,
   };
+  // Stamp pure-WW wave values now, before any OM/NS merge, for the compare tick.
+  wwData._ww = {
+    swell1H: wwData.swell1H, swell1P: wwData.swell1P, swell1Dir: wwData.swell1Dir,
+    swell2H: 0, swell2Dir: 0, swell2P: 8,
+    windWaveH: 0, windWaveP: 0, windWaveDir: 0,
+  };
+  return wwData;
 }
 
 function buildHourlyMatrix(j) {
@@ -4051,6 +4058,13 @@ function mergeNearshoreSnapshot(wwData, nsMap) {
     swell2H: 0, swell2Dir: 0, swell2P: 8,
     windWaveH: ns.windWaveH, windWaveP: ns.windWaveP, windWaveDir: ns.windWaveDir,
     _nsFeed: true,
+    // Stash WW-original wave values (pre-merge) so the compare tick scores the
+    // real WW feed, not the NS values. Prefer an already-present _ww.
+    _ww: wwData._ww || {
+      swell1H: wwData.swell1H, swell1P: wwData.swell1P, swell1Dir: wwData.swell1Dir,
+      swell2H: wwData.swell2H || 0, swell2Dir: wwData.swell2Dir || 0, swell2P: wwData.swell2P || 8,
+      windWaveH: wwData.windWaveH || 0, windWaveP: wwData.windWaveP || 0, windWaveDir: wwData.windWaveDir || 0,
+    },
   });
 }
 
