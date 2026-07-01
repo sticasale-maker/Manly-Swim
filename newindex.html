@@ -3963,13 +3963,20 @@ function buildHourlyMatrix(j) {
 // Returns a map keyed by 'YYYY-MM-DD HH:00:00' (AEST) → {swell1*, windWave*}.
 // =============================================================================
 async function fetchNearshore() {
-  if (!NS_FEED_ENABLED) return null;
+  if (!NS_FEED_ENABLED) { window._nsStatus = 'disabled'; return null; }
   const url = NS_WORKER_URL
     ? `${NS_WORKER_URL}?t=${Date.now()}`
     : `${NS_STATIC_URL}?t=${Date.now()}`;
-  const res = await fetchWithTimeout(url, 12000, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`NS ${res.status}`);
-  return await res.json();
+  try {
+    const res = await fetchWithTimeout(url, 12000, { cache: 'no-store' });
+    if (!res.ok) { window._nsStatus = 'HTTP ' + res.status + ' @ ' + url; throw new Error(`NS ${res.status}`); }
+    const j = await res.json();
+    window._nsStatus = 'ok';
+    return j;
+  } catch (e) {
+    if (!window._nsStatus) window._nsStatus = 'fetch failed: ' + (e.message || e);
+    throw e;
+  }
 }
 
 // Accepts either the static-json shape ({hours:{...}}) OR the raw NSW API shape
@@ -4693,6 +4700,7 @@ function renderSnapshot(h, wx) {
       if (dbg) {
         const f = (x) => (x == null ? '–' : (Math.round(x * 100) / 100));
         dbg.innerHTML =
+          `NS feed fetch: <b>${window._nsStatus || '(not attempted yet)'}</b><br>` +
           `<b>NS</b> sw ${f(h.swell1H)}m/${f(h.swell1P)}s/${f(h.swell1Dir)}° · ` +
           `ww ${f(h.windWaveH)}m/${f(h.windWaveP)}s · nsFeed=${h._nsFeed?'Y':'N'} · Entry ${result.entry.raw!=null?f(result.entry.raw):f(60-result.entry.score)} Chop ${f(result.swim.raw)}<br>` +
           `<b>WW</b> sw ${f(wwSlot.swell1H)}m/${f(wwSlot.swell1P)}s/${f(wwSlot.swell1Dir)}° · ` +
