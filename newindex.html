@@ -194,6 +194,7 @@
 
   /* ── Metrics panel (replaces score hero) ── */
   .metrics-panel {
+    position: relative;
     background:var(--card);
     backdrop-filter:blur(12px);
     border:1px solid var(--border);
@@ -295,6 +296,32 @@
     border: 3px solid var(--foam);
     box-shadow: 0 0 0 2px currentColor;
     transition: left 0.3s ease, top 0.3s ease;
+  }
+  /* WW comparison tick — a thin vertical marker showing where the WillyWeather
+     feed would place this metric on the same rail. Hidden unless compare mode is on. */
+  .metric-track-wwtick {
+    position: absolute;
+    top: 50%;
+    left: var(--wwpos, 50%);
+    width: 3px; height: 22px;
+    transform: translate(-50%, -50%);
+    background: var(--deep);
+    border-radius: 2px;
+    box-shadow: 0 0 0 1.5px var(--foam);
+    transition: left 0.3s ease;
+    display: none;               /* shown only in compare mode */
+    z-index: 3;
+  }
+  body.cmp-feeds .metric-track-wwtick { display: block; }
+  .metric-track-wwtick::after {
+    content: 'WW';
+    position: absolute;
+    left: 50%; top: -13px;
+    transform: translateX(-50%);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 10px; letter-spacing: 0.5px;
+    color: var(--deep);
+    white-space: nowrap;
   }
   .metric-track-labels {
     display: flex;
@@ -1933,6 +1960,11 @@
     <!-- Metrics panel -->
     <div class="metrics-panel">
       <div class="metrics-time" id="metricsTime">—</div>
+      <button id="cmpFeedsBtn" onclick="toggleCmpFeeds()"
+        style="position:absolute;top:8px;right:8px;font-family:'Bebas Neue',sans-serif;
+               font-size:13px;letter-spacing:0.5px;padding:3px 9px;border-radius:8px;
+               border:1.5px solid var(--border);background:var(--card);color:var(--deep);
+               cursor:pointer;z-index:5;">WW compare: off</button>
       <div class="metrics-grid">
         <div class="metric-block green" id="metricEntry" onclick="openMetricModal('entry')">
           <div class="metric-header">
@@ -1949,6 +1981,7 @@
               <div class="z" style="background:var(--red);flex:1"></div>
             </div>
             <div class="metric-track-dot" id="metricEntryDot" style="color:var(--green)"></div>
+            <div class="metric-track-wwtick" id="wwTickEntry"></div>
           </div>
           <div class="metric-track-labels" id="metricEntryLabels">
             <span style="flex:1">Easy</span><span style="flex:1">Doable</span><span style="flex:1">Caution</span><span style="flex:1">Dangerous</span>
@@ -1974,6 +2007,7 @@
               <div class="z" style="background:var(--red);flex:1"></div>
             </div>
             <div class="metric-track-dot" id="metricSwimDot" style="color:var(--green)"></div>
+            <div class="metric-track-wwtick" id="wwTickSwim"></div>
           </div>
           <div class="metric-track-labels" id="metricSwimLabels">
             <span style="flex:1">Smooth</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
@@ -1999,6 +2033,7 @@
               <div class="z" style="background:var(--red);flex:1"></div>
             </div>
             <div class="metric-track-dot" id="metricSurgeDot" style="color:var(--green)"></div>
+            <div class="metric-track-wwtick" id="wwTickSurge"></div>
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
             <span style="flex:1">Steady</span><span style="flex:1">Drifty</span><span style="flex:1">Surgy</span><span style="flex:1">Washy</span>
@@ -2788,8 +2823,28 @@ const GEM_MODEL = !location.search.includes('model=orig');
 const TUNE_PANEL = location.search.includes('tune=1'); // ?tune=1 shows the live sensitivity tuning panel
 const GEM_DEBUG = location.search.includes('debug=1') || TUNE_PANEL; // tune view now also shows the score breakdown (old ?debug=1 page retired)
 const VRAIL = location.search.includes('vrail=1'); // ?vrail=1 → vertical sliders beside each image (B layout); default is horizontal (A)
+const CMP_FEEDS = location.search.includes('compare=1'); // ?compare=1 → show WW tick alongside NS dot on each rail
 const FORCE_FRESH = location.search.includes('fresh=1'); // ?fresh=1 → bypass the 1h config + GEM-table cache and re-pull the sheet now. This device/load only; everyone else keeps the full SWIM_CONFIG_TTL.
 if (VRAIL) document.body.classList.add('vrail');
+if (CMP_FEEDS) document.body.classList.add('cmp-feeds');
+// WW-compare toggle: flips the tick visibility and re-renders the current slot
+// so both the NS dot and the WW tick reposition immediately.
+function toggleCmpFeeds() {
+  const on = document.body.classList.toggle('cmp-feeds');
+  const btn = document.getElementById('cmpFeedsBtn');
+  if (btn) btn.textContent = 'WW compare: ' + (on ? 'on' : 'off');
+  try {
+    const slot = (typeof _matrix !== 'undefined' && _matrix) ? _matrix[_sliderIdx] : null;
+    if (slot && typeof renderSnapshot === 'function') {
+      renderSnapshot(slot, (typeof wxLookup === 'function' ? wxLookup(slot.dateTime) : null));
+    }
+  } catch (e) { /* non-fatal */ }
+}
+// Sync button label to initial state once DOM is ready.
+document.addEventListener('DOMContentLoaded', function(){
+  const btn = document.getElementById('cmpFeedsBtn');
+  if (btn) btn.textContent = 'WW compare: ' + (document.body.classList.contains('cmp-feeds') ? 'on' : 'off');
+});
 const TUNE_KEY   = 'swim_tune_overrides_v1';            // localStorage: user's sensitivity overrides
 
 // ── Condition pictograms ─────────────────────────────────────────────────
@@ -3955,6 +4010,12 @@ function mergeNearshoreMatrix(matrix, nsMap) {
       windWaveP:   ns.windWaveP,
       windWaveDir: ns.windWaveDir,
       _nsFeed: true,
+      // Preserve the WW-original wave values so the compare view can score both feeds.
+      _ww: {
+        swell1H: row.swell1H, swell1P: row.swell1P, swell1Dir: row.swell1Dir,
+        swell2H: row.swell2H, swell2Dir: row.swell2Dir, swell2P: row.swell2P,
+        windWaveH: row.windWaveH, windWaveP: row.windWaveP, windWaveDir: row.windWaveDir,
+      },
     });
   });
 }
@@ -4560,6 +4621,38 @@ function renderSnapshot(h, wx) {
   setTrackDot('metricSurgeDot',
     bandedPct(top - surgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]),
     clsColor(result.water.cls));
+
+  // ── WW COMPARISON TICKS ────────────────────────────────────────────────────
+  // When compare mode is on AND this row carries stashed WW-original wave values,
+  // score the SAME hour with the WW feed (Original/GEM path, no NS bypass) and
+  // drop a "WW" tick on each rail at that position. NS dot vs WW tick = the A/B.
+  (function renderWWTicks(){
+    const on = document.body.classList.contains('cmp-feeds');
+    const setTick = (tickId, pct) => {
+      const t = document.getElementById(tickId);
+      if (!t) return;
+      t.style.setProperty('--wwpos', Math.min(97, Math.max(3, pct)) + '%');
+    };
+    if (!on || !h._ww) {
+      // nothing to show; ticks stay hidden by CSS (cmp-feeds off) anyway
+      return;
+    }
+    // Build a WW-feed slot: same wind + tide, but WW-original swell/wind-wave,
+    // and crucially NO _nsFeed flag → calcScore uses the real GEM transmit path.
+    const wwSlot = Object.assign({}, h, h._ww);
+    delete wwSlot._nsFeed;
+    delete wwSlot._ww;
+    const wwR = calcScore(wwSlot);   // default model (same as NS dot uses)
+
+    const wwEntryRaw = wwR.entry.raw ?? Math.max(0, 60 - wwR.entry.score);
+    setTick('wwTickEntry', bandedPct(wwEntryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]));
+
+    const wwSwimVal = wwR.swim.raw ?? 0;
+    setTick('wwTickSwim', bandedPct(wwSwimVal, [0, swT.glassy, swT.ripply, swT.choppy, swEnd]));
+
+    const wwSurgeV6 = wwR.water.score;
+    setTick('wwTickSurge', bandedPct(top - wwSurgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]));
+  })();
 
 
   setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry);
