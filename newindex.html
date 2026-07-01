@@ -3921,7 +3921,7 @@ function buildHourlyMatrix(j) {
     (sday.entries||[]).forEach(se => {
       const we = (wday.entries||[]).find(e => e.dateTime === se.dateTime) || {};
       const dt = se.dateTime;
-      matrix.push({
+      const row = {
         dateTime:  dt,
         windKmh:   we.speed     ?? 0,
         windDir:   we.direction ?? 0,
@@ -3931,7 +3931,15 @@ function buildHourlyMatrix(j) {
         swell2H: 0, swell2Dir: 0, swell2P: 8,
         windWaveH: 0, windWaveDir: 0, windWaveP: 0,
         tideM: getTide(dt),
-      });
+      };
+      // Stamp the WW-original wave values now so the compare tick always has a
+      // WW feed to score, even on cached/pre-merge renders. NS merge preserves this.
+      row._ww = {
+        swell1H: row.swell1H, swell1P: row.swell1P, swell1Dir: row.swell1Dir,
+        swell2H: 0, swell2Dir: 0, swell2P: 8,
+        windWaveH: 0, windWaveP: 0, windWaveDir: 0,
+      };
+      matrix.push(row);
     });
   });
   return matrix;
@@ -4010,8 +4018,9 @@ function mergeNearshoreMatrix(matrix, nsMap) {
       windWaveP:   ns.windWaveP,
       windWaveDir: ns.windWaveDir,
       _nsFeed: true,
-      // Preserve the WW-original wave values so the compare view can score both feeds.
-      _ww: {
+      // Preserve the WW-original values. Prefer an already-stamped _ww (from
+      // buildHourlyMatrix, pure WW); else capture this row's current values.
+      _ww: row._ww || {
         swell1H: row.swell1H, swell1P: row.swell1P, swell1Dir: row.swell1Dir,
         swell2H: row.swell2H, swell2Dir: row.swell2Dir, swell2P: row.swell2P,
         windWaveH: row.windWaveH, windWaveP: row.windWaveP, windWaveDir: row.windWaveDir,
@@ -4633,13 +4642,18 @@ function renderSnapshot(h, wx) {
       if (!t) return;
       t.style.setProperty('--wwpos', Math.min(97, Math.max(3, pct)) + '%');
     };
-    if (!on || !h._ww) {
-      // nothing to show; ticks stay hidden by CSS (cmp-feeds off) anyway
-      return;
-    }
-    // Build a WW-feed slot: same wind + tide, but WW-original swell/wind-wave,
-    // and crucially NO _nsFeed flag → calcScore uses the real GEM transmit path.
-    const wwSlot = Object.assign({}, h, h._ww);
+    if (!on) return;
+    // WW-original wave values: prefer the stashed _ww (present after NS merge);
+    // if absent (e.g. a pre-merge/cached render), fall back to this row's OWN
+    // current wave values — on a not-yet-merged row those ARE the WW values.
+    const wwWave = h._ww || {
+      swell1H: h.swell1H, swell1P: h.swell1P, swell1Dir: h.swell1Dir,
+      swell2H: h.swell2H || 0, swell2Dir: h.swell2Dir || 0, swell2P: h.swell2P || 8,
+      windWaveH: h.windWaveH || 0, windWaveP: h.windWaveP || 0, windWaveDir: h.windWaveDir || 0,
+    };
+    // Build a WW-feed slot: same wind + tide, WW-original swell/wind-wave, and
+    // crucially NO _nsFeed flag → calcScore uses the real GEM transmit path.
+    const wwSlot = Object.assign({}, h, wwWave);
     delete wwSlot._nsFeed;
     delete wwSlot._ww;
     const wwR = calcScore(wwSlot);   // default model (same as NS dot uses)
