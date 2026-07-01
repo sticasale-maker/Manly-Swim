@@ -313,6 +313,7 @@
     z-index: 3;
   }
   body.cmp-feeds .metric-track-wwtick { display: block; }
+  body.cmp-feeds #cmpDebug { display: block !important; }
   .metric-track-wwtick::after {
     content: 'WW';
     position: absolute;
@@ -1965,6 +1966,10 @@
                font-size:13px;letter-spacing:0.5px;padding:3px 9px;border-radius:8px;
                border:1.5px solid var(--border);background:var(--card);color:var(--deep);
                cursor:pointer;z-index:5;">WW compare: off</button>
+      <div id="cmpDebug" style="display:none;font-family:'DM Mono',monospace;font-size:9.5px;
+           line-height:1.5;color:var(--deep);background:rgba(255,255,255,0.6);
+           border:1px solid var(--border);border-radius:8px;padding:5px 7px;margin-bottom:6px;
+           white-space:normal;"></div>
       <div class="metrics-grid">
         <div class="metric-block green" id="metricEntry" onclick="openMetricModal('entry')">
           <div class="metric-header">
@@ -4680,6 +4685,20 @@ function renderSnapshot(h, wx) {
 
     const wwSurgeV6 = wwR.water.score;
     setTick('wwTickSurge', bandedPct(top - wwSurgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]));
+
+    // DEBUG readout (compare mode only): show the raw numbers driving each dot/tick
+    // so any data-flow bug is visible on-device instead of inferred.
+    try {
+      const dbg = document.getElementById('cmpDebug');
+      if (dbg) {
+        const f = (x) => (x == null ? '–' : (Math.round(x * 100) / 100));
+        dbg.innerHTML =
+          `<b>NS</b> sw ${f(h.swell1H)}m/${f(h.swell1P)}s/${f(h.swell1Dir)}° · ` +
+          `ww ${f(h.windWaveH)}m/${f(h.windWaveP)}s · nsFeed=${h._nsFeed?'Y':'N'} · Entry ${result.entry.raw!=null?f(result.entry.raw):f(60-result.entry.score)} Chop ${f(result.swim.raw)}<br>` +
+          `<b>WW</b> sw ${f(wwSlot.swell1H)}m/${f(wwSlot.swell1P)}s/${f(wwSlot.swell1Dir)}° · ` +
+          `ww ${f(wwSlot.windWaveH)}m/${f(wwSlot.windWaveP)}s · _ww=${h._ww?'Y':'N'} · Entry ${wwEntryRaw!=null?f(wwEntryRaw):'–'} Chop ${f(wwSwimVal)}`;
+      }
+    } catch(e) {}
   })();
 
 
