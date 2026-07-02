@@ -5094,15 +5094,13 @@ function renderSnapshot(h, wx) {
     bandedPct(swimVal, [0, swT.glassy, swT.ripply, swT.choppy, swEnd]),
     clsColor(result.swim.cls));
 
-  // Surge — SCORE scale (v6, higher=better). Rail best(left)→worst(right) as v6
-  // falls from 60 to scaleMax. Map "distance below 60" through descending edges.
+  // Swim — DEMERIT scale (rawBL, lower=better), SAME as Entry now. Bands ascend
+  // 0 → scaleMax; dot placed left(best)→right(worst) by demerits directly.
   const suT = SITE.surgeThresholds;
-  const suEnd = (suT.scaleMax != null) ? suT.scaleMax : 0;
-  const surgeV6 = result.water.score;
-  // Convert descending edges to an ascending "drop from top" scale so bandedPct works.
-  const top = 60;
+  const suEnd = (suT.scaleMax != null && suT.scaleMax > 0) ? suT.scaleMax : 60;
+  const surgeRaw = result.water.raw ?? 0;
   setTrackDot('metricSurgeDot',
-    bandedPct(top - surgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]),
+    bandedPct(surgeRaw, [0, suT.steady, suT.drifty, suT.surgy, suEnd]),
     clsColor(result.water.cls));
 
   // ── WW COMPARISON TICKS ────────────────────────────────────────────────────
@@ -5141,8 +5139,8 @@ function renderSnapshot(h, wx) {
     const wwSwimVal = wwR.swim.raw ?? 0;
     setTick('wwTickSwim', bandedPct(wwSwimVal, [0, swT.glassy, swT.ripply, swT.choppy, swEnd]));
 
-    const wwSurgeV6 = wwR.water.score;
-    setTick('wwTickSurge', bandedPct(top - wwSurgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]));
+    const wwSurgeRaw = wwR.water.raw ?? 0;
+    setTick('wwTickSurge', bandedPct(wwSurgeRaw, [0, suT.steady, suT.drifty, suT.surgy, suEnd]));
 
     // DEBUG readout (compare mode only): show the raw numbers driving each dot/tick
     // so any data-flow bug is visible on-device instead of inferred.
