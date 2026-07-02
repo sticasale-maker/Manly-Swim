@@ -2893,6 +2893,12 @@ const WW_BLEND_OVERRIDE = (() => {
 const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
 const GEM_CONFIG_KEY = 'swim_gem_config_v2'; // bumped to v2 — forces fresh fetch with real gid
 
+// NS "New NS" tab CSV — published from the New NS sheet (gid 2116848706).
+// SS block: ss_wave_sens (C2) + SS dispersion table (dir 0–180° × period 2–17s, TRANSMIT %).
+// This REPLACES the GEM table for the NS-fed scoring path.
+const NS_DISP_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2116848706&single=true&output=csv';
+const NS_DISP_CONFIG_KEY = 'swim_nsdisp_config_v1';
+
 // S. Steyne column positions (0-based):
 //   Tuning params: col P = index 15 (rows 24–26 = indices 23–25)
 //   Direction table: cols AP=41, AQ=42, AR=43 (rows 32–63 = indices 31–62)
@@ -2964,7 +2970,9 @@ const SITE_DEFAULTS = {
   // SURGE — v6 = 60 − rawSwell (HIGHER = better, rail inverted: best on left) — col AK rows 13–16:
   //   steady = v6 > AK13, drifty > AK14, surgy ≥ AK15, else washy. AK16 = scaleMax (bottom/worst end of the v6 range).
   surgeThresholds: { steady: 50, drifty: 30, surgy: 10, scaleMax: 0 },
-  gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only
+  gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
+  nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
+  ssWaveSens:     1,    // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -3402,9 +3410,9 @@ async function loadGemConfig(force) {
 async function retryGemTable() {
   const badge = document.getElementById('gem-badge');
   if (badge) { badge.textContent = 'LOADING…'; badge.style.background = 'var(--dim)'; badge.style.cursor = 'default'; badge.onclick = null; }
-  localStorage.removeItem(GEM_CONFIG_KEY);
-  await loadGemConfig(true);
-  if (SITE.gemTable) {
+  localStorage.removeItem(NS_DISP_CONFIG_KEY);
+  await loadNsDispConfig(true);
+  if (SITE.nsDisp) {
     if (badge) badge.style.display = 'none';
     try {
       if (_matrix && _matrix.length) {
@@ -3420,6 +3428,116 @@ async function retryGemTable() {
       badge.style.cursor = 'pointer';
       badge.onclick = retryGemTable;
     }
+  }
+}
+
+// =============================================================================
+// NS DISPERSION MODEL — replaces the GEM table for the NS-fed scoring path.
+// Table (from the "New NS" tab, SS block):
+//   rows = swell/sea direction 0°–180° in 10° steps (19 rows)
+//   cols = period 2–17s in 1s steps (16 cols)
+//   values = TRANSMIT % (100 = full energy reaches the S Steyne corner, 0 = blocked)
+// Since the node 103218 feed is at the bay MOUTH, this table applies the local
+// South-Steyne corner shelter the node does not resolve. Applied to NS-fed rows.
+// Returns: transmit fraction (0–1).
+// Direction ≥190° (or folded >180°) → 0 (fully blocked, land side).
+// =============================================================================
+const NS_DISP_PMIN = 2, NS_DISP_PMAX = 17; // period column range (s)
+
+function nsDispLookup(dirDeg, periodS) {
+  const tbl = SITE.nsDisp;
+  if (!tbl) return 0.5; // fallback if table not loaded
+
+  // Direction: fold 180–360 back onto 0–180 (mirror). Anything landward is 0 in
+  // the table's 150–180 rows anyway, so folding keeps behaviour continuous.
+  let d = ((dirDeg % 360) + 360) % 360;
+  if (d > 180) d = 360 - d;
+
+  const per = Math.max(NS_DISP_PMIN, Math.min(NS_DISP_PMAX, periodS || 8));
+
+  // Row index: dir 0°=row0, 180°=row18, step=10°
+  const ri = d / 10;
+  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
+  const rf = ri - r0;
+
+  // Col index: period 2s=col0, 17s=col15, step=1s
+  const ci = per - NS_DISP_PMIN;
+  const c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1);
+  const cf = ci - c0;
+
+  const tx =
+    tbl[r0][c0] * (1-rf) * (1-cf) +
+    tbl[r0][c1] * (1-rf) *    cf  +
+    tbl[r1][c0] *    rf  * (1-cf) +
+    tbl[r1][c1] *    rf  *    cf;
+
+  return Math.max(0, tx / 100); // transmit fraction
+}
+
+// Parse the "New NS" tab CSV into { table:[19][16], ssWaveSens:Number }.
+// ss_wave_sens: row index 1, col index 2.
+// Period header row: index 9, cols 3–18 (periods 2–17).
+// Direction data rows: indices 10–28 (19 rows), dir at col 2, transmit % at cols 3–18.
+function parseNsDispCSV(text) {
+  const rows = text.split('\n').map(line => {
+    const cols = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') inQ = !inQ;
+      else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
+      else cur += c;
+    }
+    cols.push(cur); return cols;
+  });
+  const num = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
+
+  // ss_wave_sens (row 1, col 2) — optional; falls back to default if blank/NaN.
+  let ssWaveSens = null;
+  if (rows[1] && rows[1][2] != null) ssWaveSens = num(rows[1][2]);
+
+  // Dispersion table: rows 10–28, cols 3–18.
+  const table = [];
+  for (let r = 10; r <= 28; r++) {
+    const row = rows[r] || [];
+    const periods = [];
+    for (let c = 3; c <= 18; c++) {
+      const v = num(row[c]);
+      periods.push(v == null ? 0 : v); // blank → 0 transmit (blocked)
+    }
+    table.push(periods);
+  }
+  return (table.length === 19 && table.every(r => r.length === 16))
+    ? { table, ssWaveSens }
+    : null;
+}
+
+async function loadNsDispConfig(force) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
+    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.table) {
+      SITE.nsDisp = cached.table;
+      if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
+      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ')');
+      return;
+    }
+  } catch(e) {}
+  diag('NS disp: fetching...');
+  try {
+    const res = await fetchWithTimeout(NS_DISP_SHEET_URL + '&t=' + Date.now(), 15000);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    const parsed = parseNsDispCSV(text);
+    if (parsed) {
+      SITE.nsDisp = parsed.table;
+      if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
+      localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({ fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens }));
+      diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ')');
+    } else {
+      diag('NS disp: parse returned null — check New NS tab (expected 19 dir rows × 16 period cols from row 11)');
+    }
+  } catch(e) {
+    diag('NS disp: FAIL — ' + (e.message || e));
+    console.warn('NS disp config: sheet unavailable, NS path will use 0.5 fallback transmit.', e.message);
   }
 }
 
@@ -3519,26 +3637,27 @@ function calcScore(d, modelOverride) {
   let ww_d, s1_d, s2_d, rif_d;
 
   if (useGem) {
-    // ── GEM model: 2D table replaces seaHit + rif; real wind wave period ──
-    const wwP    = windWaveP || 5; // use real period, fall back to 5 if missing
+    // ── NS DISPERSION model ─────────────────────────────────────────────────
+    // The "New NS" tab SS dispersion table is the transmit filter, applied to
+    // swell1, swell2 AND wind-wave — including NS-fed rows. Node 103218 sits at
+    // the bay MOUTH, so this table supplies the local South-Steyne corner shelter
+    // the node does not resolve (the "mini-GEM corner-shelter term").
+    //
+    // Energy = H² × P (linear wave-energy-flux form, no period exponent).
+    // Sensitivity = ss_wave_sens (NS tab C2), applied to all three components.
+    // Wind chop path is untouched (ss_wind_k still tbd → existing windSens).
+    const wwP  = windWaveP || 5; // real period, fall back to 5 if missing
+    const ess  = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
+    const nrg  = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
 
-    // NEARSHORE FEED BYPASS: when the slot carries NS-transformed values, the
-    // offshore→nearshore transform is already done upstream, so the GEM transmit
-    // table must NOT be applied a second time. Force transmit = 1.0 and score the
-    // NS heights/periods directly. swellSens / wwSens / periodExp stay fully live.
-    // (A local "mini-GEM" corner-shelter term will be added later, since node
-    //  103218 sits at the bay mouth and has different exposure than S Steyne.)
-    const nsFeed = (d && d._nsFeed) || false;
+    const wwTx = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP));
+    const s1Tx = Math.max(0, nsDispLookup(swell1Dir, swell1P));
+    const s2Tx = Math.max(0, nsDispLookup(swell2Dir || 0, swell2P || 8));
 
-    const wwArrival = nsFeed ? 1.0 : Math.max(0, gemLookup(windWaveDir || windDir, wwP));
-    const wwTx   = nsFeed ? 1.0 : ((1 - wwBlend) * wwArrival + wwBlend * wwRoute);
-    const s1Tx   = nsFeed ? 1.0 : Math.max(0, gemLookup(swell1Dir, swell1P));
-    const s2Tx   = nsFeed ? 1.0 : Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
-
-    ww_d  = swellPower(windWaveH || 0, wwP) * wwTx * wwSens;
-    s1_d  = swellPower(swell1H, swell1P)    * s1Tx * SITE.swellSens;
-    s2_d  = swellPower(swell2H || 0, swell2P || 8) * s2Tx * SITE.swellSens;
-    rif_d = 0; // absorbed into gemLookup (or bypassed under NS feed)
+    ww_d  = nrg(windWaveH || 0, wwP)          * wwTx * ess;
+    s1_d  = nrg(swell1H, swell1P)             * s1Tx * ess;
+    s2_d  = nrg(swell2H || 0, swell2P || 8)   * s2Tx * ess;
+    rif_d = 0; // refraction absorbed into the dispersion table
   } else {
     // ── Original model ────────────────────────────────────────────────────
     const s1p      = swellPower(swell1H, swell1P);
@@ -3623,12 +3742,12 @@ async function runModelCompare() {
   const sub  = document.getElementById('cmpSub');
   if (!slot) { if (sub) sub.textContent = 'No forecast slot loaded yet — open the Now tab first.'; return; }
 
-  // Ensure the GEM table is available even when not running in ?model=gem mode
-  if (!SITE.gemTable) {
-    if (sub) sub.textContent = 'Loading GEM table…';
-    await loadGemConfig(true);
+  // Ensure the NS dispersion table is available even when not running in ?model=gem mode
+  if (!SITE.nsDisp) {
+    if (sub) sub.textContent = 'Loading NS dispersion table…';
+    await loadNsDispConfig(true);
   }
-  const haveGem = !!SITE.gemTable;
+  const haveGem = !!SITE.nsDisp;
 
   const A = calcScore(slot, 'orig');
   const B = calcScore(slot, 'gem');
@@ -4571,10 +4690,10 @@ function renderSnapshot(h, wx) {
             (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14);
   }
 
-  // Swell map: direction/period/height from forecast; GEM transmit drives the
-  // crest opacity (energy that survived refraction/sheltering around the headland).
+  // Swell map: direction/period/height from forecast; NS dispersion transmit
+  // drives the crest opacity (energy that survived the corner shelter).
   if (window.swellSet) {
-    swellSet(h.swell1Dir, h.swell1H, h.swell1P, gemLookup(h.swell1Dir, h.swell1P),
+    swellSet(h.swell1Dir, h.swell1H, h.swell1P, nsDispLookup(h.swell1Dir, h.swell1P),
              result.entry.label, result.entry.cls);
   }
 
@@ -4677,12 +4796,15 @@ function renderSnapshot(h, wx) {
       swell2H: h.swell2H || 0, swell2Dir: h.swell2Dir || 0, swell2P: h.swell2P || 8,
       windWaveH: h.windWaveH || 0, windWaveP: h.windWaveP || 0, windWaveDir: h.windWaveDir || 0,
     };
-    // Build a WW-feed slot: same wind + tide, WW-original swell/wind-wave, and
-    // crucially NO _nsFeed flag → calcScore uses the real GEM transmit path.
+    // Build a WW-feed slot: same wind + tide, WW-original swell/wind-wave.
+    // NOTE: under the NS dispersion model calcScore no longer branches on
+    // _nsFeed — every row is scored through the same nsDispLookup transmit path.
+    // The WW tick therefore differs from the NS dot only by the swell/wind-wave
+    // INPUT values (WW feed vs NS feed), not by any transmit-path difference.
     const wwSlot = Object.assign({}, h, wwWave);
     delete wwSlot._nsFeed;
     delete wwSlot._ww;
-    const wwR = calcScore(wwSlot);   // default model (same as NS dot uses)
+    const wwR = calcScore(wwSlot);   // same model as the NS dot; differs only by inputs
 
     const wwEntryRaw = wwR.entry.raw ?? Math.max(0, 60 - wwR.entry.score);
     setTick('wwTickEntry', bandedPct(wwEntryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]));
@@ -5130,22 +5252,24 @@ function renderGemComparison(h) {
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, tideM } = h;
   const windHit = dirLookup(SITE.lookup.wind, windDir);
 
-  // Warn loudly if the GEM table failed to load (all lookups would return 0.5 fallback)
-  const tableStatus = SITE.gemTable
-    ? `<div style="color:#7ec8e3;">✓ GEM table loaded (${SITE.gemTable.length} dir rows)</div>`
-    : `<div style="color:#ff6b6b;font-weight:700;">⚠ GEM TABLE NOT LOADED — every lookup is using the 50% fallback. Check the sheet gid / publish settings.</div>`;
+  // Warn loudly if the NS dispersion table failed to load (all lookups return 0.5 fallback)
+  const tableStatus = SITE.nsDisp
+    ? `<div style="color:#7ec8e3;">✓ NS dispersion table loaded (${SITE.nsDisp.length} dir rows, ss_wave_sens=${SITE.ssWaveSens})</div>`
+    : `<div style="color:#ff6b6b;font-weight:700;">⚠ NS DISPERSION TABLE NOT LOADED — every lookup is using the 50% fallback. Check the New NS tab gid / publish settings.</div>`;
 
-  // GEM-side intermediate values (mirror calcScore GEM branch)
+  // NS-path intermediate values (mirror calcScore NS dispersion branch)
   const wwP_g   = (h.windWaveP || 5);
-  const s1Tx_g  = Math.max(0, gemLookup(swell1Dir, swell1P));
-  const s2Tx_g  = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
-  const wwTx_g  = Math.max(0, gemLookup(windWaveDir || windDir, wwP_g));
-  const s1pow_g = swellPower(swell1H, swell1P);
-  const s2pow_g = swellPower(swell2H || 0, swell2P || 8);
+  const ess_g   = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
+  const nrg_g   = (hh, pp) => (hh * hh) * Math.max(0, pp || 0); // H² × P
+  const s1Tx_g  = Math.max(0, nsDispLookup(swell1Dir, swell1P));
+  const s2Tx_g  = Math.max(0, nsDispLookup(swell2Dir || 0, swell2P || 8));
+  const wwTx_g  = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP_g));
+  const s1pow_g = nrg_g(swell1H, swell1P);
+  const s2pow_g = nrg_g(swell2H || 0, swell2P || 8);
   const wind_d_g = windPower(windKmh) * (windHit / 100) * SITE.windSens;
-  const ww_d_g   = swellPower(windWaveH || 0, wwP_g) * wwTx_g * SITE.swellSens;
-  const s1_d_g   = s1pow_g * s1Tx_g * SITE.swellSens;
-  const s2_d_g   = s2pow_g * s2Tx_g * SITE.swellSens;
+  const ww_d_g   = nrg_g(windWaveH || 0, wwP_g) * wwTx_g * ess_g;
+  const s1_d_g   = s1pow_g * s1Tx_g * ess_g;
+  const s2_d_g   = s2pow_g * s2Tx_g * ess_g;
   const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g;
   const tide_d_g = SITE.tideDir(tideM, {
     s1_d: s1_d_g, s1Dir: swell1Dir, s2_d: s2_d_g, s2Dir: swell2Dir || 0, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
@@ -5551,7 +5675,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2','swim_nsdisp_config_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -5934,12 +6058,7 @@ if (!GEM_MODEL) {
 // overrides apply on top for live experimentation.
 // =============================================================================
 const TUNE_PARAMS = [
-  { key:'windSens',      label:'Wind sensitivity',     min:0,   max:1,    step:0.01, hint:'Scales wind-chop demerit.' },
-  { key:'swellSens',     label:'Swell sensitivity',    min:0.2, max:4,    step:0.05, hint:'Scales all swell demerits. Main harshness knob.' },
-  { key:'wwSens',        label:'Wind-wave sensitivity',min:0.2, max:4,    step:0.05, hint:'Scales wind-wave term. Blank = follows swell sens.', nullable:true },
-  { key:'periodExp',     label:'Period exponent',      min:0.5, max:1.6,  step:0.05, hint:'Power on swell period. Higher = long-period swell penalised more.' },
-  { key:'tideGateStart', label:'Tide gate start (deg)',min:0,   max:180,  step:5,    hint:'Swell direction where headland/tide effect begins.' },
-  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Direction where tide effect reaches full strength.' },
+  { key:'ssWaveSens', label:'SS wave sensitivity (ss_wave_sens)', min:0, max:3, step:0.05, hint:'New NS tab C2. Scales swell1 + swell2 + wind-wave demerits (energy = H²·P × transmit × this).' },
 ];
 
 function loadTuneOverrides() {
@@ -5986,7 +6105,7 @@ function buildTunePanel() {
     box-shadow:0 8px 40px rgba(0,0,0,0.25);font-family:'DM Mono',monospace;font-size:12px;color:var(--text);`;
   panel.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--deep);">TUNE SENSITIVITIES</span>
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--deep);">TUNE · NEW NS</span>
       <button id="tune-min" title="collapse" style="border:none;background:transparent;font-size:16px;cursor:pointer;color:var(--dim);">–</button>
     </div>
     <div id="tune-body">
@@ -5998,7 +6117,7 @@ function buildTunePanel() {
       </div>
       <div id="tune-msg" style="font-size:10px;color:var(--ocean);margin-top:6px;min-height:13px;"></div>
       <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">
-        Live preview only persists on THIS device. To make values permanent for everyone, put them in the sheet (col P rows 24–27, col R rows 24–26). "Copy values" gives you a snapshot to paste into the sheet or save.
+        Live preview only persists on THIS device. To make it permanent for everyone, set ss_wave_sens in the New NS tab (cell C2). "Copy values" gives you a snapshot to paste back.
       </div>
     </div>`;
   document.body.appendChild(panel);
@@ -6112,12 +6231,14 @@ function buildTunePanel() {
   // painted — re-render so scores pick up the real config / GEM table rather than
   // the 0.5 transmit fallback. This does not block or delay the forecast.
   (async function loadConfigInBackground() {
-    try { await loadConfig(); }    catch(e) { console.warn('loadConfig failed at startup:', e); }
-    try { await loadGemConfig(); } catch(e) { console.warn('loadGemConfig failed at startup:', e); }
+    try { await loadConfig(); }       catch(e) { console.warn('loadConfig failed at startup:', e); }
+    try { await loadGemConfig(); }    catch(e) { console.warn('loadGemConfig failed at startup:', e); }
+    try { await loadNsDispConfig(); } catch(e) { console.warn('loadNsDispConfig failed at startup:', e); }
 
-    // GEM is the live model — if its table didn't load, every swell silently
-    // transmits at the 0.5 fallback (direction ignored), inflating scores. Surface it.
-    if (GEM_MODEL && !SITE.gemTable) {
+    // NS dispersion is the live model — if its table didn't load, every swell
+    // silently transmits at the 0.5 fallback (direction ignored), inflating
+    // scores. Surface it.
+    if (GEM_MODEL && !SITE.nsDisp) {
       const badge = document.getElementById('gem-badge');
       if (badge) {
         badge.textContent = '⚠ TABLE NOT LOADED — TAP';
@@ -6126,7 +6247,7 @@ function buildTunePanel() {
         badge.style.display = 'inline';
         badge.onclick = retryGemTable;
       }
-      console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback. Check diag log for error detail.');
+      console.warn('NS dispersion table failed to load — scores are using the 0.5 transmit fallback. Check diag log for error detail.');
     }
 
     // Apply manual tuning overlay on top of the freshly loaded config, build the
@@ -6306,18 +6427,20 @@ function runCalibration() {
   app_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
 
   if (GEM_MODEL) {
-    const wwTx  = Math.max(0, gemLookup(wwDir, wwP));
-    const s1Tx  = Math.max(0, gemLookup(swell1Dir, swell1P));
-    const s2Tx  = Math.max(0, gemLookup(swell2Dir, swell2P));
-    app_ww_d  = swellPower(wwH, wwP) * wwTx * SITE.swellSens;
-    app_s1_d  = swellPower(swell1H, swell1P) * s1Tx * SITE.swellSens;
-    app_s2_d  = swellPower(swell2H, swell2P) * s2Tx * SITE.swellSens;
+    const ess   = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
+    const nrg   = (hh, pp) => (hh * hh) * Math.max(0, pp || 0); // H² × P
+    const wwTx  = Math.max(0, nsDispLookup(wwDir, wwP));
+    const s1Tx  = Math.max(0, nsDispLookup(swell1Dir, swell1P));
+    const s2Tx  = Math.max(0, nsDispLookup(swell2Dir, swell2P));
+    app_ww_d  = nrg(wwH, wwP) * wwTx * ess;
+    app_s1_d  = nrg(swell1H, swell1P) * s1Tx * ess;
+    app_s2_d  = nrg(swell2H, swell2P) * s2Tx * ess;
     app_rif_d = 0;
-    // Sheet comparison not applicable in GEM mode — show same values
+    // Sheet comparison not applicable in NS mode — show same values
     sh_wind_d = app_wind_d; sh_ww_d = app_ww_d;
     sh_s1_d = app_s1_d; sh_s2_d = app_s2_d; sh_rif_d = 0;
     s1_sea = Math.round(s1Tx * 100); s2_sea = Math.round(s2Tx * 100);
-    s1p = swellPower(swell1H, swell1P); s2p = swellPower(swell2H, swell2P);
+    s1p = nrg(swell1H, swell1P); s2p = nrg(swell2H, swell2P);
   } else {
     const ww_sea_hit = Math.max(0, dirLookup(lk.sea, wwDir));
     s1_sea     = Math.max(0, dirLookup(lk.sea, swell1Dir));
@@ -6685,7 +6808,7 @@ async function generateBannerSummary() {
   // good), the summary must lead with the contrast — "big swell offshore, but
   // the bay shelters it" — rather than implying the bay itself is rough.
   const avgTransmit = rows.length
-    ? avg(rows.map(r => gemLookup(r.swell1Dir, r.swell1P)))
+    ? avg(rows.map(r => nsDispLookup(r.swell1Dir, r.swell1P)))
     : 0.5;
   // "Large offshore swell" worth calling out explicitly.
   const bigOffshore = avgS1H >= 1.2;
@@ -7752,9 +7875,9 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   function landBit(nx, ny) { if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return 0; return BITS[((ny * BH) | 0) * BW + ((nx * BW) | 0)]; }
   function litCell(nx, ny, dx, dy) { var x = nx, y = ny; for (var s = 0; s < 110; s++) { x -= dx * 0.009; y -= dy * 0.009; if (x < 0 || x > 1 || y < 0 || y > 1) return true; if (landBit(x, y)) return false; } return true; }
 
-  // energy transmitted (0..100) for a swell direction/period — reuses the app's GEM table
-  function hitAt(d, T) { var g = (typeof gemLookup === 'function') ? gemLookup(clamp(d, 0, 180), T) : 0.5; return g * 100; }
-  // fold any swell-from bearing into the table's 0..180 arc (mirrors the western half, as gemLookup does)
+  // energy transmitted (0..100) for a swell direction/period — reuses the app's NS dispersion table
+  function hitAt(d, T) { var g = (typeof nsDispLookup === 'function') ? nsDispLookup(clamp(d, 0, 180), T) : 0.5; return g * 100; }
+  // fold any swell-from bearing into the table's 0..180 arc (mirrors the western half, as nsDispLookup does)
   function foldDir(d) { d = ((d % 360) + 360) % 360; return d > 180 ? 360 - d : d; }
 
   // ---- normalized phase/energy field (canvas-px independent; rebuilt only when the swell changes) ----
