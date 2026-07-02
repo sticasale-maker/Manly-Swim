@@ -313,7 +313,6 @@
     z-index: 3;
   }
   body.cmp-feeds .metric-track-wwtick { display: block; }
-  body.cmp-feeds #cmpDebug { display: block !important; }
   .metric-track-wwtick::after {
     content: 'WW';
     position: absolute;
@@ -1966,10 +1965,6 @@
                font-size:13px;letter-spacing:0.5px;padding:3px 9px;border-radius:8px;
                border:1.5px solid var(--border);background:var(--card);color:var(--deep);
                cursor:pointer;z-index:5;">WW compare: off</button>
-      <div id="cmpDebug" style="display:none;font-family:'DM Mono',monospace;font-size:9.5px;
-           line-height:1.5;color:var(--deep);background:rgba(255,255,255,0.6);
-           border:1px solid var(--border);border-radius:8px;padding:5px 7px;margin-bottom:6px;
-           white-space:normal;"></div>
       <div class="metrics-grid">
         <div class="metric-block green" id="metricEntry" onclick="openMetricModal('entry')">
           <div class="metric-header">
@@ -2041,7 +2036,7 @@
             <div class="metric-track-wwtick" id="wwTickSurge"></div>
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
-            <span style="flex:1">Glide</span><span style="flex:1">Jostle</span><span style="flex:1">Wrestle</span><span style="flex:1">Washed</span>
+            <span style="flex:1">Smooth</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
           </div>
           <div class="assess-wrap" onclick="event.stopPropagation()">
             <div class="assess-label">My call ▸ drag to where the dot should be</div>
@@ -2072,7 +2067,7 @@
         <span class="window-graph-best" id="dayWindowBest">—</span>
       </div>
       <div class="window-graph-sub" id="dayWindowSub">Each row shaded by value · best window boxed</div>
-      <svg class="window-graph-svg" id="dayWindowSvg" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="Entry, Chop and Surge conditions across the selected day"></svg>
+      <svg class="window-graph-svg" id="dayWindowSvg" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" aria-label="Entry, Chop and Swim conditions across the selected day"></svg>
       <div class="window-graph-legend">
         <span style="display:flex;align-items:center;gap:8px;width:100%">
           <span style="color:var(--dim)">Worst</span>
@@ -2486,7 +2481,7 @@ const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 // NS swell partition → swell1 ; NS sea partition → wind wave ; swell2 stays 0.
 // Wind + tide still come from WillyWeather.
 const NS_STATIC_URL   = 'nearshore.json';   // same directory on GitHub Pages
-const NS_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/nearshore'; // live Worker route; '' = use static nearshore.json
+const NS_WORKER_URL   = '';                 // set to /nearshore route when live; '' = use static
 const NS_FEED_ENABLED = true;
 const OM_CACHE_KEY    = 'swim_om_cache_v3';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
@@ -2862,11 +2857,14 @@ const _ICON_ZONE = { green: 0, amber: 1, yellow: 2, red: 3 };
 const _ICON_WORD = {
   entry: ['easy', 'doable', 'caution', 'dangerous'],
   swim:  ['smooth', 'ripply', 'choppy', 'messy'],
-  surge: ['glide', 'jostle', 'wrestle', 'washed']
+  surge: ['smooth', 'ripply', 'choppy', 'messy']
 };
-// Image filename prefix per metric. Internal key stays 'swim' (DOM ids, modal,
-// thresholds all keyed on it) but the on-disk pictograms are named chop-*.png.
-const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'surge' };
+// Image filename prefix per metric. Internal keys are historical (entry / swim /
+// surge) but the on-disk pictograms follow the CURRENT display names:
+//   entry key -> entry-*.png (Entry), swim key -> chop-*.png (Chop diagnostic),
+//   surge key -> swim-*.png (Swim). Chop & Swim share the smooth/ripply/choppy/
+//   messy stages by design.
+const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'swim' };
 function renderMetricIcon(blockId, cls) {
   const host = document.getElementById(blockId + 'Icon');
   if (!host) return;
@@ -2892,18 +2890,6 @@ const WW_BLEND_OVERRIDE = (() => {
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid 2011938330)
 const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
 const GEM_CONFIG_KEY = 'swim_gem_config_v2'; // bumped to v2 — forces fresh fetch with real gid
-
-// NS "New NS" tab CSV — published from the New NS sheet (gid 2116848706).
-// SS block: ss_wave_sens (C2) + SS dispersion table (dir 0–180° × period 2–17s, TRANSMIT %).
-// This REPLACES the GEM table for the NS-fed scoring path.
-const NS_DISP_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2116848706&single=true&output=csv';
-const NS_DISP_CONFIG_KEY = 'swim_nsdisp_config_v1';
-// Wind-chop directional shelter curve (CHOP point) — published CSV tab.
-// Expected layout: col A = bearing 0,5,10…355 (72 rows), col B = transmit fraction
-// (a blank or 60 = blocked → 0). Set the gid once the tab is published; until then
-// the loader falls back to SITE_DEFAULTS.chopShelter (the measured fetch_true curve).
-const CHOP_SHELTER_SHEET_URL = ''; // e.g. '…/pub?gid=XXXXXXXXXX&single=true&output=csv'
-const CHOP_SHELTER_CONFIG_KEY = 'swim_chopshelter_config_v1';
 
 // S. Steyne column positions (0-based):
 //   Tuning params: col P = index 15 (rows 24–26 = indices 23–25)
@@ -2969,34 +2955,14 @@ const SITE_DEFAULTS = {
   //
   // SWIM — q7 = wind_d + ww_d (LOWER = better) — col AK rows 9–12:
   //   glassy = q7 < AK9, ripply ≤ AK10, choppy ≤ AK11, else messy. AK12 = scaleMax (rail end + score cap).
-  swimThresholds: { glassy: 4, ripply: 10, choppy: 14, scaleMax: 14 },
+  swimThresholds: { glassy: 1, ripply: 3, choppy: 9, scaleMax: 14 },
   // ENTRY — `total` demerits (LOWER = better) — col AK rows 5–8:
   //   easy = total ≤ AK5, doable ≤ AK6, caution ≤ AK7, else dangerous. AK8 = scaleMax (rail end).
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
   // SURGE — v6 = 60 − rawSwell (HIGHER = better, rail inverted: best on left) — col AK rows 13–16:
   //   steady = v6 > AK13, drifty > AK14, surgy ≥ AK15, else washy. AK16 = scaleMax (bottom/worst end of the v6 range).
-  surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 }, // demerit edges, ASCEND toward bad (like Entry). Steady≤15, Drifty≤30, Surgy≤45, else Washy.
-  gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
-  nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
-  ssWaveSens:     2.35, // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path (tuned 2 Jul 2026)
-  blDisp:         null, // BL (Bower Lane / bay) dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % — New NS tab V10:AL28
-  blWaveSens:     2.35, // New NS tab V2 (bl_wave_sens) — BL swell+sea sensitivity for the Swim metric
-  blChopImpact:   1.3,  // New NS tab V3 (bl_chop_impact) — "BL chop impact": single knob scaling the whole BL chop crossfade (wind-sea + wind-wave), no handover jump
-  // Wind-chop directional shelter at the CHOP point (measured on the bathymetry
-  // grid). 72 bins @ 5° (index 0=0°N … 71=355°). Value =
-  // TRANSMIT fraction of local wind-chop reaching the swim line from that wind
-  // bearing; 0 = land-shadowed/blocked (N/NE arc 0–70°, NW arc 315–355°). This
-  // replaces the old 32-bin `lookup.wind` direction table for wind_d entirely.
-  chopShelter: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.635,0.626,0.638,0.664,0.702,0.789,0.768,0.69,0.436,0.365,0.318,0.284,0.265,0.246,0.237,0.228,0.22,0.216,0.213,0.211,0.213,0.216,0.218,0.225,0.232,0.242,0.254,0.263,0.268,0.275,0.303,0.318,0.318,0.308,0.315,0.322,0.329,0.334,0.341,0.353,0.379,0.419,0.455,0.5,0.55,1.365,1.512,1.702,0,0,0,0,0,0,0,0,0],
-  // STRAIGHT-LINE FETCH MASKS (ray-cast from the bathymetry, yellow-land = blocker;
-  // waves travel straight, no refraction). 72 bins @ 5° (index 0=0°N … 71=355°).
-  // 1 = open water in that wind bearing → wind-sea can build; 0 = land upwind → blocked.
-  // SS = South Steyne entry point (feeds ENTRY); BL = mid-bay chop point (feeds CHOP).
-  // The two windows differ because the points sit differently in the bay.
-  fetchMaskSS: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
-  fetchMaskBL: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1],
-  windSeaSens:   1.3,   // scales the fetch-derived wind-sea demerit (tuned 2 Jul 2026)
-  windSeaDurCapH: 24,   // duration tracker caps at this many hours (fully-developed ceiling)
+  surgeThresholds: { steady: 50, drifty: 30, surgy: 10, scaleMax: 0 },
+  gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -3172,14 +3138,10 @@ function applySwimConfig(rows) {
   if (bSea.length === 32 && bSea.some(v => v > 0))
     SITE.bowerLookup = { wind: bWind, sea: bSea, rif: bRif };
 
-  // ── COL-AK THRESHOLDS: DISABLED for the NS build (2 Jul 2026) ─────────────
-  // Metric classification thresholds now come EXCLUSIVELY from the New NS tab
-  // block AN2:AQ13 (parsed in parseNsDispCSV, applied in loadNsDispConfig). This
-  // block used to read Entry/Swim/Surge edges from col AK of the MASTER tab; it is
-  // left dormant (not deleted) so MASTER can still supply tideGain, the lookup
-  // arrays, and the Bower/Surge scalars, without ever touching the thresholds.
-  // DO NOT re-enable — it would clobber the New NS values.
-  /*
+  // SWIM band edges — col AK (index 36), rows 9–12 (indices 8–11):
+  //   AK9 = Glassy edge, AK10 = Ripply edge, AK11 = Choppy edge, AK12 = Messy edge / display cap.
+  // Each cell is applied only when it's a real number, so blank cells or partial
+  // edits fall back to the existing default rather than collapsing the band to 0.
   const numAt = (r, c) => {
     const raw = rows[r]?.[c];
     if (raw == null || String(raw).trim() === '') return null;
@@ -3195,6 +3157,8 @@ function applySwimConfig(rows) {
   if (swChoppy   != null) SITE.swimThresholds.choppy   = swChoppy;
   if (swScaleMax != null) SITE.swimThresholds.scaleMax = swScaleMax;
 
+  // ENTRY band edges — col AK, rows 5–8 (indices 4–7). Demerit side, LOWER = better:
+  //   AK5 = Easy max, AK6 = Doable max, AK7 = Caution max, AK8 = scaleMax (rail end).
   const enEasy     = numAt(4, STEYNE_SWIM_COL);  // AK5
   const enDoable   = numAt(5, STEYNE_SWIM_COL);  // AK6
   const enCaution  = numAt(6, STEYNE_SWIM_COL);  // AK7
@@ -3204,6 +3168,8 @@ function applySwimConfig(rows) {
   if (enCaution  != null) SITE.entryThresholds.caution  = enCaution;
   if (enScaleMax != null) SITE.entryThresholds.scaleMax = enScaleMax;
 
+  // SURGE band edges — col AK, rows 13–16 (indices 12–15). Score side, HIGHER = better:
+  //   AK13 = Steady min, AK14 = Drifty min, AK15 = Surgy min, AK16 = scaleMax (worst/bottom end).
   const suSteady   = numAt(12, STEYNE_SWIM_COL);  // AK13
   const suDrifty   = numAt(13, STEYNE_SWIM_COL);  // AK14
   const suSurgy    = numAt(14, STEYNE_SWIM_COL);  // AK15
@@ -3212,7 +3178,6 @@ function applySwimConfig(rows) {
   if (suDrifty   != null) SITE.surgeThresholds.drifty   = suDrifty;
   if (suSurgy    != null) SITE.surgeThresholds.surgy    = suSurgy;
   if (suScaleMax != null) SITE.surgeThresholds.scaleMax = suScaleMax;
-  */
 }
 
 async function loadConfig() {
@@ -3231,9 +3196,11 @@ async function loadConfig() {
       SITE.wwSens          = (c.wwSens != null) ? c.wwSens : SITE_DEFAULTS.wwSens;
       SITE.tideGain        = (c.tideGain != null) ? c.tideGain : SITE_DEFAULTS.tideGain;
       SITE.wwRouteBlend    = c.wwRouteBlend || 0;
-      // Thresholds are NOT restored from the MASTER cache — they come from the
-      // New NS tab (AN2:AQ13) via loadNsDispConfig, which runs after this. Leaving
-      // these lines out prevents a stale MASTER cache from clobbering New NS.
+      // Merge over defaults so any key absent from an older cache (e.g. scaleMax)
+      // falls back to a sane value rather than undefined breaking the rail math.
+      if (c.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...c.swimThresholds };
+      if (c.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...c.entryThresholds };
+      if (c.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...c.surgeThresholds };
       SITE.lookup      = c.lookup;
       // Bower surge — guarded so an older cache (without these keys) keeps the
       // SITE_DEFAULTS values rather than going undefined.
@@ -3296,7 +3263,6 @@ async function loadConfig() {
     SITE.entryThresholds = JSON.parse(JSON.stringify(SITE_DEFAULTS.entryThresholds));
     SITE.surgeThresholds = JSON.parse(JSON.stringify(SITE_DEFAULTS.surgeThresholds));
     SITE.lookup      = JSON.parse(JSON.stringify(SITE_DEFAULTS.lookup));
-    SITE.chopShelter = SITE_DEFAULTS.chopShelter.slice();
     SITE.bowerLookup        = JSON.parse(JSON.stringify(SITE_DEFAULTS.bowerLookup));
     SITE.bowerSwellSens     = SITE_DEFAULTS.bowerSwellSens;
     SITE.bowerSpm           = SITE_DEFAULTS.bowerSpm;
@@ -3434,9 +3400,9 @@ async function loadGemConfig(force) {
 async function retryGemTable() {
   const badge = document.getElementById('gem-badge');
   if (badge) { badge.textContent = 'LOADING…'; badge.style.background = 'var(--dim)'; badge.style.cursor = 'default'; badge.onclick = null; }
-  localStorage.removeItem(NS_DISP_CONFIG_KEY);
-  await loadNsDispConfig(true);
-  if (SITE.nsDisp) {
+  localStorage.removeItem(GEM_CONFIG_KEY);
+  await loadGemConfig(true);
+  if (SITE.gemTable) {
     if (badge) badge.style.display = 'none';
     try {
       if (_matrix && _matrix.length) {
@@ -3452,330 +3418,6 @@ async function retryGemTable() {
       badge.style.cursor = 'pointer';
       badge.onclick = retryGemTable;
     }
-  }
-}
-
-// =============================================================================
-// NS DISPERSION MODEL — replaces the GEM table for the NS-fed scoring path.
-// Table (from the "New NS" tab, SS block):
-//   rows = swell/sea direction 0°–180° in 10° steps (19 rows)
-//   cols = period 2–17s in 1s steps (16 cols)
-//   values = TRANSMIT % (100 = full energy reaches the S Steyne corner, 0 = blocked)
-// Since the node 103218 feed is at the bay MOUTH, this table applies the local
-// South-Steyne corner shelter the node does not resolve. Applied to NS-fed rows.
-// Returns: transmit fraction (0–1).
-// Direction ≥190° (or folded >180°) → 0 (fully blocked, land side).
-// =============================================================================
-const NS_DISP_PMIN = 2, NS_DISP_PMAX = 17; // period column range (s)
-
-function nsDispLookup(dirDeg, periodS) {
-  const tbl = SITE.nsDisp;
-  if (!tbl) return 0.5; // fallback if table not loaded
-
-  // Direction: fold 180–360 back onto 0–180 (mirror). Anything landward is 0 in
-  // the table's 150–180 rows anyway, so folding keeps behaviour continuous.
-  let d = ((dirDeg % 360) + 360) % 360;
-  if (d > 180) d = 360 - d;
-
-  const per = Math.max(NS_DISP_PMIN, Math.min(NS_DISP_PMAX, periodS || 8));
-
-  // Row index: dir 0°=row0, 180°=row18, step=10°
-  const ri = d / 10;
-  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
-  const rf = ri - r0;
-
-  // Col index: period 2s=col0, 17s=col15, step=1s
-  const ci = per - NS_DISP_PMIN;
-  const c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1);
-  const cf = ci - c0;
-
-  const tx =
-    tbl[r0][c0] * (1-rf) * (1-cf) +
-    tbl[r0][c1] * (1-rf) *    cf  +
-    tbl[r1][c0] *    rf  * (1-cf) +
-    tbl[r1][c1] *    rf  *    cf;
-
-  return Math.max(0, tx / 100); // transmit fraction
-}
-
-// BL (Bower Lane / bay) dispersion lookup — identical interp to nsDispLookup but
-// reads the BL table (New NS tab V10:AL28). Feeds the Swim metric (ex-Surge).
-function blDispLookup(dirDeg, periodS) {
-  const tbl = SITE.blDisp;
-  if (!tbl) return 0.5;
-  let d = ((dirDeg % 360) + 360) % 360;
-  if (d > 180) d = 360 - d;
-  const per = Math.max(NS_DISP_PMIN, Math.min(NS_DISP_PMAX, periodS || 8));
-  const ri = d / 10;
-  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
-  const rf = ri - r0;
-  const ci = per - NS_DISP_PMIN;
-  const c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1);
-  const cf = ci - c0;
-  const tx =
-    tbl[r0][c0] * (1-rf) * (1-cf) +
-    tbl[r0][c1] * (1-rf) *    cf  +
-    tbl[r1][c0] *    rf  * (1-cf) +
-    tbl[r1][c1] *    rf  *    cf;
-  return Math.max(0, tx / 100);
-}
-
-// Parse the "New NS" tab CSV into { table:[19][16], ssWaveSens:Number }.
-// ss_wave_sens: row index 1, col index 2.
-// Period header row: index 9, cols 3–18 (periods 2–17).
-// Direction data rows: indices 10–28 (19 rows), dir at col 2, transmit % at cols 3–18.
-function parseNsDispCSV(text) {
-  const rows = text.split('\n').map(line => {
-    const cols = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') inQ = !inQ;
-      else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
-      else cur += c;
-    }
-    cols.push(cur); return cols;
-  });
-  const num = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
-
-  // ss_wave_sens (C2 = row 1, col 2) and wind_sens (C3 = row 2, col 2) —
-  // both optional; fall back to code defaults if blank/NaN.
-  let ssWaveSens = null;
-  if (rows[1] && rows[1][2] != null) ssWaveSens = num(rows[1][2]);
-  let windSeaSens = null;
-  if (rows[2] && rows[2][2] != null) windSeaSens = num(rows[2][2]);
-  // bl_wave_sens (V2 = row 1, col 21) — BL dispersion sensitivity for the Swim metric.
-  let blWaveSens = null;
-  if (rows[1] && rows[1][21] != null) blWaveSens = num(rows[1][21]);
-  // bl_chop_impact (V3 = row 2, col 21) — "BL chop impact", single chop knob.
-  let blChopImpact = null;
-  if (rows[2] && rows[2][21] != null) blChopImpact = num(rows[2][21]);
-
-  // Metric thresholds — New NS tab block AN2:AQ13 (SEPARATE from index.html's col AK).
-  // 4 cols: AN(39)=metric, AO(40)=band label, AP(41)=colour, AQ(42)=value.
-  // 12 rows (indices 1–12) = 3 metrics × 4 bands, fixed order. Col AQ = the edge value;
-  // the 4th value in each group is scaleMax. Any blank/NaN → that metric falls back to default.
-  const VCOL = 42;
-  const readEdge = (ri) => (rows[ri] ? num(rows[ri][VCOL]) : null);
-  let entryThresholds = null, swimThresholds = null, surgeThresholds = null;
-  const eEasy=readEdge(1), eDoable=readEdge(2), eCaution=readEdge(3), eMax=readEdge(4);
-  const sGlassy=readEdge(5), sRipply=readEdge(6), sChoppy=readEdge(7), sMax=readEdge(8);
-  const uSteady=readEdge(9), uDrifty=readEdge(10), uSurgy=readEdge(11), uMax=readEdge(12);
-  if ([eEasy,eDoable,eCaution,eMax].every(v => v != null))
-    entryThresholds = { easy:eEasy, doable:eDoable, caution:eCaution, scaleMax:eMax };
-  if ([sGlassy,sRipply,sChoppy,sMax].every(v => v != null))
-    swimThresholds  = { glassy:sGlassy, ripply:sRipply, choppy:sChoppy, scaleMax:sMax };
-  if ([uSteady,uDrifty,uSurgy,uMax].every(v => v != null))
-    surgeThresholds = { steady:uSteady, drifty:uDrifty, surgy:uSurgy, scaleMax:uMax };
-
-  // SS dispersion table: rows 10–28, cols 3–18 (dir label in col 2).
-  const table = [];
-  for (let r = 10; r <= 28; r++) {
-    const row = rows[r] || [];
-    const periods = [];
-    for (let c = 3; c <= 18; c++) {
-      const v = num(row[c]);
-      periods.push(v == null ? 0 : v); // blank → 0 transmit (blocked)
-    }
-    table.push(periods);
-  }
-  // BL dispersion table: V10:AL28 — dir label in col V(21), 16 period values in W:AL (cols 22–37).
-  const blTable = [];
-  for (let r = 10; r <= 28; r++) {
-    const row = rows[r] || [];
-    const periods = [];
-    for (let c = 22; c <= 37; c++) {
-      const v = num(row[c]);
-      periods.push(v == null ? 0 : v);
-    }
-    blTable.push(periods);
-  }
-  const blOk = (blTable.length === 19 && blTable.every(r => r.length === 16) && blTable.some(r => r.some(v => v > 0)));
-  return (table.length === 19 && table.every(r => r.length === 16))
-    ? { table, blTable: blOk ? blTable : null, ssWaveSens, windSeaSens, blWaveSens, blChopImpact, entryThresholds, swimThresholds, surgeThresholds }
-    : null;
-}
-
-async function loadNsDispConfig(force) {
-  // Apply threshold objects parsed from the New NS tab (AN2:AQ13) onto SITE,
-  // merging over defaults so a blank cell keeps the code fallback.
-  const applyThresh = (o) => {
-    if (!o) return;
-    if (o.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...o.entryThresholds };
-    if (o.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...o.swimThresholds };
-    if (o.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...o.surgeThresholds };
-  };
-  try {
-    const cached = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
-    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.table) {
-      SITE.nsDisp = cached.table;
-      if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
-      if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
-      if (cached.blDisp) SITE.blDisp = cached.blDisp;
-      if (cached.blWaveSens != null) SITE.blWaveSens = cached.blWaveSens;
-      if (cached.blChopImpact != null) SITE.blChopImpact = cached.blChopImpact;
-      applyThresh(cached);
-      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ', BL=' + (SITE.blDisp?'y':'n') + ')');
-      return;
-    }
-  } catch(e) {}
-  diag('NS disp: fetching...');
-  try {
-    const res = await fetchWithTimeout(NS_DISP_SHEET_URL + '&t=' + Date.now(), 15000);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    const parsed = parseNsDispCSV(text);
-    if (parsed) {
-      SITE.nsDisp = parsed.table;
-      if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
-      if (parsed.windSeaSens != null) SITE.windSeaSens = parsed.windSeaSens;
-      if (parsed.blDisp) SITE.blDisp = parsed.blDisp;
-      if (parsed.blWaveSens != null) SITE.blWaveSens = parsed.blWaveSens;
-      if (parsed.blChopImpact != null) SITE.blChopImpact = parsed.blChopImpact;
-      applyThresh(parsed);
-      localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
-        fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens,
-        blDisp: parsed.blDisp, blWaveSens: parsed.blWaveSens, blChopImpact: parsed.blChopImpact,
-        entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
-      }));
-      diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens
-        + ', BL table=' + (parsed.blDisp?'loaded':'MISSING') + ' bl_wave_sens=' + SITE.blWaveSens
-        + (parsed.swimThresholds ? ', CHOP ' + parsed.swimThresholds.glassy + '/' + parsed.swimThresholds.ripply + '/' + parsed.swimThresholds.choppy : '') + ')');
-    } else {
-      diag('NS disp: parse returned null — check New NS tab (expected 19 dir rows × 16 period cols from row 11)');
-    }
-  } catch(e) {
-    diag('NS disp: FAIL — ' + (e.message || e));
-    console.warn('NS disp config: sheet unavailable, NS path will use 0.5 fallback transmit.', e.message);
-  }
-}
-
-// =============================================================================
-// WIND-SEA FETCH MODEL — straight-line, per point (SS entry / BL chop)
-// Waves travel straight: land upwind blocks them. openWeight() reads the point's
-// 0/1 fetch mask with σ≈15° angular smoothing so the shelter edge rolls, not cliffs.
-// windSeaHs() runs SPM/CERC duration-limited growth: open bearings are effectively
-// unlimited fetch (ocean) so DURATION caps the sea; blocked bearings get a tiny
-// residual bay chop. Returns {hs, tp} for the given wind speed + how many hours the
-// wind has held (durHrs, tracked in buildHourlyMatrix).
-// =============================================================================
-const WINDSEA_BLOCKED_FETCH_M = 300;  // residual near-shore chop on blocked bearings
-const WINDSEA_G = 9.81;
-
-// Smoothed openness (0..1) for a wind bearing against a 72-bin 0/1 mask.
-function openWeight(mask, deg) {
-  if (!mask || mask.length !== 72) return 1;
-  const d = ((deg % 360) + 360) % 360;
-  const c = d / 5; // fractional bin
-  // circular gaussian, sigma = 3 bins (~15°), taps ±6 bins
-  let num = 0, den = 0;
-  for (let k = -6; k <= 6; k++) {
-    const w = Math.exp(-0.5 * (k / 3) * (k / 3));
-    const bin = ((Math.round(c) + k) % 72 + 72) % 72;
-    num += w * mask[bin]; den += w;
-  }
-  return den > 0 ? num / den : 1;
-}
-
-// SPM fetch-limited Hs/Tp (metres, seconds). Caps at fully-developed sea.
-function spmGrowth(U, F) {
-  if (U <= 0 || F <= 0) return { hs: 0, tp: 0 };
-  const X = WINDSEA_G * F / (U * U);
-  const hs = Math.min(1.6e-3 * Math.sqrt(X) * U * U / WINDSEA_G, 0.243 * U * U / WINDSEA_G);
-  const tp = Math.min(0.286 * Math.pow(X, 1 / 3) * U / WINDSEA_G, 8.134 * U / WINDSEA_G);
-  return { hs, tp };
-}
-// Duration-equivalent fetch (m) for wind U (m/s) blown t hours (CERC inverse).
-function durEquivFetch(U, tHours) {
-  if (U <= 0 || tHours <= 0) return 0;
-  const t = tHours * 3600;
-  const tstar = WINDSEA_G * t / U;
-  return Math.pow(tstar / 68.8, 1.5) * U * U / WINDSEA_G;
-}
-
-// Wind-sea at a point: blends open-ocean (duration-limited) with blocked bay chop
-// by the smoothed openness weight. windKmh = wind speed, deg = wind bearing FROM,
-// durHrs = consecutive hours the wind has held (Option A). Returns {hs, tp, wOpen}.
-function windSeaAt(mask, windKmh, deg, durHrs) {
-  const U = (windKmh || 0) / 3.6;
-  const w = openWeight(mask, deg);
-  const capH = SITE.windSeaDurCapH || 24;
-  const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
-  const open = spmGrowth(U, durEquivFetch(U, t));       // unlimited ocean, duration caps
-  const blk  = spmGrowth(U, WINDSEA_BLOCKED_FETCH_M);   // tiny residual chop
-  return {
-    hs:  w * open.hs + (1 - w) * blk.hs,
-    tp:  w * open.tp + (1 - w) * blk.tp,
-    wOpen: w,
-  };
-}
-
-// Legacy shim — kept so any un-migrated caller still resolves. Uses the smoothed
-// BL openness as a 0..1 gate (NOT the old transmit table).
-function chopTransmit(deg) {
-  return openWeight(SITE.fetchMaskBL, deg);
-}
-
-// Parse the chop-shelter CSV: col A = bearing (0,5,…355), col B = transmit.
-// A blank cell or a value >= 60 is treated as blocked → 0. Returns a 72-length
-// array indexed by bearing/5, or null if the layout doesn't yield 72 bins.
-function parseChopShelterCSV(text) {
-  const rows = text.split('\n').map(line => {
-    const cols = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') inQ = !inQ;
-      else if (c === ',' && !inQ) { cols.push(cur); cur = ''; }
-      else cur += c;
-    }
-    cols.push(cur); return cols;
-  });
-  const out = new Array(72).fill(null);
-  let filled = 0;
-  for (const row of rows) {
-    if (!row || row.length < 2) continue;
-    const b = parseFloat(row[0]);
-    if (isNaN(b)) continue;                    // header / label row
-    const bin = Math.round(((b % 360) + 360) % 360 / 5) % 72;
-    const raw = parseFloat(row[1]);
-    // blank or the 60.0 sentinel = blocked → 0 transmit
-    const v = (isNaN(raw) || raw >= 60) ? 0 : Math.max(0, raw);
-    if (out[bin] == null) filled++;
-    out[bin] = v;
-  }
-  if (filled < 72) return null;                // need a complete 72-bin curve
-  return out;
-}
-
-async function loadChopShelterConfig(force) {
-  if (!CHOP_SHELTER_SHEET_URL) {
-    // No published tab yet — SITE.chopShelter already holds the measured default.
-    diag('Chop shelter: using built-in default (no sheet gid set)');
-    return;
-  }
-  try {
-    const cached = JSON.parse(localStorage.getItem(CHOP_SHELTER_CONFIG_KEY) || 'null');
-    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.curve) {
-      SITE.chopShelter = cached.curve;
-      diag('Chop shelter: cache hit (' + cached.curve.length + ' bins)');
-      return;
-    }
-  } catch(e) {}
-  diag('Chop shelter: fetching...');
-  try {
-    const res = await fetchWithTimeout(CHOP_SHELTER_SHEET_URL + '&t=' + Date.now(), 15000);
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    const curve = parseChopShelterCSV(text);
-    if (curve) {
-      SITE.chopShelter = curve;
-      localStorage.setItem(CHOP_SHELTER_CONFIG_KEY, JSON.stringify({ fetchedAt: Date.now(), curve }));
-      diag('Chop shelter: loaded from sheet (' + curve.length + ' bins)');
-    } else {
-      diag('Chop shelter: parse returned null — expected 72 bearing/transmit rows (0–355 @5°). Keeping default.');
-    }
-  } catch(e) {
-    diag('Chop shelter: FAIL — ' + (e.message || e) + ' (keeping default curve)');
-    console.warn('Chop shelter config: sheet unavailable, using built-in curve.', e.message);
   }
 }
 
@@ -3842,53 +3484,11 @@ function bowerSurgeWater(d) {
   const p  = bowerSurgeParts(d);
   const v6 = Math.max(0, Math.round(60 - p.raw));
   const t  = SITE.surgeThresholds;
-  const z  = v6 >  t.steady ? ['Glide',   'green']
-           : v6 >  t.drifty ? ['Jostle',  'amber']
-           : v6 >= t.surgy  ? ['Wrestle', 'yellow']
-           :                  ['Washed',  'red'];
+  const z  = v6 >  t.steady ? ['Smooth', 'green']
+           : v6 >  t.drifty ? ['Ripply', 'amber']
+           : v6 >= t.surgy  ? ['Choppy', 'yellow']
+           :                  ['Messy',  'red'];
   return { label: z[0], cls: z[1], score: v6, parts: p };
-}
-
-// SWIM metric (renamed from Surge, 2 Jul 2026) — swell+sea across the bay at the
-// BL (Bower Lane / bay) point. Same swell1 + swell2 + wind-wave energy as Entry,
-// but filtered through the BL DISPERSION TABLE (New NS tab V10:AL28) instead of
-// the SS table, and scaled by bl_wave_sens. This carries the wall-reflection /
-// bay-crossing character the old Surge rail was meant to show. Chop is a SEPARATE
-// metric (kept as-is) so it is NOT summed here. Rail is inverted like Surge:
-// v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
-function blSwimWater(d, chop) {
-  const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
-          windWaveH, windWaveDir, windWaveP, windDir, tideM } = d;
-  const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
-  const nrg = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
-  const wwP = windWaveP || 5;
-  const s1  = nrg(swell1H, swell1P)           * Math.max(0, blDispLookup(swell1Dir, swell1P));
-  const s2  = nrg(swell2H || 0, swell2P || 8) * Math.max(0, blDispLookup(swell2Dir || 0, swell2P || 8));
-  const ww  = nrg(windWaveH || 0, wwP)        * Math.max(0, blDispLookup(windWaveDir || windDir, wwP));
-  const s1_d = s1 * ess, s2_d = s2 * ess, ww_d = ww * ess;
-  // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied
-  // to the BL swell terms. Rides on swell energy only; wind-wave excluded, matching
-  // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
-  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir });
-  // Chop added 1:1 — the same non-double-counted crossfade q7 the CHOP metric uses,
-  // passed in from calcScore (single source of truth). The wind-wave (ww_d) is NOT
-  // added separately here: it already lives inside the chop crossfade (ww_d×w), so
-  // adding it again would double-count the sea on in-arc easterlies. Swim swell+sea
-  // = the two true SWELL terms (s1_d, s2_d); the sea/wind-wave enters only via chop.
-  const chop_d = Math.max(0, chop || 0);
-  const rawBL = s1_d + s2_d + tide_d + chop_d;
-  // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
-  // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
-  // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
-  // = better), same convention as Entry's score.
-  const score = Math.max(0, Math.round(60 - rawBL));
-  const t  = SITE.surgeThresholds;
-  const z  = rawBL <= t.steady ? ['Glide',   'green']
-           : rawBL <= t.drifty ? ['Jostle',  'amber']
-           : rawBL <= t.surgy  ? ['Wrestle', 'yellow']
-           :                     ['Washed',  'red'];
-  return { label: z[0], cls: z[1], score: score, raw: rawBL,
-           parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 
 function calcScore(d, modelOverride) {
@@ -3899,22 +3499,10 @@ function calcScore(d, modelOverride) {
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = d;
-  const windDurHrs = (d.windDurHrs != null) ? d.windDurHrs : 6;
 
-  // ── CHOP term: BL-point wind-sea (straight-line fetch, duration-limited) ──────
-  // Waves travel straight; the BL open/blocked mask IS the shelter (no extra gate).
-  // windSeaAt returns real Hs/Tp; scored as energy H²×P like the other wave terms.
-  // Computed RAW here — the whole BL chop crossfade is scaled once by bl_chop_impact
-  // (V3) below, NOT by windSeaSens (which now scales only the SS entry wind-sea).
-  const wsBL   = windSeaAt(SITE.fetchMaskBL, windKmh, windDir, windDurHrs);
-  const wind_d_raw = (wsBL.hs * wsBL.hs) * Math.max(0, wsBL.tp); // BL wind-sea energy, NO sensitivity
-
-  // BL-table wind-wave for the CHOP crossfade (Option A). Computed RAW here (no
-  // sensitivity) — a single knob (bl_chop_impact) scales the whole crossfade below,
-  // so there is no magnitude jump at the wind-sea ↔ wind-wave handover angle.
-  const _wwP_bl   = windWaveP || 5;
-  const wwTxBL    = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, _wwP_bl)));
-  const ww_d_BL_raw = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, _wwP_bl) * wwTxBL; // NO sensitivity
+  // Wind chop — identical in both models
+  const windHit  = dirLookup(lk.wind, windDir);
+  const wind_d   = windPower(windKmh) * (windHit / 100) * SITE.windSens;
 
   // Wind-wave directional geometry — blend ARRIVAL (point: energy refracting into
   // the S Steyne entry/break) with ROUTE (line: swimmer exposure crossing the bay
@@ -3926,42 +3514,29 @@ function calcScore(d, modelOverride) {
   const wwSens  = (SITE.wwSens != null) ? SITE.wwSens : SITE.swellSens;
   const wwRoute = Math.max(0, dirLookup(lk.wind, windWaveDir || windDir)) / 100;
 
-  let ww_d, s1_d, s2_d, rif_d, ws_d = 0, wwTxForChop = 0;
+  let ww_d, s1_d, s2_d, rif_d;
 
   if (useGem) {
-    // ── NS DISPERSION model ─────────────────────────────────────────────────
-    // The "New NS" tab SS dispersion table is the transmit filter, applied to
-    // swell1, swell2 AND wind-wave — including NS-fed rows. Node 103218 sits at
-    // the bay MOUTH, so this table supplies the local South-Steyne corner shelter
-    // the node does not resolve (the "mini-GEM corner-shelter term").
-    //
-    // Energy = H² × P (linear wave-energy-flux form, no period exponent).
-    // Sensitivity = ss_wave_sens (NS tab C2), applied to all three components.
-    // Wind chop path is untouched (ss_wind_k still tbd → existing windSens).
-    const wwP  = windWaveP || 5; // real period, fall back to 5 if missing
-    const ess  = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
-    const nrg  = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
+    // ── GEM model: 2D table replaces seaHit + rif; real wind wave period ──
+    const wwP    = windWaveP || 5; // use real period, fall back to 5 if missing
 
-    const wwTx = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP));
-    wwTxForChop = Math.max(0, Math.min(1, wwTx)); // handover weight for CHOP crossfade
-    const s1Tx = Math.max(0, nsDispLookup(swell1Dir, swell1P));
-    const s2Tx = Math.max(0, nsDispLookup(swell2Dir || 0, swell2P || 8));
+    // NEARSHORE FEED BYPASS: when the slot carries NS-transformed values, the
+    // offshore→nearshore transform is already done upstream, so the GEM transmit
+    // table must NOT be applied a second time. Force transmit = 1.0 and score the
+    // NS heights/periods directly. swellSens / wwSens / periodExp stay fully live.
+    // (A local "mini-GEM" corner-shelter term will be added later, since node
+    //  103218 sits at the bay mouth and has different exposure than S Steyne.)
+    const nsFeed = (d && d._nsFeed) || false;
 
-    ww_d  = nrg(windWaveH || 0, wwP)          * wwTx * ess;
-    s1_d  = nrg(swell1H, swell1P)             * s1Tx * ess;
-    s2_d  = nrg(swell2H || 0, swell2P || 8)   * s2Tx * ess;
-    rif_d = 0; // refraction absorbed into the dispersion table
+    const wwArrival = nsFeed ? 1.0 : Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    const wwTx   = nsFeed ? 1.0 : ((1 - wwBlend) * wwArrival + wwBlend * wwRoute);
+    const s1Tx   = nsFeed ? 1.0 : Math.max(0, gemLookup(swell1Dir, swell1P));
+    const s2Tx   = nsFeed ? 1.0 : Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
 
-    // ── ENTRY wind-sea: SS-point straight-line fetch ─────────────────────────
-    // Raw SS fetch wind-sea. The anti-double-count against the NS-reported sea
-    // (ww_d) is handled by the wind-wave crossfade below (windEntry), NOT by a
-    // separate (1−NS) gate — that was double-suppression and made Entry read
-    // lower than Swim on windy hours. Now consistent with Swim's chop (2 Jul 2026).
-    // windSeaSens (New NS C3) scales ONLY this SS entry wind-sea now — BL chop is
-    // governed entirely by bl_chop_impact (V3), no longer by windSeaSens.
-    const wsSens = (SITE.windSeaSens != null) ? SITE.windSeaSens : 1;
-    const wsSS  = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs);
-    ws_d = nrg(wsSS.hs, wsSS.tp) * ess * wsSens;
+    ww_d  = swellPower(windWaveH || 0, wwP) * wwTx * wwSens;
+    s1_d  = swellPower(swell1H, swell1P)    * s1Tx * SITE.swellSens;
+    s2_d  = swellPower(swell2H || 0, swell2P || 8) * s2Tx * SITE.swellSens;
+    rif_d = 0; // absorbed into gemLookup (or bypassed under NS feed)
   } else {
     // ── Original model ────────────────────────────────────────────────────
     const s1p      = swellPower(swell1H, swell1P);
@@ -3980,19 +3555,7 @@ function calcScore(d, modelOverride) {
     rif_d = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
   }
 
-  // BL wind-sea (wind_d) is DELIBERATELY EXCLUDED from the Entry total (2 Jul 2026):
-  // it's the mid-bay chop, not what a swimmer feels entering at the SS corner. It
-  // still feeds the standalone CHOP metric (q7 below).
-  //
-  // Entry's wind contribution is a CROSSFADE (like Chop), not a stack: the SS fetch
-  // wind-sea (ws_d, already gated × (1−NS)) and the forecast wind-wave (ww_d) both
-  // represent the same wind-driven sea at the corner. Blend at the wind-wave arc
-  // weight w so they hand over gracefully instead of double-counting:
-  //   windEntry = ws_d × (1 − w) + ww_d × w
-  // where w = wwTxForChop (wind-wave's SS-dispersion arc). Entry = swell + windEntry + tide.
-  const wEntry   = wwTxForChop;
-  const windEntry = ws_d * (1 - wEntry) + ww_d * wEntry;
-  const o      = windEntry + s1_d + s2_d + rif_d;
+  const o      = wind_d + ww_d + s1_d + s2_d + rif_d;
 
   // ── Tide effect — headland protection model ──────────────────────────────
   // The Shelly headland shelters the bay, and how much depends on water level.
@@ -4006,27 +3569,12 @@ function calcScore(d, modelOverride) {
   });
   const total  = o + tide_d;
 
-  // CHOP crossfade (single source of truth): BL wind-sea ↔ BL wind-wave handover
-  // at the BL arc weight. Both terms are now BL-point (Option A). Used by the CHOP
-  // metric AND added into SWIM (1:1). Entry keeps its own SS-table crossfade above.
-  // CHOP crossfade (single source of truth): raw BL wind-sea ↔ raw BL wind-wave
-  // handover at the BL arc weight, then the WHOLE crossfade scaled by one knob —
-  // bl_chop_impact ("BL chop impact", New NS V3). Single knob = no magnitude jump
-  // at the handover. Used by the CHOP metric AND added into SWIM (1:1).
-  const blChopImpact = (SITE.blChopImpact != null) ? SITE.blChopImpact : 1;
-  const chopQ7 = (wind_d_raw * (1 - wwTxBL) + ww_d_BL_raw * wwTxBL) * blChopImpact;
-  // wind_d exposed for the demerits breakdown (scaled fetch-sea half).
-  const wind_d = wind_d_raw * blChopImpact;
-
   return {
     score: Math.max(0, Math.round(60 - total)),
     demerits: {
       tide:     Math.round(tide_d  * 10) / 10,
       wind:     Math.round(wind_d  * 10) / 10,
       windWave: Math.round(ww_d    * 10) / 10,
-      windSea:  Math.round(ws_d    * 10) / 10,
-      windEntry: Math.round(windEntry * 10) / 10,
-      chop:     Math.round(chopQ7  * 10) / 10,
       swell1:   Math.round(s1_d   * 10) / 10,
       swell2:   Math.round(s2_d   * 10) / 10,
       refrac:   Math.round(rif_d  * 10) / 10,
@@ -4043,13 +3591,10 @@ function calcScore(d, modelOverride) {
       if (total <= t.caution) return { label:'Caution',   cls:'yellow', score: s, raw: total };
       return                         { label:'Dangerous', cls:'red',     score: s, raw: total };
     })(),
-    // Metric 2: CHOP — graceful handover between the two wind-chop sources.
-    //   The wind-wave (ww_d) arrives from a RESTRICTED arc (its SS dispersion
-    //   transmit wwTxForChop); our fetch wind-sea (wind_d) covers everywhere else.
-    //   Symmetric crossfade at the switch angle so they never double-count:
-    //   q7 = wind_d × (1 − w) + ww_d × w, where w = wind-wave arc weight.
+    // Metric 2: Swim — q7 = wind_d + ww_d chop
+    //   Band edges from sheet col AK (glassy/ripply/choppy/messy); messy also caps the scale.
     swim: (() => {
-      const q7  = chopQ7;
+      const q7 = wind_d + ww_d;
       const t  = SITE.swimThresholds;
       // Convert to 0–60 scale (inverted, matching Entry & Surge): 60=best, 0=worst.
       // q7 is capped at the Messy edge for scale purposes (beyond that is fully Messy).
@@ -4060,10 +3605,11 @@ function calcScore(d, modelOverride) {
       if (q7 <= t.choppy) return { label:'Choppy', cls:'yellow', score: s60, raw: q7 };
       return                     { label:'Messy',  cls:'red',     score: s60, raw: q7 };
     })(),
-    // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
-    //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
-    //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
-    water: blSwimWater(d, chopQ7),
+    // Metric 3: Surge — sourced from Bower Lane (CTB) tables, NOT the entry point.
+    //   See bowerSurgeWater(): own sea/rif tables, swellSens 1.4, spm 4.05, flat
+    //   tide amplifier, chop excluded. v6 = 60 − rawSwell (HIGHER = better).
+    //   Independent of the entry-point GEM/Original swell path above.
+    water: bowerSurgeWater(d),
   };
 }
 
@@ -4075,12 +3621,12 @@ async function runModelCompare() {
   const sub  = document.getElementById('cmpSub');
   if (!slot) { if (sub) sub.textContent = 'No forecast slot loaded yet — open the Now tab first.'; return; }
 
-  // Ensure the NS dispersion table is available even when not running in ?model=gem mode
-  if (!SITE.nsDisp) {
-    if (sub) sub.textContent = 'Loading NS dispersion table…';
-    await loadNsDispConfig(true);
+  // Ensure the GEM table is available even when not running in ?model=gem mode
+  if (!SITE.gemTable) {
+    if (sub) sub.textContent = 'Loading GEM table…';
+    await loadGemConfig(true);
   }
-  const haveGem = !!SITE.nsDisp;
+  const haveGem = !!SITE.gemTable;
 
   const A = calcScore(slot, 'orig');
   const B = calcScore(slot, 'gem');
@@ -4123,8 +3669,8 @@ async function runModelCompare() {
       `<div style="display:grid;grid-template-columns:60px 1fr 1fr;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--dim);margin-bottom:2px;">`
     + `<span></span><span>Original</span><span>GEM</span></div>`
     + metricRow('Entry', A.entry, B.entry)
-    + metricRow('Swim',  A.swim,  B.swim)
-    + metricRow('Surge', A.water, B.water);
+    + metricRow('Chop',  A.swim,  B.swim)
+    + metricRow('Swim', A.water, B.water);
 
   if (sub) {
     const wwP = slot.windWaveP || 5;
@@ -4324,7 +3870,7 @@ function parseWillyWeather(j) {
     }));
     if (closest) tideM = closest.height ?? 1.0;
   }
-  const wwData = {
+  return {
     dateTime:  new Date().toISOString().replace('T',' ').substring(0,19),
     windKmh:   wfc.speed     ?? 0,
     windDir:   wfc.direction ?? 0,
@@ -4335,13 +3881,6 @@ function parseWillyWeather(j) {
     windWaveH: 0, windWaveDir: 0, windWaveP: 0,
     tideM,
   };
-  // Stamp pure-WW wave values now, before any OM/NS merge, for the compare tick.
-  wwData._ww = {
-    swell1H: wwData.swell1H, swell1P: wwData.swell1P, swell1Dir: wwData.swell1Dir,
-    swell2H: 0, swell2Dir: 0, swell2P: 8,
-    windWaveH: 0, windWaveP: 0, windWaveDir: 0,
-  };
-  return wwData;
 }
 
 function buildHourlyMatrix(j) {
@@ -4406,26 +3945,6 @@ function buildHourlyMatrix(j) {
       matrix.push(row);
     });
   });
-
-  // ── Wind-duration tracker (Option A) ──────────────────────────────────────
-  // Forward pass over the ordered hourly rows: windDurHrs = how many consecutive
-  // hours the wind has held within ±30° of the current bearing (and been blowing).
-  // Feeds the wind-sea duration cap — a long-held wind builds a bigger sea.
-  const DIR_TOL = 30, MIN_KMH = 3;
-  let held = 0, prevDir = null;
-  for (let i = 0; i < matrix.length; i++) {
-    const r = matrix[i];
-    const dir = r.windDir || 0, spd = r.windKmh || 0;
-    if (spd < MIN_KMH) { held = 0; }
-    else if (prevDir == null) { held = 1; }
-    else {
-      let diff = Math.abs(((dir - prevDir + 540) % 360) - 180); // circular Δ
-      held = (diff <= DIR_TOL) ? held + 1 : 1;
-    }
-    r.windDurHrs = held;
-    prevDir = (spd < MIN_KMH) ? null : dir;
-  }
-
   return matrix;
 }
 
@@ -4435,20 +3954,13 @@ function buildHourlyMatrix(j) {
 // Returns a map keyed by 'YYYY-MM-DD HH:00:00' (AEST) → {swell1*, windWave*}.
 // =============================================================================
 async function fetchNearshore() {
-  if (!NS_FEED_ENABLED) { window._nsStatus = 'disabled'; return null; }
+  if (!NS_FEED_ENABLED) return null;
   const url = NS_WORKER_URL
     ? `${NS_WORKER_URL}?t=${Date.now()}`
     : `${NS_STATIC_URL}?t=${Date.now()}`;
-  try {
-    const res = await fetchWithTimeout(url, 12000, { cache: 'no-store' });
-    if (!res.ok) { window._nsStatus = 'HTTP ' + res.status + ' @ ' + url; throw new Error(`NS ${res.status}`); }
-    const j = await res.json();
-    window._nsStatus = 'ok';
-    return j;
-  } catch (e) {
-    if (!window._nsStatus) window._nsStatus = 'fetch failed: ' + (e.message || e);
-    throw e;
-  }
+  const res = await fetchWithTimeout(url, 12000, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`NS ${res.status}`);
+  return await res.json();
 }
 
 // Accepts either the static-json shape ({hours:{...}}) OR the raw NSW API shape
@@ -4542,13 +4054,6 @@ function mergeNearshoreSnapshot(wwData, nsMap) {
     swell2H: 0, swell2Dir: 0, swell2P: 8,
     windWaveH: ns.windWaveH, windWaveP: ns.windWaveP, windWaveDir: ns.windWaveDir,
     _nsFeed: true,
-    // Stash WW-original wave values (pre-merge) so the compare tick scores the
-    // real WW feed, not the NS values. Prefer an already-present _ww.
-    _ww: wwData._ww || {
-      swell1H: wwData.swell1H, swell1P: wwData.swell1P, swell1Dir: wwData.swell1Dir,
-      swell2H: wwData.swell2H || 0, swell2Dir: wwData.swell2Dir || 0, swell2P: wwData.swell2P || 8,
-      windWaveH: wwData.windWaveH || 0, windWaveP: wwData.windWaveP || 0, windWaveDir: wwData.windWaveDir || 0,
-    },
   });
 }
 
@@ -5043,10 +4548,10 @@ function renderSnapshot(h, wx) {
             (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14);
   }
 
-  // Swell map: direction/period/height from forecast; NS dispersion transmit
-  // drives the crest opacity (energy that survived the corner shelter).
+  // Swell map: direction/period/height from forecast; GEM transmit drives the
+  // crest opacity (energy that survived refraction/sheltering around the headland).
   if (window.swellSet) {
-    swellSet(h.swell1Dir, h.swell1H, h.swell1P, nsDispLookup(h.swell1Dir, h.swell1P),
+    swellSet(h.swell1Dir, h.swell1H, h.swell1P, gemLookup(h.swell1Dir, h.swell1P),
              result.entry.label, result.entry.cls);
   }
 
@@ -5118,13 +4623,15 @@ function renderSnapshot(h, wx) {
     bandedPct(swimVal, [0, swT.glassy, swT.ripply, swT.choppy, swEnd]),
     clsColor(result.swim.cls));
 
-  // Swim — DEMERIT scale (rawBL, lower=better), SAME as Entry now. Bands ascend
-  // 0 → scaleMax; dot placed left(best)→right(worst) by demerits directly.
+  // Surge — SCORE scale (v6, higher=better). Rail best(left)→worst(right) as v6
+  // falls from 60 to scaleMax. Map "distance below 60" through descending edges.
   const suT = SITE.surgeThresholds;
-  const suEnd = (suT.scaleMax != null && suT.scaleMax > 0) ? suT.scaleMax : 60;
-  const surgeRaw = result.water.raw ?? 0;
+  const suEnd = (suT.scaleMax != null) ? suT.scaleMax : 0;
+  const surgeV6 = result.water.score;
+  // Convert descending edges to an ascending "drop from top" scale so bandedPct works.
+  const top = 60;
   setTrackDot('metricSurgeDot',
-    bandedPct(surgeRaw, [0, suT.steady, suT.drifty, suT.surgy, suEnd]),
+    bandedPct(top - surgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]),
     clsColor(result.water.cls));
 
   // ── WW COMPARISON TICKS ────────────────────────────────────────────────────
@@ -5147,15 +4654,12 @@ function renderSnapshot(h, wx) {
       swell2H: h.swell2H || 0, swell2Dir: h.swell2Dir || 0, swell2P: h.swell2P || 8,
       windWaveH: h.windWaveH || 0, windWaveP: h.windWaveP || 0, windWaveDir: h.windWaveDir || 0,
     };
-    // Build a WW-feed slot: same wind + tide, WW-original swell/wind-wave.
-    // NOTE: under the NS dispersion model calcScore no longer branches on
-    // _nsFeed — every row is scored through the same nsDispLookup transmit path.
-    // The WW tick therefore differs from the NS dot only by the swell/wind-wave
-    // INPUT values (WW feed vs NS feed), not by any transmit-path difference.
+    // Build a WW-feed slot: same wind + tide, WW-original swell/wind-wave, and
+    // crucially NO _nsFeed flag → calcScore uses the real GEM transmit path.
     const wwSlot = Object.assign({}, h, wwWave);
     delete wwSlot._nsFeed;
     delete wwSlot._ww;
-    const wwR = calcScore(wwSlot);   // same model as the NS dot; differs only by inputs
+    const wwR = calcScore(wwSlot);   // default model (same as NS dot uses)
 
     const wwEntryRaw = wwR.entry.raw ?? Math.max(0, 60 - wwR.entry.score);
     setTick('wwTickEntry', bandedPct(wwEntryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]));
@@ -5163,23 +4667,8 @@ function renderSnapshot(h, wx) {
     const wwSwimVal = wwR.swim.raw ?? 0;
     setTick('wwTickSwim', bandedPct(wwSwimVal, [0, swT.glassy, swT.ripply, swT.choppy, swEnd]));
 
-    const wwSurgeRaw = wwR.water.raw ?? 0;
-    setTick('wwTickSurge', bandedPct(wwSurgeRaw, [0, suT.steady, suT.drifty, suT.surgy, suEnd]));
-
-    // DEBUG readout (compare mode only): show the raw numbers driving each dot/tick
-    // so any data-flow bug is visible on-device instead of inferred.
-    try {
-      const dbg = document.getElementById('cmpDebug');
-      if (dbg) {
-        const f = (x) => (x == null ? '–' : (Math.round(x * 100) / 100));
-        dbg.innerHTML =
-          `NS feed fetch: <b>${window._nsStatus || '(not attempted yet)'}</b><br>` +
-          `<b>NS</b> sw ${f(h.swell1H)}m/${f(h.swell1P)}s/${f(h.swell1Dir)}° · ` +
-          `ww ${f(h.windWaveH)}m/${f(h.windWaveP)}s/${f(h.windWaveDir)}° · nsFeed=${h._nsFeed?'Y':'N'} · Entry ${result.entry.raw!=null?f(result.entry.raw):f(60-result.entry.score)} Chop ${f(result.swim.raw)}<br>` +
-          `<b>WW</b> sw ${f(wwSlot.swell1H)}m/${f(wwSlot.swell1P)}s/${f(wwSlot.swell1Dir)}° · ` +
-          `ww ${f(wwSlot.windWaveH)}m/${f(wwSlot.windWaveP)}s/${f(wwSlot.windWaveDir)}° · _ww=${h._ww?'Y':'N'} · Entry ${wwEntryRaw!=null?f(wwEntryRaw):'–'} Chop ${f(wwSwimVal)}`;
-      }
-    } catch(e) {}
+    const wwSurgeV6 = wwR.water.score;
+    setTick('wwTickSurge', bandedPct(top - wwSurgeV6, [0, top - suT.steady, top - suT.drifty, top - suT.surgy, top - suEnd]));
   })();
 
 
@@ -5601,36 +5090,25 @@ function renderGemComparison(h) {
 
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, tideM } = h;
-  const windDurHrs_g = (h.windDurHrs != null) ? h.windDurHrs : 6;
-  const wsSens_g = (SITE.windSeaSens != null) ? SITE.windSeaSens : 1;
+  const windHit = dirLookup(SITE.lookup.wind, windDir);
 
-  // Warn loudly if the NS dispersion table failed to load (all lookups return 0.5 fallback)
-  const tableStatus = SITE.nsDisp
-    ? `<div style="color:#7ec8e3;">✓ NS dispersion table loaded (${SITE.nsDisp.length} dir rows, ss_wave_sens=${SITE.ssWaveSens})</div>`
-    : `<div style="color:#ff6b6b;font-weight:700;">⚠ NS DISPERSION TABLE NOT LOADED — every lookup is using the 50% fallback. Check the New NS tab gid / publish settings.</div>`;
+  // Warn loudly if the GEM table failed to load (all lookups would return 0.5 fallback)
+  const tableStatus = SITE.gemTable
+    ? `<div style="color:#7ec8e3;">✓ GEM table loaded (${SITE.gemTable.length} dir rows)</div>`
+    : `<div style="color:#ff6b6b;font-weight:700;">⚠ GEM TABLE NOT LOADED — every lookup is using the 50% fallback. Check the sheet gid / publish settings.</div>`;
 
-  // NS-path intermediate values (mirror calcScore NS dispersion branch)
+  // GEM-side intermediate values (mirror calcScore GEM branch)
   const wwP_g   = (h.windWaveP || 5);
-  const ess_g   = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
-  const nrg_g   = (hh, pp) => (hh * hh) * Math.max(0, pp || 0); // H² × P
-  const s1Tx_g  = Math.max(0, nsDispLookup(swell1Dir, swell1P));
-  const s2Tx_g  = Math.max(0, nsDispLookup(swell2Dir || 0, swell2P || 8));
-  const wwTx_g  = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP_g));
-  const s1pow_g = nrg_g(swell1H, swell1P);
-  const s2pow_g = nrg_g(swell2H || 0, swell2P || 8);
-  const wsBL_g   = windSeaAt(SITE.fetchMaskBL, windKmh, windDir, windDurHrs_g);
-  // Mirror calcScore: BL wind-sea is scaled by bl_chop_impact (V3), NOT windSeaSens.
-  // windSeaSens now scales ONLY the SS entry wind-sea (ws_d_g below).
-  const blChopImpact_g = (SITE.blChopImpact != null) ? SITE.blChopImpact : 1;
-  const wind_d_g = nrg_g(wsBL_g.hs, wsBL_g.tp) * blChopImpact_g;
-  const ww_d_g   = nrg_g(windWaveH || 0, wwP_g) * wwTx_g * ess_g;
-  const s1_d_g   = s1pow_g * s1Tx_g * ess_g;
-  const s2_d_g   = s2pow_g * s2Tx_g * ess_g;
-  const wsSS_g   = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs_g);
-  const ws_d_g   = nrg_g(wsSS_g.hs, wsSS_g.tp) * ess_g * wsSens_g;
-  const wEntry_g = Math.max(0, Math.min(1, wwTx_g));
-  const windEntry_g = ws_d_g * (1 - wEntry_g) + ww_d_g * wEntry_g;
-  const o_g      = windEntry_g + s1_d_g + s2_d_g;
+  const s1Tx_g  = Math.max(0, gemLookup(swell1Dir, swell1P));
+  const s2Tx_g  = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
+  const wwTx_g  = Math.max(0, gemLookup(windWaveDir || windDir, wwP_g));
+  const s1pow_g = swellPower(swell1H, swell1P);
+  const s2pow_g = swellPower(swell2H || 0, swell2P || 8);
+  const wind_d_g = windPower(windKmh) * (windHit / 100) * SITE.windSens;
+  const ww_d_g   = swellPower(windWaveH || 0, wwP_g) * wwTx_g * SITE.swellSens;
+  const s1_d_g   = s1pow_g * s1Tx_g * SITE.swellSens;
+  const s2_d_g   = s2pow_g * s2Tx_g * SITE.swellSens;
+  const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g;
   const tide_d_g = SITE.tideDir(tideM, {
     s1_d: s1_d_g, s1Dir: swell1Dir, s2_d: s2_d_g, s2Dir: swell2Dir || 0, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
   });
@@ -6035,7 +5513,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2','swim_nsdisp_config_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -6418,19 +5896,12 @@ if (!GEM_MODEL) {
 // overrides apply on top for live experimentation.
 // =============================================================================
 const TUNE_PARAMS = [
-  { key:'ssWaveSens', label:'SS wave sensitivity (ss_wave_sens)', min:0, max:3, step:0.05, hint:'New NS tab C2. Scales swell1 + swell2 + wind-wave demerits (energy = H²·P × transmit × this).' },
-  { key:'windSeaSens', label:'Wind-sea sensitivity', min:0, max:3, step:0.05, hint:'Scales the fetch-derived wind-sea (CHOP = BL point, ENTRY = SS point blended vs NS). Higher = wind builds more score.' },
-  { key:'swimThresholds.glassy', label:'CHOP · Smooth edge', min:0, max:14, step:0.5, hint:'q7 below this = Smooth. Retune since CHOP now uses real wind-sea energy.' },
-  { key:'swimThresholds.ripply', label:'CHOP · Ripply edge', min:0, max:20, step:0.5, hint:'q7 ≤ this = Ripply.' },
-  { key:'swimThresholds.choppy', label:'CHOP · Choppy edge', min:0, max:40, step:0.5, hint:'q7 ≤ this = Choppy, else Messy.' },
-  { key:'blWaveSens', label:'SWIM · BL wave sensitivity (bl_wave_sens)', min:0, max:4, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SWIM metric (energy × BL transmit × this, +tide).' },
-  { key:'blChopImpact', label:'CHOP · BL chop impact (bl_chop_impact)', min:0, max:4, step:0.05, hint:'New NS tab V3. Single knob scaling the WHOLE BL chop crossfade (wind-sea + wind-wave), no handover jump. Feeds CHOP metric and Swim.' },
-  { key:'surgeThresholds.steady', label:'SWIM · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
-  { key:'surgeThresholds.drifty', label:'SWIM · Drifty edge', min:0, max:60, step:1, hint:'rawBL ≤ this = Drifty.' },
-  { key:'surgeThresholds.surgy',  label:'SWIM · Surgy edge',  min:0, max:60, step:1, hint:'rawBL ≤ this = Surgy, else Washy. Highest of the three.' },
-  { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'total demerits ≤ this = Easy. Lowest of the three (LOWER demerits = better).' },
-  { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'total ≤ this = Doable.' },
-  { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'total ≤ this = Caution, else Dangerous. Highest of the three.' },
+  { key:'windSens',      label:'Wind sensitivity',     min:0,   max:1,    step:0.01, hint:'Scales wind-chop demerit.' },
+  { key:'swellSens',     label:'Swell sensitivity',    min:0.2, max:4,    step:0.05, hint:'Scales all swell demerits. Main harshness knob.' },
+  { key:'wwSens',        label:'Wind-wave sensitivity',min:0.2, max:4,    step:0.05, hint:'Scales wind-wave term. Blank = follows swell sens.', nullable:true },
+  { key:'periodExp',     label:'Period exponent',      min:0.5, max:1.6,  step:0.05, hint:'Power on swell period. Higher = long-period swell penalised more.' },
+  { key:'tideGateStart', label:'Tide gate start (deg)',min:0,   max:180,  step:5,    hint:'Swell direction where headland/tide effect begins.' },
+  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Direction where tide effect reaches full strength.' },
 ];
 
 function loadTuneOverrides() {
@@ -6439,22 +5910,10 @@ function loadTuneOverrides() {
 function saveTuneOverrides(obj) {
   try { localStorage.setItem(TUNE_KEY, JSON.stringify(obj)); } catch(e) {}
 }
-// Get/set a possibly-dotted path on SITE (e.g. 'swimThresholds.glassy').
-function tuneGet(key) {
-  if (key.indexOf('.') < 0) return SITE[key];
-  const [a, b] = key.split('.');
-  return (SITE[a] && SITE[a][b] != null) ? SITE[a][b] : null;
-}
-function tuneSet(key, val) {
-  if (key.indexOf('.') < 0) { SITE[key] = val; return; }
-  const [a, b] = key.split('.');
-  if (!SITE[a]) SITE[a] = {};
-  SITE[a][b] = val;
-}
 function applyTuneOverrides() {
   const ov = loadTuneOverrides();
   TUNE_PARAMS.forEach(p => {
-    if (Object.prototype.hasOwnProperty.call(ov, p.key)) tuneSet(p.key, ov[p.key]);
+    if (Object.prototype.hasOwnProperty.call(ov, p.key)) SITE[p.key] = ov[p.key];
   });
 }
 
@@ -6465,7 +5924,7 @@ function buildTunePanel() {
   const rowHTML = (p) => {
     const ov = loadTuneOverrides();
     const overridden = Object.prototype.hasOwnProperty.call(ov, p.key);
-    const cur = tuneGet(p.key);
+    const cur = SITE[p.key];
     const sliderVal = (cur == null) ? p.min : cur;
     return `
       <div style="margin-bottom:12px;">
@@ -6489,7 +5948,7 @@ function buildTunePanel() {
     box-shadow:0 8px 40px rgba(0,0,0,0.25);font-family:'DM Mono',monospace;font-size:12px;color:var(--text);`;
   panel.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--deep);">TUNE · NEW NS</span>
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--deep);">TUNE SENSITIVITIES</span>
       <button id="tune-min" title="collapse" style="border:none;background:transparent;font-size:16px;cursor:pointer;color:var(--dim);">–</button>
     </div>
     <div id="tune-body">
@@ -6501,7 +5960,7 @@ function buildTunePanel() {
       </div>
       <div id="tune-msg" style="font-size:10px;color:var(--ocean);margin-top:6px;min-height:13px;"></div>
       <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">
-        Live preview only persists on THIS device. To make it permanent for everyone, set ss_wave_sens in the New NS tab (cell C2). "Copy values" gives you a snapshot to paste back.
+        Live preview only persists on THIS device. To make values permanent for everyone, put them in the sheet (col P rows 24–27, col R rows 24–26). "Copy values" gives you a snapshot to paste into the sheet or save.
       </div>
     </div>`;
   document.body.appendChild(panel);
@@ -6527,13 +5986,13 @@ function buildTunePanel() {
     const overridden = Object.prototype.hasOwnProperty.call(ov, key);
     const valEl  = panel.querySelector(`[data-tune-val="${key}"]`);
     const flagEl = panel.querySelector(`[data-tune-flag="${key}"]`);
-    if (valEl)  valEl.textContent = fmt(tuneGet(key));
+    if (valEl)  valEl.textContent = fmt(SITE[key]);
     if (flagEl) { flagEl.textContent = overridden ? 'SET' : 'sheet'; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
   };
   const refreshAll = () => TUNE_PARAMS.forEach(p => {
     refreshRow(p.key);
     const inp = panel.querySelector(`[data-tune-input="${p.key}"]`);
-    if (inp) inp.value = (tuneGet(p.key) == null) ? p.min : tuneGet(p.key);
+    if (inp) inp.value = (SITE[p.key] == null) ? p.min : SITE[p.key];
   });
 
   const applyAndRender = () => {
@@ -6550,21 +6009,21 @@ function buildTunePanel() {
     if (input) input.addEventListener('input', () => {
       const v = parseFloat(input.value);
       const ov = loadTuneOverrides(); ov[p.key] = v; saveTuneOverrides(ov);
-      tuneSet(p.key, v); applyAndRender(); refreshRow(p.key);
+      SITE[p.key] = v; applyAndRender(); refreshRow(p.key);
     });
     if (p.nullable) {
       const clr = panel.querySelector(`[data-tune-clear="${p.key}"]`);
       if (clr) clr.addEventListener('click', () => {
         const ov = loadTuneOverrides(); ov[p.key] = null; saveTuneOverrides(ov);
-        tuneSet(p.key, null); applyAndRender(); refreshRow(p.key);
+        SITE[p.key] = null; applyAndRender(); refreshRow(p.key);
       });
     }
   });
 
   // EXPORT — copy current values as readable text + JSON to clipboard
   panel.querySelector('#tune-export').addEventListener('click', () => {
-    const lines = TUNE_PARAMS.map(p => `${p.label}: ${fmt(tuneGet(p.key))}`).join('\n');
-    const json = JSON.stringify(TUNE_PARAMS.reduce((o,p)=>{o[p.key]=tuneGet(p.key);return o;}, {}));
+    const lines = TUNE_PARAMS.map(p => `${p.label}: ${fmt(SITE[p.key])}`).join('\n');
+    const json = JSON.stringify(TUNE_PARAMS.reduce((o,p)=>{o[p.key]=SITE[p.key];return o;}, {}));
     const text = `Swim Manly tuning — ${new Date().toLocaleString('en-AU')}\n${lines}\n\nJSON: ${json}`;
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).then(()=>msg('Copied to clipboard ✓')).catch(()=>{ prompt('Copy these values:', text); });
@@ -6579,7 +6038,7 @@ function buildTunePanel() {
       const m = input.match(/\{.*\}/s);
       const obj = JSON.parse(m ? m[0] : input);
       const ov = loadTuneOverrides();
-      TUNE_PARAMS.forEach(p => { if (Object.prototype.hasOwnProperty.call(obj, p.key)) { ov[p.key] = obj[p.key]; tuneSet(p.key, obj[p.key]); } });
+      TUNE_PARAMS.forEach(p => { if (Object.prototype.hasOwnProperty.call(obj, p.key)) { ov[p.key] = obj[p.key]; SITE[p.key] = obj[p.key]; } });
       saveTuneOverrides(ov); applyAndRender(); refreshAll();
       msg('Imported ✓');
     } catch(e) { msg('Could not parse — check the JSON'); }
@@ -6587,12 +6046,7 @@ function buildTunePanel() {
 
   panel.querySelector('#tune-reset').addEventListener('click', () => {
     saveTuneOverrides({});
-    TUNE_PARAMS.forEach(p => {
-      const dv = (p.key.indexOf('.') < 0)
-        ? SITE_DEFAULTS[p.key]
-        : (SITE_DEFAULTS[p.key.split('.')[0]] || {})[p.key.split('.')[1]];
-      tuneSet(p.key, dv);
-    });
+    TUNE_PARAMS.forEach(p => { SITE[p.key] = SITE_DEFAULTS[p.key]; });
     applyAndRender(); refreshAll();
     msg('Cleared — reload to re-pull exact sheet values');
   });
@@ -6620,15 +6074,12 @@ function buildTunePanel() {
   // painted — re-render so scores pick up the real config / GEM table rather than
   // the 0.5 transmit fallback. This does not block or delay the forecast.
   (async function loadConfigInBackground() {
-    try { await loadConfig(); }       catch(e) { console.warn('loadConfig failed at startup:', e); }
-    try { await loadGemConfig(); }    catch(e) { console.warn('loadGemConfig failed at startup:', e); }
-    try { await loadNsDispConfig(); } catch(e) { console.warn('loadNsDispConfig failed at startup:', e); }
-    try { await loadChopShelterConfig(); } catch(e) { console.warn('loadChopShelterConfig failed at startup:', e); }
+    try { await loadConfig(); }    catch(e) { console.warn('loadConfig failed at startup:', e); }
+    try { await loadGemConfig(); } catch(e) { console.warn('loadGemConfig failed at startup:', e); }
 
-    // NS dispersion is the live model — if its table didn't load, every swell
-    // silently transmits at the 0.5 fallback (direction ignored), inflating
-    // scores. Surface it.
-    if (GEM_MODEL && !SITE.nsDisp) {
+    // GEM is the live model — if its table didn't load, every swell silently
+    // transmits at the 0.5 fallback (direction ignored), inflating scores. Surface it.
+    if (GEM_MODEL && !SITE.gemTable) {
       const badge = document.getElementById('gem-badge');
       if (badge) {
         badge.textContent = '⚠ TABLE NOT LOADED — TAP';
@@ -6637,7 +6088,7 @@ function buildTunePanel() {
         badge.style.display = 'inline';
         badge.onclick = retryGemTable;
       }
-      console.warn('NS dispersion table failed to load — scores are using the 0.5 transmit fallback. Check diag log for error detail.');
+      console.warn('GEM energy table failed to load — scores are using the 0.5 transmit fallback. Check diag log for error detail.');
     }
 
     // Apply manual tuning overlay on top of the freshly loaded config, build the
@@ -6809,33 +6260,26 @@ function runCalibration() {
   const tideM     = h.tideM;
 
   const wind_hit   = dirLookup(lk.wind, windDir);
-  const chopTx_w   = chopTransmit(windDir);
-  // GEM/NS path uses the measured chop-shelter transmit; Original keeps wind_hit/100.
-  const windGate   = GEM_MODEL ? chopTx_w : (wind_hit / 100);
 
   let app_wind_d, app_ww_d, app_s1_d, app_s2_d, app_rif_d;
   let sh_wind_d, sh_ww_d, sh_s1_d, sh_s2_d, sh_rif_d;
   let s1_sea, s2_sea, s1p, s2p; // for lookup info display
-  let wbWwTx = 0; // wind-wave arc weight for the CHOP crossfade
 
-  app_wind_d = windPower(windKmh) * windGate * SITE.windSens;
+  app_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
 
   if (GEM_MODEL) {
-    const ess   = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
-    const nrg   = (hh, pp) => (hh * hh) * Math.max(0, pp || 0); // H² × P
-    const wwTx  = Math.max(0, nsDispLookup(wwDir, wwP));
-    wbWwTx = Math.max(0, Math.min(1, wwTx));
-    const s1Tx  = Math.max(0, nsDispLookup(swell1Dir, swell1P));
-    const s2Tx  = Math.max(0, nsDispLookup(swell2Dir, swell2P));
-    app_ww_d  = nrg(wwH, wwP) * wwTx * ess;
-    app_s1_d  = nrg(swell1H, swell1P) * s1Tx * ess;
-    app_s2_d  = nrg(swell2H, swell2P) * s2Tx * ess;
+    const wwTx  = Math.max(0, gemLookup(wwDir, wwP));
+    const s1Tx  = Math.max(0, gemLookup(swell1Dir, swell1P));
+    const s2Tx  = Math.max(0, gemLookup(swell2Dir, swell2P));
+    app_ww_d  = swellPower(wwH, wwP) * wwTx * SITE.swellSens;
+    app_s1_d  = swellPower(swell1H, swell1P) * s1Tx * SITE.swellSens;
+    app_s2_d  = swellPower(swell2H, swell2P) * s2Tx * SITE.swellSens;
     app_rif_d = 0;
-    // Sheet comparison not applicable in NS mode — show same values
+    // Sheet comparison not applicable in GEM mode — show same values
     sh_wind_d = app_wind_d; sh_ww_d = app_ww_d;
     sh_s1_d = app_s1_d; sh_s2_d = app_s2_d; sh_rif_d = 0;
     s1_sea = Math.round(s1Tx * 100); s2_sea = Math.round(s2Tx * 100);
-    s1p = nrg(swell1H, swell1P); s2p = nrg(swell2H, swell2P);
+    s1p = swellPower(swell1H, swell1P); s2p = swellPower(swell2H, swell2P);
   } else {
     const ww_sea_hit = Math.max(0, dirLookup(lk.sea, wwDir));
     s1_sea     = Math.max(0, dirLookup(lk.sea, swell1Dir));
@@ -6852,7 +6296,7 @@ function runCalibration() {
     // Sheet formula (no period cap)
     const s1p_sh  = swellPower(swell1H, swell1P);
     const s2p_sh  = swellPower(swell2H, swell2P);
-    sh_wind_d = windPower(windKmh) * windGate * SITE.windSens;
+    sh_wind_d = windPower(windKmh) * (wind_hit / 100) * SITE.windSens;
     sh_ww_d   = swellPower(wwH, 5) * (ww_sea_hit / 100) * SITE.swellSens;
     sh_s1_d   = s1p_sh * (s1_sea / 100) * SITE.swellSens;
     sh_s2_d   = s2p_sh * (s2_sea / 100) * SITE.swellSens;
@@ -6928,13 +6372,9 @@ function runCalibration() {
     ${lookupInfo}`;
 
   // Metric zones
-  const q7 = GEM_MODEL ? (app_wind_d * (1 - wbWwTx) + app_ww_d * wbWwTx)
-                       : (app_wind_d + app_ww_d);
-  // Surge (SWIM/water metric) — mirror the LIVE path (blSwimWater), not the retired
-  // bowerSurgeWater. blSwimWater classifies rawBL demerits ascending; we display its
-  // own label/cls so the CAL tab can never diverge from what the Now tab shows.
-  const _calWater = blSwimWater(h, q7); // pass the raw slot; blSwimWater reads windWave* itself
-  const v6 = _calWater.score;
+  const q7 = app_wind_d + app_ww_d;
+  // Surge uses Bower Lane (CTB) source — same as the live metric, not entry-point swell.
+  const v6 = bowerSurgeWater({ swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM }).score;
   function zoneLabel(metric, val) {
     if (metric === 'entry') {
       const t = SITE.entryThresholds;  // val = total demerits, lower=better
@@ -6944,18 +6384,15 @@ function runCalibration() {
       return val < t.glassy ? {l:'Smooth',c:'green'} : val <= t.ripply ? {l:'Ripply',c:'amber'} : val <= t.choppy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
     } else {
       const t = SITE.surgeThresholds;  // val = v6, higher=better
-      return val > t.steady ? {l:'Glide',c:'green'} : val > t.drifty ? {l:'Jostle',c:'amber'} : val >= t.surgy ? {l:'Wrestle',c:'yellow'} : {l:'Washed',c:'red'};
+      return val > t.steady ? {l:'Smooth',c:'green'} : val > t.drifty ? {l:'Ripply',c:'amber'} : val >= t.surgy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
     }
   }
   const ez = zoneLabel('entry', Math.max(0, 60 - app_score));
   const sz = zoneLabel('swim', q7);
-  // Use blSwimWater's OWN label/cls so the CAL surge band is identical to the live
-  // Now-tab band (do NOT re-derive via zoneLabel('surge'), which uses the inverted
-  // v6-descending convention and would diverge from the live rawBL-ascending path).
-  const gz = { l: _calWater.label, c: _calWater.cls };
+  const gz = zoneLabel('surge', v6);
   document.getElementById('calMetrics').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-      ${[['Entry', app_score, ez], ['Chop q7', q7.toFixed(1), sz], ['Surge v6', v6, gz]].map(([name, val, z]) => `
+      ${[['Entry', app_score, ez], ['Chop q7', q7.toFixed(1), sz], ['Swim v6', v6, gz]].map(([name, val, z]) => `
         <div class="cal-metric-row" style="flex-direction:column;align-items:center;background:rgba(${z.c==='green'?'26,158,110':z.c==='amber'?'74,168,204':z.c==='yellow'?'224,124,42':'192,57,43'},0.1);border:1px solid var(--${z.c});">
           <span class="cal-metric-label">${name}</span>
           <span class="cal-metric-val" style="color:var(--${z.c})">${z.l}</span>
@@ -7138,11 +6575,11 @@ async function generateBannerSummary() {
   // ── Generate colloquial summary locally
   const entryBad = ['Caution','Dangerous'].includes(domEntry);
   const swimBad  = ['Choppy','Messy'].includes(domSwim);
-  const surgeBad = ['Wrestle','Washed'].includes(domSurge);
+  const surgeBad = ['Choppy','Messy'].includes(domSurge);
   const allGood  = !entryBad && !swimBad && !surgeBad;
 
   function emphasise(t) {
-    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy|Glide|Jostle|Wrestle|Washed)\b/g, '<em>$1</em>');
+    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy|Steady|Drifty|Surgy|Washy)\b/g, '<em>$1</em>');
   }
 
   // ── PARAGRAPH 1: Weather ──────────────────────────────────────────────────
@@ -7210,7 +6647,7 @@ async function generateBannerSummary() {
   // good), the summary must lead with the contrast — "big swell offshore, but
   // the bay shelters it" — rather than implying the bay itself is rough.
   const avgTransmit = rows.length
-    ? avg(rows.map(r => nsDispLookup(r.swell1Dir, r.swell1P)))
+    ? avg(rows.map(r => gemLookup(r.swell1Dir, r.swell1P)))
     : 0.5;
   // "Large offshore swell" worth calling out explicitly.
   const bigOffshore = avgS1H >= 1.2;
@@ -7289,12 +6726,12 @@ async function generateBannerSummary() {
     }
 
     // Surge
-    if (domSurge === 'Washed') {
+    if (domSurge === 'Messy') {
       parts.push(pick([
         ` The surge inside the bay is significant today — swell is bouncing back off the Shelly headland wall and creating that churned-up, turbulent water that makes it hard to swim a clean line. Visibility underwater will be poor near the rocks. Give the headland wall a wide berth.`,
         ` Lots of surge through Cabbage Tree Bay — the swell is reflecting off the walls and pushing you around, especially near the Shelly end. The water will be stirred up and visibility might be murky. Experienced swimmers only on days like this.`,
       ]));
-    } else if (domSurge === 'Wrestle') {
+    } else if (domSurge === 'Choppy') {
       parts.push(pick([
         ` Some surge through the bay today — you'll feel the pull of the swell near the headland and the water is moving around more than usual. Keep clear of the rocks near the Shelly wall and you'll be fine.`,
         ` The bay has a bit of surge to it today — nothing extreme but the swell is moving through and you'll notice it near the headland. Swim a relaxed line and stay away from the cliff edges.`,
@@ -7302,12 +6739,12 @@ async function generateBannerSummary() {
     }
 
     // Closing recommendation
-    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washed') {
+    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Messy') {
       parts.push(pick([
         ` Best left to experienced swimmers today — conditions are genuinely challenging and this isn't the day to push your limits if you're still building confidence in open water.`,
         ` Worth asking yourself honestly whether today's the day. Conditions are tough — experienced open water swimmers will manage, but it's a solid day to sit it out on the sand if you're not fully comfortable.`,
       ]));
-    } else if (domEntry === 'Caution' || domSurge === 'Wrestle' || domSwim === 'Choppy') {
+    } else if (domEntry === 'Caution' || domSurge === 'Choppy' || domSwim === 'Choppy') {
       parts.push(pick([
         ` All in all, a doable day — just stay aware and pick your moments. Most swimmers will have a good time once they're in.`,
         ` Worth being switched on, but nothing here that should put you off getting in the water.`,
@@ -7326,8 +6763,8 @@ async function generateBannerSummary() {
 
   // Water icon
   document.getElementById('banner-water-icon').textContent =
-    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washed' ? '⚠️' :
-    domEntry === 'Caution'   || domSurge === 'Wrestle' || domSwim === 'Choppy' ? '🏄' : '🏊';
+    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Messy' ? '⚠️' :
+    domEntry === 'Caution'   || domSurge === 'Choppy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
@@ -7494,7 +6931,7 @@ const CAM_BAND_MID  = { 0: 12.5, 1: 37.5, 2: 62.5, 3: 87.5 };
 const CAM_LABEL_BAND = {
   entry: { easy: 0, doable: 1, caution: 2, dangerous: 3, danger: 3 },
   swim:  { smooth: 0, glassy: 0, ripply: 1, choppy: 2, messy: 3 },
-  surge: { glide: 0, steady: 0, jostle: 1, drifty: 1, wrestle: 2, surgy: 2, washed: 3, washy: 3 },
+  surge: { smooth: 0, ripply: 1, choppy: 2, messy: 3, steady: 0, drifty: 1, surgy: 2, washy: 3 },
 };
 
 function camToken() {
@@ -7913,7 +7350,7 @@ const METRIC_INFO = {
   },
   surge: {
     title: 'Swim',
-    text: "What the swim across the bay actually feels like \u2014 both the sideways push of surge and the chop you're stroking through. Swell reflects off the Shelly headland wall and the wind roughs up the surface; together they decide whether you glide or get washed around. Strongest near the rocks."
+    text: "How much the bay pushes you around. Swell bounces off the Shelly headland wall and reflects back, churning things up \u2014 strongest near the rocks."
   }
 };
 
@@ -7952,12 +7389,12 @@ function metricBreakdownHTML(key) {
        ${inner}</div>`;
 
   if (key === 'entry') {
-    const we = (dm.windEntry != null) ? dm.windEntry : ((dm.windSea || 0) + dm.windWave);
-    const o = (we + dm.swell1 + dm.swell2 + dm.refrac);
+    const o = (dm.wind + dm.windWave + dm.swell1 + dm.swell2 + dm.refrac);
     return wrap(
+      row('Wind chop', f(dm.wind)) +
+      row('Wind-wave', f(dm.windWave)) +
       row('Primary swell', f(dm.swell1)) +
       row('Secondary swell', f(dm.swell2)) +
-      row('Wind (sea ↔ wave)', f(we), '(SS fetch + wind-wave, crossfaded at arc)') +
       (Math.abs(dm.refrac) > 0.05 ? row('Refraction', f(dm.refrac)) : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Subtotal (before tide)', f(o)) +
@@ -7969,26 +7406,23 @@ function metricBreakdownHTML(key) {
   }
   if (key === 'swim') {
     return wrap(
-      row('Wind-sea (BL fetch)', f(dm.wind)) +
-      row('Wind-wave (arc)', f(dm.windWave)) +
+      row('Wind chop', f(dm.wind)) +
+      row('Wind-wave', f(dm.windWave)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('q7 = crossfade at arc', f(r.swim.raw)) +
+      row('q7 = wind + wind-wave', f(r.swim.raw)) +
       row('Swim score (60 = best)', r.swim.score + ' · ' + r.swim.label)
     );
   }
   if (key === 'surge') {
-    // SWIM (ex-Surge) components from r.water.parts. Total = swell (s1+s2 via BL
-    // table) + tide + chop. The wind-wave is NOT summed separately — it enters only
-    // through the chop crossfade (shown below), so the sea isn't double-counted.
-    const w = r.water.parts || { swell1: 0, swell2: 0, windWave: 0, tide: 0, chop: 0, raw: r.water.score };
-    const swellSub = (w.swell1 || 0) + (w.swell2 || 0);
+    // Bower (CTB) components — sourced from r.water.parts so they reconcile with
+    // the score, unlike the entry-point dm.swell1/swell2 used elsewhere.
+    const w = r.water.parts || { s1_d: 0, s2_d: 0, tide_d: 0, raw: r.water.score };
     return wrap(
-      row('Primary swell (BL)', f(w.swell1)) +
-      row('Secondary swell (BL)', f(w.swell2)) +
+      row('Primary swell', f(w.s1_d)) +
+      row('Secondary swell', f(w.s2_d)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('Swell subtotal', f(swellSub)) +
-      row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
-      row('Chop (crossfade, 1:1)', f(w.chop || 0), '(carries the wind-wave/sea)') +
+      row('Subtotal (before tide)', f(w.s1_d + w.s2_d)) +
+      row('Tide effect', f(w.tide_d), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Swim demerits', f(w.raw)) +
       row('Swim score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
@@ -8280,9 +7714,9 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   function landBit(nx, ny) { if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return 0; return BITS[((ny * BH) | 0) * BW + ((nx * BW) | 0)]; }
   function litCell(nx, ny, dx, dy) { var x = nx, y = ny; for (var s = 0; s < 110; s++) { x -= dx * 0.009; y -= dy * 0.009; if (x < 0 || x > 1 || y < 0 || y > 1) return true; if (landBit(x, y)) return false; } return true; }
 
-  // energy transmitted (0..100) for a swell direction/period — reuses the app's NS dispersion table
-  function hitAt(d, T) { var g = (typeof nsDispLookup === 'function') ? nsDispLookup(clamp(d, 0, 180), T) : 0.5; return g * 100; }
-  // fold any swell-from bearing into the table's 0..180 arc (mirrors the western half, as nsDispLookup does)
+  // energy transmitted (0..100) for a swell direction/period — reuses the app's GEM table
+  function hitAt(d, T) { var g = (typeof gemLookup === 'function') ? gemLookup(clamp(d, 0, 180), T) : 0.5; return g * 100; }
+  // fold any swell-from bearing into the table's 0..180 arc (mirrors the western half, as gemLookup does)
   function foldDir(d) { d = ((d % 360) + 360) % 360; return d > 180 ? 360 - d : d; }
 
   // ---- normalized phase/energy field (canvas-px independent; rebuilt only when the swell changes) ----
@@ -8617,7 +8051,7 @@ if ('serviceWorker' in navigator) {
 (function () {
   var SECTIONS = [
     { key:'verdict', label:"Overall verdict", sel:'#verdictBar', essential:1, complete:1 },
-    { key:'metrics', label:"Metrics (Entry/Swim/Surge)", sel:'.metrics-panel', essential:1, complete:1, core:1 },
+    { key:'metrics', label:"Metrics (Entry/Chop/Swim)", sel:'.metrics-panel', essential:1, complete:1, core:1 },
     { key:'wxbar', label:"Weather bar (sky + feels)", sel:'#wxBar', essential:1, complete:1 },
     { key:'slider', label:"Time slider", sel:'.slider-wrap', essential:1, complete:1, core:1 },
     { key:'daywindow', label:"Best swim window (day chart)", sel:'#dayWindowWrap', essential:1, complete:1 },
