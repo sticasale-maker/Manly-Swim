@@ -2975,7 +2975,7 @@ const SITE_DEFAULTS = {
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
   // SURGE — v6 = 60 − rawSwell (HIGHER = better, rail inverted: best on left) — col AK rows 13–16:
   //   steady = v6 > AK13, drifty > AK14, surgy ≥ AK15, else washy. AK16 = scaleMax (bottom/worst end of the v6 range).
-  surgeThresholds: { steady: 50, drifty: 30, surgy: 10, scaleMax: 0 },
+  surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 }, // demerit edges, ASCEND toward bad (like Entry). Steady≤15, Drifty≤30, Surgy≤45, else Washy.
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
   nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
   ssWaveSens:     2.35, // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path (tuned 2 Jul 2026)
@@ -3871,13 +3871,17 @@ function blSwimWater(d, chop) {
   // = the two true SWELL terms (s1_d, s2_d); the sea/wind-wave enters only via chop.
   const chop_d = Math.max(0, chop || 0);
   const rawBL = s1_d + s2_d + tide_d + chop_d;
-  const v6 = Math.max(0, Math.round(60 - rawBL));
+  // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
+  // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
+  // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
+  // = better), same convention as Entry's score.
+  const score = Math.max(0, Math.round(60 - rawBL));
   const t  = SITE.surgeThresholds;
-  const z  = v6 >  t.steady ? ['Steady', 'green']
-           : v6 >  t.drifty ? ['Drifty', 'amber']
-           : v6 >= t.surgy  ? ['Surgy',  'yellow']
-           :                  ['Washy',  'red'];
-  return { label: z[0], cls: z[1], score: v6, raw: rawBL,
+  const z  = rawBL <= t.steady ? ['Steady', 'green']
+           : rawBL <= t.drifty ? ['Drifty', 'amber']
+           : rawBL <= t.surgy  ? ['Surgy',  'yellow']
+           :                     ['Washy',  'red'];
+  return { label: z[0], cls: z[1], score: score, raw: rawBL,
            parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 
@@ -6395,9 +6399,9 @@ const TUNE_PARAMS = [
   { key:'swimThresholds.ripply', label:'CHOP · Ripply edge', min:0, max:20, step:0.5, hint:'q7 ≤ this = Ripply.' },
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge', min:0, max:40, step:0.5, hint:'q7 ≤ this = Choppy, else Messy.' },
   { key:'blWaveSens', label:'SWIM · BL wave sensitivity (bl_wave_sens)', min:0, max:4, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SWIM metric (energy × BL transmit × this, +tide).' },
-  { key:'surgeThresholds.steady', label:'SWIM · Steady edge', min:0, max:60, step:1, hint:'v6 (=60−rawBL, HIGHER=better) above this = Steady. Should be the highest of the three.' },
-  { key:'surgeThresholds.drifty', label:'SWIM · Drifty edge', min:0, max:60, step:1, hint:'v6 above this = Drifty.' },
-  { key:'surgeThresholds.surgy',  label:'SWIM · Surgy edge',  min:0, max:60, step:1, hint:'v6 ≥ this = Surgy, else Washy. Should be the lowest of the three.' },
+  { key:'surgeThresholds.steady', label:'SWIM · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
+  { key:'surgeThresholds.drifty', label:'SWIM · Drifty edge', min:0, max:60, step:1, hint:'rawBL ≤ this = Drifty.' },
+  { key:'surgeThresholds.surgy',  label:'SWIM · Surgy edge',  min:0, max:60, step:1, hint:'rawBL ≤ this = Surgy, else Washy. Highest of the three.' },
   { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'total demerits ≤ this = Easy. Lowest of the three (LOWER demerits = better).' },
   { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'total ≤ this = Doable.' },
   { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'total ≤ this = Caution, else Dangerous. Highest of the three.' },
