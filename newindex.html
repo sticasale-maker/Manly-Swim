@@ -5619,7 +5619,10 @@ function renderGemComparison(h) {
   const s1pow_g = nrg_g(swell1H, swell1P);
   const s2pow_g = nrg_g(swell2H || 0, swell2P || 8);
   const wsBL_g   = windSeaAt(SITE.fetchMaskBL, windKmh, windDir, windDurHrs_g);
-  const wind_d_g = nrg_g(wsBL_g.hs, wsBL_g.tp) * wsSens_g;
+  // Mirror calcScore: BL wind-sea is scaled by bl_chop_impact (V3), NOT windSeaSens.
+  // windSeaSens now scales ONLY the SS entry wind-sea (ws_d_g below).
+  const blChopImpact_g = (SITE.blChopImpact != null) ? SITE.blChopImpact : 1;
+  const wind_d_g = nrg_g(wsBL_g.hs, wsBL_g.tp) * blChopImpact_g;
   const ww_d_g   = nrg_g(windWaveH || 0, wwP_g) * wwTx_g * ess_g;
   const s1_d_g   = s1pow_g * s1Tx_g * ess_g;
   const s2_d_g   = s2pow_g * s2Tx_g * ess_g;
@@ -6927,8 +6930,11 @@ function runCalibration() {
   // Metric zones
   const q7 = GEM_MODEL ? (app_wind_d * (1 - wbWwTx) + app_ww_d * wbWwTx)
                        : (app_wind_d + app_ww_d);
-  // Surge uses Bower Lane (CTB) source — same as the live metric, not entry-point swell.
-  const v6 = bowerSurgeWater({ swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM }).score;
+  // Surge (SWIM/water metric) — mirror the LIVE path (blSwimWater), not the retired
+  // bowerSurgeWater. blSwimWater classifies rawBL demerits ascending; we display its
+  // own label/cls so the CAL tab can never diverge from what the Now tab shows.
+  const _calWater = blSwimWater(h, q7); // pass the raw slot; blSwimWater reads windWave* itself
+  const v6 = _calWater.score;
   function zoneLabel(metric, val) {
     if (metric === 'entry') {
       const t = SITE.entryThresholds;  // val = total demerits, lower=better
@@ -6943,7 +6949,10 @@ function runCalibration() {
   }
   const ez = zoneLabel('entry', Math.max(0, 60 - app_score));
   const sz = zoneLabel('swim', q7);
-  const gz = zoneLabel('surge', v6);
+  // Use blSwimWater's OWN label/cls so the CAL surge band is identical to the live
+  // Now-tab band (do NOT re-derive via zoneLabel('surge'), which uses the inverted
+  // v6-descending convention and would diverge from the live rawBL-ascending path).
+  const gz = { l: _calWater.label, c: _calWater.cls };
   document.getElementById('calMetrics').innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
       ${[['Entry', app_score, ez], ['Chop q7', q7.toFixed(1), sz], ['Surge v6', v6, gz]].map(([name, val, z]) => `
