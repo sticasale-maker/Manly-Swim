@@ -2041,7 +2041,7 @@
             <div class="metric-track-wwtick" id="wwTickSurge"></div>
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
-            <span style="flex:1">Steady</span><span style="flex:1">Drifty</span><span style="flex:1">Surgy</span><span style="flex:1">Washy</span>
+            <span style="flex:1">Glide</span><span style="flex:1">Jostle</span><span style="flex:1">Wrestle</span><span style="flex:1">Washed</span>
           </div>
           <div class="assess-wrap" onclick="event.stopPropagation()">
             <div class="assess-label">My call ▸ drag to where the dot should be</div>
@@ -2862,7 +2862,7 @@ const _ICON_ZONE = { green: 0, amber: 1, yellow: 2, red: 3 };
 const _ICON_WORD = {
   entry: ['easy', 'doable', 'caution', 'dangerous'],
   swim:  ['smooth', 'ripply', 'choppy', 'messy'],
-  surge: ['steady', 'drifty', 'surgy', 'washy']
+  surge: ['glide', 'jostle', 'wrestle', 'washed']
 };
 // Image filename prefix per metric. Internal key stays 'swim' (DOM ids, modal,
 // thresholds all keyed on it) but the on-disk pictograms are named chop-*.png.
@@ -3836,10 +3836,10 @@ function bowerSurgeWater(d) {
   const p  = bowerSurgeParts(d);
   const v6 = Math.max(0, Math.round(60 - p.raw));
   const t  = SITE.surgeThresholds;
-  const z  = v6 >  t.steady ? ['Steady', 'green']
-           : v6 >  t.drifty ? ['Drifty', 'amber']
-           : v6 >= t.surgy  ? ['Surgy',  'yellow']
-           :                  ['Washy',  'red'];
+  const z  = v6 >  t.steady ? ['Glide',   'green']
+           : v6 >  t.drifty ? ['Jostle',  'amber']
+           : v6 >= t.surgy  ? ['Wrestle', 'yellow']
+           :                  ['Washed',  'red'];
   return { label: z[0], cls: z[1], score: v6, parts: p };
 }
 
@@ -3877,10 +3877,10 @@ function blSwimWater(d, chop) {
   // = better), same convention as Entry's score.
   const score = Math.max(0, Math.round(60 - rawBL));
   const t  = SITE.surgeThresholds;
-  const z  = rawBL <= t.steady ? ['Steady', 'green']
-           : rawBL <= t.drifty ? ['Drifty', 'amber']
-           : rawBL <= t.surgy  ? ['Surgy',  'yellow']
-           :                     ['Washy',  'red'];
+  const z  = rawBL <= t.steady ? ['Glide',   'green']
+           : rawBL <= t.drifty ? ['Jostle',  'amber']
+           : rawBL <= t.surgy  ? ['Wrestle', 'yellow']
+           :                     ['Washed',  'red'];
   return { label: z[0], cls: z[1], score: score, raw: rawBL,
            parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
@@ -3902,6 +3902,15 @@ function calcScore(d, modelOverride) {
   const wsBL   = windSeaAt(SITE.fetchMaskBL, windKmh, windDir, windDurHrs);
   const wsSens = (SITE.windSeaSens != null) ? SITE.windSeaSens : 1;
   const wind_d = (wsBL.hs * wsBL.hs) * Math.max(0, wsBL.tp) * wsSens;
+
+  // BL-table wind-wave for the CHOP crossfade (Option A, 2 Jul 2026): both Chop
+  // and Swim are BL-point metrics, so the wind-wave in their crossfade is filtered
+  // through the BL dispersion table (not the SS table used for Entry) and scaled by
+  // bl_wave_sens. wwTxBL is its BL arc transmit — the crossfade handover weight.
+  const _wwP_bl   = windWaveP || 5;
+  const _blSens   = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
+  const wwTxBL    = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, _wwP_bl)));
+  const ww_d_BL   = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, _wwP_bl) * wwTxBL * _blSens;
 
   // Wind-wave directional geometry — blend ARRIVAL (point: energy refracting into
   // the S Steyne entry/break) with ROUTE (line: swimmer exposure crossing the bay
@@ -3990,9 +3999,10 @@ function calcScore(d, modelOverride) {
   });
   const total  = o + tide_d;
 
-  // CHOP crossfade (single source of truth): wind-sea ↔ wind-wave handover at the
-  // wind-wave's arc weight. Used by the CHOP metric AND added into SWIM (1:1).
-  const chopQ7 = wind_d * (1 - wwTxForChop) + ww_d * wwTxForChop;
+  // CHOP crossfade (single source of truth): BL wind-sea ↔ BL wind-wave handover
+  // at the BL arc weight. Both terms are now BL-point (Option A). Used by the CHOP
+  // metric AND added into SWIM (1:1). Entry keeps its own SS-table crossfade above.
+  const chopQ7 = wind_d * (1 - wwTxBL) + ww_d_BL * wwTxBL;
 
   return {
     score: Math.max(0, Math.round(60 - total)),
@@ -4956,7 +4966,7 @@ function renderDayWindow(dateTimeStr){
   var fullH = ribH + 18;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + fullH);
 
-  var ROWS = [['Entry','entry'], ['Chop','chop'], ['Surge','surge']];
+  var ROWS = [['Entry','entry'], ['Chop','chop'], ['Swim','surge']];
   var cells = '', labels = '';
   ROWS.forEach(function(row, r){
     var ry = top + r*(rowH + gap);
@@ -6913,7 +6923,7 @@ function runCalibration() {
       return val < t.glassy ? {l:'Smooth',c:'green'} : val <= t.ripply ? {l:'Ripply',c:'amber'} : val <= t.choppy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
     } else {
       const t = SITE.surgeThresholds;  // val = v6, higher=better
-      return val > t.steady ? {l:'Steady',c:'green'} : val > t.drifty ? {l:'Drifty',c:'amber'} : val >= t.surgy ? {l:'Surgy',c:'yellow'} : {l:'Washy',c:'red'};
+      return val > t.steady ? {l:'Glide',c:'green'} : val > t.drifty ? {l:'Jostle',c:'amber'} : val >= t.surgy ? {l:'Wrestle',c:'yellow'} : {l:'Washed',c:'red'};
     }
   }
   const ez = zoneLabel('entry', Math.max(0, 60 - app_score));
@@ -7104,11 +7114,11 @@ async function generateBannerSummary() {
   // ── Generate colloquial summary locally
   const entryBad = ['Caution','Dangerous'].includes(domEntry);
   const swimBad  = ['Choppy','Messy'].includes(domSwim);
-  const surgeBad = ['Surgy','Washy'].includes(domSurge);
+  const surgeBad = ['Wrestle','Washed'].includes(domSurge);
   const allGood  = !entryBad && !swimBad && !surgeBad;
 
   function emphasise(t) {
-    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy|Steady|Drifty|Surgy|Washy)\b/g, '<em>$1</em>');
+    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy|Glide|Jostle|Wrestle|Washed)\b/g, '<em>$1</em>');
   }
 
   // ── PARAGRAPH 1: Weather ──────────────────────────────────────────────────
@@ -7255,12 +7265,12 @@ async function generateBannerSummary() {
     }
 
     // Surge
-    if (domSurge === 'Washy') {
+    if (domSurge === 'Washed') {
       parts.push(pick([
         ` The surge inside the bay is significant today — swell is bouncing back off the Shelly headland wall and creating that churned-up, turbulent water that makes it hard to swim a clean line. Visibility underwater will be poor near the rocks. Give the headland wall a wide berth.`,
         ` Lots of surge through Cabbage Tree Bay — the swell is reflecting off the walls and pushing you around, especially near the Shelly end. The water will be stirred up and visibility might be murky. Experienced swimmers only on days like this.`,
       ]));
-    } else if (domSurge === 'Surgy') {
+    } else if (domSurge === 'Wrestle') {
       parts.push(pick([
         ` Some surge through the bay today — you'll feel the pull of the swell near the headland and the water is moving around more than usual. Keep clear of the rocks near the Shelly wall and you'll be fine.`,
         ` The bay has a bit of surge to it today — nothing extreme but the swell is moving through and you'll notice it near the headland. Swim a relaxed line and stay away from the cliff edges.`,
@@ -7268,12 +7278,12 @@ async function generateBannerSummary() {
     }
 
     // Closing recommendation
-    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') {
+    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washed') {
       parts.push(pick([
         ` Best left to experienced swimmers today — conditions are genuinely challenging and this isn't the day to push your limits if you're still building confidence in open water.`,
         ` Worth asking yourself honestly whether today's the day. Conditions are tough — experienced open water swimmers will manage, but it's a solid day to sit it out on the sand if you're not fully comfortable.`,
       ]));
-    } else if (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') {
+    } else if (domEntry === 'Caution' || domSurge === 'Wrestle' || domSwim === 'Choppy') {
       parts.push(pick([
         ` All in all, a doable day — just stay aware and pick your moments. Most swimmers will have a good time once they're in.`,
         ` Worth being switched on, but nothing here that should put you off getting in the water.`,
@@ -7292,8 +7302,8 @@ async function generateBannerSummary() {
 
   // Water icon
   document.getElementById('banner-water-icon').textContent =
-    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
-    domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
+    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washed' ? '⚠️' :
+    domEntry === 'Caution'   || domSurge === 'Wrestle' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
@@ -7460,7 +7470,7 @@ const CAM_BAND_MID  = { 0: 12.5, 1: 37.5, 2: 62.5, 3: 87.5 };
 const CAM_LABEL_BAND = {
   entry: { easy: 0, doable: 1, caution: 2, dangerous: 3, danger: 3 },
   swim:  { smooth: 0, glassy: 0, ripply: 1, choppy: 2, messy: 3 },
-  surge: { steady: 0, drifty: 1, surgy: 2, washy: 3 },
+  surge: { glide: 0, steady: 0, jostle: 1, drifty: 1, wrestle: 2, surgy: 2, washed: 3, washy: 3 },
 };
 
 function camToken() {
@@ -7878,8 +7888,8 @@ const METRIC_INFO = {
     text: "How much the wind is roughing up the surface. Small wind-waves slap your face and get water in your mouth when you go to breathe \u2014 the more chop, the harder it is to get a clean breath. Wind builds chop from its speed and its runway over open water \u2014 the fetch."
   },
   surge: {
-    title: 'Surge',
-    text: "How much the bay pushes you around. Swell bounces off the Shelly headland wall and reflects back, churning things up \u2014 strongest near the rocks."
+    title: 'Swim',
+    text: "What the swim across the bay actually feels like \u2014 both the sideways push of surge and the chop you're stroking through. Swell reflects off the Shelly headland wall and the wind roughs up the surface; together they decide whether you glide or get washed around. Strongest near the rocks."
   }
 };
 
