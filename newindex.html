@@ -1900,7 +1900,7 @@
       <div class="custom-head"><h4>Choose what to show</h4><button type="button" id="customClose" class="custom-x" aria-label="Close">✕</button></div>
       <div id="customList"></div>
 
-      <div class="ind-head">Entry / Swim / Surge indicators</div>
+      <div class="ind-head">Entry / Chop / Swim indicators</div>
       <div class="ind-choice" id="indChoice" role="group" aria-label="Indicator style">
         <button type="button" class="ind-opt" data-ind="pic" aria-pressed="true">
           <div class="ind-demo ind-demo-pic">
@@ -2025,7 +2025,7 @@
         </div>
         <div class="metric-block green" id="metricSurge" onclick="openMetricModal('surge')">
           <div class="metric-header">
-            <div class="metric-name">Surge: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-name">Swim: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSurgeVal">—</div>
             <div class="metric-score" id="metricSurgeScore">—</div>
           </div>
@@ -2749,7 +2749,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       tile('Sticky', ratio + '%');
     el('stStick').textContent = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU)';
     el('stDaily').innerHTML = dailyChart(d.daily || []);
-    el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Surge' });
+    el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Swim' });
     el('stModes').innerHTML = mixBars(d.modes || [], 'mode', null);
     el('stSources').innerHTML = listRows(d.sources || [], 'source', 'devices');
     el('stEvents').innerHTML = listRows(d.top_events || [], 'event', 'n');
@@ -2979,6 +2979,8 @@ const SITE_DEFAULTS = {
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
   nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
   ssWaveSens:     2.35, // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path (tuned 2 Jul 2026)
+  blDisp:         null, // BL (Bower Lane / bay) dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % — New NS tab V10:AL28
+  blWaveSens:     2.35, // New NS tab V2 (bl_wave_sens) — BL swell+sea sensitivity for the Swim metric
   // Wind-chop directional shelter at the CHOP point (measured on the bathymetry
   // grid). 72 bins @ 5° (index 0=0°N … 71=355°). Value =
   // TRANSMIT fraction of local wind-chop reaching the swim line from that wind
@@ -3495,6 +3497,28 @@ function nsDispLookup(dirDeg, periodS) {
   return Math.max(0, tx / 100); // transmit fraction
 }
 
+// BL (Bower Lane / bay) dispersion lookup — identical interp to nsDispLookup but
+// reads the BL table (New NS tab V10:AL28). Feeds the Swim metric (ex-Surge).
+function blDispLookup(dirDeg, periodS) {
+  const tbl = SITE.blDisp;
+  if (!tbl) return 0.5;
+  let d = ((dirDeg % 360) + 360) % 360;
+  if (d > 180) d = 360 - d;
+  const per = Math.max(NS_DISP_PMIN, Math.min(NS_DISP_PMAX, periodS || 8));
+  const ri = d / 10;
+  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
+  const rf = ri - r0;
+  const ci = per - NS_DISP_PMIN;
+  const c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1);
+  const cf = ci - c0;
+  const tx =
+    tbl[r0][c0] * (1-rf) * (1-cf) +
+    tbl[r0][c1] * (1-rf) *    cf  +
+    tbl[r1][c0] *    rf  * (1-cf) +
+    tbl[r1][c1] *    rf  *    cf;
+  return Math.max(0, tx / 100);
+}
+
 // Parse the "New NS" tab CSV into { table:[19][16], ssWaveSens:Number }.
 // ss_wave_sens: row index 1, col index 2.
 // Period header row: index 9, cols 3–18 (periods 2–17).
@@ -3518,6 +3542,9 @@ function parseNsDispCSV(text) {
   if (rows[1] && rows[1][2] != null) ssWaveSens = num(rows[1][2]);
   let windSeaSens = null;
   if (rows[2] && rows[2][2] != null) windSeaSens = num(rows[2][2]);
+  // bl_wave_sens (V2 = row 1, col 21) — BL dispersion sensitivity for the Swim metric.
+  let blWaveSens = null;
+  if (rows[1] && rows[1][21] != null) blWaveSens = num(rows[1][21]);
 
   // Metric thresholds — New NS tab block AN2:AQ13 (SEPARATE from index.html's col AK).
   // 4 cols: AN(39)=metric, AO(40)=band label, AP(41)=colour, AQ(42)=value.
@@ -3536,7 +3563,7 @@ function parseNsDispCSV(text) {
   if ([uSteady,uDrifty,uSurgy,uMax].every(v => v != null))
     surgeThresholds = { steady:uSteady, drifty:uDrifty, surgy:uSurgy, scaleMax:uMax };
 
-  // Dispersion table: rows 10–28, cols 3–18.
+  // SS dispersion table: rows 10–28, cols 3–18 (dir label in col 2).
   const table = [];
   for (let r = 10; r <= 28; r++) {
     const row = rows[r] || [];
@@ -3547,8 +3574,20 @@ function parseNsDispCSV(text) {
     }
     table.push(periods);
   }
+  // BL dispersion table: V10:AL28 — dir label in col V(21), 16 period values in W:AL (cols 22–37).
+  const blTable = [];
+  for (let r = 10; r <= 28; r++) {
+    const row = rows[r] || [];
+    const periods = [];
+    for (let c = 22; c <= 37; c++) {
+      const v = num(row[c]);
+      periods.push(v == null ? 0 : v);
+    }
+    blTable.push(periods);
+  }
+  const blOk = (blTable.length === 19 && blTable.every(r => r.length === 16) && blTable.some(r => r.some(v => v > 0)));
   return (table.length === 19 && table.every(r => r.length === 16))
-    ? { table, ssWaveSens, windSeaSens, entryThresholds, swimThresholds, surgeThresholds }
+    ? { table, blTable: blOk ? blTable : null, ssWaveSens, windSeaSens, blWaveSens, entryThresholds, swimThresholds, surgeThresholds }
     : null;
 }
 
@@ -3567,8 +3606,10 @@ async function loadNsDispConfig(force) {
       SITE.nsDisp = cached.table;
       if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
       if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
+      if (cached.blDisp) SITE.blDisp = cached.blDisp;
+      if (cached.blWaveSens != null) SITE.blWaveSens = cached.blWaveSens;
       applyThresh(cached);
-      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ')');
+      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ', BL=' + (SITE.blDisp?'y':'n') + ')');
       return;
     }
   } catch(e) {}
@@ -3582,12 +3623,16 @@ async function loadNsDispConfig(force) {
       SITE.nsDisp = parsed.table;
       if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
       if (parsed.windSeaSens != null) SITE.windSeaSens = parsed.windSeaSens;
+      if (parsed.blDisp) SITE.blDisp = parsed.blDisp;
+      if (parsed.blWaveSens != null) SITE.blWaveSens = parsed.blWaveSens;
       applyThresh(parsed);
       localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
         fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens,
+        blDisp: parsed.blDisp, blWaveSens: parsed.blWaveSens,
         entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
       }));
       diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens
+        + ', BL table=' + (parsed.blDisp?'loaded':'MISSING') + ' bl_wave_sens=' + SITE.blWaveSens
         + (parsed.swimThresholds ? ', CHOP ' + parsed.swimThresholds.glassy + '/' + parsed.swimThresholds.ripply + '/' + parsed.swimThresholds.choppy : '') + ')');
     } else {
       diag('NS disp: parse returned null — check New NS tab (expected 19 dir rows × 16 period cols from row 11)');
@@ -3798,6 +3843,33 @@ function bowerSurgeWater(d) {
   return { label: z[0], cls: z[1], score: v6, parts: p };
 }
 
+// SWIM metric (renamed from Surge, 2 Jul 2026) — swell+sea across the bay at the
+// BL (Bower Lane / bay) point. Same swell1 + swell2 + wind-wave energy as Entry,
+// but filtered through the BL DISPERSION TABLE (New NS tab V10:AL28) instead of
+// the SS table, and scaled by bl_wave_sens. This carries the wall-reflection /
+// bay-crossing character the old Surge rail was meant to show. Chop is a SEPARATE
+// metric (kept as-is) so it is NOT summed here. Rail is inverted like Surge:
+// v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
+function blSwimWater(d) {
+  const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
+          windWaveH, windWaveDir, windWaveP, windDir } = d;
+  const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
+  const nrg = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
+  const wwP = windWaveP || 5;
+  const s1  = nrg(swell1H, swell1P)           * Math.max(0, blDispLookup(swell1Dir, swell1P));
+  const s2  = nrg(swell2H || 0, swell2P || 8) * Math.max(0, blDispLookup(swell2Dir || 0, swell2P || 8));
+  const ww  = nrg(windWaveH || 0, wwP)        * Math.max(0, blDispLookup(windWaveDir || windDir, wwP));
+  const rawBL = (s1 + s2 + ww) * ess;
+  const v6 = Math.max(0, Math.round(60 - rawBL));
+  const t  = SITE.surgeThresholds;
+  const z  = v6 >  t.steady ? ['Steady', 'green']
+           : v6 >  t.drifty ? ['Drifty', 'amber']
+           : v6 >= t.surgy  ? ['Surgy',  'yellow']
+           :                  ['Washy',  'red'];
+  return { label: z[0], cls: z[1], score: v6, raw: rawBL,
+           parts: { swell1: s1*ess, swell2: s2*ess, windWave: ww*ess, raw: rawBL } };
+}
+
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
@@ -3929,11 +4001,10 @@ function calcScore(d, modelOverride) {
       if (q7 <= t.choppy) return { label:'Choppy', cls:'yellow', score: s60, raw: q7 };
       return                     { label:'Messy',  cls:'red',     score: s60, raw: q7 };
     })(),
-    // Metric 3: Surge — sourced from Bower Lane (CTB) tables, NOT the entry point.
-    //   See bowerSurgeWater(): own sea/rif tables, swellSens 1.4, spm 4.05, flat
-    //   tide amplifier, chop excluded. v6 = 60 − rawSwell (HIGHER = better).
-    //   Independent of the entry-point GEM/Original swell path above.
-    water: bowerSurgeWater(d),
+    // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
+    //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
+    //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
+    water: blSwimWater(d),
   };
 }
 
