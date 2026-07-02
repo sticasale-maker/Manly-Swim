@@ -4501,11 +4501,12 @@ function renderSnapshot(h, wx) {
         wx.feelsLike != null ? Math.round(wx.feelsLike) + '°' : '—';
     }
   }
-  // Sea temp (from marine data on h, available regardless of wx)
+  // Sea temp — Facebook community reading is the ONLY source. Never fall back to
+  // WW/Open-Meteo: the FB value set for the day stands until the pipeline overwrites it.
   const seaTempEl = document.getElementById('seaTempVal');
   const seaTempSlim = document.getElementById('seaTempValSlim');
   if (seaTempEl || seaTempSlim) {
-    const st = (window._communitySeaTemp != null) ? window._communitySeaTemp : h.seaTemp;
+    const st = window._communitySeaTemp;
     const stTxt = (st != null && st > 1) ? st.toFixed(1) : '—';
     if (seaTempEl)   seaTempEl.textContent   = stTxt;
     if (seaTempSlim) seaTempSlim.textContent = stTxt;
@@ -5348,7 +5349,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260702-211548';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5453,9 +5454,9 @@ const BB_SUPABASE_KEY  = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
 
 // ── Community morning water temperature ───────────────────────────────────────
 // Read-only here (anon key, same as the bluebottle reads). The PC pipeline writes
-// water_temp_now via the service role. When a reading exists for TODAY (Sydney) it
-// transparently stands in for the Open-Meteo sea temp — same tile, same .toFixed(1)
-// formatting, no label, no timestamp. If there's none, the Open-Meteo value shows.
+// water_temp_now via the service role. This Facebook reading is the ONLY source for
+// the sea-temp tile — WW/Open-Meteo is never used. The stored value stands until the
+// pipeline overwrites it, so yesterday's reading shows until today's is posted.
 window._communitySeaTemp = null;
 function _sydTodayStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney',
@@ -5471,7 +5472,7 @@ async function fetchCommunitySeaTemp() {
     if (!r.ok) return;
     const rows = await r.json();
     const row  = Array.isArray(rows) ? rows[0] : null;
-    const val  = (row && row.day === _sydTodayStr()) ? Number(row.temp_c) : NaN;
+    const val  = row ? Number(row.temp_c) : NaN;
     window._communitySeaTemp = (isFinite(val) && val > 1) ? val : null;
     if (window._communitySeaTemp != null) {
       const txt = window._communitySeaTemp.toFixed(1);
@@ -5480,7 +5481,7 @@ async function fetchCommunitySeaTemp() {
       if (a) a.textContent = txt;
       if (b) b.textContent = txt;
     }
-  } catch (_) { /* leave the Open-Meteo value in place */ }
+  } catch (_) { /* leave the last community value in place */ }
 }
 window.addEventListener('load', fetchCommunitySeaTemp);
 setInterval(fetchCommunitySeaTemp, 5 * 60 * 1000);
