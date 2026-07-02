@@ -3935,15 +3935,13 @@ function calcScore(d, modelOverride) {
     s2_d  = nrg(swell2H || 0, swell2P || 8)   * s2Tx * ess;
     rif_d = 0; // refraction absorbed into the dispersion table
 
-    // ── ENTRY wind-sea: SS-point straight-line fetch, blended against NS ──────
-    // The NS feed already delivers the organised sea from its restricted arc, so
-    // adding the fetch wind-sea on top would double-count. Blend by (1 − s1Tx):
-    // where NS transmits strongly (its arc) the fetch sea is suppressed; where NS
-    // is blind (outside its arc, e.g. a N/NNE sea) the fetch sea takes over.
-    // Graceful, continuous — a few degrees never flips it.
+    // ── ENTRY wind-sea: SS-point straight-line fetch ─────────────────────────
+    // Raw SS fetch wind-sea. The anti-double-count against the NS-reported sea
+    // (ww_d) is handled by the wind-wave crossfade below (windEntry), NOT by a
+    // separate (1−NS) gate — that was double-suppression and made Entry read
+    // lower than Swim on windy hours. Now consistent with Swim's chop (2 Jul 2026).
     const wsSS  = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs);
-    const nsCover = Math.max(0, Math.min(1, s1Tx)); // NS presence on the swell path
-    ws_d = nrg(wsSS.hs, wsSS.tp) * (1 - nsCover) * ess * wsSens;
+    ws_d = nrg(wsSS.hs, wsSS.tp) * ess * wsSens;
   } else {
     // ── Original model ────────────────────────────────────────────────────
     const s1p      = swellPower(swell1H, swell1P);
@@ -5600,7 +5598,7 @@ function renderGemComparison(h) {
   const s1_d_g   = s1pow_g * s1Tx_g * ess_g;
   const s2_d_g   = s2pow_g * s2Tx_g * ess_g;
   const wsSS_g   = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs_g);
-  const ws_d_g   = nrg_g(wsSS_g.hs, wsSS_g.tp) * (1 - Math.max(0, Math.min(1, s1Tx_g))) * ess_g * wsSens_g;
+  const ws_d_g   = nrg_g(wsSS_g.hs, wsSS_g.tp) * ess_g * wsSens_g;
   const wEntry_g = Math.max(0, Math.min(1, wwTx_g));
   const windEntry_g = ws_d_g * (1 - wEntry_g) + ww_d_g * wEntry_g;
   const o_g      = windEntry_g + s1_d_g + s2_d_g;
