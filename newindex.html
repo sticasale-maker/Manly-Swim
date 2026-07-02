@@ -3852,14 +3852,19 @@ function bowerSurgeWater(d) {
 // v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
 function blSwimWater(d) {
   const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
-          windWaveH, windWaveDir, windWaveP, windDir } = d;
+          windWaveH, windWaveDir, windWaveP, windDir, tideM } = d;
   const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
   const nrg = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
   const wwP = windWaveP || 5;
   const s1  = nrg(swell1H, swell1P)           * Math.max(0, blDispLookup(swell1Dir, swell1P));
   const s2  = nrg(swell2H || 0, swell2P || 8) * Math.max(0, blDispLookup(swell2Dir || 0, swell2P || 8));
   const ww  = nrg(windWaveH || 0, wwP)        * Math.max(0, blDispLookup(windWaveDir || windDir, wwP));
-  const rawBL = (s1 + s2 + ww) * ess;
+  const s1_d = s1 * ess, s2_d = s2 * ess, ww_d = ww * ess;
+  // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied
+  // to the BL swell terms. Rides on swell energy only; wind-wave excluded, matching
+  // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
+  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir });
+  const rawBL = s1_d + s2_d + ww_d + tide_d;
   const v6 = Math.max(0, Math.round(60 - rawBL));
   const t  = SITE.surgeThresholds;
   const z  = v6 >  t.steady ? ['Steady', 'green']
@@ -3867,7 +3872,7 @@ function blSwimWater(d) {
            : v6 >= t.surgy  ? ['Surgy',  'yellow']
            :                  ['Washy',  'red'];
   return { label: z[0], cls: z[1], score: v6, raw: rawBL,
-           parts: { swell1: s1*ess, swell2: s2*ess, windWave: ww*ess, raw: rawBL } };
+           parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, raw: rawBL } };
 }
 
 function calcScore(d, modelOverride) {
