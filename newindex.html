@@ -3865,10 +3865,12 @@ function blSwimWater(d, chop) {
   // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
   const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir });
   // Chop added 1:1 — the same non-double-counted crossfade q7 the CHOP metric uses,
-  // passed in from calcScore (single source of truth). Matches the graphic's
-  // Swim = swell+sea + chop. 0 if not supplied (e.g. standalone calls).
+  // passed in from calcScore (single source of truth). The wind-wave (ww_d) is NOT
+  // added separately here: it already lives inside the chop crossfade (ww_d×w), so
+  // adding it again would double-count the sea on in-arc easterlies. Swim swell+sea
+  // = the two true SWELL terms (s1_d, s2_d); the sea/wind-wave enters only via chop.
   const chop_d = Math.max(0, chop || 0);
-  const rawBL = s1_d + s2_d + ww_d + tide_d + chop_d;
+  const rawBL = s1_d + s2_d + tide_d + chop_d;
   const v6 = Math.max(0, Math.round(60 - rawBL));
   const t  = SITE.surgeThresholds;
   const z  = v6 >  t.steady ? ['Steady', 'green']
@@ -7941,18 +7943,18 @@ function metricBreakdownHTML(key) {
     );
   }
   if (key === 'surge') {
-    // SWIM (ex-Surge) components from r.water.parts — swell+sea via BL table,
-    // tide, plus the crossfade chop added 1:1. Reconciles with the v6 score.
+    // SWIM (ex-Surge) components from r.water.parts. Total = swell (s1+s2 via BL
+    // table) + tide + chop. The wind-wave is NOT summed separately — it enters only
+    // through the chop crossfade (shown below), so the sea isn't double-counted.
     const w = r.water.parts || { swell1: 0, swell2: 0, windWave: 0, tide: 0, chop: 0, raw: r.water.score };
-    const swellSub = (w.swell1 || 0) + (w.swell2 || 0) + (w.windWave || 0);
+    const swellSub = (w.swell1 || 0) + (w.swell2 || 0);
     return wrap(
       row('Primary swell (BL)', f(w.swell1)) +
       row('Secondary swell (BL)', f(w.swell2)) +
-      row('Wind-wave (BL)', f(w.windWave)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('Swell+sea subtotal', f(swellSub)) +
+      row('Swell subtotal', f(swellSub)) +
       row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
-      row('Chop (crossfade, 1:1)', f(w.chop || 0)) +
+      row('Chop (crossfade, 1:1)', f(w.chop || 0), '(carries the wind-wave/sea)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Swim demerits', f(w.raw)) +
       row('Swim score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
