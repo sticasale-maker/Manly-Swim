@@ -4331,16 +4331,21 @@ function parseWillyWeather(j) {
     dateTime:  new Date().toISOString().replace('T',' ').substring(0,19),
     windKmh:   wfc.speed     ?? 0,
     windDir:   wfc.direction ?? 0,
-    swell1H:   fc.height     ?? 0,
-    swell1Dir: fc.direction  ?? 0,
-    swell1P:   fc.period     ?? 8,
+    // Swell + sea are NS-ONLY (node 103218 covers the forecast window). WW must
+    // never seed these slots or a WW arrival dir (e.g. a 174 deg south swell that
+    // NS never reports at this node) leaks in on any hour NS doesn't overwrite.
+    // Left 0 here; mergeNearshore* fills them from hs_swl/dp_swl + hs_sea/dp_sea.
+    swell1H:   0,
+    swell1Dir: 0,
+    swell1P:   8,
     swell2H: 0, swell2Dir: 0, swell2P: 8,
     windWaveH: 0, windWaveDir: 0, windWaveP: 0,
     tideM,
   };
-  // Stamp pure-WW wave values now, before any OM/NS merge, for the compare tick.
+  // Stamp pure-WW wave values now (from the WW forecast, NOT the zeroed slots
+  // above) so the WW-compare tick still scores the real WillyWeather feed.
   wwData._ww = {
-    swell1H: wwData.swell1H, swell1P: wwData.swell1P, swell1Dir: wwData.swell1Dir,
+    swell1H: fc.height ?? 0, swell1P: fc.period ?? 8, swell1Dir: fc.direction ?? 0,
     swell2H: 0, swell2Dir: 0, swell2P: 8,
     windWaveH: 0, windWaveP: 0, windWaveDir: 0,
   };
@@ -4392,17 +4397,19 @@ function buildHourlyMatrix(j) {
         dateTime:  dt,
         windKmh:   we.speed     ?? 0,
         windDir:   we.direction ?? 0,
-        swell1H:   se.height    ?? 0,
-        swell1Dir: se.direction ?? 0,
-        swell1P:   se.period    ?? 8,
+        // NS-ONLY swell + sea (see wwData note). WW never seeds these — a missing
+        // NS hour must yield 0, not a WW arrival dir that NS never reports here.
+        swell1H:   0,
+        swell1Dir: 0,
+        swell1P:   8,
         swell2H: 0, swell2Dir: 0, swell2P: 8,
         windWaveH: 0, windWaveDir: 0, windWaveP: 0,
         tideM: getTide(dt),
       };
-      // Stamp the WW-original wave values now so the compare tick always has a
-      // WW feed to score, even on cached/pre-merge renders. NS merge preserves this.
+      // Stamp the WW-original wave values (from the WW swell entry, NOT the zeroed
+      // slots) so the compare tick always has a real WW feed to score.
       row._ww = {
-        swell1H: row.swell1H, swell1P: row.swell1P, swell1Dir: row.swell1Dir,
+        swell1H: se.height ?? 0, swell1P: se.period ?? 8, swell1Dir: se.direction ?? 0,
         swell2H: 0, swell2Dir: 0, swell2P: 8,
         windWaveH: 0, windWaveP: 0, windWaveDir: 0,
       };
@@ -4612,28 +4619,10 @@ async function fetchOMarine() {
 function mergeOMarine(data, omData) {
   if (!omData?.current) return data;
   const c = omData.current;
-  let windWaveP = c.windWaveP || 0;
-  if (!windWaveP && omData.hourly) {
-    const now = Date.now();
-    let closest = null, minDiff = Infinity;
-    Object.entries(omData.hourly).forEach(([dt, vals]) => {
-      const wwp = vals['wind_wave_period'];
-      if (!wwp) return;
-      const ts = Date.parse(dt.length === 16 ? dt + ':00' : dt);
-      if (isNaN(ts)) return;
-      const diff = Math.abs(ts - now);
-      if (diff < minDiff) { minDiff = diff; closest = { windWaveP: wwp }; }
-    });
-    if (closest) windWaveP = closest.windWaveP;
-  }
-  const guarded = guardSwell2(data.swell1H, data.swell1Dir,
-    c.swell2H||0, c.swell2Dir||0, c.swell2P||8);
-  return { ...data, ...guarded,
-    windWaveH:  c.windWaveH  || 0,
-    windWaveDir:c.windWaveDir || data.windDir,
-    windWaveP,
-    seaTemp: c.seaTemp ?? null,
-  };
+  // Swell + sea are NS-ONLY. Open-Meteo no longer seeds wind-wave (sea slot) or
+  // swell2 — those come from NS (hs_sea/dp_sea) or stay 0. OM contributes sea
+  // temperature only.
+  return { ...data, seaTemp: c.seaTemp ?? null };
 }
 
 function mergeOMarineMatrix(matrix, omData) {
@@ -4659,19 +4648,11 @@ function mergeOMarineMatrix(matrix, omData) {
     }
     return bestDiff <= 90*60*1000 ? best : null;
   }
+  // Swell + sea are NS-ONLY — OM contributes sea temperature only, no waves.
   return matrix.map(row => {
     const om = nearest(row.dateTime);
     if (!om) return row;
-    const guarded = guardSwell2(row.swell1H, row.swell1Dir,
-      om.secondary_swell_wave_height    || 0,
-      om.secondary_swell_wave_direction || 0,
-      om.secondary_swell_wave_period    || 8);
-    return { ...row, ...guarded,
-      windWaveH:  om.wind_wave_height    || 0,
-      windWaveDir:om.wind_wave_direction || row.windDir,
-      windWaveP:  om.wind_wave_period    || 0,
-      seaTemp:    om.sea_surface_temperature ?? null,
-    };
+    return { ...row, seaTemp: om.sea_surface_temperature ?? null };
   });
 }
 
