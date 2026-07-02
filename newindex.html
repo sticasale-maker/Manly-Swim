@@ -2985,6 +2985,7 @@ const SITE_DEFAULTS = {
   blDisp:         null, // BL (Bower Lane / bay) dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % — New NS tab V10:AL28
   blWaveSens:     2.35, // New NS tab V2 (bl_wave_sens) — BL swell+sea sensitivity for the Swim metric
   blChopImpact:   1.3,  // New NS tab V3 (bl_chop_impact) — "BL chop impact": single knob scaling the whole BL chop crossfade (wind-sea + wind-wave), no handover jump
+  chopSwimWeight: 1.0,  // New NS tab V4 (chop_swim_weight) — extra multiplier on chop WHERE IT ENTERS SWIM ONLY. Chop energy is physically small next to swell but adds annoyance; this lets chop move the SWIM band without touching the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = chop enters Swim 1:1 (legacy).
   // Wind-chop directional shelter at the CHOP point (measured on the bathymetry
   // grid). 72 bins @ 5° (index 0=0°N … 71=355°). Value =
   // TRANSMIT fraction of local wind-chop reaching the swim line from that wind
@@ -3552,6 +3553,10 @@ function parseNsDispCSV(text) {
   // bl_chop_impact (V3 = row 2, col 21) — "BL chop impact", single chop knob.
   let blChopImpact = null;
   if (rows[2] && rows[2][21] != null) blChopImpact = num(rows[2][21]);
+  // chop_swim_weight (V4 = row 2, col 22) — extra multiplier on chop WHERE IT ENTERS
+  // SWIM only. Amplifies chop's SWIM-band contribution without touching the CHOP metric.
+  let chopSwimWeight = null;
+  if (rows[2] && rows[2][22] != null) chopSwimWeight = num(rows[2][22]);
 
   // Metric thresholds — New NS tab block AN2:AQ13 (SEPARATE from index.html's col AK).
   // 4 cols: AN(39)=metric, AO(40)=band label, AP(41)=colour, AQ(42)=value.
@@ -3594,7 +3599,7 @@ function parseNsDispCSV(text) {
   }
   const blOk = (blTable.length === 19 && blTable.every(r => r.length === 16) && blTable.some(r => r.some(v => v > 0)));
   return (table.length === 19 && table.every(r => r.length === 16))
-    ? { table, blTable: blOk ? blTable : null, ssWaveSens, windSeaSens, blWaveSens, blChopImpact, entryThresholds, swimThresholds, surgeThresholds }
+    ? { table, blTable: blOk ? blTable : null, ssWaveSens, windSeaSens, blWaveSens, blChopImpact, chopSwimWeight, entryThresholds, swimThresholds, surgeThresholds }
     : null;
 }
 
@@ -3616,6 +3621,7 @@ async function loadNsDispConfig(force) {
       if (cached.blDisp) SITE.blDisp = cached.blDisp;
       if (cached.blWaveSens != null) SITE.blWaveSens = cached.blWaveSens;
       if (cached.blChopImpact != null) SITE.blChopImpact = cached.blChopImpact;
+      if (cached.chopSwimWeight != null) SITE.chopSwimWeight = cached.chopSwimWeight;
       applyThresh(cached);
       diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ', BL=' + (SITE.blDisp?'y':'n') + ')');
       return;
@@ -3634,10 +3640,11 @@ async function loadNsDispConfig(force) {
       if (parsed.blDisp) SITE.blDisp = parsed.blDisp;
       if (parsed.blWaveSens != null) SITE.blWaveSens = parsed.blWaveSens;
       if (parsed.blChopImpact != null) SITE.blChopImpact = parsed.blChopImpact;
+      if (parsed.chopSwimWeight != null) SITE.chopSwimWeight = parsed.chopSwimWeight;
       applyThresh(parsed);
       localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
         fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens,
-        blDisp: parsed.blDisp, blWaveSens: parsed.blWaveSens, blChopImpact: parsed.blChopImpact,
+        blDisp: parsed.blDisp, blWaveSens: parsed.blWaveSens, blChopImpact: parsed.blChopImpact, chopSwimWeight: parsed.chopSwimWeight,
         entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
       }));
       diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens
@@ -3873,12 +3880,19 @@ function blSwimWater(d, chop) {
   // to the BL swell terms. Rides on swell energy only; wind-wave excluded, matching
   // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
   const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir });
-  // Chop added 1:1 — the same non-double-counted crossfade q7 the CHOP metric uses,
-  // passed in from calcScore (single source of truth). The wind-wave (ww_d) is NOT
-  // added separately here: it already lives inside the chop crossfade (ww_d×w), so
-  // adding it again would double-count the sea on in-arc easterlies. Swim swell+sea
-  // = the two true SWELL terms (s1_d, s2_d); the sea/wind-wave enters only via chop.
-  const chop_d = Math.max(0, chop || 0);
+  // Chop enters SWIM via the same non-double-counted crossfade q7 the CHOP metric
+  // uses (passed in from calcScore, single source of truth), but scaled here by
+  // chop_swim_weight (New NS V4). Rationale: chop energy is physically small next
+  // to swell (H²×P), so a 1:1 add can't move the SWIM band even when chop is the
+  // dominant annoyance in the water. This weight amplifies chop's SWIM contribution
+  // ONLY — the standalone CHOP metric (chopQ7), the swell terms, and bl_chop_impact
+  // are all untouched. weight = 1.0 reproduces the legacy 1:1 add exactly.
+  // The wind-wave (ww_d) is NOT added separately: it already lives inside the chop
+  // crossfade (ww_d×w), so adding it again would double-count the sea on in-arc
+  // easterlies. Swim swell+sea = the two true SWELL terms (s1_d, s2_d); the
+  // sea/wind-wave enters only via chop.
+  const chopSwimWeight = (SITE.chopSwimWeight != null) ? SITE.chopSwimWeight : 1;
+  const chop_d = Math.max(0, chop || 0) * chopSwimWeight;
   const rawBL = s1_d + s2_d + tide_d + chop_d;
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
   // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
@@ -6410,6 +6424,7 @@ const TUNE_PARAMS = [
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge', min:0, max:40, step:0.5, hint:'q7 ≤ this = Choppy, else Messy.' },
   { key:'blWaveSens', label:'SWIM · BL wave sensitivity (bl_wave_sens)', min:0, max:4, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SWIM metric (energy × BL transmit × this, +tide).' },
   { key:'blChopImpact', label:'CHOP · BL chop impact (bl_chop_impact)', min:0, max:4, step:0.05, hint:'New NS tab V3. Single knob scaling the WHOLE BL chop crossfade (wind-sea + wind-wave), no handover jump. Feeds CHOP metric and Swim.' },
+  { key:'chopSwimWeight', label:'SWIM · chop weight into Swim (chop_swim_weight)', min:1, max:8, step:0.1, hint:'New NS tab V4. Extra multiplier on chop WHERE IT ENTERS SWIM only. Chop energy is small next to swell but adds annoyance — turn this up to make chop move the SWIM band. Does NOT affect the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = legacy 1:1.' },
   { key:'surgeThresholds.steady', label:'SWIM · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
   { key:'surgeThresholds.drifty', label:'SWIM · Drifty edge', min:0, max:60, step:1, hint:'rawBL ≤ this = Drifty.' },
   { key:'surgeThresholds.surgy',  label:'SWIM · Surgy edge',  min:0, max:60, step:1, hint:'rawBL ≤ this = Surgy, else Washy. Highest of the three.' },
