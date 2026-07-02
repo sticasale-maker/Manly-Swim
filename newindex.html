@@ -3850,7 +3850,7 @@ function bowerSurgeWater(d) {
 // bay-crossing character the old Surge rail was meant to show. Chop is a SEPARATE
 // metric (kept as-is) so it is NOT summed here. Rail is inverted like Surge:
 // v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
-function blSwimWater(d) {
+function blSwimWater(d, chop) {
   const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
           windWaveH, windWaveDir, windWaveP, windDir, tideM } = d;
   const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
@@ -3864,7 +3864,11 @@ function blSwimWater(d) {
   // to the BL swell terms. Rides on swell energy only; wind-wave excluded, matching
   // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
   const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir });
-  const rawBL = s1_d + s2_d + ww_d + tide_d;
+  // Chop added 1:1 — the same non-double-counted crossfade q7 the CHOP metric uses,
+  // passed in from calcScore (single source of truth). Matches the graphic's
+  // Swim = swell+sea + chop. 0 if not supplied (e.g. standalone calls).
+  const chop_d = Math.max(0, chop || 0);
+  const rawBL = s1_d + s2_d + ww_d + tide_d + chop_d;
   const v6 = Math.max(0, Math.round(60 - rawBL));
   const t  = SITE.surgeThresholds;
   const z  = v6 >  t.steady ? ['Steady', 'green']
@@ -3872,7 +3876,7 @@ function blSwimWater(d) {
            : v6 >= t.surgy  ? ['Surgy',  'yellow']
            :                  ['Washy',  'red'];
   return { label: z[0], cls: z[1], score: v6, raw: rawBL,
-           parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, raw: rawBL } };
+           parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 
 function calcScore(d, modelOverride) {
@@ -3903,7 +3907,7 @@ function calcScore(d, modelOverride) {
   const wwSens  = (SITE.wwSens != null) ? SITE.wwSens : SITE.swellSens;
   const wwRoute = Math.max(0, dirLookup(lk.wind, windWaveDir || windDir)) / 100;
 
-  let ww_d, s1_d, s2_d, rif_d, ws_d = 0;
+  let ww_d, s1_d, s2_d, rif_d, ws_d = 0, wwTxForChop = 0;
 
   if (useGem) {
     // ── NS DISPERSION model ─────────────────────────────────────────────────
@@ -3920,6 +3924,7 @@ function calcScore(d, modelOverride) {
     const nrg  = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
 
     const wwTx = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP));
+    wwTxForChop = Math.max(0, Math.min(1, wwTx)); // handover weight for CHOP crossfade
     const s1Tx = Math.max(0, nsDispLookup(swell1Dir, swell1P));
     const s2Tx = Math.max(0, nsDispLookup(swell2Dir || 0, swell2P || 8));
 
@@ -3955,7 +3960,19 @@ function calcScore(d, modelOverride) {
     rif_d = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
   }
 
-  const o      = wind_d + ww_d + s1_d + s2_d + rif_d + ws_d;
+  // BL wind-sea (wind_d) is DELIBERATELY EXCLUDED from the Entry total (2 Jul 2026):
+  // it's the mid-bay chop, not what a swimmer feels entering at the SS corner. It
+  // still feeds the standalone CHOP metric (q7 below).
+  //
+  // Entry's wind contribution is a CROSSFADE (like Chop), not a stack: the SS fetch
+  // wind-sea (ws_d, already gated × (1−NS)) and the forecast wind-wave (ww_d) both
+  // represent the same wind-driven sea at the corner. Blend at the wind-wave arc
+  // weight w so they hand over gracefully instead of double-counting:
+  //   windEntry = ws_d × (1 − w) + ww_d × w
+  // where w = wwTxForChop (wind-wave's SS-dispersion arc). Entry = swell + windEntry + tide.
+  const wEntry   = wwTxForChop;
+  const windEntry = ws_d * (1 - wEntry) + ww_d * wEntry;
+  const o      = windEntry + s1_d + s2_d + rif_d;
 
   // ── Tide effect — headland protection model ──────────────────────────────
   // The Shelly headland shelters the bay, and how much depends on water level.
@@ -3969,6 +3986,10 @@ function calcScore(d, modelOverride) {
   });
   const total  = o + tide_d;
 
+  // CHOP crossfade (single source of truth): wind-sea ↔ wind-wave handover at the
+  // wind-wave's arc weight. Used by the CHOP metric AND added into SWIM (1:1).
+  const chopQ7 = wind_d * (1 - wwTxForChop) + ww_d * wwTxForChop;
+
   return {
     score: Math.max(0, Math.round(60 - total)),
     demerits: {
@@ -3976,6 +3997,8 @@ function calcScore(d, modelOverride) {
       wind:     Math.round(wind_d  * 10) / 10,
       windWave: Math.round(ww_d    * 10) / 10,
       windSea:  Math.round(ws_d    * 10) / 10,
+      windEntry: Math.round(windEntry * 10) / 10,
+      chop:     Math.round(chopQ7  * 10) / 10,
       swell1:   Math.round(s1_d   * 10) / 10,
       swell2:   Math.round(s2_d   * 10) / 10,
       refrac:   Math.round(rif_d  * 10) / 10,
@@ -3992,10 +4015,13 @@ function calcScore(d, modelOverride) {
       if (total <= t.caution) return { label:'Caution',   cls:'yellow', score: s, raw: total };
       return                         { label:'Dangerous', cls:'red',     score: s, raw: total };
     })(),
-    // Metric 2: Swim — q7 = wind_d + ww_d chop
-    //   Band edges from sheet col AK (glassy/ripply/choppy/messy); messy also caps the scale.
+    // Metric 2: CHOP — graceful handover between the two wind-chop sources.
+    //   The wind-wave (ww_d) arrives from a RESTRICTED arc (its SS dispersion
+    //   transmit wwTxForChop); our fetch wind-sea (wind_d) covers everywhere else.
+    //   Symmetric crossfade at the switch angle so they never double-count:
+    //   q7 = wind_d × (1 − w) + ww_d × w, where w = wind-wave arc weight.
     swim: (() => {
-      const q7 = wind_d + ww_d;
+      const q7  = chopQ7;
       const t  = SITE.swimThresholds;
       // Convert to 0–60 scale (inverted, matching Entry & Surge): 60=best, 0=worst.
       // q7 is capped at the Messy edge for scale purposes (beyond that is fully Messy).
@@ -4009,7 +4035,7 @@ function calcScore(d, modelOverride) {
     // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
     //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
     //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
-    water: blSwimWater(d),
+    water: blSwimWater(d, chopQ7),
   };
 }
 
@@ -5573,7 +5599,9 @@ function renderGemComparison(h) {
   const s2_d_g   = s2pow_g * s2Tx_g * ess_g;
   const wsSS_g   = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs_g);
   const ws_d_g   = nrg_g(wsSS_g.hs, wsSS_g.tp) * (1 - Math.max(0, Math.min(1, s1Tx_g))) * ess_g * wsSens_g;
-  const o_g      = wind_d_g + ww_d_g + s1_d_g + s2_d_g + ws_d_g;
+  const wEntry_g = Math.max(0, Math.min(1, wwTx_g));
+  const windEntry_g = ws_d_g * (1 - wEntry_g) + ww_d_g * wEntry_g;
+  const o_g      = windEntry_g + s1_d_g + s2_d_g;
   const tide_d_g = SITE.tideDir(tideM, {
     s1_d: s1_d_g, s1Dir: swell1Dir, s2_d: s2_d_g, s2Dir: swell2Dir || 0, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
   });
@@ -6758,6 +6786,7 @@ function runCalibration() {
   let app_wind_d, app_ww_d, app_s1_d, app_s2_d, app_rif_d;
   let sh_wind_d, sh_ww_d, sh_s1_d, sh_s2_d, sh_rif_d;
   let s1_sea, s2_sea, s1p, s2p; // for lookup info display
+  let wbWwTx = 0; // wind-wave arc weight for the CHOP crossfade
 
   app_wind_d = windPower(windKmh) * windGate * SITE.windSens;
 
@@ -6765,6 +6794,7 @@ function runCalibration() {
     const ess   = (SITE.ssWaveSens != null) ? SITE.ssWaveSens : 1;
     const nrg   = (hh, pp) => (hh * hh) * Math.max(0, pp || 0); // H² × P
     const wwTx  = Math.max(0, nsDispLookup(wwDir, wwP));
+    wbWwTx = Math.max(0, Math.min(1, wwTx));
     const s1Tx  = Math.max(0, nsDispLookup(swell1Dir, swell1P));
     const s2Tx  = Math.max(0, nsDispLookup(swell2Dir, swell2P));
     app_ww_d  = nrg(wwH, wwP) * wwTx * ess;
@@ -6868,7 +6898,8 @@ function runCalibration() {
     ${lookupInfo}`;
 
   // Metric zones
-  const q7 = app_wind_d + app_ww_d;
+  const q7 = GEM_MODEL ? (app_wind_d * (1 - wbWwTx) + app_ww_d * wbWwTx)
+                       : (app_wind_d + app_ww_d);
   // Surge uses Bower Lane (CTB) source — same as the live metric, not entry-point swell.
   const v6 = bowerSurgeWater({ swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM }).score;
   function zoneLabel(metric, val) {
@@ -7885,12 +7916,12 @@ function metricBreakdownHTML(key) {
        ${inner}</div>`;
 
   if (key === 'entry') {
-    const o = (dm.wind + dm.windWave + dm.swell1 + dm.swell2 + dm.refrac);
+    const we = (dm.windEntry != null) ? dm.windEntry : ((dm.windSea || 0) + dm.windWave);
+    const o = (we + dm.swell1 + dm.swell2 + dm.refrac);
     return wrap(
-      row('Wind chop', f(dm.wind)) +
-      row('Wind-wave', f(dm.windWave)) +
       row('Primary swell', f(dm.swell1)) +
       row('Secondary swell', f(dm.swell2)) +
+      row('Wind (sea ↔ wave)', f(we), '(SS fetch + wind-wave, crossfaded at arc)') +
       (Math.abs(dm.refrac) > 0.05 ? row('Refraction', f(dm.refrac)) : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Subtotal (before tide)', f(o)) +
@@ -7902,26 +7933,29 @@ function metricBreakdownHTML(key) {
   }
   if (key === 'swim') {
     return wrap(
-      row('Wind chop', f(dm.wind)) +
-      row('Wind-wave', f(dm.windWave)) +
+      row('Wind-sea (BL fetch)', f(dm.wind)) +
+      row('Wind-wave (arc)', f(dm.windWave)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('q7 = wind + wind-wave', f(r.swim.raw)) +
+      row('q7 = crossfade at arc', f(r.swim.raw)) +
       row('Swim score (60 = best)', r.swim.score + ' · ' + r.swim.label)
     );
   }
   if (key === 'surge') {
-    // Bower (CTB) components — sourced from r.water.parts so they reconcile with
-    // the score, unlike the entry-point dm.swell1/swell2 used elsewhere.
-    const w = r.water.parts || { s1_d: 0, s2_d: 0, tide_d: 0, raw: r.water.score };
+    // SWIM (ex-Surge) components from r.water.parts — swell+sea via BL table,
+    // tide, plus the crossfade chop added 1:1. Reconciles with the v6 score.
+    const w = r.water.parts || { swell1: 0, swell2: 0, windWave: 0, tide: 0, chop: 0, raw: r.water.score };
+    const swellSub = (w.swell1 || 0) + (w.swell2 || 0) + (w.windWave || 0);
     return wrap(
-      row('Primary swell', f(w.s1_d)) +
-      row('Secondary swell', f(w.s2_d)) +
+      row('Primary swell (BL)', f(w.swell1)) +
+      row('Secondary swell (BL)', f(w.swell2)) +
+      row('Wind-wave (BL)', f(w.windWave)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('Subtotal (before tide)', f(w.s1_d + w.s2_d)) +
-      row('Tide effect', f(w.tide_d), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
+      row('Swell+sea subtotal', f(swellSub)) +
+      row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
+      row('Chop (crossfade, 1:1)', f(w.chop || 0)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('Surge demerits', f(w.raw)) +
-      row('Surge score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
+      row('Swim demerits', f(w.raw)) +
+      row('Swim score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
     );
   }
   return '';
