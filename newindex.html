@@ -2969,7 +2969,7 @@ const SITE_DEFAULTS = {
   //
   // SWIM — q7 = wind_d + ww_d (LOWER = better) — col AK rows 9–12:
   //   glassy = q7 < AK9, ripply ≤ AK10, choppy ≤ AK11, else messy. AK12 = scaleMax (rail end + score cap).
-  swimThresholds: { glassy: 1, ripply: 3, choppy: 9, scaleMax: 14 },
+  swimThresholds: { glassy: 4, ripply: 10, choppy: 14, scaleMax: 14 },
   // ENTRY — `total` demerits (LOWER = better) — col AK rows 5–8:
   //   easy = total ≤ AK5, doable ≤ AK6, caution ≤ AK7, else dangerous. AK8 = scaleMax (rail end).
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
@@ -2978,7 +2978,7 @@ const SITE_DEFAULTS = {
   surgeThresholds: { steady: 50, drifty: 30, surgy: 10, scaleMax: 0 },
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
   nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
-  ssWaveSens:     1,    // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path
+  ssWaveSens:     2.35, // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path (tuned 2 Jul 2026)
   // Wind-chop directional shelter at the CHOP point (measured on the bathymetry
   // grid). 72 bins @ 5° (index 0=0°N … 71=355°). Value =
   // TRANSMIT fraction of local wind-chop reaching the swim line from that wind
@@ -2992,7 +2992,7 @@ const SITE_DEFAULTS = {
   // The two windows differ because the points sit differently in the bay.
   fetchMaskSS: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
   fetchMaskBL: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1],
-  windSeaSens:   1.0,   // scales the fetch-derived wind-sea demerit (tunable)
+  windSeaSens:   1.3,   // scales the fetch-derived wind-sea demerit (tuned 2 Jul 2026)
   windSeaDurCapH: 24,   // duration tracker caps at this many hours (fully-developed ceiling)
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
@@ -3169,10 +3169,14 @@ function applySwimConfig(rows) {
   if (bSea.length === 32 && bSea.some(v => v > 0))
     SITE.bowerLookup = { wind: bWind, sea: bSea, rif: bRif };
 
-  // SWIM band edges — col AK (index 36), rows 9–12 (indices 8–11):
-  //   AK9 = Glassy edge, AK10 = Ripply edge, AK11 = Choppy edge, AK12 = Messy edge / display cap.
-  // Each cell is applied only when it's a real number, so blank cells or partial
-  // edits fall back to the existing default rather than collapsing the band to 0.
+  // ── COL-AK THRESHOLDS: DISABLED for the NS build (2 Jul 2026) ─────────────
+  // Metric classification thresholds now come EXCLUSIVELY from the New NS tab
+  // block AN2:AQ13 (parsed in parseNsDispCSV, applied in loadNsDispConfig). This
+  // block used to read Entry/Swim/Surge edges from col AK of the MASTER tab; it is
+  // left dormant (not deleted) so MASTER can still supply tideGain, the lookup
+  // arrays, and the Bower/Surge scalars, without ever touching the thresholds.
+  // DO NOT re-enable — it would clobber the New NS values.
+  /*
   const numAt = (r, c) => {
     const raw = rows[r]?.[c];
     if (raw == null || String(raw).trim() === '') return null;
@@ -3188,8 +3192,6 @@ function applySwimConfig(rows) {
   if (swChoppy   != null) SITE.swimThresholds.choppy   = swChoppy;
   if (swScaleMax != null) SITE.swimThresholds.scaleMax = swScaleMax;
 
-  // ENTRY band edges — col AK, rows 5–8 (indices 4–7). Demerit side, LOWER = better:
-  //   AK5 = Easy max, AK6 = Doable max, AK7 = Caution max, AK8 = scaleMax (rail end).
   const enEasy     = numAt(4, STEYNE_SWIM_COL);  // AK5
   const enDoable   = numAt(5, STEYNE_SWIM_COL);  // AK6
   const enCaution  = numAt(6, STEYNE_SWIM_COL);  // AK7
@@ -3199,8 +3201,6 @@ function applySwimConfig(rows) {
   if (enCaution  != null) SITE.entryThresholds.caution  = enCaution;
   if (enScaleMax != null) SITE.entryThresholds.scaleMax = enScaleMax;
 
-  // SURGE band edges — col AK, rows 13–16 (indices 12–15). Score side, HIGHER = better:
-  //   AK13 = Steady min, AK14 = Drifty min, AK15 = Surgy min, AK16 = scaleMax (worst/bottom end).
   const suSteady   = numAt(12, STEYNE_SWIM_COL);  // AK13
   const suDrifty   = numAt(13, STEYNE_SWIM_COL);  // AK14
   const suSurgy    = numAt(14, STEYNE_SWIM_COL);  // AK15
@@ -3209,6 +3209,7 @@ function applySwimConfig(rows) {
   if (suDrifty   != null) SITE.surgeThresholds.drifty   = suDrifty;
   if (suSurgy    != null) SITE.surgeThresholds.surgy    = suSurgy;
   if (suScaleMax != null) SITE.surgeThresholds.scaleMax = suScaleMax;
+  */
 }
 
 async function loadConfig() {
@@ -3227,11 +3228,9 @@ async function loadConfig() {
       SITE.wwSens          = (c.wwSens != null) ? c.wwSens : SITE_DEFAULTS.wwSens;
       SITE.tideGain        = (c.tideGain != null) ? c.tideGain : SITE_DEFAULTS.tideGain;
       SITE.wwRouteBlend    = c.wwRouteBlend || 0;
-      // Merge over defaults so any key absent from an older cache (e.g. scaleMax)
-      // falls back to a sane value rather than undefined breaking the rail math.
-      if (c.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...c.swimThresholds };
-      if (c.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...c.entryThresholds };
-      if (c.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...c.surgeThresholds };
+      // Thresholds are NOT restored from the MASTER cache — they come from the
+      // New NS tab (AN2:AQ13) via loadNsDispConfig, which runs after this. Leaving
+      // these lines out prevents a stale MASTER cache from clobbering New NS.
       SITE.lookup      = c.lookup;
       // Bower surge — guarded so an older cache (without these keys) keeps the
       // SITE_DEFAULTS values rather than going undefined.
@@ -3513,9 +3512,29 @@ function parseNsDispCSV(text) {
   });
   const num = v => { const x = parseFloat(v); return isNaN(x) ? null : x; };
 
-  // ss_wave_sens (row 1, col 2) — optional; falls back to default if blank/NaN.
+  // ss_wave_sens (C2 = row 1, col 2) and wind_sens (C3 = row 2, col 2) —
+  // both optional; fall back to code defaults if blank/NaN.
   let ssWaveSens = null;
   if (rows[1] && rows[1][2] != null) ssWaveSens = num(rows[1][2]);
+  let windSeaSens = null;
+  if (rows[2] && rows[2][2] != null) windSeaSens = num(rows[2][2]);
+
+  // Metric thresholds — New NS tab block AN2:AQ13 (SEPARATE from index.html's col AK).
+  // 4 cols: AN(39)=metric, AO(40)=band label, AP(41)=colour, AQ(42)=value.
+  // 12 rows (indices 1–12) = 3 metrics × 4 bands, fixed order. Col AQ = the edge value;
+  // the 4th value in each group is scaleMax. Any blank/NaN → that metric falls back to default.
+  const VCOL = 42;
+  const readEdge = (ri) => (rows[ri] ? num(rows[ri][VCOL]) : null);
+  let entryThresholds = null, swimThresholds = null, surgeThresholds = null;
+  const eEasy=readEdge(1), eDoable=readEdge(2), eCaution=readEdge(3), eMax=readEdge(4);
+  const sGlassy=readEdge(5), sRipply=readEdge(6), sChoppy=readEdge(7), sMax=readEdge(8);
+  const uSteady=readEdge(9), uDrifty=readEdge(10), uSurgy=readEdge(11), uMax=readEdge(12);
+  if ([eEasy,eDoable,eCaution,eMax].every(v => v != null))
+    entryThresholds = { easy:eEasy, doable:eDoable, caution:eCaution, scaleMax:eMax };
+  if ([sGlassy,sRipply,sChoppy,sMax].every(v => v != null))
+    swimThresholds  = { glassy:sGlassy, ripply:sRipply, choppy:sChoppy, scaleMax:sMax };
+  if ([uSteady,uDrifty,uSurgy,uMax].every(v => v != null))
+    surgeThresholds = { steady:uSteady, drifty:uDrifty, surgy:uSurgy, scaleMax:uMax };
 
   // Dispersion table: rows 10–28, cols 3–18.
   const table = [];
@@ -3529,17 +3548,27 @@ function parseNsDispCSV(text) {
     table.push(periods);
   }
   return (table.length === 19 && table.every(r => r.length === 16))
-    ? { table, ssWaveSens }
+    ? { table, ssWaveSens, windSeaSens, entryThresholds, swimThresholds, surgeThresholds }
     : null;
 }
 
 async function loadNsDispConfig(force) {
+  // Apply threshold objects parsed from the New NS tab (AN2:AQ13) onto SITE,
+  // merging over defaults so a blank cell keeps the code fallback.
+  const applyThresh = (o) => {
+    if (!o) return;
+    if (o.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...o.entryThresholds };
+    if (o.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...o.swimThresholds };
+    if (o.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...o.surgeThresholds };
+  };
   try {
     const cached = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
     if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.table) {
       SITE.nsDisp = cached.table;
       if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
-      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ')');
+      if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
+      applyThresh(cached);
+      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ')');
       return;
     }
   } catch(e) {}
@@ -3552,8 +3581,14 @@ async function loadNsDispConfig(force) {
     if (parsed) {
       SITE.nsDisp = parsed.table;
       if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
-      localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({ fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens }));
-      diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ')');
+      if (parsed.windSeaSens != null) SITE.windSeaSens = parsed.windSeaSens;
+      applyThresh(parsed);
+      localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
+        fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens,
+        entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
+      }));
+      diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens
+        + (parsed.swimThresholds ? ', CHOP ' + parsed.swimThresholds.glassy + '/' + parsed.swimThresholds.ripply + '/' + parsed.swimThresholds.choppy : '') + ')');
     } else {
       diag('NS disp: parse returned null — check New NS tab (expected 19 dir rows × 16 period cols from row 11)');
     }
