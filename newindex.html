@@ -2529,7 +2529,28 @@ const BW_CACHE_KEY    = 'swim_bw_cache_v1';
 const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by Beachwatch)
 
 
-const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
+// ─────────────────────────────────────────────────────────────────────────────
+// SHEET SOURCE — routed through the Cloudflare Worker edge-cache proxy (swim-sheets)
+// so N concurrent clients cause ~1 Google fetch per FRESH_TTL, not N. Same Worker as
+// index.html, but its OWN /newindex/* route namespace so the two apps never share
+// cache state: a reload/miss/bad-sheet on one cannot affect the other. Set to your
+// deployed Worker host, no trailing slash. Fallback: point URLs at the raw CSV links.
+const SHEET_PROXY_BASE = 'https://middleman-to-sheet.sticasale.workers.dev';
+// Raw Google published-CSV (now served via the Worker; kept for reference/fallback).
+// NOTE: the config route was gid-LESS here (pulled the wrong default tab); the Worker
+// route /newindex/config supplies the correct tuning gid 697410321, fixing that bug.
+//   config tab  (gid 697410321):  …/pub?gid=697410321&single=true&output=csv
+//   GEM tab     (gid 2011938330): …/pub?gid=2011938330&single=true&output=csv
+//   NS-disp tab (gid 2116848706): …/pub?gid=2116848706&single=true&output=csv
+const SHEET_CSV_URL    = SHEET_PROXY_BASE + '/newindex/config';
+// Build a fetch URL for a proxied (or raw) sheet endpoint. `t` busts the BROWSER
+// cache so the request always reaches the Worker (the Worker ignores `t`).
+// `forceUpstream` adds `fresh=1`, telling the Worker to bypass its edge cache and
+// re-pull Google for this one call — used by ?fresh=1 / forced reloads.
+function sheetFetchURL(base, forceUpstream) {
+  const sep = base.includes('?') ? '&' : '?';
+  return base + sep + 't=' + Date.now() + (forceUpstream ? '&fresh=1' : '');
+}
 const SWIM_CONFIG_KEY  = 'swim_config_cache_v9';
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
@@ -2922,19 +2943,19 @@ const WW_BLEND_OVERRIDE = (() => {
 })();
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid must match your sheet)
 // GEM tab CSV — published from the "Gem-Cla50-50" sheet (gid 2011938330)
-const GEM_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2011938330&single=true&output=csv';
+const GEM_SHEET_URL = SHEET_PROXY_BASE + '/newindex/gem';
 const GEM_CONFIG_KEY = 'swim_gem_config_v2'; // bumped to v2 — forces fresh fetch with real gid
 
 // NS "New NS" tab CSV — published from the New NS sheet (gid 2116848706).
 // SS block: ss_wave_sens (C2) + SS dispersion table (dir 0–180° × period 2–17s, TRANSMIT %).
 // This REPLACES the GEM table for the NS-fed scoring path.
-const NS_DISP_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?gid=2116848706&single=true&output=csv';
+const NS_DISP_SHEET_URL = SHEET_PROXY_BASE + '/newindex/nsdisp';
 const NS_DISP_CONFIG_KEY = 'swim_nsdisp_config_v1';
 // Wind-chop directional shelter curve (CHOP point) — published CSV tab.
 // Expected layout: col A = bearing 0,5,10…355 (72 rows), col B = transmit fraction
 // (a blank or 60 = blocked → 0). Set the gid once the tab is published; until then
 // the loader falls back to SITE_DEFAULTS.chopShelter (the measured fetch_true curve).
-const CHOP_SHELTER_SHEET_URL = ''; // e.g. '…/pub?gid=XXXXXXXXXX&single=true&output=csv'
+const CHOP_SHELTER_SHEET_URL = ''; // when published, set to: SHEET_PROXY_BASE + '/newindex/chop' (and add that route + gid to the Worker)
 const CHOP_SHELTER_CONFIG_KEY = 'swim_chopshelter_config_v1';
 
 // S. Steyne column positions (0-based):
@@ -3248,10 +3269,10 @@ function applySwimConfig(rows) {
   */
 }
 
-async function loadConfig() {
+async function loadConfig(forceUpstream = FORCE_FRESH) {
   try {
     const cached = JSON.parse(localStorage.getItem(SWIM_CONFIG_KEY) || 'null');
-    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
+    if (!forceUpstream && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
       // Restore tuning params from cache (lookup arrays + scalars)
       const c = cached.config;
       SITE.windSens       = c.windSens;
@@ -3282,7 +3303,7 @@ async function loadConfig() {
   } catch(e) {}
 
   try {
-    const res = await fetchWithTimeout(SHEET_CSV_URL + '&t=' + Date.now(), 8000);
+    const res = await fetchWithTimeout(sheetFetchURL(SHEET_CSV_URL, forceUpstream), 8000);
     if (!res.ok) throw new Error('Sheet fetch failed: ' + res.status);
     const rows = parseSheetCSV(await res.text());
     applySwimConfig(rows);
@@ -3445,7 +3466,7 @@ async function loadGemConfig(force) {
   } catch(e) {}
   diag('GEM table: fetching...');
   try {
-    const res = await fetchWithTimeout(GEM_SHEET_URL + '&t=' + Date.now(), 15000);
+    const res = await fetchWithTimeout(sheetFetchURL(GEM_SHEET_URL, FORCE_FRESH), 15000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
     const table = parseGemCSV(text);
@@ -3660,7 +3681,7 @@ async function loadNsDispConfig(force) {
   } catch(e) {}
   diag('NS disp: fetching...');
   try {
-    const res = await fetchWithTimeout(NS_DISP_SHEET_URL + '&t=' + Date.now(), 15000);
+    const res = await fetchWithTimeout(sheetFetchURL(NS_DISP_SHEET_URL, FORCE_FRESH), 15000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
     const parsed = parseNsDispCSV(text);
@@ -3803,7 +3824,7 @@ async function loadChopShelterConfig(force) {
   } catch(e) {}
   diag('Chop shelter: fetching...');
   try {
-    const res = await fetchWithTimeout(CHOP_SHELTER_SHEET_URL + '&t=' + Date.now(), 15000);
+    const res = await fetchWithTimeout(sheetFetchURL(CHOP_SHELTER_SHEET_URL, FORCE_FRESH), 15000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
     const curve = parseChopShelterCSV(text);
@@ -6174,7 +6195,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260703-223955';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
