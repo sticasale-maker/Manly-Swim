@@ -2038,7 +2038,7 @@
         </div>
         <div class="metric-block green" id="metricSurge" onclick="openMetricModal('surge')">
           <div class="metric-header">
-            <div class="metric-name">Swim: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-name">Surge: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSurgeVal">—</div>
             <div class="metric-score" id="metricSurgeScore">—</div>
           </div>
@@ -2054,7 +2054,7 @@
             <div class="metric-track-wwtick" id="wwTickSurge"></div>
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
-            <span style="flex:1">Smooth</span><span style="flex:1">Ripply</span><span style="flex:1">Choppy</span><span style="flex:1">Messy</span>
+            <span style="flex:1">Steady</span><span style="flex:1">Drifty</span><span style="flex:1">Surgy</span><span style="flex:1">Washy</span>
           </div>
           <div class="assess-wrap" onclick="event.stopPropagation()">
             <div class="assess-label">My call ▸ drag to where the dot should be</div>
@@ -3877,10 +3877,10 @@ function bowerSurgeWater(d) {
   const p  = bowerSurgeParts(d);
   const v6 = Math.max(0, Math.round(60 - p.raw));
   const t  = SITE.surgeThresholds;
-  const z  = v6 >  t.steady ? ['Smooth',  'green']
-           : v6 >  t.drifty ? ['Ripply',  'amber']
-           : v6 >= t.surgy  ? ['Choppy',  'yellow']
-           :                  ['Messy',   'red'];
+  const z  = v6 >  t.steady ? ['Steady',  'green']
+           : v6 >  t.drifty ? ['Drifty',  'amber']
+           : v6 >= t.surgy  ? ['Surgy',   'yellow']
+           :                  ['Washy',   'red'];
   return { label: z[0], cls: z[1], score: v6, parts: p };
 }
 
@@ -3925,10 +3925,10 @@ function blSwimWater(d, chop) {
   // = better), same convention as Entry's score.
   const score = Math.max(0, Math.round(60 - rawBL));
   const t  = SITE.surgeThresholds;
-  const z  = rawBL <= t.steady ? ['Smooth',  'green']
-           : rawBL <= t.drifty ? ['Ripply',  'amber']
-           : rawBL <= t.surgy  ? ['Choppy',  'yellow']
-           :                     ['Messy',   'red'];
+  const z  = rawBL <= t.steady ? ['Steady',  'green']
+           : rawBL <= t.drifty ? ['Drifty',  'amber']
+           : rawBL <= t.surgy  ? ['Surgy',   'yellow']
+           :                     ['Washy',   'red'];
   return { label: z[0], cls: z[1], score: score, raw: rawBL,
            parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
@@ -5006,7 +5006,7 @@ function renderDayWindow(dateTimeStr){
   var fullH = ribH + 18;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + fullH);
 
-  var ROWS = [['Entry','entry'], ['Chop','chop'], ['Swim','surge']];
+  var ROWS = [['Entry','entry'], ['Chop','chop'], ['Surge','surge']];
   var cells = '', labels = '';
   ROWS.forEach(function(row, r){
     var ry = top + r*(rowH + gap);
@@ -6175,7 +6175,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260703-171724';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6483,12 +6483,12 @@ const TUNE_PARAMS = [
   { key:'swimThresholds.glassy', label:'CHOP · Smooth edge', min:0, max:14, step:0.5, hint:'q7 below this = Smooth. Retune since CHOP now uses real wind-sea energy.' },
   { key:'swimThresholds.ripply', label:'CHOP · Ripply edge', min:0, max:20, step:0.5, hint:'q7 ≤ this = Ripply.' },
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge', min:0, max:40, step:0.5, hint:'q7 ≤ this = Choppy, else Messy.' },
-  { key:'blWaveSens', label:'SWIM · BL wave sensitivity (bl_wave_sens)', min:0, max:4, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SWIM metric (energy × BL transmit × this, +tide).' },
+  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:4, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
   { key:'blChopImpact', label:'CHOP · BL chop impact (bl_chop_impact)', min:0, max:4, step:0.05, hint:'New NS tab V3. Single knob scaling the WHOLE BL chop crossfade (wind-sea + wind-wave), no handover jump. Feeds CHOP metric and Swim.' },
-  { key:'chopSwimWeight', label:'SWIM · chop weight into Swim (chop_swim_weight)', min:1, max:8, step:0.1, hint:'New NS tab cell V7 ("Chop contribution to Swim"). Extra multiplier on chop WHERE IT ENTERS SWIM only. Chop energy is small next to swell but adds annoyance — turn this up to make chop move the SWIM band. Does NOT affect the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = legacy 1:1.' },
-  { key:'surgeThresholds.steady', label:'SWIM · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
-  { key:'surgeThresholds.drifty', label:'SWIM · Drifty edge', min:0, max:60, step:1, hint:'rawBL ≤ this = Drifty.' },
-  { key:'surgeThresholds.surgy',  label:'SWIM · Surgy edge',  min:0, max:60, step:1, hint:'rawBL ≤ this = Surgy, else Washy. Highest of the three.' },
+  { key:'chopSwimWeight', label:'SURGE · chop weight into Surge (chop_swim_weight)', min:1, max:8, step:0.1, hint:'New NS tab cell V7 ("Chop contribution to Swim"). Extra multiplier on chop WHERE IT ENTERS SURGE only. Chop energy is small next to swell but adds annoyance — turn this up to make chop move the SURGE band. Does NOT affect the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = legacy 1:1.' },
+  { key:'surgeThresholds.steady', label:'SURGE · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
+  { key:'surgeThresholds.drifty', label:'SURGE · Drifty edge', min:0, max:60, step:1, hint:'rawBL ≤ this = Drifty.' },
+  { key:'surgeThresholds.surgy',  label:'SURGE · Surgy edge',  min:0, max:60, step:1, hint:'rawBL ≤ this = Surgy, else Washy. Highest of the three.' },
   { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'total demerits ≤ this = Easy. Lowest of the three (LOWER demerits = better).' },
   { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'total ≤ this = Doable.' },
   { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'total ≤ this = Caution, else Dangerous. Highest of the three.' },
@@ -7005,7 +7005,7 @@ function runCalibration() {
       return val < t.glassy ? {l:'Smooth',c:'green'} : val <= t.ripply ? {l:'Ripply',c:'amber'} : val <= t.choppy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
     } else {
       const t = SITE.surgeThresholds;  // val = v6, higher=better
-      return val > t.steady ? {l:'Smooth',c:'green'} : val > t.drifty ? {l:'Ripply',c:'amber'} : val >= t.surgy ? {l:'Choppy',c:'yellow'} : {l:'Messy',c:'red'};
+      return val > t.steady ? {l:'Steady',c:'green'} : val > t.drifty ? {l:'Drifty',c:'amber'} : val >= t.surgy ? {l:'Surgy',c:'yellow'} : {l:'Washy',c:'red'};
     }
   }
   const ez = zoneLabel('entry', Math.max(0, 60 - app_score));
@@ -7199,7 +7199,7 @@ async function generateBannerSummary() {
   // ── Generate colloquial summary locally
   const entryBad = ['Caution','Dangerous'].includes(domEntry);
   const swimBad  = ['Choppy','Messy'].includes(domSwim);
-  const surgeBad = ['Choppy','Messy'].includes(domSurge);
+  const surgeBad = ['Surgy','Washy'].includes(domSurge);
   const allGood  = !entryBad && !swimBad && !surgeBad;
 
   function emphasise(t) {
@@ -7350,12 +7350,12 @@ async function generateBannerSummary() {
     }
 
     // Surge
-    if (domSurge === 'Messy') {
+    if (domSurge === 'Washy') {
       parts.push(pick([
         ` The surge inside the bay is significant today — swell is bouncing back off the Shelly headland wall and creating that churned-up, turbulent water that makes it hard to swim a clean line. Visibility underwater will be poor near the rocks. Give the headland wall a wide berth.`,
         ` Lots of surge through Cabbage Tree Bay — the swell is reflecting off the walls and pushing you around, especially near the Shelly end. The water will be stirred up and visibility might be murky. Experienced swimmers only on days like this.`,
       ]));
-    } else if (domSurge === 'Choppy') {
+    } else if (domSurge === 'Surgy') {
       parts.push(pick([
         ` Some surge through the bay today — you'll feel the pull of the swell near the headland and the water is moving around more than usual. Keep clear of the rocks near the Shelly wall and you'll be fine.`,
         ` The bay has a bit of surge to it today — nothing extreme but the swell is moving through and you'll notice it near the headland. Swim a relaxed line and stay away from the cliff edges.`,
@@ -7363,12 +7363,12 @@ async function generateBannerSummary() {
     }
 
     // Closing recommendation
-    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Messy') {
+    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') {
       parts.push(pick([
         ` Best left to experienced swimmers today — conditions are genuinely challenging and this isn't the day to push your limits if you're still building confidence in open water.`,
         ` Worth asking yourself honestly whether today's the day. Conditions are tough — experienced open water swimmers will manage, but it's a solid day to sit it out on the sand if you're not fully comfortable.`,
       ]));
-    } else if (domEntry === 'Caution' || domSurge === 'Choppy' || domSwim === 'Choppy') {
+    } else if (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') {
       parts.push(pick([
         ` All in all, a doable day — just stay aware and pick your moments. Most swimmers will have a good time once they're in.`,
         ` Worth being switched on, but nothing here that should put you off getting in the water.`,
@@ -7387,8 +7387,8 @@ async function generateBannerSummary() {
 
   // Water icon
   document.getElementById('banner-water-icon').textContent =
-    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Messy' ? '⚠️' :
-    domEntry === 'Caution'   || domSurge === 'Choppy' || domSwim === 'Choppy' ? '🏄' : '🏊';
+    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
+    domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
@@ -7973,7 +7973,7 @@ const METRIC_INFO = {
     text: "How much the wind is roughing up the surface. Small wind-waves slap your face and get water in your mouth when you go to breathe \u2014 the more chop, the harder it is to get a clean breath. Wind builds chop from its speed and its runway over open water \u2014 the fetch."
   },
   surge: {
-    title: 'Swim',
+    title: 'Surge',
     text: "What the swim across the bay actually feels like \u2014 both the sideways push of surge and the chop you're stroking through. Swell reflects off the Shelly headland wall and the wind roughs up the surface; together they decide whether you glide or get washed around. Strongest near the rocks."
   }
 };
@@ -8051,8 +8051,8 @@ function metricBreakdownHTML(key) {
       row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
       row('Chop (crossfade, 1:1)', f(w.chop || 0), '(carries the wind-wave/sea)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('Swim demerits', f(w.raw)) +
-      row('Swim score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
+      row('Surge demerits', f(w.raw)) +
+      row('Surge score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
     );
   }
   return '';
