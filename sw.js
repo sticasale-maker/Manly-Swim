@@ -11,15 +11,17 @@
 //  CACHE_VERSION is stamped automatically by CI — do not edit by hand.
 // ─────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = '20260703-225735';
+const CACHE_VERSION = '20260703-newindex';
 const CACHE_NAME    = 'swim-manly-' + CACHE_VERSION;
 
 // App shell assets to pre-cache on install (relative to /Manly-Swim/)
 const SHELL_ASSETS = [
   './',
   './index.html',
+  './newindex.html',
   './manifest.webmanifest',
-  './images/logos/icon-512.png',
+  './manifest-newindex.webmanifest',
+  './images/logos/splash.png',
   './images/logos/icon-180.png',
   './images/logos/favicon-32.png',
   './images/marco2.png',
@@ -29,11 +31,12 @@ const SHELL_ASSETS = [
 
 // Hostnames whose requests should NEVER be cached (API traffic)
 const PASSTHROUGH_HOSTS = [
-  'bold-rain-6ded.sticasale.workers.dev',  // Cloudflare Worker
+  'middleman-to-sheet.sticasale.workers.dev', // sheet-proxy Worker (config/gem/nsdisp CSV) — never SW-cache
+  'bold-rain-6ded.sticasale.workers.dev',  // Cloudflare Worker (API proxy)
   'api.open-meteo.com',
   'marine-api.open-meteo.com',
   'gkspukabnfbzrvjoewpc.supabase.co',      // Supabase
-  'docs.google.com',                        // Google Sheet CSV
+  'docs.google.com',                        // Google Sheet CSV (direct fallback)
   'fonts.gstatic.com',                      // font files — let browser cache naturally
 ];
 
@@ -124,8 +127,11 @@ self.addEventListener('fetch', event => {
         return caches.match(event.request).then(cached => {
           if (cached) return cached;
           // If it's a navigation request and we have no cache, serve the app shell
+          // that MATCHES the launched app — otherwise an offline newindex launch
+          // would wrongly render index.
           if (event.request.mode === 'navigate') {
-            return caches.match('./index.html');
+            const shell = url.pathname.includes('newindex') ? './newindex.html' : './index.html';
+            return caches.match(shell).then(m => m || caches.match('./index.html'));
           }
           return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
         });
