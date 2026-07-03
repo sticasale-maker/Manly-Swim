@@ -3911,20 +3911,13 @@ function blSwimWater(d, chop) {
   // to the BL swell terms. Rides on swell energy only; wind-wave excluded, matching
   // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
   const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d, wwDir: windWaveDir || windDir });
-  // Chop enters SWIM via the same non-double-counted crossfade q7 the CHOP metric
-  // uses (passed in from calcScore, single source of truth), but scaled here by
-  // chop_swim_weight (New NS cell V7). Rationale: chop energy is physically small next
-  // to swell (H²×P), so a 1:1 add can't move the SWIM band even when chop is the
-  // dominant annoyance in the water. This weight amplifies chop's SWIM contribution
-  // ONLY — the standalone CHOP metric (chopQ7), the swell terms, and bl_chop_impact
-  // are all untouched. weight = 1.0 reproduces the legacy 1:1 add exactly.
-  // The wind-wave (ww_d) is NOT added separately: it already lives inside the chop
-  // crossfade (ww_d×w), so adding it again would double-count the sea on in-arc
-  // easterlies. Swim swell+sea = the two true SWELL terms (s1_d, s2_d); the
-  // sea/wind-wave enters only via chop.
-  const chopSwimWeight = (SITE.chopSwimWeight != null) ? SITE.chopSwimWeight : 1;
-  const chop_d = Math.max(0, chop || 0) * chopSwimWeight;
-  const rawBL = s1_d + s2_d + tide_d + chop_d;
+  // Chop REMOVED from Surge (3 Jul 2026). Surge now reflects swell + tide only —
+  // the standalone CHOP metric carries chop, and mixing it in muddied the swell/
+  // wash signal this rail is meant to show. chop_d held at 0 so the parts object /
+  // breakdown popup stay structurally intact; the CHOP metric (chopQ7), the swell
+  // terms, chop_swim_weight and bl_chop_impact are all untouched.
+  const chop_d = 0;
+  const rawBL = s1_d + s2_d + tide_d;
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
   // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
   // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
@@ -6181,7 +6174,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260703-212210';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -8044,9 +8037,8 @@ function metricBreakdownHTML(key) {
     );
   }
   if (key === 'surge') {
-    // SWIM (ex-Surge) components from r.water.parts. Total = swell (s1+s2 via BL
-    // table) + tide + chop. The wind-wave is NOT summed separately — it enters only
-    // through the chop crossfade (shown below), so the sea isn't double-counted.
+    // SURGE components from r.water.parts. Total = swell (s1+s2 via BL table) + tide.
+    // Chop was removed from Surge (3 Jul 2026) — it lives only in the CHOP metric now.
     const w = r.water.parts || { swell1: 0, swell2: 0, windWave: 0, tide: 0, chop: 0, raw: r.water.score };
     const swellSub = (w.swell1 || 0) + (w.swell2 || 0);
     return wrap(
@@ -8055,7 +8047,6 @@ function metricBreakdownHTML(key) {
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Swell subtotal', f(swellSub)) +
       row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
-      row('Chop (crossfade, 1:1)', f(w.chop || 0), '(carries the wind-wave/sea)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw)) +
       row('Surge score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
