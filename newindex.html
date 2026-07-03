@@ -2510,6 +2510,11 @@ const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const NS_STATIC_URL   = 'nearshore.json';   // same directory on GitHub Pages
 const NS_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/nearshore'; // live Worker route; '' = use static nearshore.json
 const NS_FEED_ENABLED = true;
+// NS feed had NO cache — every open paid the full cold-fetch latency of the NSW
+// nearshore Worker (the slowest endpoint, ~10-15s cold). Cache it like WW so repeat
+// visits show NS instantly while a fresh copy loads in the background.
+const NS_CACHE_KEY    = 'swim_ns_cache_v1';
+const NS_CACHE_TTL    = 2 * 60 * 60 * 1000;  // 2h — nearshore forecast updates slowly
 const OM_CACHE_KEY    = 'swim_om_cache_v3';
 const OM_CACHE_TTL    = 6 * 60 * 60 * 1000;
 const MAX_RETRIES     = 5;
@@ -4340,12 +4345,14 @@ function fetchWithTimeout(url, ms, opts) {
 // =============================================================================
 // FETCH WILLYWEATHER — primary swell, wind, tide (Manly Beach location)
 // =============================================================================
-async function fetchWillyWeather() {
+async function fetchWillyWeather(timeoutMs) {
   // Cache-bust + no-store: a cached error/empty response from a cold-start hit was
   // being re-served to every automatic retry, so the app stayed stuck until a hard
   // reload bypassed the HTTP cache. Force a fresh network read every time.
+  // timeoutMs is per-attempt: the caller uses a SHORT first timeout so a cold
+  // Worker can't burn 12s before the retry ladder even starts, then widens it.
   const url = `${WW_WORKER_URL}?location=swimmers&days=5&t=${Date.now()}`;
-  const res = await fetchWithTimeout(url, 12000, { cache: 'no-store' });
+  const res = await fetchWithTimeout(url, timeoutMs || 12000, { cache: 'no-store' });
   if (!res.ok) throw new Error(`WW ${res.status}`);
   return await res.json();
 }
@@ -4492,6 +4499,7 @@ async function fetchNearshore() {
     if (!res.ok) { window._nsStatus = 'HTTP ' + res.status + ' @ ' + url; throw new Error(`NS ${res.status}`); }
     const j = await res.json();
     window._nsStatus = 'ok';
+    try { saveCache(NS_CACHE_KEY, j); } catch (e) {}   // stash raw JSON for instant repeat opens
     return j;
   } catch (e) {
     if (!window._nsStatus) window._nsStatus = 'fetch failed: ' + (e.message || e);
@@ -5907,7 +5915,11 @@ async function loadAndRender(forceRefresh = false) {
         try {
           if (attempt > 1) setStatus(`Retrying… (${attempt}/${MAX_RETRIES})`);
           diag('WW fetch attempt ' + attempt);
-          const j = await fetchWillyWeather();
+          // Short first timeouts so a cold/slow first hit fails fast and the NEXT
+          // attempt starts almost immediately, instead of one 12s stall blocking
+          // everything. A healthy response returns in 1-3s; widen only later.
+          const attemptTimeout = [4000, 6000, 9000, 12000, 15000][attempt - 1] || 12000;
+          const j = await fetchWillyWeather(attemptTimeout);
           wwData  = parseWillyWeather(j);
           matrix  = buildHourlyMatrix(j);
           if (!matrix.length) throw new Error('WW returned empty forecast');
@@ -5924,7 +5936,7 @@ async function loadAndRender(forceRefresh = false) {
           // Front-loaded backoff: a cold-launch first fetch often fails instantly
           // because the network stack isn't up yet, so retry quickly, then ease off.
           if (attempt < MAX_RETRIES) {
-            const backoff = [700, 1500, 3000, 5000][attempt - 1] || 5000;
+            const backoff = [400, 800, 1500, 2500][attempt - 1] || 2500;
             await new Promise(r => setTimeout(r, backoff));
           }
         }
@@ -5961,6 +5973,29 @@ async function loadAndRender(forceRefresh = false) {
     renderSlider(_matrix);
     renderTimeline(_matrix, {});
     hideErrorBanner();
+
+    // ── Instant NS overlay from cache ─────────────────────────────────────────
+    // The live NS fetch (below) hits the slow NSW nearshore Worker and takes
+    // ~10-15s cold, so on every open the swell/wave numbers used to "pop" late.
+    // If we have a recent cached NS response, apply it NOW so repeat visits show
+    // the nearshore overlay immediately; the live fetch then refreshes it in the
+    // background (usually identical data → no visible change).
+    if (NS_FEED_ENABLED) {
+      try {
+        const nsCache = loadCache(NS_CACHE_KEY);
+        if (cacheIsFresh(nsCache, NS_CACHE_TTL) && nsCache.data) {
+          const nsMapC = parseNearshore(nsCache.data);
+          if (nsMapC && Object.keys(nsMapC).length) {
+            _matrix = mergeNearshoreMatrix(_matrix, nsMapC);
+            wwData  = mergeNearshoreSnapshot(wwData, nsMapC);
+            const reH = _matrix[_sliderIdx] || wwData || null;
+            if (reH) renderSnapshot(reH, null);
+            renderTimeline(_matrix, {});
+            diag('NS cache applied — ' + Object.keys(nsMapC).length + ' hours (live refresh pending)');
+          }
+        }
+      } catch (nscErr) { diag('NS cache apply error (isolated): ' + nscErr.message); }
+    }
 
     // ── Fetch secondary data in parallel with 8s timeout each ─────────────────
     // Isolated in its own try/catch: a failure here must NOT abandon the
@@ -6224,6 +6259,12 @@ function hideRefreshPrompt() {
     if (location.protocol === 'file:') return;
     diag('self-heal retry: ' + reason);
     setStatus('Reconnecting…');
+    // We're still empty AND a real recovery event just fired (network back /
+    // app foregrounded). If a load is wedged in flight, its slow ladder is the
+    // very thing keeping us blank — clear the in-flight guard so this forced
+    // retry actually runs instead of being skipped as "already in flight".
+    // Safe because we only reach here while _forecastRendered is false.
+    _loadInFlight = false;
     loadAndRender(true);
   }
   window.addEventListener('online', () => retryIfStillEmpty('online'));
