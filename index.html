@@ -2458,7 +2458,7 @@ const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by B
 
 
 const SHEET_CSV_URL    = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-eu04_kS3FylNaiJtYJlfJ9RarZwIXfjbpuGHt9tEMgrHr74370-r_FrRN3vx4vIPD/pub?output=csv';
-const SWIM_CONFIG_KEY  = 'swim_config_cache_v9';
+const SWIM_CONFIG_KEY  = 'swim_config_cache_v10'; // v10 — adds fromSheet flag; flushes stale default-laden caches
 const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
 // =============================================================================
@@ -2922,6 +2922,13 @@ const SITE_DEFAULTS = {
   }
 };
 
+// True only when applySwimConfig actually matched the expected sheet layout
+// (i.e. the tuning rows/cols lined up and values were read). Stays false when the
+// fetch fails OR succeeds but lands on the wrong tab/columns and every value falls
+// back to SITE_DEFAULTS. Drives the panel's "sheet vs default" indicator so a
+// silent fallback can never masquerade as sheet-loaded again.
+let SITE_FROM_SHEET = false;
+
 // Live SITE — starts as deep copy of defaults, overwritten by loadConfig
 let SITE = {
   key:      'SteyneSw',
@@ -2984,6 +2991,18 @@ function parseSheetCSV(text) {
 
 function applySwimConfig(rows) {
   const n = v => parseFloat(v) || 0;
+
+  // Alignment check: if the expected tuning labels aren't where we read them, the
+  // fetch landed on the wrong tab/columns (e.g. a gid-less pub URL) and NOTHING
+  // below will apply. Record that so the panel shows "default", not a fake "sheet".
+  const aligned = !!(rows[23]?.[1]?.includes('Wind sens')
+                  && rows[24]?.[1]?.includes('Swell sens')
+                  && rows[25]?.[1]?.includes('Period power'));
+  SITE_FROM_SHEET = aligned;
+  if (!aligned) {
+    console.warn('applySwimConfig: sheet layout not recognised (wrong tab/gid?) — '
+      + 'tuning params kept at defaults. row24[B]=' + JSON.stringify(rows[23]?.[1]));
+  }
 
   // Row 24 (index 23) — Wind sens TUNE, col P (index 15)
   if (rows[23]?.[1]?.includes('Wind sens'))
@@ -3149,7 +3168,10 @@ async function loadConfig() {
       if (c.bowerTideGain != null)    SITE.bowerTideGain      = c.bowerTideGain;
       if (c.bowerTideGateStart != null) SITE.bowerTideGateStart = c.bowerTideGateStart;
       if (c.bowerTideGateFull  != null) SITE.bowerTideGateFull  = c.bowerTideGateFull;
-      console.log('Swim config: loaded from cache');
+      // Carry the sheet-vs-default provenance forward. A cache written during a
+      // misaligned load stored fromSheet:false, so it won't fake "sheet" here.
+      SITE_FROM_SHEET = (c.fromSheet === true);
+      console.log('Swim config: loaded from cache (fromSheet=' + SITE_FROM_SHEET + ')');
       return;
     }
   } catch(e) {}
@@ -3162,6 +3184,7 @@ async function loadConfig() {
     localStorage.setItem(SWIM_CONFIG_KEY, JSON.stringify({
       fetchedAt: Date.now(),
       config: {
+        fromSheet:      SITE_FROM_SHEET,
         windSens:       SITE.windSens,
         swellSens:      SITE.swellSens,
         periodPower:    SITE.periodPower,
@@ -3187,6 +3210,7 @@ async function loadConfig() {
     console.log(`Swim config: loaded from sheet (windSens=${SITE.windSens}, swellSens=${SITE.swellSens}, periodPower=${SITE.periodPower}, swellPeriodMult=${SITE.swellPeriodMult})`);
   } catch(e) {
     console.warn('Swim config: sheet unavailable, using defaults.', e.message);
+    SITE_FROM_SHEET = false;
     // Reset to defaults
     SITE.windSens       = SITE_DEFAULTS.windSens;
     SITE.swellSens      = SITE_DEFAULTS.swellSens;
@@ -5356,7 +5380,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260703-213914';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5657,8 +5681,10 @@ const TUNE_PARAMS = [
   { key:'swellSens',     label:'Swell sensitivity',    min:0.2, max:4,    step:0.05, hint:'Scales all swell demerits. Main harshness knob.' },
   { key:'wwSens',        label:'Wind-wave sensitivity',min:0.2, max:4,    step:0.05, hint:'Scales wind-wave term. Blank = follows swell sens.', nullable:true },
   { key:'periodExp',     label:'Period exponent',      min:0.5, max:1.6,  step:0.05, hint:'Power on swell period. Higher = long-period swell penalised more.' },
+  { key:'periodPower',   label:'Period power',         min:10,  max:40,   step:1,    hint:'Sets spm = 81 ÷ this, the swell-period multiplier in the rif term. Lower = harsher.' },
+  { key:'tideGain',      label:'Tide gain',            min:0,   max:1,    step:0.01, hint:'Scales the entry tide demerit: tideGain × max(0, tideM−0.2) × (s1_d+s2_d).' },
   { key:'tideGateStart', label:'Tide gate start (deg)',min:0,   max:180,  step:5,    hint:'Swell direction where headland/tide effect begins.' },
-  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Direction where tide effect reaches full strength.' },
+  { key:'tideGateFull',  label:'Tide gate full (deg)', min:0,   max:180,  step:5,    hint:'Retired — gate no longer used for tide. Kept for back-compat only.', retired:true },
 ];
 
 function loadTuneOverrides() {
@@ -5678,22 +5704,31 @@ function buildTunePanel() {
   if (!TUNE_PANEL) return;
   try {
   const fmt = v => (v == null ? '—' : (Math.round(v * 100) / 100));
+  // Provenance tag for a param: local override wins; otherwise report whether the
+  // value genuinely came from the sheet (SITE_FROM_SHEET) or is a silent default.
+  const flagFor = (overridden) => {
+    if (overridden)      return { text:'SET',     color:'var(--ocean)' };
+    if (SITE_FROM_SHEET) return { text:'sheet',   color:'var(--dim)' };
+    return                      { text:'default', color:'#c47b1f' };
+  };
   const rowHTML = (p) => {
     const ov = loadTuneOverrides();
     const overridden = Object.prototype.hasOwnProperty.call(ov, p.key);
     const cur = SITE[p.key];
     const sliderVal = (cur == null) ? p.min : cur;
+    const flag = flagFor(overridden);
+    const dim  = p.retired ? 'opacity:0.5;' : '';
     return `
-      <div style="margin-bottom:12px;">
+      <div style="margin-bottom:12px;${dim}">
         <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
-          <span style="font-weight:700;color:var(--deep);">${p.label}</span>
+          <span style="font-weight:700;color:var(--deep);">${p.label}${p.retired ? ' <span style=\"font-size:9px;font-weight:400;color:var(--dim);\">(retired)</span>' : ''}</span>
           <span style="font-family:'Inter',sans-serif;font-size:12px;">
             <b data-tune-val="${p.key}">${fmt(cur)}</b>
-            <span data-tune-flag="${p.key}" style="margin-left:6px;font-size:9px;letter-spacing:0.5px;color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : 'sheet'}</span>
+            <span data-tune-flag="${p.key}" style="margin-left:6px;font-size:9px;letter-spacing:0.5px;color:${flag.color};">${flag.text}</span>
           </span>
         </div>
-        <input type="range" data-tune-input="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}"
-          style="width:100%;margin:4px 0 2px;accent-color:var(--ocean);">
+        <input type="range" data-tune-input="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}"${p.retired ? ' disabled' : ''}
+          style="width:100%;margin:4px 0 2px;accent-color:var(--ocean);${p.retired ? 'cursor:not-allowed;' : ''}">
         <div style="font-size:10px;color:var(--dim);line-height:1.3;">${p.hint}${p.nullable ? ' <button data-tune-clear="'+p.key+'" style="margin-left:4px;font-size:9px;padding:1px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--dim);cursor:pointer;">use swell sens</button>' : ''}</div>
       </div>`;
   };
@@ -5744,7 +5779,7 @@ function buildTunePanel() {
     const valEl  = panel.querySelector(`[data-tune-val="${key}"]`);
     const flagEl = panel.querySelector(`[data-tune-flag="${key}"]`);
     if (valEl)  valEl.textContent = fmt(SITE[key]);
-    if (flagEl) { flagEl.textContent = overridden ? 'SET' : 'sheet'; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
+    if (flagEl) { const f = flagFor(overridden); flagEl.textContent = f.text; flagEl.style.color = f.color; }
   };
   const refreshAll = () => TUNE_PARAMS.forEach(p => {
     refreshRow(p.key);
