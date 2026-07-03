@@ -2498,6 +2498,11 @@
 // CONSTANTS
 // =============================================================================
 const WW_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/forecast';
+// Open-Meteo WEATHER is proxied through the Worker: direct browser calls to
+// api.open-meteo.com fail on some networks ('Failed to fetch' / aborted signal)
+// while the Worker reaches the host fine. The Worker forwards the query string
+// verbatim, so the URL params below are unchanged — only the host swaps.
+const OM_WEATHER_PROXY = 'https://bold-rain-6ded.sticasale.workers.dev/weather';
 const WW_CACHE_KEY    = 'swim_ww_cache_v4';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 // ── NEARSHORE (NS) FEED — NSW Nearshore Wave Tool node 103218 ────────────────
@@ -2959,7 +2964,7 @@ const OM_MARINE_URL = `https://marine-api.open-meteo.com/v1/marine`
   + `&forecast_days=7&wind_speed_unit=kmh&timezone=Australia%2FSydney`;
 
 // Open-Meteo Weather (temp, wind chill, cloud, rain, sunrise/sunset)
-const OM_WEATHER_URL = `https://api.open-meteo.com/v1/forecast`
+const OM_WEATHER_URL = `${OM_WEATHER_PROXY}`
   + `?latitude=${MANLY_LAT}&longitude=${MANLY_LNG}`
   + `&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
   + `,cloud_cover,precipitation_probability,weather_code`
@@ -4712,7 +4717,7 @@ const OM_WX_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours (matches marine — weath
 // actually need. If the full request ever 400s because Open-Meteo rejects one
 // optional variable (cloud_cover, weather_code, a renamed field, …), this still
 // brings back air temp + feels-like so the cards never go blank.
-const OM_WEATHER_CORE_URL = `https://api.open-meteo.com/v1/forecast`
+const OM_WEATHER_CORE_URL = `${OM_WEATHER_PROXY}`
   + `?latitude=${MANLY_LAT}&longitude=${MANLY_LNG}`
   + `&hourly=temperature_2m,apparent_temperature,wind_speed_10m,wind_direction_10m`
   + `&daily=sunrise,sunset`
