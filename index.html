@@ -5380,7 +5380,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260703-220723';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -5748,7 +5748,7 @@ function buildTunePanel() {
       <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
         <button id="tune-export" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Copy values</button>
         <button id="tune-import" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Paste values</button>
-        <button id="tune-reset" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reset</button>
+        <button id="tune-reset" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reload from sheet</button>
       </div>
       <div id="tune-msg" style="font-size:10px;color:var(--ocean);margin-top:6px;min-height:13px;"></div>
       <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">
@@ -5836,11 +5836,18 @@ function buildTunePanel() {
     } catch(e) { msg('Could not parse — check the JSON'); }
   });
 
-  panel.querySelector('#tune-reset').addEventListener('click', () => {
+  panel.querySelector('#tune-reset').addEventListener('click', async () => {
+    // Drop any local overrides, then force a fresh pull of the sheet (bypassing
+    // the 1h config cache) so the panel shows the CURRENT sheet values — not the
+    // hardcoded SITE_DEFAULTS. Falls back to defaults only if the sheet is
+    // unreachable, and the flag/message reflect which actually happened.
     saveTuneOverrides({});
-    TUNE_PARAMS.forEach(p => { SITE[p.key] = SITE_DEFAULTS[p.key]; });
+    try { localStorage.removeItem(SWIM_CONFIG_KEY); } catch(e) {}
+    msg('Reloading from sheet…');
+    try { await loadConfig(); } catch(e) { console.warn('Reload from sheet failed:', e); }
+    applyTuneOverrides(); // overrides now empty — keeps the apply invariant
     applyAndRender(); refreshAll();
-    msg('Cleared — reload to re-pull exact sheet values');
+    msg(SITE_FROM_SHEET ? 'Reloaded from sheet ✓' : 'Sheet unreachable — showing coded defaults');
   });
   } catch(err) {
     console.error('Tune panel failed to build:', err);
