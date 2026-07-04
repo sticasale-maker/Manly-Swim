@@ -3666,7 +3666,7 @@ async function loadNsDispConfig(force) {
   };
   try {
     const cached = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
-    if (!FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.table) {
+    if (!force && !FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.table) {
       SITE.nsDisp = cached.table;
       if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
       if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
@@ -3681,7 +3681,7 @@ async function loadNsDispConfig(force) {
   } catch(e) {}
   diag('NS disp: fetching...');
   try {
-    const res = await fetchWithTimeout(sheetFetchURL(NS_DISP_SHEET_URL, FORCE_FRESH), 15000);
+    const res = await fetchWithTimeout(sheetFetchURL(NS_DISP_SHEET_URL, FORCE_FRESH || force), 15000);
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const text = await res.text();
     const parsed = parseNsDispCSV(text);
@@ -6231,7 +6231,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-120307';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6539,7 +6539,7 @@ const TUNE_PARAMS = [
   { key:'swimThresholds.glassy', label:'CHOP · Smooth edge', min:0, max:14, step:0.5, hint:'q7 below this = Smooth. Retune since CHOP now uses real wind-sea energy.' },
   { key:'swimThresholds.ripply', label:'CHOP · Ripply edge', min:0, max:20, step:0.5, hint:'q7 ≤ this = Ripply.' },
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge', min:0, max:40, step:0.5, hint:'q7 ≤ this = Choppy, else Messy.' },
-  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:4, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
+  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:8, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
   { key:'blChopImpact', label:'CHOP · BL chop impact (bl_chop_impact)', min:0, max:4, step:0.05, hint:'New NS tab V3. Single knob scaling the WHOLE BL chop crossfade (wind-sea + wind-wave), no handover jump. Feeds CHOP metric and Swim.' },
   { key:'chopSwimWeight', label:'SURGE · chop weight into Surge (chop_swim_weight)', min:1, max:8, step:0.1, hint:'New NS tab cell V7 ("Chop contribution to Swim"). Extra multiplier on chop WHERE IT ENTERS SURGE only. Chop energy is small next to swell but adds annoyance — turn this up to make chop move the SURGE band. Does NOT affect the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = legacy 1:1.' },
   { key:'surgeThresholds.steady', label:'SURGE · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
@@ -6616,6 +6616,8 @@ function buildTunePanel() {
         <button id="tune-import" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Paste values</button>
         <button id="tune-reset" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reset</button>
       </div>
+      <button id="tune-reload" style="width:100%;margin-top:8px;padding:9px;border:1px solid var(--ocean);border-radius:8px;background:var(--ocean);color:#fff;font-weight:700;cursor:pointer;">Reload from sheet</button>
+      <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches.</div>
       <div id="tune-msg" style="font-size:10px;color:var(--ocean);margin-top:6px;min-height:13px;"></div>
       <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">
         Live preview only persists on THIS device. To make it permanent for everyone, set ss_wave_sens in the New NS tab (cell C2). "Copy values" gives you a snapshot to paste back.
@@ -6719,6 +6721,34 @@ function buildTunePanel() {
     });
     applyAndRender(); refreshAll();
     msg('Cleared — reload to re-pull exact sheet values');
+  });
+
+  // RELOAD FROM SHEET — hard re-pull of the entire New NS tab: both dispersion
+  // tables (SS + BL) plus every sensitivity/threshold. Busts the local cache and
+  // forces the upstream (fresh=1) so a sheet edit shows up without a hard refresh.
+  // Non-destructive to local slider overrides — if any are set they still mask the
+  // freshly-pulled scalar values, so we flag that in the confirmation.
+  panel.querySelector('#tune-reload').addEventListener('click', async () => {
+    const btn = panel.querySelector('#tune-reload');
+    const prev = btn.textContent;
+    btn.textContent = 'Loading…'; btn.disabled = true;
+    try {
+      localStorage.removeItem(NS_DISP_CONFIG_KEY);   // bust local cache
+      await loadNsDispConfig(true);                  // force upstream re-pull
+      refreshAll();                                  // repaint sliders from fresh sheet values
+      applyAndRender();                              // re-score with new tables/sensitivities
+      const rows = SITE.nsDisp ? SITE.nsDisp.length : 0;
+      const blOK = SITE.blDisp ? 'BL\u2713' : 'BL\u2717';
+      const ov = loadTuneOverrides();
+      const nOv = Object.keys(ov).filter(k => ov[k] != null).length;
+      let t = 'Reloaded from sheet \u2713 (' + rows + ' SS rows, ' + blOK + ', ss=' + SITE.ssWaveSens + ')';
+      if (nOv) t += ' \u2014 ' + nOv + ' slider' + (nOv > 1 ? 's' : '') + ' still overridden locally; Reset to clear.';
+      msg(t);
+    } catch (e) {
+      msg('Reload failed \u2014 ' + (e.message || e));
+    } finally {
+      btn.textContent = prev; btn.disabled = false;
+    }
   });
   } catch(err) {
     console.error('Tune panel failed to build:', err);
