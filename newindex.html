@@ -2880,6 +2880,7 @@ const GEM_DEBUG = location.search.includes('debug=1') || TUNE_PANEL; // tune vie
 const VRAIL = location.search.includes('vrail=1'); // ?vrail=1 → vertical sliders beside each image (B layout); default is horizontal (A)
 const CMP_FEEDS = location.search.includes('compare=1'); // ?compare=1 → show WW tick alongside NS dot on each rail
 const FORCE_FRESH = location.search.includes('fresh=1'); // ?fresh=1 → bypass the 1h config + GEM-table cache and re-pull the sheet now. This device/load only; everyone else keeps the full SWIM_CONFIG_TTL.
+const SWELL_SIM = location.search.includes('swellsim=1'); // ?swellsim=1 -> draggable swell-direction arrow on the bay map; drag to rotate, Entry/Surge update live. Admin/dev only.
 if (VRAIL) document.body.classList.add('vrail');
 if (CMP_FEEDS) document.body.classList.add('cmp-feeds');
 // WW-compare toggle: flips the tick visibility and re-renders the current slot
@@ -3013,7 +3014,9 @@ const SITE_DEFAULTS = {
   periodExp:      1.15,   // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  75,     // sheet col R r25 — tide/headland effect begins above this swell direction (°)
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.35,   // sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × max(0,tideM−0.2) × (s1_d+s2_d)
+  tideGain:       0.35,   // sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d+s2_d), clamped below
+  tideRef:        1.0,    // neutral tide height (m, WW datum): tideM>ref amplifies swell, tideM<ref credits (reduces) it. Bidirectional pivot.
+  tideCreditClamp:0.4,    // max fraction of swell demerits the low-tide credit may remove (0.4 = −40% floor; big swell at dead-low is reduced, never erased)
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
   // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
   // three band edges + an explicit scaleMax (4th cell) that sets the rail's total
@@ -3104,12 +3107,18 @@ let SITE = {
   // Direction-gated, per-source tide demerit. Only swell + wind-wave terms are
   // amplified (each by its own arrival direction); wind chop is never tide-amplified.
   tideDir: function(tideM, parts) {
-    // Tide rides on the arriving swell energy (already direction-weighted by GEM
-    // transmit inside s1_d/s2_d). No separate gate — that double-counted direction
-    // and made equal swell read worse from 90° than 60°. Chop excluded.
-    const mult = Math.max(0, tideM - 0.2);
-    const w = (parts.s1_d || 0) + (parts.s2_d || 0);
-    return (this.tideGain ?? 0.35) * mult * w;
+    // Tide rides on the arriving swell energy (already direction-weighted by the SS
+    // transmit inside s1_d/s2_d). BIDIRECTIONAL about a neutral height tideRef: above
+    // it, more water over the shelf carries swell further in (demerit ADDED); below
+    // it, the shelf drains and waves break offshore, calmer entry (demerit CREDITED).
+    // The credit is clamped so a big swell at dead-low tide is reduced, never erased.
+    // No separate direction gate — direction already lives in s1_d/s2_d. Chop excluded.
+    const ref = this.tideRef ?? 1.0;
+    const w   = (parts.s1_d || 0) + (parts.s2_d || 0);
+    let   td  = (this.tideGain ?? 0.35) * (tideM - ref) * w;   // (+ above ref, - below)
+    const clampFrac = this.tideCreditClamp ?? 0.4;
+    const floor = -clampFrac * w;                              // most the credit can remove
+    return (td < floor) ? floor : td;
   },
   get spm() { return 81 / this.periodPower; },
   ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
@@ -6251,7 +6260,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-134209';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6568,6 +6577,8 @@ const TUNE_PARAMS = [
   { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'total demerits ≤ this = Easy. Lowest of the three (LOWER demerits = better).' },
   { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'total ≤ this = Doable.' },
   { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'total ≤ this = Caution, else Dangerous. Highest of the three.' },
+  { key:'tideRef', label:'TIDE · neutral height (m)', min:0, max:2, step:0.05, hint:'Pivot on the WW datum. Above it high water amplifies swell; below it low water credits (reduces) swell. Rides on s1_d+s2_d only. Default 1.0 = mid-tide.' },
+  { key:'tideCreditClamp', label:'TIDE · low-tide credit clamp', min:0, max:1, step:0.05, hint:'Cap on how much low tide can cut swell demerits. 0.4 = at most -40%, so a big swell at dead-low is reduced, never erased. 0 = no low-tide credit.' },
 ];
 
 function loadTuneOverrides() {
@@ -6839,6 +6850,85 @@ function buildTunePanel() {
     }
   }, 25000);
 })();
+
+  // ===== SWELL DIRECTION SIMULATOR (?swellsim=1) =====
+  // Overlays a draggable handle on the bay swell map. Drag to rotate the swell-FROM
+  // bearing; we clone the current hour's slot with that direction and call
+  // renderSnapshot, which redraws the refraction arrows AND re-scores Entry/Surge
+  // (through nsDispLookup). Direction only — height/period stay as forecast. Fully
+  // gated: no DOM, no listeners, nothing runs unless the URL carries swellsim=1.
+  (function swellSimSetup() {
+    if (!SWELL_SIM) return;
+    var tries = 0;
+    var poll = setInterval(function () {
+      tries++;
+      var wrap = document.getElementById('swellGraphWrap');
+      var haveSlot = (_matrix && _matrix.length && _matrix[_sliderIdx]);
+      if ((!wrap || !haveSlot) && tries < 120) return;   // wait up to ~60s for first render
+      clearInterval(poll);
+      if (!wrap || !haveSlot) return;
+
+      wrap.style.display = 'block';                        // force visible even in Essential mode
+      wrap.style.position = 'relative';
+
+      var layer = document.createElement('div');
+      layer.id = 'swellSimLayer';
+      layer.style.cssText = 'position:absolute;inset:0;z-index:20;cursor:grab;touch-action:none;';
+      wrap.appendChild(layer);
+
+      var knob = document.createElement('div');
+      knob.style.cssText = 'position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;'
+        + 'background:#ffd23f;border:2px solid #064e6e;box-shadow:0 1px 4px rgba(0,0,0,.4);pointer-events:none;';
+      layer.appendChild(knob);
+
+      var readout = document.createElement('div');
+      readout.style.cssText = 'position:absolute;left:8px;top:8px;z-index:21;pointer-events:none;'
+        + 'font:700 11px/1.3 "DM Mono",monospace;color:#fff;background:rgba(6,78,110,.85);'
+        + 'padding:5px 8px;border-radius:6px;max-width:calc(100% - 16px);';
+      readout.textContent = 'SWELL SIM \u00b7 drag on the map to rotate the swell';
+      layer.appendChild(readout);
+
+      function baseSlot() { return window._btPreviewSlot || _matrix[_sliderIdx]; }
+
+      function positionKnob(brg) {
+        var w = layer.clientWidth, h = layer.clientHeight;
+        var r = Math.min(w, h) * 0.42;
+        knob.style.left = (w / 2 + r * Math.sin(brg * Math.PI / 180)) + 'px';
+        knob.style.top  = (h / 2 - r * Math.cos(brg * Math.PI / 180)) + 'px';
+      }
+
+      function apply(brg) {
+        var base = baseSlot();
+        if (!base) return;
+        var dir = Math.round(((brg % 360) + 360) % 360);
+        var clone = Object.assign({}, base, { swell1Dir: dir });
+        try { renderSnapshot(clone, (typeof wxLookup === 'function') ? wxLookup(clone.dateTime) : null); } catch (e) {}
+        var res = null; try { res = (typeof calcScore === 'function') ? calcScore(clone) : null; } catch (e) {}
+        readout.textContent = 'SWELL SIM \u00b7 from ' + dir + '\u00b0'
+          + (res ? ' \u00b7 Entry ' + res.entry.label + ' \u00b7 Surge ' + (res.water ? res.water.label : '-') : '')
+          + ' \u00b7 drag to rotate';
+        positionKnob(brg);
+      }
+
+      function bearingFromEvent(ev) {
+        var rect = layer.getBoundingClientRect();
+        var px = (ev.touches ? ev.touches[0].clientX : ev.clientX);
+        var py = (ev.touches ? ev.touches[0].clientY : ev.clientY);
+        var dx = px - (rect.left + rect.width / 2);
+        var dy = py - (rect.top + rect.height / 2);
+        return (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360; // compass: 0=N up, 90=E right
+      }
+
+      var dragging = false;
+      layer.addEventListener('pointerdown', function (ev) { dragging = true; layer.style.cursor = 'grabbing'; apply(bearingFromEvent(ev)); ev.preventDefault(); });
+      window.addEventListener('pointermove', function (ev) { if (dragging) { apply(bearingFromEvent(ev)); ev.preventDefault(); } });
+      window.addEventListener('pointerup', function () { dragging = false; layer.style.cursor = 'grab'; });
+
+      // seed the knob at the current forecast swell direction
+      var seed = baseSlot();
+      apply((seed && isFinite(seed.swell1Dir)) ? seed.swell1Dir : 90);
+    }, 500);
+  })();
 
   // ===== SPLASH SCREEN =====
   // Phase 1: video plays to completion (or max 10s safety cap).
