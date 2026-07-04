@@ -6195,7 +6195,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-105530';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6565,7 +6565,7 @@ function buildTunePanel() {
 
   const panel = document.createElement('div');
   panel.id = 'tune-panel';
-  panel.style.cssText = `position:fixed;right:12px;top:12px;z-index:99999;width:300px;max-height:90vh;overflow-y:auto;
+  panel.style.cssText = `position:fixed;right:12px;top:12px;z-index:99999;width:300px;max-height:calc(100vh - 140px);overflow-y:auto;
     background:var(--foam);border:2px solid var(--ocean);border-radius:14px;padding:14px 16px;
     box-shadow:0 8px 40px rgba(0,0,0,0.25);font-family:'Inter',sans-serif;font-size:12px;color:var(--text);`;
   panel.innerHTML = `
@@ -6619,6 +6619,13 @@ function buildTunePanel() {
 
   const applyAndRender = () => {
     applyTuneOverrides();
+    // If the backtest panel has pushed a historical hour onto the live sliders
+    // (window._btPreviewSlot), keep re-scoring THAT hour as tuning moves —
+    // otherwise every slider touch would silently snap back to today's forecast.
+    if (window._btPreviewSlot) {
+      try { renderSnapshot(window._btPreviewSlot); } catch (e) { console.warn('renderSnapshot (historical) failed:', e); }
+      return;
+    }
     if (_matrix && _matrix.length) {
       const slot = _matrix[_sliderIdx];
       renderSnapshot(slot, wxLookup(slot?.dateTime));
@@ -9752,7 +9759,7 @@ if ('serviceWorker' in navigator) {
           '<h4>Look up a specific day <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--dim,#5a8a9f);">(compare against the swimmers\u2019 report)</span></h4>' +
           '<div class="bt-tide">' +
             '<button class="bt-btn ghost" id="btPrevDay" style="padding:6px 10px;">\u2190</button>' +
-            '<input type="date" id="btDateInput">' +
+            '<input type="date" id="btDateInput" value="2025-06-15" min="2024-12-01" max="2025-12-31">' +
             '<button class="bt-btn ghost" id="btNextDay" style="padding:6px 10px;">\u2192</button>' +
           '</div>' +
           '<div id="btDayWrap" style="margin-top:8px;"></div>' +
@@ -9809,6 +9816,17 @@ if ('serviceWorker' in navigator) {
     b.id = 'btHistBanner';
     document.body.appendChild(b);
   }
+  var _resizeWired = false;
+  function adjustTunePanelForBanner() {
+    var panel = el('tune-panel');
+    var banner = el('btHistBanner');
+    if (!panel) return;
+    if (banner && banner.classList.contains('show')) {
+      panel.style.top = (banner.getBoundingClientRect().height + 12) + 'px';
+    } else {
+      panel.style.top = '12px';
+    }
+  }
   function showHistBanner(x) {
     ensureHistBanner();
     var b = el('btHistBanner');
@@ -9825,12 +9843,17 @@ if ('serviceWorker' in navigator) {
     el('bhNext').addEventListener('click', function () { useHourByIndex(_histIdx + 1); });
     el('bhBacktest').addEventListener('click', function () { show(); });
     el('bhLive').addEventListener('click', function () { location.reload(); });
+    // banner height depends on wrap state, which depends on viewport width — measure
+    // after layout settles, and keep it correct across resize/rotate while it's up.
+    requestAnimationFrame(adjustTunePanelForBanner);
+    if (!_resizeWired) { _resizeWired = true; window.addEventListener('resize', adjustTunePanelForBanner); }
   }
   function useHourByIndex(idx) {
     if (!RESULTS || idx < 0 || idx >= RESULTS.length) return;
     _histIdx = idx;
     var x = RESULTS[idx];
     var h = Object.assign({}, x.slot, { dateTime: x.localDate + ' ' + x.localTime + ':00' });
+    window._btPreviewSlot = h; // read by buildTunePanel's applyAndRender so slider moves re-score THIS hour
     try {
       if (typeof renderSnapshot === 'function') renderSnapshot(h);
       else el('btStatus').textContent = '\u26a0 renderSnapshot() not found \u2014 cannot preview on live sliders.';
