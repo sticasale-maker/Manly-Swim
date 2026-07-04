@@ -5686,30 +5686,66 @@ function renderGemComparison(h) {
 
   const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
   const time = h.dateTime || '';
+
+  // Authoritative outputs from the live scorer. The _g values above are a MIRROR of
+  // calcScore's NS branch; if they ever drift apart we flag it, so this panel can
+  // never silently show stale maths again (that's what made the NS path look like
+  // the old-index path).
+  let res = null;
+  try { res = calcScore(h); } catch (e) { res = null; }
+  const driftAmt = res ? Math.abs(total_g - res.entry.raw) : 0;
+  const driftLine = res
+    ? (driftAmt > 0.1
+        ? `<div style="color:#ff6b6b;font-weight:700;">⚠ MIRROR DRIFT ${driftAmt.toFixed(2)} — panel maths diverged from calcScore.</div>`
+        : `<div style="color:#7ec8e3;">✓ mirror matches calcScore (Δ ${driftAmt.toFixed(2)})</div>`)
+    : `<div style="color:#fc8;">calcScore unavailable — mirror only</div>`;
+
+  const branchTag = (typeof GEM_MODEL !== 'undefined' && GEM_MODEL) ? 'NS DISPERSION · newindex' : 'ORIGINAL · legacy';
+  const feedFlag  = h._nsFeed ? 'yes' : 'no';
+  const wwPow_g   = nrg_g(windWaveH || 0, wwP_g);
+
   dbg.innerHTML =
     `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
+    `<div style="color:#7ec8e3;font-weight:700;">BRANCH: ${branchTag} &nbsp;·&nbsp; row _nsFeed: ${feedFlag}</div>` +
     tableStatus +
-    `<div style="color:#9fd;">INPUTS:</div>` +
+    driftLine +
+    `<div style="color:#9fd;margin-top:4px;">INPUTS:</div>` +
     `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s &nbsp; S2 ${swell2H}m ${swell2Dir}° ${swell2P}s<br>` +
     `WW ${windWaveH}m ${windWaveDir}° ${h.windWaveP||0}s &nbsp; Wind ${windKmh}km/h ${windDir}° &nbsp; Tide ${tideM}m<br>` +
+    `<div style="color:#9fd;margin-top:4px;">SENSITIVITIES:</div>` +
+    `ss_wave_sens = ${ess_g} → s1_d, s2_d, ww_d<br>` +
+    `windSeaSens = ${wsSens_g} → ws_d only (SS fetch wind-sea)<br>` +
+    `<div style="font-size:10px;color:#fc8;">on backtest rows Wind=0 ⇒ ws_d≈0, so windSeaSens does nothing; all wind-chop enters via ww_d ×ss_wave_sens</div>` +
     `<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin-top:6px;">` +
-    `<b style="color:#9fd;"></b><b style="color:#7ec8e3;">GEM</b>` +
+    `<b style="color:#9fd;"></b><b style="color:#7ec8e3;">NS value</b>` +
     `<span>S1 period used</span><span>${swell1P}s (real)</span>` +
     `<span>S2 period used</span><span>${swell2P||8}s</span>` +
-    `<span>S1 power H²·P^1.1</span><span>${f(s1pow_g)}</span>` +
-    `<span>S2 power</span><span>${f(s2pow_g)}</span>` +
-    `<span>S1 transmit</span><span>${(s1Tx_g*100).toFixed(1)}%</span>` +
-    `<span>S2 transmit</span><span>${(s2Tx_g*100).toFixed(1)}%</span>` +
-    `<span>WW transmit</span><span>${(wwTx_g*100).toFixed(1)}%</span>` +
-    `<span style="color:#fc8;">wind_d</span><span>${f(wind_d_g)}</span>` +
-    `<span style="color:#fc8;">ww_d</span><span>${f(ww_d_g)}</span>` +
-    `<span style="color:#fc8;">s1_d</span><span>${f(s1_d_g)}</span>` +
-    `<span style="color:#fc8;">s2_d</span><span>${f(s2_d_g)}</span>` +
+    `<span>WW period used</span><span>${wwP_g}s</span>` +
+    `<span>S1 power (H²·P)</span><span>${f(s1pow_g)}</span>` +
+    `<span>S2 power (H²·P)</span><span>${f(s2pow_g)}</span>` +
+    `<span>WW power (H²·P)</span><span>${f(wwPow_g)}</span>` +
+    `<span>S1 transmit (SS table)</span><span>${(s1Tx_g*100).toFixed(1)}%</span>` +
+    `<span>S2 transmit (SS table)</span><span>${(s2Tx_g*100).toFixed(1)}%</span>` +
+    `<span>WW transmit (SS table)</span><span>${(wwTx_g*100).toFixed(1)}%</span>` +
+    `<span style="color:#fc8;">s1_d (×ss)</span><span>${f(s1_d_g)}</span>` +
+    `<span style="color:#fc8;">s2_d (×ss)</span><span>${f(s2_d_g)}</span>` +
+    `<span style="color:#fc8;">ww_d (×ss)</span><span>${f(ww_d_g)}</span>` +
+    `<span style="color:#fc8;">ws_d (×windSea)</span><span>${f(ws_d_g)}</span>` +
+    `<span style="color:#fc8;">wind_d (BL chop)</span><span>${f(wind_d_g)}</span>` +
+    `<span style="color:#9fd;">windEntry (w=${wEntry_g.toFixed(2)})</span><span>${f(windEntry_g)}</span>` +
     `<span style="color:#9fd;">subtotal o</span><span>${f(o_g)}</span>` +
     `<span style="color:#9fd;">tide_d</span><span>${f(tide_d_g)}</span>` +
     `<span style="color:#9fd;">total</span><span>${f(total_g)}</span>` +
     `<b style="color:#7ec8e3;">SCORE 60−total</b><b style="color:#7ec8e3;">${score_g}</b>` +
-    `</div>`;
+    `</div>` +
+    (res
+      ? `<div style="color:#9fd;margin-top:6px;">OUTPUTS (calcScore):</div>` +
+        `<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;">` +
+        `<span>ENTRY</span><span>${res.entry.label} · total ${f(res.entry.raw)} · score ${res.score}</span>` +
+        `<span>CHOP (q7)</span><span>${res.swim.label} · q7 ${f(res.swim.raw)}</span>` +
+        `<span>SURGE (v6)</span><span>${res.water ? res.water.label : '—'} · raw ${res.water ? f(res.water.raw) : '—'}</span>` +
+        `</div>`
+      : '');
 }
 
 
@@ -9682,6 +9718,8 @@ if ('serviceWorker' in navigator) {
   var RESULTS = null;
   var TIDE_MAP = null;      // epochHourMs -> metres (datum-shifted)
   var TIDE_STATUS = 'not fetched';
+  var WIND_MAP = null;      // epochHourMs -> { kmh, dir } from Open-Meteo archive
+  var WIND_STATUS = 'not fetched';
   var _histIdx = -1;        // index into RESULTS currently shown on the live dot-rails
   var _histBannerBuilt = false;
 
@@ -9747,6 +9785,10 @@ if ('serviceWorker' in navigator) {
             '<span id="btTideStatus" style="color:var(--dim,#5a8a9f);">tide: not fetched</span>' +
             '<button class="bt-btn ghost" id="btFetchTide" style="padding:6px 10px;font-size:11px;">Fetch tide (Open-Meteo)</button>' +
           '</div>' +
+          '<div class="bt-tide">' +
+            '<span id="btWindStatus" style="color:var(--dim,#5a8a9f);">wind: not fetched</span>' +
+            '<button class="bt-btn ghost" id="btFetchWind" style="padding:6px 10px;font-size:11px;">Fetch wind (Open-Meteo)</button>' +
+          '</div>' +
           '<div class="bt-tide">Fallback tide if fetch fails (m): <input type="number" id="btTide" value="0.8" step="0.1" min="0" max="2"></div>' +
           '<div style="display:flex;gap:8px;margin-top:12px;">' +
             '<button class="bt-btn primary" id="btRun">Run backtest</button>' +
@@ -9774,6 +9816,7 @@ if ('serviceWorker' in navigator) {
     el('btDownload').addEventListener('click', download);
     el('btBundled').addEventListener('click', function () { loadBundled(true); });
     el('btFetchTide').addEventListener('click', fetchTide);
+    el('btFetchWind').addEventListener('click', fetchWind);
     el('btDateInput').addEventListener('change', function () { renderDay(this.value); });
     el('btPrevDay').addEventListener('click', function () { shiftDay(-1); });
     el('btNextDay').addEventListener('click', function () { shiftDay(1); });
@@ -9869,12 +9912,16 @@ if ('serviceWorker' in navigator) {
     DATA = { headers: headers, rows: rows };
     TIDE_MAP = null;
     TIDE_STATUS = 'not fetched';
+    WIND_MAP = null;
+    WIND_STATUS = 'not fetched';
     buildMapUI(headers);
     el('btStatus').textContent = statusMsg;
     el('btTideStatus').textContent = 'tide: not fetched';
+    el('btWindStatus').textContent = 'wind: not fetched';
     el('btDaySec').style.display = 'none';
-    // auto-fetch tide right away so Run is one click
+    // auto-fetch tide + wind right away so Run is one click
     fetchTide();
+    fetchWind();
   }
 
   var _bundledTried = false;
@@ -10027,6 +10074,73 @@ if ('serviceWorker' in navigator) {
     return fallback;
   }
 
+  // ── wind fetch: Open-Meteo historical archive 10m wind ───────────────────
+  // The live app takes wind from WillyWeather; the backtest has no WW history,
+  // so we pull Open-Meteo's archive (wind_speed_10m + wind_direction_10m, km/h)
+  // for the exact date span and feed windKmh/windDir into the SAME fetch wind-sea
+  // model the live path uses. windDurHrs is reconstructed separately in run()
+  // via the buildHourlyMatrix forward-pass, so behaviour matches live exactly.
+  // Returns the fetch promise so run() can await it before scoring.
+  function fetchWind() {
+    if (!DATA || !DATA.rows.length) return Promise.resolve();
+    var m = readMap();
+    if (m.time == null || m.time < 0) { el('btWindStatus').textContent = 'wind: no time column mapped'; return Promise.resolve(); }
+    var tz = el('btTz').value;
+    var minMs = Infinity, maxMs = -Infinity;
+    for (var i = 0; i < DATA.rows.length; i++) {
+      var ms = rowTimeToUtcMs(DATA.rows[i][m.time], tz);
+      if (ms == null) continue;
+      if (ms < minMs) minMs = ms;
+      if (ms > maxMs) maxMs = ms;
+    }
+    if (!isFinite(minMs) || !isFinite(maxMs)) { el('btWindStatus').textContent = 'wind: could not read row times'; return Promise.resolve(); }
+    var startDate = new Date(minMs - 86400000).toISOString().slice(0, 10); // 1 day pad
+    var endDate   = new Date(maxMs + 86400000).toISOString().slice(0, 10);
+    var url = 'https://archive-api.open-meteo.com/v1/archive'
+      + '?latitude=' + MANLY_LAT + '&longitude=' + MANLY_LNG
+      + '&hourly=wind_speed_10m,wind_direction_10m'
+      + '&start_date=' + startDate + '&end_date=' + endDate
+      + '&wind_speed_unit=kmh&timezone=UTC';
+    el('btWindStatus').textContent = 'wind: fetching ' + startDate + ' \u2192 ' + endDate + '\u2026';
+    return fetch(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        var times = (j.hourly && j.hourly.time) || [];
+        var spd   = (j.hourly && j.hourly.wind_speed_10m) || [];
+        var dir   = (j.hourly && j.hourly.wind_direction_10m) || [];
+        if (!times.length) throw new Error('empty series');
+        var map = {};
+        for (var i = 0; i < times.length; i++) {
+          if (spd[i] == null) continue;
+          var ms = Date.parse(times[i] + ':00Z');
+          if (isNaN(ms)) continue;
+          map[Math.floor(ms / 3600000)] = { kmh: spd[i], dir: (dir[i] == null ? 0 : dir[i]) };
+        }
+        if (!Object.keys(map).length) throw new Error('all null');
+        WIND_MAP = map;
+        WIND_STATUS = 'ok';
+        el('btWindStatus').innerHTML = '\u2713 wind loaded (' + Object.keys(map).length + 'h, Open-Meteo 10m)';
+      })
+      .catch(function (e) {
+        WIND_MAP = null;
+        WIND_STATUS = 'failed: ' + (e.message || e);
+        el('btWindStatus').textContent = '\u26a0 wind fetch failed \u2014 scoring with wind=0 (' + (e.message || e) + ')';
+      });
+  }
+
+  function windForRow(rawTime, tz) {
+    if (!WIND_MAP) return null;
+    var ms = rowTimeToUtcMs(rawTime, tz);
+    if (ms == null) return null;
+    var key = Math.floor(ms / 3600000);
+    if (WIND_MAP[key] != null) return WIND_MAP[key];
+    // nearest hour within ±2h if exact bucket missing
+    for (var d = 1; d <= 2; d++) {
+      if (WIND_MAP[key - d] != null) return WIND_MAP[key - d];
+      if (WIND_MAP[key + d] != null) return WIND_MAP[key + d];
+    }
+    return null;
+  }
+
   // Sydney-local calendar date/time for a UTC instant — lets the day-picker
   // match the date a swimmer actually experienced, regardless of whether the
   // source CSV's time column was UTC or already Sydney-local.
@@ -10053,15 +10167,58 @@ if ('serviceWorker' in navigator) {
     } catch (e) { /* proceed; calcScore falls back */ }
     if (typeof applyTuneOverrides === 'function') { try { applyTuneOverrides(); } catch (e) {} }
 
+    // Wind, like the live path — pulled from Open-Meteo (WW has no history). Await
+    // it here so scoring never silently runs on wind=0 just because the auto-fetch
+    // hadn't resolved when Run was clicked.
+    if (!WIND_MAP && m.time > -1) {
+      status.textContent = 'Fetching wind (Open-Meteo)\u2026';
+      try { await fetchWind(); } catch (e) {}
+    }
+
     var tz = el('btTz').value;
     var fallbackTide = num(el('btTide').value);
     var col = function (r, idx) { return idx > -1 ? r[idx] : 0; };
+
+    // windDurHrs forward-pass — identical rule to buildHourlyMatrix (live): count
+    // consecutive hours the wind has held within ±30° of the current bearing and
+    // been blowing (>=3 km/h). Must run in CHRONOLOGICAL order for the running
+    // count to be correct, so we walk a time-sorted index and store the result
+    // back on the original row index. When wind isn't loaded, windForRow returns
+    // null everywhere → held stays 0 → identical to the old wind=0 behaviour.
+    var DIR_TOL = 30, MIN_KMH = 3;
+    var order = [];
+    for (var oi = 0; oi < DATA.rows.length; oi++) order.push(oi);
+    if (m.time > -1) {
+      order.sort(function (a, b) {
+        var ta = rowTimeToUtcMs(DATA.rows[a][m.time], tz);
+        var tb = rowTimeToUtcMs(DATA.rows[b][m.time], tz);
+        return (ta == null ? 0 : ta) - (tb == null ? 0 : tb);
+      });
+    }
+    var heldByIdx = new Array(DATA.rows.length);
+    var held = 0, prevDir = null;
+    for (var oj = 0; oj < order.length; oj++) {
+      var idx = order[oj];
+      var rt = m.time > -1 ? DATA.rows[idx][m.time] : String(idx);
+      var wv0 = windForRow(rt, tz);
+      var spd0 = wv0 ? wv0.kmh : 0, dir0 = wv0 ? wv0.dir : 0;
+      if (spd0 < MIN_KMH) { held = 0; }
+      else if (prevDir == null) { held = 1; }
+      else {
+        var diff = Math.abs(((dir0 - prevDir + 540) % 360) - 180); // circular Δ
+        held = (diff <= DIR_TOL) ? held + 1 : 1;
+      }
+      heldByIdx[idx] = held;
+      prevDir = (spd0 < MIN_KMH) ? null : dir0;
+    }
+
     var out = [];
     for (var i = 0; i < DATA.rows.length; i++) {
       var r = DATA.rows[i];
       var rawTime = m.time > -1 ? r[m.time] : String(i);
+      var wv = windForRow(rawTime, tz);
       var slot = {
-        windKmh: 0, windDir: 0, windDurHrs: 0,
+        windKmh: wv ? wv.kmh : 0, windDir: wv ? wv.dir : 0, windDurHrs: heldByIdx[i] || 0,
         swell1H: num(col(r, m.swellH)), swell1P: num(col(r, m.swellP)), swell1Dir: num(col(r, m.swellDir)),
         swell2H: 0, swell2Dir: 0, swell2P: 8,
         windWaveH: num(col(r, m.seaH)), windWaveP: num(col(r, m.seaP)), windWaveDir: num(col(r, m.seaDir)),
@@ -10089,8 +10246,9 @@ if ('serviceWorker' in navigator) {
     var ss = (typeof SITE !== 'undefined' && SITE.ssWaveSens != null) ? SITE.ssWaveSens : '?';
     var bl = (typeof SITE !== 'undefined' && SITE.blChopImpact != null) ? SITE.blChopImpact : '?';
     var tideNote = TIDE_MAP ? 'Open-Meteo (datum-shifted)' : ('fallback constant ' + fallbackTide + 'm \u2014 ' + TIDE_STATUS);
+    var windNote = WIND_MAP ? 'Open-Meteo 10m' : ('none (wind=0) \u2014 ' + WIND_STATUS);
     el('btModelNote').innerHTML = 'Scored with <b>' + esc(model) + '</b> \u00b7 ss_wave_sens=' + esc(ss) +
-      ' \u00b7 bl_chop_impact=' + esc(bl) + ' \u00b7 tide source: ' + esc(tideNote) + '. Change tune-panel sliders then Run again to compare.';
+      ' \u00b7 bl_chop_impact=' + esc(bl) + ' \u00b7 tide source: ' + esc(tideNote) + ' \u00b7 wind source: ' + esc(windNote) + '. Change tune-panel sliders then Run again to compare.';
     status.textContent = out.length.toLocaleString() + ' hours scored.';
     render();
   }
