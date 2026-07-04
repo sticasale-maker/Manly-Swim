@@ -5704,6 +5704,20 @@ function renderGemComparison(h) {
   const feedFlag  = h._nsFeed ? 'yes' : 'no';
   const wwPow_g   = nrg_g(windWaveH || 0, wwP_g);
 
+  // BL dispersion diagnostics — SURGE/CHOP read the BL table, not the SS table.
+  // Fingerprint = sum of every cell: it changes iff the table CONTENT changed, so
+  // after "Reload from sheet" a stale/lagging/parse-failed BL table is obvious
+  // (fingerprint unchanged) vs a real edit that just doesn't hit this row's dir/period.
+  var blFp = 'no BL table';
+  if (SITE.blDisp && SITE.blDisp.length) {
+    var _s = 0, _n = 0;
+    for (var _a = 0; _a < SITE.blDisp.length; _a++)
+      for (var _b = 0; _b < SITE.blDisp[_a].length; _b++) { _s += (+SITE.blDisp[_a][_b] || 0); _n++; }
+    blFp = _s.toFixed(0) + ' (' + _n + ' cells)';
+  }
+  var blS1Tx = (typeof blDispLookup === 'function') ? (blDispLookup(swell1Dir, swell1P) * 100).toFixed(1) + '%' : '?';
+  var blWWTx = (typeof blDispLookup === 'function') ? (blDispLookup(windWaveDir || windDir, wwP_g) * 100).toFixed(1) + '%' : '?';
+
   dbg.innerHTML =
     `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
     `<div style="color:#7ec8e3;font-weight:700;">BRANCH: ${branchTag} &nbsp;·&nbsp; row _nsFeed: ${feedFlag}</div>` +
@@ -5737,6 +5751,12 @@ function renderGemComparison(h) {
     `<span style="color:#9fd;">tide_d</span><span>${f(tide_d_g)}</span>` +
     `<span style="color:#9fd;">total</span><span>${f(total_g)}</span>` +
     `<b style="color:#7ec8e3;">SCORE 60−total</b><b style="color:#7ec8e3;">${score_g}</b>` +
+    `</div>` +
+    `<div style="color:#9fd;margin-top:6px;">BL TABLE (drives SURGE + CHOP, not ENTRY):</div>` +
+    `<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;">` +
+    `<span>BL fingerprint</span><span>${blFp}</span>` +
+    `<span>BL transmit · S1</span><span>${blS1Tx}</span>` +
+    `<span>BL transmit · WW</span><span>${blWWTx}</span>` +
     `</div>` +
     (res
       ? `<div style="color:#9fd;margin-top:6px;">OUTPUTS (calcScore):</div>` +
@@ -6231,7 +6251,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-121711';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
