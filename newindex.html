@@ -6195,7 +6195,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-102348';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -9675,6 +9675,8 @@ if ('serviceWorker' in navigator) {
   var RESULTS = null;
   var TIDE_MAP = null;      // epochHourMs -> metres (datum-shifted)
   var TIDE_STATUS = 'not fetched';
+  var _histIdx = -1;        // index into RESULTS currently shown on the live dot-rails
+  var _histBannerBuilt = false;
 
   // ── build overlay ────────────────────────────────────────────────────────
   var built = false;
@@ -9782,6 +9784,63 @@ if ('serviceWorker' in navigator) {
 
   function show() { var ov = el('btOverlay'); if (ov) ov.classList.add('show'); }
   function hide() { var ov = el('btOverlay'); if (ov) ov.classList.remove('show'); }
+
+  // ── historical preview: push one picked hour onto the REAL live dot-rails ──
+  // via the app's own renderSnapshot(), then close the overlay so the actual
+  // Entry/Chop/Surge sliders (and verdict banner) are what's on screen — not a
+  // parallel mini-UI. A persistent banner marks it as historical (not live) and
+  // offers hour-by-hour scrubbing without reopening the panel each time.
+  function ensureHistBanner() {
+    if (_histBannerBuilt) return; _histBannerBuilt = true;
+    var css = document.createElement('style');
+    css.textContent =
+      "#btHistBanner{position:fixed;top:0;left:0;right:0;z-index:99998;display:none;" +
+      "background:linear-gradient(90deg,#8dae2a,#d4900a);color:#fff;font-family:'Inter',sans-serif;" +
+      "padding:8px 12px;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;" +
+      "box-shadow:0 2px 8px rgba(0,0,0,.25);}" +
+      "#btHistBanner.show{display:flex;}" +
+      "#btHistBanner .bh-txt{font-size:12px;font-weight:700;letter-spacing:.3px;}" +
+      "#btHistBanner .bh-btns{display:flex;gap:6px;flex-wrap:wrap;}" +
+      "#btHistBanner button{font-family:'Inter',sans-serif;font-weight:700;font-size:11px;border:none;" +
+      "border-radius:8px;padding:5px 9px;cursor:pointer;background:rgba(255,255,255,.25);color:#fff;}" +
+      "#btHistBanner button:hover{background:rgba(255,255,255,.4);}";
+    document.head.appendChild(css);
+    var b = document.createElement('div');
+    b.id = 'btHistBanner';
+    document.body.appendChild(b);
+  }
+  function showHistBanner(x) {
+    ensureHistBanner();
+    var b = el('btHistBanner');
+    b.innerHTML =
+      '<span class="bh-txt">HISTORICAL BACKTEST \u00b7 ' + esc(x.localDate) + ' ' + esc(x.localTime) + ' \u2014 not live conditions</span>' +
+      '<span class="bh-btns">' +
+        '<button id="bhPrev">\u25c0 hour</button>' +
+        '<button id="bhNext">hour \u25b6</button>' +
+        '<button id="bhBacktest">Backtest panel</button>' +
+        '<button id="bhLive">Exit \u2192 Live</button>' +
+      '</span>';
+    b.classList.add('show');
+    el('bhPrev').addEventListener('click', function () { useHourByIndex(_histIdx - 1); });
+    el('bhNext').addEventListener('click', function () { useHourByIndex(_histIdx + 1); });
+    el('bhBacktest').addEventListener('click', function () { show(); });
+    el('bhLive').addEventListener('click', function () { location.reload(); });
+  }
+  function useHourByIndex(idx) {
+    if (!RESULTS || idx < 0 || idx >= RESULTS.length) return;
+    _histIdx = idx;
+    var x = RESULTS[idx];
+    var h = Object.assign({}, x.slot, { dateTime: x.localDate + ' ' + x.localTime + ':00' });
+    try {
+      if (typeof renderSnapshot === 'function') renderSnapshot(h);
+      else el('btStatus').textContent = '\u26a0 renderSnapshot() not found \u2014 cannot preview on live sliders.';
+    } catch (e) {
+      el('btStatus').textContent = '\u26a0 Preview failed: ' + (e.message || e);
+      return;
+    }
+    hide();
+    showHistBanner(x);
+  }
 
   function applyData(headers, rows, statusMsg) {
     DATA = { headers: headers, rows: rows };
@@ -9997,7 +10056,8 @@ if ('serviceWorker' in navigator) {
         swimRaw: (res.water && res.water.raw != null) ? res.water.raw : null,
         swimLabel: res.water ? res.water.label : '', swimCls: res.water ? res.water.cls : 'dim',
         tideUsed: slot.tideM,
-        score60: res.score
+        score60: res.score,
+        slot: slot   // kept so a tap can re-run calcScore via renderSnapshot with live tuning
       });
     }
     RESULTS = out;
@@ -10100,7 +10160,8 @@ if ('serviceWorker' in navigator) {
       return;
     }
     var rows = day.map(function (x) {
-      return '<tr><td>' + esc(x.localTime) + '</td>' +
+      var ridx = RESULTS.indexOf(x);
+      return '<tr data-ridx="' + ridx + '" style="cursor:pointer;"><td>' + esc(x.localTime) + '</td>' +
         '<td class="bt-lab ' + cellCls(x.entryCls) + '">' + esc(x.entryLabel) + ' <span style="color:var(--dim,#5a8a9f);font-weight:400;">' + f1(x.entryRaw) + '</span></td>' +
         '<td class="bt-lab ' + cellCls(x.chopCls) + '">' + esc(x.chopLabel) + ' <span style="color:var(--dim,#5a8a9f);font-weight:400;">' + f1(x.chopRaw) + '</span></td>' +
         '<td class="bt-lab ' + cellCls(x.swimCls) + '">' + esc(x.swimLabel) + '</td>' +
@@ -10108,8 +10169,15 @@ if ('serviceWorker' in navigator) {
         '<td>' + x.score60 + '</td></tr>';
     }).join('');
     wrap.innerHTML =
+      '<p class="bt-sub" style="margin:0 0 4px;">Tap an hour to preview it on the live Entry / Chop / Surge sliders.</p>' +
       '<div class="bt-scroll"><table class="bt-tbl"><thead><tr><th>Local time</th><th>Entry</th><th>Chop</th><th>Swim</th><th>Tide m</th><th>/60</th></tr></thead><tbody>' +
       rows + '</tbody></table></div>';
+    var tbl = wrap.querySelector('table');
+    if (tbl) tbl.addEventListener('click', function (e) {
+      var tr = e.target.closest('tr[data-ridx]');
+      if (!tr) return;
+      useHourByIndex(parseInt(tr.getAttribute('data-ridx'), 10));
+    });
   }
 
   function download() {
