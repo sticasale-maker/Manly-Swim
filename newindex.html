@@ -6195,7 +6195,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260703-230556';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -9578,6 +9578,498 @@ if ('serviceWorker' in navigator) {
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
+</script>
+<script>
+// ===== NS BACKTEST BLOCK (admin ?backtest=1) — appended =====
+(function () {
+  function tok() { try { return localStorage.getItem('swim_admin_token') || ''; } catch (e) { return ''; } }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function el(id) { return document.getElementById(id); }
+  function num(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
+
+  // ── tiny CSV parser (handles quoted fields + embedded commas/quotes) ──────
+  function parseCSV(text) {
+    var rows = [], row = [], cur = '', inQ = false;
+    text = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (inQ) {
+        if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else { inQ = false; } }
+        else { cur += c; }
+      } else {
+        if (c === '"') { inQ = true; }
+        else if (c === ',') { row.push(cur); cur = ''; }
+        else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+        else { cur += c; }
+      }
+    }
+    if (cur.length || row.length) { row.push(cur); rows.push(row); }
+    rows = rows.filter(function (r) { return r.some(function (x) { return String(x).trim() !== ''; }); });
+    if (!rows.length) return null;
+    var headers = rows.shift().map(function (h) { return String(h).trim(); });
+    return { headers: headers, rows: rows };
+  }
+
+  // ── column auto-detect ────────────────────────────────────────────────────
+  var ALIASES = {
+    time:    ['time', 'utc', 'datetime', 'date_time', 'timestamp', 'date'],
+    swellH:  ['hs_swl', 'swell_height', 'swell_h', 'hs_swell', 'hsig_swell', 'swellh'],
+    swellP:  ['tp_swl', 'swell_period', 'swell_p', 'tp_swell', 'swellp'],
+    swellDir:['dp_swl', 'swell_dir', 'swell_direction', 'dp_swell', 'swelldir'],
+    seaH:    ['hs_sea', 'sea_height', 'sea_h', 'windsea_h', 'wind_sea_height', 'hs_windsea', 'seah'],
+    seaP:    ['tp_sea', 'sea_period', 'sea_p', 'windsea_p', 'wind_sea_period', 'tp_windsea', 'seap'],
+    seaDir:  ['dp_sea', 'sea_dir', 'sea_direction', 'windsea_dir', 'wind_sea_direction', 'dp_windsea', 'seadir']
+  };
+  function norm(h) { return String(h).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function guess(headers, aliases) {
+    var normed = headers.map(norm);
+    for (var a = 0; a < aliases.length; a++) {
+      var target = norm(aliases[a]);
+      var idx = normed.indexOf(target);
+      if (idx > -1) return idx;
+    }
+    for (var b = 0; b < aliases.length; b++) {
+      var t2 = norm(aliases[b]);
+      for (var j = 0; j < normed.length; j++) if (normed[j].indexOf(t2) > -1) return j;
+    }
+    return -1;
+  }
+  // header row itself hints whether the time column is raw UTC (NSW export) or
+  // already Sydney-local (our merge_ns.py output uses a plain 'time' header).
+  function guessTz(headers, timeIdx) {
+    if (timeIdx < 0) return 'utc';
+    return norm(headers[timeIdx]).indexOf('utc') > -1 ? 'utc' : 'syd';
+  }
+
+  // ── Sydney DST (1st Sun Oct 02:00 -> 1st Sun Apr 03:00) for tz conversion ──
+  function firstSundayUTC(year, month) { // month: 0-indexed
+    var d = new Date(Date.UTC(year, month, 1));
+    var add = (7 - d.getUTCDay()) % 7;
+    return new Date(Date.UTC(year, month, 1 + add));
+  }
+  function isSydneyDST(utcMs) {
+    var y = new Date(utcMs).getUTCFullYear();
+    var start = firstSundayUTC(y, 9);  start.setUTCHours(16);  // 1st Sun Oct, 02:00 local(+11 not yet)~=16:00 UTC prev
+    var end   = firstSundayUTC(y, 3);  end.setUTCHours(16);    // 1st Sun Apr
+    return utcMs >= start.getTime() || utcMs < end.getTime();
+  }
+  // Parse a 'YYYY-MM-DD HH:MM[:SS]' string as either UTC or Sydney-local wall time -> epoch ms UTC.
+  function rowTimeToUtcMs(str, tz) {
+    var s = String(str).trim().replace(' ', 'T');
+    if (s.length === 16) s += ':00';
+    var naive = Date.parse(s + 'Z'); // treat digits as UTC wall-clock first
+    if (isNaN(naive)) return null;
+    if (tz === 'utc') return naive;
+    // tz === 'syd': naive currently holds the Sydney wall-clock digits as if UTC;
+    // convert to true UTC by subtracting the Sydney offset for that instant.
+    var offsetHrs = isSydneyDST(naive) ? 11 : 10;
+    return naive - offsetHrs * 3600000;
+  }
+
+  // ── state ─────────────────────────────────────────────────────────────────
+  var DATA = null;
+  var RESULTS = null;
+  var TIDE_MAP = null;      // epochHourMs -> metres (datum-shifted)
+  var TIDE_STATUS = 'not fetched';
+
+  // ── build overlay ────────────────────────────────────────────────────────
+  var built = false;
+  function build() {
+    if (built) return; built = true;
+
+    var css = document.createElement('style');
+    css.textContent =
+      "#btOverlay{position:fixed;inset:0;z-index:100003;display:none;align-items:flex-start;justify-content:center;background:rgba(6,40,55,.55);overflow:auto;padding:18px 10px;font-family:'Inter',sans-serif;}" +
+      "#btOverlay.show{display:flex;}" +
+      "#btOverlay .bt-modal{background:var(--foam,#f0faff);color:var(--text,#0d2b3e);border-radius:16px;max-width:660px;width:100%;padding:16px;box-shadow:0 18px 60px rgba(6,40,55,.4);max-height:94vh;overflow:auto;}" +
+      ".bt-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}" +
+      ".bt-head h3{margin:0;font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1px;color:var(--deep,#064e6e);}" +
+      ".bt-x{border:none;background:transparent;font-size:22px;color:var(--dim,#5a8a9f);cursor:pointer;line-height:1;}" +
+      ".bt-sub{font-size:11px;color:var(--dim,#5a8a9f);line-height:1.4;margin:0 0 12px;}" +
+      ".bt-status{font-size:11px;color:var(--dim,#5a8a9f);min-height:14px;margin:8px 0;}" +
+      ".bt-sec{border-top:1px solid var(--border,rgba(10,126,164,0.15));padding-top:10px;margin-top:10px;}" +
+      ".bt-sec h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:0.8px;color:var(--deep,#064e6e);}" +
+      ".bt-map{display:grid;grid-template-columns:1fr 1fr;gap:8px;}" +
+      ".bt-map label{font-size:11px;color:var(--text,#0d2b3e);display:flex;flex-direction:column;gap:3px;}" +
+      ".bt-map select,.bt-tide input,.bt-tide select{font-family:'Inter',sans-serif;font-size:13px;padding:6px;border-radius:8px;border:1px solid var(--border,rgba(10,126,164,0.25));background:#fff;color:var(--text,#0d2b3e);}" +
+      ".bt-tide{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--text,#0d2b3e);flex-wrap:wrap;}" +
+      ".bt-tide input{width:80px;}" +
+      ".bt-btn{font-family:'Inter',sans-serif;font-weight:700;font-size:13px;border:none;border-radius:10px;padding:10px 14px;cursor:pointer;letter-spacing:0.3px;}" +
+      ".bt-btn.primary{background:var(--ocean,#0a7ea4);color:#fff;}" +
+      ".bt-btn.ghost{background:transparent;color:var(--ocean,#0a7ea4);border:1px solid var(--ocean,#0a7ea4);}" +
+      ".bt-file{font-size:12px;color:var(--text,#0d2b3e);}" +
+      ".bt-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:6px 0;}" +
+      ".bt-card{background:var(--card,rgba(255,255,255,0.72));border:1px solid var(--border,rgba(10,126,164,0.15));border-radius:10px;padding:8px;text-align:center;}" +
+      ".bt-card .k{font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:var(--dim,#5a8a9f);}" +
+      ".bt-card .v{font-size:16px;font-weight:700;color:var(--deep,#064e6e);}" +
+      ".bt-card .s{font-size:10px;color:var(--dim,#5a8a9f);}" +
+      ".bt-hist{display:flex;gap:4px;margin:6px 0;}" +
+      ".bt-hist .h{flex:1;border-radius:6px;padding:5px 2px;text-align:center;color:#fff;font-size:10px;font-weight:700;}" +
+      ".bt-h-green{background:var(--green,#1a9e6e);}.bt-h-amber{background:var(--amber,#8dae2a);}.bt-h-yellow{background:var(--yellow,#d4900a);}.bt-h-red{background:var(--red,#c0392b);}" +
+      ".bt-tbl{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;}" +
+      ".bt-tbl th{text-align:left;color:var(--dim,#5a8a9f);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--border,rgba(10,126,164,0.2));text-transform:uppercase;font-size:9px;letter-spacing:0.4px;}" +
+      ".bt-tbl td{padding:4px 6px;border-bottom:1px solid var(--border,rgba(10,126,164,0.08));}" +
+      ".bt-scroll{max-height:320px;overflow:auto;border:1px solid var(--border,rgba(10,126,164,0.12));border-radius:10px;}" +
+      ".bt-lab{font-weight:700;}" +
+      ".bt-green{color:var(--green,#1a9e6e);}.bt-amber{color:var(--amber,#8dae2a);}.bt-yellow{color:var(--yellow,#d4900a);}.bt-red{color:var(--red,#c0392b);}";
+    document.head.appendChild(css);
+
+    var ov = document.createElement('div');
+    ov.id = 'btOverlay';
+    ov.innerHTML =
+      '<div class="bt-modal">' +
+        '<div class="bt-head"><h3>NS Backtest</h3><button class="bt-x" id="btClose">&times;</button></div>' +
+        '<p class="bt-sub">Admin only. Replays historical NS wave CSVs through the live scoring model. Tide is pulled automatically from Open-Meteo\u2019s historical marine sea-level series for the exact dates in your file \u2014 no manual guess needed. Nothing is written anywhere.</p>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">' +
+          '<button class="bt-btn ghost" id="btBundled">Load bundled history</button>' +
+          '<span class="bt-sub" id="btBundledNote" style="margin:0;">reads <code>ns_hindcast.csv</code> from this folder</span>' +
+        '</div>' +
+        '<div class="bt-file" style="font-size:11px;color:var(--dim,#5a8a9f);">\u2026 or pick CSV files manually: <input type="file" id="btFiles" accept=".csv,text/csv" multiple></div>' +
+        '<div class="bt-status" id="btStatus"></div>' +
+        '<div class="bt-sec" id="btMapSec" style="display:none;">' +
+          '<h4>Column mapping <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--dim,#5a8a9f);">(auto-detected \u2014 fix any that are wrong)</span></h4>' +
+          '<div class="bt-map" id="btMap"></div>' +
+          '<div class="bt-tide">' +
+            'Row times are: <select id="btTz"><option value="utc">UTC</option><option value="syd">Sydney local</option></select>' +
+            '<span id="btTideStatus" style="color:var(--dim,#5a8a9f);">tide: not fetched</span>' +
+            '<button class="bt-btn ghost" id="btFetchTide" style="padding:6px 10px;font-size:11px;">Fetch tide (Open-Meteo)</button>' +
+          '</div>' +
+          '<div class="bt-tide">Fallback tide if fetch fails (m): <input type="number" id="btTide" value="0.8" step="0.1" min="0" max="2"></div>' +
+          '<div style="display:flex;gap:8px;margin-top:12px;">' +
+            '<button class="bt-btn primary" id="btRun">Run backtest</button>' +
+            '<button class="bt-btn ghost" id="btDownload" style="display:none;">Download results CSV</button>' +
+          '</div>' +
+          '<div class="bt-sub" id="btModelNote" style="margin-top:8px;"></div>' +
+        '</div>' +
+        '<div class="bt-sec" id="btResults" style="display:none;"></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+
+    ov.addEventListener('click', function (e) { if (e.target === ov) hide(); });
+    el('btClose').addEventListener('click', hide);
+    el('btFiles').addEventListener('change', onFiles);
+    el('btRun').addEventListener('click', run);
+    el('btDownload').addEventListener('click', download);
+    el('btBundled').addEventListener('click', function () { loadBundled(true); });
+    el('btFetchTide').addEventListener('click', fetchTide);
+  }
+
+  function show() { var ov = el('btOverlay'); if (ov) ov.classList.add('show'); }
+  function hide() { var ov = el('btOverlay'); if (ov) ov.classList.remove('show'); }
+
+  function applyData(headers, rows, statusMsg) {
+    DATA = { headers: headers, rows: rows };
+    TIDE_MAP = null;
+    TIDE_STATUS = 'not fetched';
+    buildMapUI(headers);
+    el('btStatus').textContent = statusMsg;
+    el('btTideStatus').textContent = 'tide: not fetched';
+    // auto-fetch tide right away so Run is one click
+    fetchTide();
+  }
+
+  var _bundledTried = false;
+  function loadBundled(manual) {
+    var note = el('btBundledNote');
+    fetch('ns_hindcast.csv?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (text) {
+        var parsed = parseCSV(text);
+        if (!parsed || !parsed.rows.length) throw new Error('empty');
+        applyData(parsed.headers, parsed.rows, parsed.rows.length.toLocaleString() + ' rows loaded from bundled ns_hindcast.csv.');
+        if (note) note.innerHTML = '\u2713 bundled <code>ns_hindcast.csv</code> found';
+      })
+      .catch(function (e) {
+        if (note) note.innerHTML = 'no <code>ns_hindcast.csv</code> in this folder yet \u2014 pick files below';
+        if (manual) el('btStatus').textContent = '\u26a0 Could not load bundled ns_hindcast.csv (' + (e.message || e) + ').';
+      });
+  }
+
+  function onFiles(input) {
+    var files = Array.from((input.target || input).files || []);
+    if (!files.length) return;
+    var status = el('btStatus');
+    status.textContent = 'Reading ' + files.length + ' file(s)\u2026';
+    var readers = files.map(function (f) {
+      return new Promise(function (res) {
+        var r = new FileReader();
+        r.onload = function () { res({ name: f.name, text: r.result }); };
+        r.onerror = function () { res({ name: f.name, text: '' }); };
+        r.readAsText(f);
+      });
+    });
+    Promise.all(readers).then(function (parts) {
+      var headers = null, allRows = [], skipped = [];
+      parts.forEach(function (p) {
+        var parsed = parseCSV(p.text);
+        if (!parsed) { skipped.push(p.name + ' (empty)'); return; }
+        if (!headers) { headers = parsed.headers; }
+        else if (parsed.headers.length !== headers.length) { skipped.push(p.name + ' (header mismatch)'); return; }
+        allRows = allRows.concat(parsed.rows);
+      });
+      if (!headers || !allRows.length) { status.textContent = '\u26a0 No usable rows found.'; return; }
+      var msg = allRows.length.toLocaleString() + ' rows loaded from ' + (files.length - skipped.length) + ' file(s).';
+      if (skipped.length) msg += ' Skipped: ' + skipped.join(', ') + '.';
+      applyData(headers, allRows, msg);
+    });
+  }
+
+  function buildMapUI(headers) {
+    var fields = [
+      ['time', 'Time'], ['swellH', 'Swell height'], ['swellP', 'Swell period'], ['swellDir', 'Swell dir'],
+      ['seaH', 'Sea height'], ['seaP', 'Sea period'], ['seaDir', 'Sea dir']
+    ];
+    var opts = function (sel) {
+      var o = '<option value="-1"' + (sel === -1 ? ' selected' : '') + '>\u2014 none / 0 \u2014</option>';
+      headers.forEach(function (h, i) { o += '<option value="' + i + '"' + (sel === i ? ' selected' : '') + '>' + esc(h) + '</option>'; });
+      return o;
+    };
+    var html = '';
+    fields.forEach(function (f) {
+      var g = guess(headers, ALIASES[f[0]]);
+      html += '<label>' + f[1] + '<select data-bt-field="' + f[0] + '">' + opts(g) + '</select></label>';
+    });
+    el('btMap').innerHTML = html;
+    var timeIdx = guess(headers, ALIASES.time);
+    el('btTz').value = guessTz(headers, timeIdx);
+    el('btMapSec').style.display = '';
+    el('btResults').style.display = 'none';
+    el('btDownload').style.display = 'none';
+    RESULTS = null;
+  }
+
+  function readMap() {
+    var m = {};
+    Array.prototype.forEach.call(document.querySelectorAll('#btMap select'), function (s) {
+      m[s.getAttribute('data-bt-field')] = parseInt(s.value, 10);
+    });
+    return m;
+  }
+
+  // ── tide fetch: Open-Meteo historical marine sea_level_height_msl ─────────
+  // sea_level_height_msl is an anomaly about mean sea level (roughly ±0.7m for
+  // Sydney's ~1.5m tidal range), not a chart-datum height. calcScore's tide
+  // formula (tideGain * max(0, tideM-0.2)) expects WillyWeather-style chart-datum
+  // heights (~0.2-1.8m, low water near 0.2). We shift the fetched series so its
+  // minimum lands at 0.2m, matching that convention. The shift is shown in the
+  // status line so it's never a hidden assumption.
+  function fetchTide() {
+    if (!DATA || !DATA.rows.length) return;
+    var m = readMap();
+    if (m.time == null || m.time < 0) { el('btTideStatus').textContent = 'tide: no time column mapped'; return; }
+    var tz = el('btTz').value;
+    var minMs = Infinity, maxMs = -Infinity;
+    for (var i = 0; i < DATA.rows.length; i++) {
+      var ms = rowTimeToUtcMs(DATA.rows[i][m.time], tz);
+      if (ms == null) continue;
+      if (ms < minMs) minMs = ms;
+      if (ms > maxMs) maxMs = ms;
+    }
+    if (!isFinite(minMs) || !isFinite(maxMs)) { el('btTideStatus').textContent = 'tide: could not read row times'; return; }
+    var startDate = new Date(minMs - 86400000).toISOString().slice(0, 10); // 1 day pad
+    var endDate   = new Date(maxMs + 86400000).toISOString().slice(0, 10);
+    var url = 'https://marine-api.open-meteo.com/v1/marine'
+      + '?latitude=' + MANLY_LAT + '&longitude=' + MANLY_LNG
+      + '&hourly=sea_level_height_msl'
+      + '&start_date=' + startDate + '&end_date=' + endDate
+      + '&timezone=UTC&cell_selection=sea';
+    el('btTideStatus').textContent = 'tide: fetching ' + startDate + ' \u2192 ' + endDate + '\u2026';
+    fetch(url).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) {
+        var times = (j.hourly && j.hourly.time) || [];
+        var vals = (j.hourly && j.hourly.sea_level_height_msl) || [];
+        if (!times.length) throw new Error('empty series');
+        var min = Infinity;
+        var map = {};
+        for (var i = 0; i < times.length; i++) {
+          var v = vals[i];
+          if (v == null) continue;
+          if (v < min) min = v;
+          var ms = Date.parse(times[i] + ':00Z');
+          if (isNaN(ms)) continue;
+          map[Math.floor(ms / 3600000)] = v;
+        }
+        if (!isFinite(min)) throw new Error('all null');
+        var shift = 0.2 - min; // pin low-water to 0.2m, matching the calcScore convention
+        var shifted = {};
+        Object.keys(map).forEach(function (k) { shifted[k] = map[k] + shift; });
+        TIDE_MAP = shifted;
+        TIDE_STATUS = 'ok';
+        el('btTideStatus').innerHTML = '\u2713 tide loaded (' + Object.keys(shifted).length + 'h, datum-shifted +' + shift.toFixed(2) + 'm)';
+      })
+      .catch(function (e) {
+        TIDE_MAP = null;
+        TIDE_STATUS = 'failed: ' + (e.message || e);
+        el('btTideStatus').textContent = '\u26a0 tide fetch failed \u2014 using fallback constant (' + (e.message || e) + ')';
+      });
+  }
+
+  function tideForRow(rawTime, tz, fallback) {
+    if (!TIDE_MAP) return fallback;
+    var ms = rowTimeToUtcMs(rawTime, tz);
+    if (ms == null) return fallback;
+    var key = Math.floor(ms / 3600000);
+    if (TIDE_MAP[key] != null) return TIDE_MAP[key];
+    // nearest hour within ±2h if exact bucket missing
+    for (var d = 1; d <= 2; d++) {
+      if (TIDE_MAP[key - d] != null) return TIDE_MAP[key - d];
+      if (TIDE_MAP[key + d] != null) return TIDE_MAP[key + d];
+    }
+    return fallback;
+  }
+
+  // ── run the replay ──────────────────────────────────────────────────────────
+  async function run() {
+    if (!DATA) return;
+    var status = el('btStatus');
+    var m = readMap();
+    try {
+      if (typeof loadNsDispConfig === 'function' && typeof SITE !== 'undefined' && !SITE.nsDisp) {
+        status.textContent = 'Loading dispersion table\u2026';
+        await loadNsDispConfig(true);
+      }
+    } catch (e) { /* proceed; calcScore falls back */ }
+    if (typeof applyTuneOverrides === 'function') { try { applyTuneOverrides(); } catch (e) {} }
+
+    var tz = el('btTz').value;
+    var fallbackTide = num(el('btTide').value);
+    var col = function (r, idx) { return idx > -1 ? r[idx] : 0; };
+    var out = [];
+    for (var i = 0; i < DATA.rows.length; i++) {
+      var r = DATA.rows[i];
+      var rawTime = m.time > -1 ? r[m.time] : String(i);
+      var slot = {
+        windKmh: 0, windDir: 0, windDurHrs: 0,
+        swell1H: num(col(r, m.swellH)), swell1P: num(col(r, m.swellP)), swell1Dir: num(col(r, m.swellDir)),
+        swell2H: 0, swell2Dir: 0, swell2P: 8,
+        windWaveH: num(col(r, m.seaH)), windWaveP: num(col(r, m.seaP)), windWaveDir: num(col(r, m.seaDir)),
+        tideM: tideForRow(rawTime, tz, fallbackTide), _nsFeed: true
+      };
+      var res;
+      try { res = calcScore(slot); } catch (e) { continue; }
+      out.push({
+        time: String(rawTime),
+        entryRaw: res.entry.raw, entryLabel: res.entry.label, entryCls: res.entry.cls,
+        chopRaw: res.swim.raw, chopLabel: res.swim.label, chopCls: res.swim.cls,
+        swimRaw: (res.water && res.water.raw != null) ? res.water.raw : null,
+        swimLabel: res.water ? res.water.label : '', swimCls: res.water ? res.water.cls : 'dim',
+        tideUsed: slot.tideM,
+        score60: res.score
+      });
+    }
+    RESULTS = out;
+    var model = (typeof GEM_MODEL !== 'undefined' && GEM_MODEL) ? 'GEM (live)' : 'Original';
+    var ss = (typeof SITE !== 'undefined' && SITE.ssWaveSens != null) ? SITE.ssWaveSens : '?';
+    var bl = (typeof SITE !== 'undefined' && SITE.blChopImpact != null) ? SITE.blChopImpact : '?';
+    var tideNote = TIDE_MAP ? 'Open-Meteo (datum-shifted)' : ('fallback constant ' + fallbackTide + 'm \u2014 ' + TIDE_STATUS);
+    el('btModelNote').innerHTML = 'Scored with <b>' + esc(model) + '</b> \u00b7 ss_wave_sens=' + esc(ss) +
+      ' \u00b7 bl_chop_impact=' + esc(bl) + ' \u00b7 tide source: ' + esc(tideNote) + '. Change tune-panel sliders then Run again to compare.';
+    status.textContent = out.length.toLocaleString() + ' hours scored.';
+    render();
+  }
+
+  function render() {
+    if (!RESULTS || !RESULTS.length) return;
+    var R = RESULTS;
+    var eVals = R.map(function (x) { return x.entryRaw; });
+    var cVals = R.map(function (x) { return x.chopRaw; });
+    var mean = function (a) { return a.reduce(function (s, v) { return s + v; }, 0) / a.length; };
+    var f1 = function (v) { return (Math.round(v * 10) / 10).toFixed(1); };
+
+    var t = (typeof SITE !== 'undefined' && SITE.entryThresholds) ? SITE.entryThresholds : { easy: 15, doable: 30, caution: 45 };
+    var hz = { easy: 0, doable: 0, caution: 0, danger: 0 };
+    R.forEach(function (x) {
+      if (x.entryRaw <= t.easy) hz.easy++;
+      else if (x.entryRaw <= t.doable) hz.doable++;
+      else if (x.entryRaw <= t.caution) hz.caution++;
+      else hz.danger++;
+    });
+    var pct = function (n) { return R.length ? Math.round(n / R.length * 100) : 0; };
+
+    var W = 620, H = 120, PAD = 4;
+    var maxE = Math.max(60, Math.ceil(Math.max.apply(null, eVals)));
+    var step = Math.max(1, Math.ceil(R.length / 600));
+    var pts = [];
+    for (var i = 0; i < R.length; i += step) {
+      var x = PAD + (i / (R.length - 1 || 1)) * (W - 2 * PAD);
+      var y = PAD + (1 - R[i].entryRaw / maxE) * (H - 2 * PAD);
+      pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+    }
+    var bandY = function (v) { return PAD + (1 - Math.min(v, maxE) / maxE) * (H - 2 * PAD); };
+    var line = function (v, col) { var yy = bandY(v).toFixed(1); return '<line x1="' + PAD + '" y1="' + yy + '" x2="' + (W - PAD) + '" y2="' + yy + '" stroke="' + col + '" stroke-width="1" stroke-dasharray="4 3" opacity="0.6"></line>'; };
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" preserveAspectRatio="none" style="background:var(--card,rgba(255,255,255,0.72));border:1px solid var(--border,rgba(10,126,164,0.15));border-radius:10px;">' +
+      line(t.easy, 'var(--green,#1a9e6e)') + line(t.doable, 'var(--amber,#8dae2a)') + line(t.caution, 'var(--red,#c0392b)') +
+      '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--deep,#064e6e)" stroke-width="1.2"></polyline>' +
+      '</svg>';
+
+    var worst = R.slice().sort(function (a, b) { return b.entryRaw - a.entryRaw; }).slice(0, 25);
+    var cellCls = function (cls) { return 'bt-' + (cls === 'green' ? 'green' : cls === 'amber' ? 'amber' : cls === 'yellow' ? 'yellow' : 'red'); };
+    var rowsHtml = worst.map(function (x) {
+      return '<tr><td>' + esc(x.time) + '</td>' +
+        '<td class="bt-lab ' + cellCls(x.entryCls) + '">' + esc(x.entryLabel) + ' <span style="color:var(--dim,#5a8a9f);font-weight:400;">' + f1(x.entryRaw) + '</span></td>' +
+        '<td class="bt-lab ' + cellCls(x.chopCls) + '">' + esc(x.chopLabel) + ' <span style="color:var(--dim,#5a8a9f);font-weight:400;">' + f1(x.chopRaw) + '</span></td>' +
+        '<td class="bt-lab ' + cellCls(x.swimCls) + '">' + esc(x.swimLabel) + '</td>' +
+        '<td>' + f1(x.tideUsed) + '</td>' +
+        '<td>' + x.score60 + '</td></tr>';
+    }).join('');
+
+    el('btResults').innerHTML =
+      '<h4>Summary \u00b7 ' + R.length.toLocaleString() + ' hours (' + esc(R[0].time) + ' \u2192 ' + esc(R[R.length - 1].time) + ')</h4>' +
+      '<div class="bt-cards">' +
+        '<div class="bt-card"><div class="k">Entry demerits</div><div class="v">' + f1(mean(eVals)) + '</div><div class="s">min ' + f1(Math.min.apply(null, eVals)) + ' \u00b7 max ' + f1(Math.max.apply(null, eVals)) + '</div></div>' +
+        '<div class="bt-card"><div class="k">Chop q7</div><div class="v">' + f1(mean(cVals)) + '</div><div class="s">min ' + f1(Math.min.apply(null, cVals)) + ' \u00b7 max ' + f1(Math.max.apply(null, cVals)) + '</div></div>' +
+        '<div class="bt-card"><div class="k">Score /60</div><div class="v">' + Math.round(mean(R.map(function (x) { return x.score60; }))) + '</div><div class="s">mean</div></div>' +
+      '</div>' +
+      '<div class="bt-hist">' +
+        '<div class="h bt-h-green">Easy ' + pct(hz.easy) + '%</div>' +
+        '<div class="h bt-h-amber">Doable ' + pct(hz.doable) + '%</div>' +
+        '<div class="h bt-h-yellow">Caution ' + pct(hz.caution) + '%</div>' +
+        '<div class="h bt-h-red">Danger ' + pct(hz.danger) + '%</div>' +
+      '</div>' +
+      '<div style="font-size:10px;color:var(--dim,#5a8a9f);margin:8px 0 2px;">Entry demerits over time (dashed = Easy / Doable / Caution edges)</div>' +
+      svg +
+      '<h4 style="margin-top:14px;">Worst 25 hours by Entry demerits</h4>' +
+      '<div class="bt-scroll"><table class="bt-tbl"><thead><tr><th>Time</th><th>Entry</th><th>Chop</th><th>Swim</th><th>Tide m</th><th>/60</th></tr></thead><tbody>' +
+      rowsHtml + '</tbody></table></div>';
+    el('btResults').style.display = '';
+    el('btDownload').style.display = '';
+  }
+
+  function download() {
+    if (!RESULTS || !RESULTS.length) return;
+    var head = ['time', 'entry_demerits', 'entry_label', 'chop_q7', 'chop_label', 'swim_raw', 'swim_label', 'tide_m_used', 'score60'];
+    var lines = [head.join(',')];
+    var q = function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    RESULTS.forEach(function (x) {
+      lines.push([q(x.time), x.entryRaw, q(x.entryLabel), x.chopRaw, q(x.chopLabel),
+        (x.swimRaw == null ? '' : x.swimRaw), q(x.swimLabel), x.tideUsed, x.score60].join(','));
+    });
+    var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'ns_backtest_results.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 100);
+  }
+
+  function open() {
+    build();
+    if (!tok()) { el('btStatus').textContent = '\u26a0 No admin token \u2014 open with ?backtest=1&token=YOUR_ADMIN_TOKEN'; }
+    show();
+    if (!_bundledTried) { _bundledTried = true; loadBundled(false); }
+  }
+
+  if (location.search.indexOf('backtest=1') > -1) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open);
+    else open();
+  }
+  window.openBacktest = open;
+})();
+
 </script>
 </body>
 </html>
