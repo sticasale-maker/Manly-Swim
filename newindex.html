@@ -6195,7 +6195,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-101354';
+var APP_BUILD = '20260629-112355';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -9746,6 +9746,15 @@ if ('serviceWorker' in navigator) {
           '<div class="bt-sub" id="btModelNote" style="margin-top:8px;"></div>' +
         '</div>' +
         '<div class="bt-sec" id="btResults" style="display:none;"></div>' +
+        '<div class="bt-sec" id="btDaySec" style="display:none;">' +
+          '<h4>Look up a specific day <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--dim,#5a8a9f);">(compare against the swimmers\u2019 report)</span></h4>' +
+          '<div class="bt-tide">' +
+            '<button class="bt-btn ghost" id="btPrevDay" style="padding:6px 10px;">\u2190</button>' +
+            '<input type="date" id="btDateInput">' +
+            '<button class="bt-btn ghost" id="btNextDay" style="padding:6px 10px;">\u2192</button>' +
+          '</div>' +
+          '<div id="btDayWrap" style="margin-top:8px;"></div>' +
+        '</div>' +
       '</div>';
     document.body.appendChild(ov);
 
@@ -9756,6 +9765,19 @@ if ('serviceWorker' in navigator) {
     el('btDownload').addEventListener('click', download);
     el('btBundled').addEventListener('click', function () { loadBundled(true); });
     el('btFetchTide').addEventListener('click', fetchTide);
+    el('btDateInput').addEventListener('change', function () { renderDay(this.value); });
+    el('btPrevDay').addEventListener('click', function () { shiftDay(-1); });
+    el('btNextDay').addEventListener('click', function () { shiftDay(1); });
+  }
+
+  function shiftDay(delta) {
+    var cur = el('btDateInput').value;
+    if (!cur) return;
+    var d = new Date(cur + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + delta);
+    var next = d.toISOString().slice(0, 10);
+    el('btDateInput').value = next;
+    renderDay(next);
   }
 
   function show() { var ov = el('btOverlay'); if (ov) ov.classList.add('show'); }
@@ -9768,6 +9790,7 @@ if ('serviceWorker' in navigator) {
     buildMapUI(headers);
     el('btStatus').textContent = statusMsg;
     el('btTideStatus').textContent = 'tide: not fetched';
+    el('btDaySec').style.display = 'none';
     // auto-fetch tide right away so Run is one click
     fetchTide();
   }
@@ -9922,6 +9945,19 @@ if ('serviceWorker' in navigator) {
     return fallback;
   }
 
+  // Sydney-local calendar date/time for a UTC instant — lets the day-picker
+  // match the date a swimmer actually experienced, regardless of whether the
+  // source CSV's time column was UTC or already Sydney-local.
+  function utcMsToSydneyParts(ms) {
+    var offsetHrs = isSydneyDST(ms) ? 11 : 10;
+    var local = new Date(ms + offsetHrs * 3600000);
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    return {
+      date: local.getUTCFullYear() + '-' + pad(local.getUTCMonth() + 1) + '-' + pad(local.getUTCDate()),
+      time: pad(local.getUTCHours()) + ':' + pad(local.getUTCMinutes())
+    };
+  }
+
   // ── run the replay ──────────────────────────────────────────────────────────
   async function run() {
     if (!DATA) return;
@@ -9951,8 +9987,11 @@ if ('serviceWorker' in navigator) {
       };
       var res;
       try { res = calcScore(slot); } catch (e) { continue; }
+      var ms = rowTimeToUtcMs(rawTime, tz);
+      var parts = (ms != null) ? utcMsToSydneyParts(ms) : { date: String(rawTime).slice(0, 10), time: String(rawTime).slice(11, 16) };
       out.push({
         time: String(rawTime),
+        localDate: parts.date, localTime: parts.time,
         entryRaw: res.entry.raw, entryLabel: res.entry.label, entryCls: res.entry.cls,
         chopRaw: res.swim.raw, chopLabel: res.swim.label, chopCls: res.swim.cls,
         swimRaw: (res.water && res.water.raw != null) ? res.water.raw : null,
@@ -9962,6 +10001,7 @@ if ('serviceWorker' in navigator) {
       });
     }
     RESULTS = out;
+    RESULTS.sort(function (a, b) { return (a.localDate + a.localTime) < (b.localDate + b.localTime) ? -1 : 1; });
     var model = (typeof GEM_MODEL !== 'undefined' && GEM_MODEL) ? 'GEM (live)' : 'Original';
     var ss = (typeof SITE !== 'undefined' && SITE.ssWaveSens != null) ? SITE.ssWaveSens : '?';
     var bl = (typeof SITE !== 'undefined' && SITE.blChopImpact != null) ? SITE.blChopImpact : '?';
@@ -10037,6 +10077,39 @@ if ('serviceWorker' in navigator) {
       rowsHtml + '</tbody></table></div>';
     el('btResults').style.display = '';
     el('btDownload').style.display = '';
+
+    // ── day picker: set bounds to the loaded range, default to day 1 ─────────
+    var dates = R.map(function (x) { return x.localDate; });
+    var minD = dates[0], maxD = dates[dates.length - 1];
+    var dateInput = el('btDateInput');
+    dateInput.min = minD; dateInput.max = maxD; dateInput.value = minD;
+    el('btDaySec').style.display = '';
+    renderDay(minD);
+  }
+
+  // ── single-day view: every hour for one Sydney-local calendar date ────────
+  function renderDay(dateStr) {
+    if (!RESULTS || !RESULTS.length) return;
+    var wrap = el('btDayWrap');
+    var cellCls = function (cls) { return 'bt-' + (cls === 'green' ? 'green' : cls === 'amber' ? 'amber' : cls === 'yellow' ? 'yellow' : 'red'); };
+    var f1 = function (v) { return (Math.round(v * 10) / 10).toFixed(1); };
+    var day = RESULTS.filter(function (x) { return x.localDate === dateStr; });
+    if (!day.length) {
+      var minD = RESULTS[0].localDate, maxD = RESULTS[RESULTS.length - 1].localDate;
+      wrap.innerHTML = '<p class="bt-sub" style="margin:0;">No data for ' + esc(dateStr) + '. Loaded range: ' + esc(minD) + ' \u2192 ' + esc(maxD) + '.</p>';
+      return;
+    }
+    var rows = day.map(function (x) {
+      return '<tr><td>' + esc(x.localTime) + '</td>' +
+        '<td class="bt-lab ' + cellCls(x.entryCls) + '">' + esc(x.entryLabel) + ' <span style="color:var(--dim,#5a8a9f);font-weight:400;">' + f1(x.entryRaw) + '</span></td>' +
+        '<td class="bt-lab ' + cellCls(x.chopCls) + '">' + esc(x.chopLabel) + ' <span style="color:var(--dim,#5a8a9f);font-weight:400;">' + f1(x.chopRaw) + '</span></td>' +
+        '<td class="bt-lab ' + cellCls(x.swimCls) + '">' + esc(x.swimLabel) + '</td>' +
+        '<td>' + f1(x.tideUsed) + '</td>' +
+        '<td>' + x.score60 + '</td></tr>';
+    }).join('');
+    wrap.innerHTML =
+      '<div class="bt-scroll"><table class="bt-tbl"><thead><tr><th>Local time</th><th>Entry</th><th>Chop</th><th>Swim</th><th>Tide m</th><th>/60</th></tr></thead><tbody>' +
+      rows + '</tbody></table></div>';
   }
 
   function download() {
