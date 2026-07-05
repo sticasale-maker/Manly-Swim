@@ -3053,6 +3053,15 @@ const SITE_DEFAULTS = {
   fetchMaskBL: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1],
   windSeaSens:   1.3,   // scales the fetch-derived wind-sea demerit (tuned 2 Jul 2026)
   windSeaDurCapH: 24,   // duration tracker caps at this many hours (fully-developed ceiling)
+  // CHOP slap/heave split by STEEPNESS (H/L), replacing the old hard period cap.
+  // slap fraction = smoothstep of deep-water steepness s = 2πH/(gT²) between chopSteepLo
+  // (below = pure heave → SURGE) and chopSteepHi (above = full slap → CHOP). Height-aware:
+  // a short steep wave slaps, a long flat swell doesn't, a fully-developed sea (~1/43) sits
+  // mid-ramp so only part slaps. Applied to BOTH chop sources; the (1−slap) heave fraction
+  // routes to SURGE (lossless). Defaults: lo=1/60, hi=1/28. Tune per New NS later.
+  chopSteepLo:  0.016667,   // 1/60 — below this steepness: 0 slap (pure heave/swell)
+  chopSteepHi:  0.035714,   // 1/28 — above this steepness: full slap (short steep chop)
+  chopPeriodCap:  4,        // DEPRECATED (superseded by chopSteepLo/Hi) — retained for back-compat, no longer read
   lookup: {
     wind: [100,100,100,90,90,80,70,60,50,40,35,30,20,15,12,10,5,0,0,0,0,0,0,0,5,10,17,25,35,60,80,90],
     sea:  [20,50,100,100,100,100,100,100,100,90,50,20,10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
@@ -3791,6 +3800,19 @@ function windSeaAt(mask, windKmh, deg, durHrs) {
   };
 }
 
+// Steepness-based CHOP slap fraction (0..1). Deep-water steepness s = 2πH/(gT²);
+// smoothstep between chopSteepLo (pure heave) and chopSteepHi (full slap). Height-aware:
+// short steep waves slap (→1), long flat swell heaves (→0). (1−weight) is the heave
+// fraction routed to SURGE. Returns 0 for non-positive H or T.
+function chopSlapWeight(H, T) {
+  if (!(H > 0) || !(T > 0)) return 0;
+  const s  = 2 * Math.PI * H / (9.81 * T * T);
+  const lo = (SITE.chopSteepLo != null) ? SITE.chopSteepLo : (1/60);
+  const hi = (SITE.chopSteepHi != null) ? SITE.chopSteepHi : (1/28);
+  const t  = Math.max(0, Math.min(1, (s - lo) / Math.max(1e-9, hi - lo)));
+  return t * t * (3 - 2 * t);
+}
+
 // Legacy shim — kept so any un-migrated caller still resolves. Uses the smoothed
 // BL openness as a 0..1 gate (NOT the old transmit table).
 function chopTransmit(deg) {
@@ -3938,27 +3960,41 @@ function bowerSurgeWater(d) {
 // bay-crossing character the old Surge rail was meant to show. Chop is a SEPARATE
 // metric (kept as-is) so it is NOT summed here. Rail is inverted like Surge:
 // v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
-function blSwimWater(d, chop) {
+function blSwimWater(d, chop, wsBL) {
   const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
-          windWaveH, windWaveDir, windWaveP, windDir, tideM } = d;
+          windWaveH, windWaveDir, windWaveP, windDir, windKmh, tideM } = d;
+  // Fetch wind-sea at BL: passed from calcScore (live) or recomputed here (cal path).
+  const _wsBL = wsBL || windSeaAt(SITE.fetchMaskBL, windKmh, windDir, (d.windDurHrs != null ? d.windDurHrs : 6));
   const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
   const nrg = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
   const wwP = windWaveP || 5;
   const s1  = nrg(swell1H, swell1P)           * Math.max(0, blDispLookup(swell1Dir, swell1P));
   const s2  = nrg(swell2H || 0, swell2P || 8) * Math.max(0, blDispLookup(swell2Dir || 0, swell2P || 8));
-  const ww  = nrg(windWaveH || 0, wwP)        * Math.max(0, blDispLookup(windWaveDir || windDir, wwP));
-  const s1_d = s1 * ess, s2_d = s2 * ess, ww_d = ww * ess;
-  // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied
-  // to the BL swell terms. Rides on swell energy only; wind-wave excluded, matching
-  // Entry. Uses the shared tideGain (from MASTER); splittable to bl_tide_gain later.
-  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d: 0, wwDir: 0 }, 'bowerTideGate');
+  // Sea on the SURGE rail = the HEAVE fraction (1−slap) of the wind-sea, by steepness.
+  // CHOP takes slap; SURGE takes heave (slap+heave = 1, lossless). Two estimates of the
+  // SAME sea — forecast wind-wave (arrival, via BL disp table) and local fetch windchop
+  // (via fetch mask) — are CROSSFADED by wwTxBL exactly like CHOP, so they never double-
+  // count. wwTxBL high → forecast sea dominates; low → local windchop covers the rest.
+  const wwTxBL_s  = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, wwP)));
+  const wwHeave   = 1 - chopSlapWeight(windWaveH || 0, wwP);
+  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave * Math.max(0, blDispLookup(windWaveDir || windDir, wwP)); // forecast sea heave (arrival)
+  const wchHeave  = 1 - chopSlapWeight(_wsBL.hs, _wsBL.tp);
+  const wchHeaveE = (_wsBL.hs * _wsBL.hs) * Math.max(0, _wsBL.tp) * wchHeave; // fetch windchop heave (mask)
+  const seaHeaveE = wchHeaveE * (1 - wwTxBL_s) + wwHeaveE * wwTxBL_s;         // crossfade → dedup, mirrors CHOP
+  const s1_d = s1 * ess, s2_d = s2 * ess, sea_d = seaHeaveE * ess;
+  // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied to
+  // the BL swell terms AND the crossfaded sea heave (sea_d). Tide modulates the
+  // entrance-shelf depth, so it shoals ALL incoming long-period energy — sea and swell
+  // alike (added 5 Jul 2026, matching Entry which already passes sea/ww). Short-period
+  // chop stays off tide by design. Shared tideGain (MASTER); splittable to bl_tide_gain later.
+  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d: sea_d, wwDir: windWaveDir || windDir }, 'bowerTideGate');
   // Chop REMOVED from Surge (3 Jul 2026). Surge now reflects swell + tide only —
   // the standalone CHOP metric carries chop, and mixing it in muddied the swell/
   // wash signal this rail is meant to show. chop_d held at 0 so the parts object /
   // breakdown popup stay structurally intact; the CHOP metric (chopQ7), the swell
   // terms, chop_swim_weight and bl_chop_impact are all untouched.
   const chop_d = 0;
-  const rawBL = s1_d + s2_d + tide_d;
+  const rawBL = s1_d + s2_d + sea_d + tide_d;  // swell + crossfaded sea-heave (sea_d, tide-amplified) + tide; steepness slap/heave split, 5 Jul 2026
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
   // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
   // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
@@ -3970,7 +4006,7 @@ function blSwimWater(d, chop) {
            : rawBL <= t.surgy  ? ['Surgy',   'yellow']
            :                     ['Washy',   'red'];
   return { label: z[0], cls: z[1], score: score, raw: rawBL,
-           parts: { swell1: s1_d, swell2: s2_d, windWave: ww_d, tide: tide_d, chop: chop_d, raw: rawBL } };
+           parts: { swell1: s1_d, swell2: s2_d, windWave: sea_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 
 function calcScore(d, modelOverride) {
@@ -3989,14 +4025,14 @@ function calcScore(d, modelOverride) {
   // Computed RAW here — the whole BL chop crossfade is scaled once by bl_chop_impact
   // (V3) below, NOT by windSeaSens (which now scales only the SS entry wind-sea).
   const wsBL   = windSeaAt(SITE.fetchMaskBL, windKmh, windDir, windDurHrs);
-  const wind_d_raw = (wsBL.hs * wsBL.hs) * Math.max(0, wsBL.tp); // BL wind-sea energy, NO sensitivity
+  const wind_d_raw = (wsBL.hs * wsBL.hs) * Math.max(0, wsBL.tp) * chopSlapWeight(wsBL.hs, wsBL.tp); // BL wind-sea energy × STEEPNESS slap fraction (slap→CHOP), NO sensitivity
 
   // BL-table wind-wave for the CHOP crossfade (Option A). Computed RAW here (no
   // sensitivity) — a single knob (bl_chop_impact) scales the whole crossfade below,
   // so there is no magnitude jump at the wind-sea ↔ wind-wave handover angle.
   const _wwP_bl   = windWaveP || 5;
   const wwTxBL    = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, _wwP_bl)));
-  const ww_d_BL_raw = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, _wwP_bl) * wwTxBL; // NO sensitivity
+  const ww_d_BL_raw = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, _wwP_bl) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL; // × STEEPNESS slap fraction; wwTxBL uses REAL _wwP_bl. NO sensitivity
 
   // Wind-wave directional geometry — blend ARRIVAL (point: energy refracting into
   // the S Steyne entry/break) with ROUTE (line: swimmer exposure crossing the bay
@@ -4145,7 +4181,7 @@ function calcScore(d, modelOverride) {
     // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
     //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
     //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
-    water: blSwimWater(d, chopQ7),
+    water: blSwimWater(d, chopQ7, wsBL),
   };
 }
 
@@ -6271,7 +6307,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260704-155429';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
