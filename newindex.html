@@ -3056,17 +3056,17 @@ const SITE_DEFAULTS = {
   // ── BL geographic fetch (three-zone) — replaces binary fetchMaskBL for CHOP ──────
   // Per-bearing fetch length (m) fed into spmGrowth: F_eff = min(durEquivFetch(U,t),
   // F_geo(dir)). Relative to CHOP CENTRE (BL), wind-FROM bearings:
-  //   320°→22° (through N): confined coastal water, ray-cast 6.7 km to the north headland
-  //   22°→45°: open ocean (F huge → duration governs)
-  //   45°→320° (E→S→W→NW): sheltered bay, local fetch only
+  //   337°→22° (NNW→N→NNE): confined coastal water, 6.7 km fetch to Long Reef headland
+  //   22°→67° (NNE→NE→ENE): open ocean (F huge → duration governs)
+  //   67°→337° (E→S→W→NW): sheltered bay, local fetch only
   // Smoothstep blend of ±fetchBlendDeg at each sector edge. fetchMaskBL kept only for
   // the legacy chopTransmit shim; CHOP now uses this.
   fetchConfinedM: 6700,       // N/NNE confined-water fetch (m), ray-cast to north headland
   fetchOpenM:     1000000,    // open-ocean sector: effectively unlimited (duration caps it)
   fetchBayM:      300,        // sheltered-bay local fetch (m)
-  fetchBoundBayConf:  320,    // bay→confined edge (deg), wraps through N
+  fetchBoundBayConf:  337,    // bay→confined edge (deg), wraps through N — NNW; open quarter is NNW→ENE
   fetchBoundConfOpen: 22,     // confined→open edge (deg)
-  fetchBoundOpenBay:  45,     // open→bay edge (deg)
+  fetchBoundOpenBay:  67,     // open→bay edge (deg) — ENE; open ocean sweep runs NNE→NE→ENE
   fetchBlendDeg:      5,      // smoothstep half-width at each edge (deg)
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
@@ -3853,7 +3853,7 @@ function windSeaGeo(windKmh, deg, durHrs) {
   const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
   const Fgeo = fetchGeoBL(deg);
   const sea = spmGrowth(U, Math.min(durEquivFetch(U, t), Fgeo));
-  return { hs: sea.hs, tp: sea.tp, fetch: Fgeo, survive: surviveWeight(sea.tp) };
+  return { hs: sea.hs, tp: sea.tp, fetch: Fgeo, survive: 1 }; // corridor-survival OFF: a fetch sea still under its own wind is wind-forced (choppy at 7 s), not detached/refracted swell; refraction-death applies only to arriving NS swell, a separate term. surviveWeight() retained below for reference.
 }
 
 // Corridor-survival fraction (0..1) for a fetch-grown sea by peak period. 1 = short
@@ -6380,7 +6380,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260705-163928';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
