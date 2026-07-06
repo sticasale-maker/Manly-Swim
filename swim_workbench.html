@@ -986,6 +986,8 @@ function drawForecastPoint(g){
 /* ===================== MODEL ADAPTER (workbench inputs -> app calcScore) ===================== */
 function gemTransmit(dirDeg,periodS){return nsDispLookup(dirDeg,periodS);}
 function inputObj(){return {s1H:ST.s1H,s1D:ST.s1D,s1P:ST.s1P, s2H:ST.s2on?ST.s2H:0,s2D:ST.s2D,s2P:ST.s2P, windKmh:ST.wK,windD:ST.wD,windDurHrs:ST.wFetch, wwH:ST.wwH,wwD:ST.wwD,wwP:ST.wwP, tideM:ST.tide};}
+/* CHOP steep-face height bands (cm) — Marco 6 Jul 2026: >10cm ripply, 20 choppy, 30 messy */
+const CHOP_FACE={ripply:10,choppy:20,messy:30,scaleMax:45};
 function calc(I){
   const dur=(I.windDurHrs!=null?I.windDurHrs:6);
   const d={windKmh:I.windKmh,windDir:I.windD,windDurHrs:dur,
@@ -1000,9 +1002,23 @@ function calc(I){
   const surge={label:r.water.label,cls:r.water.cls,score:r.water.score,raw:r.water.raw,
     parts:{s1_d:wp.swell1,s2_d:wp.swell2,sea_d:wp.windWave,tide_d:wp.tide}};
   const ws=windSeaGeo(I.windKmh,I.windD,dur);
-  return {entry:r.entry,swim:r.swim,surge,
+  /* ── CHOP = STEEP-FACE HEIGHT (cm), not H²×P energy. chopSlapWeight = the steep
+     (chop) fraction of each sea; wind-wave is dir-gated by BL transmit; the two
+     sources combine energy-additive (quadrature). Bands are the face heights above. ── */
+  const _wwP=I.wwP||5, _wwH=I.wwH||0;
+  const hWs = ws.hs * chopSlapWeight(ws.hs, ws.tp);
+  const _blTxWw = Math.max(0,Math.min(1, blDispLookup((I.wwD!=null?I.wwD:I.windD), _wwP)));
+  const hWw = _wwH * chopSlapWeight(_wwH,_wwP) * _blTxWw;
+  const chopCm = 100*Math.sqrt(hWs*hWs + hWw*hWw);
+  const CF=CHOP_FACE;
+  const chopLbl = chopCm<CF.ripply?'Smooth':chopCm<CF.choppy?'Ripply':chopCm<CF.messy?'Choppy':'Messy';
+  const chopCls = chopCm<CF.ripply?'green':chopCm<CF.choppy?'amber':chopCm<CF.messy?'yellow':'red';
+  const chopScore = Math.max(0,Math.round(60 - Math.min(chopCm,CF.scaleMax)*(60/CF.scaleMax)));
+  const swim = {label:chopLbl,cls:chopCls,score:chopScore,raw:chopCm};
+  return {entry:r.entry,swim,surge,
     wind_d,ww_d:dm.windWave,windEntry:dm.windEntry,s1_d:dm.swell1,s2_d:dm.swell2,
     o,tide_d,total,q7,chopWW,
+    chopCm, hWsCm:100*hWs, hWwCm:100*hWw,
     s1Tx:Math.max(0,nsDispLookup(I.s1D,I.s1P)),
     s2Tx:Math.max(0,nsDispLookup(I.s2D||0,I.s2P||8)),
     wwArrival:Math.max(0,nsDispLookup((I.wwD!=null?I.wwD:I.windD),I.wwP||5)),
@@ -1067,7 +1083,7 @@ function render(){
   drawMap();
   const chipRail={
     entry:{kind:'lowGood',value:R.entry.raw,scaleMax:SITE.entryThresholds.scaleMax,bounds:[SITE.entryThresholds.easy,SITE.entryThresholds.doable,SITE.entryThresholds.caution]},
-    swim:{kind:'lowGood',value:R.swim.raw,scaleMax:SITE.swimThresholds.scaleMax,bounds:[SITE.swimThresholds.glassy,SITE.swimThresholds.ripply,SITE.swimThresholds.choppy]},
+    swim:{kind:'lowGood',value:R.chopCm,scaleMax:CHOP_FACE.scaleMax,bounds:[CHOP_FACE.ripply,CHOP_FACE.choppy,CHOP_FACE.messy]},
     surge:{kind:'lowGood',value:R.surge.raw,scaleMax:SITE.surgeThresholds.scaleMax,bounds:[SITE.surgeThresholds.steady,SITE.surgeThresholds.drifty,SITE.surgeThresholds.surgy]},
   };
   const chip=(n,m,sub,rc)=>`<div class="chipcard">
@@ -1076,7 +1092,7 @@ function render(){
     <div class="rail-scale"><span>best</span><span>worst</span></div></div>`;
   document.getElementById('chips').innerHTML=
     chip('Entry',R.entry,R.entry.score,chipRail.entry)+
-    chip('Chop',R.swim,R.swim.score,chipRail.swim)+
+    chip('Chop',R.swim,Math.round(R.chopCm)+'cm',chipRail.swim)+
     chip('Swim',R.surge,R.surge.score,chipRail.surge);
 
   const tx1=R.s1Tx*100;
@@ -1090,8 +1106,8 @@ function render(){
   const cards=[
     {name:'Entry',sub:'getting in',m:R.entry,rail:chipRail.entry,
      rows:[['Wind + wind-wave',R.windEntry],['Primary swell',R.s1_d],['Secondary swell',R.s2_d],['Subtotal (before tide)',R.o,'mid'],['Tide effect',R.tide_d],['Total demerits',R.total,'tot']]},
-    {name:'Chop',sub:'wind-sea slap',m:R.swim,rail:chipRail.swim,
-     rows:[['Fetch wind-sea',R.wind_d],['Wind-wave chop',R.chopWW],['fetch '+Math.round(R.wsFetch)+'m → '+F(R.wsHs,2)+'m/'+F(R.wsTp,1)+'s',''],['q7 = chop',R.q7,'tot']]},
+    {name:'Chop',sub:'steep-face height',m:R.swim,rail:chipRail.swim,
+     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['fetch '+Math.round(R.wsFetch)+'m → '+F(R.wsHs,2)+'m/'+F(R.wsTp,1)+'s',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
     {name:'Swim',sub:'swell + heave + tide',m:R.surge,rail:chipRail.surge,
      rows:[['Primary swell',R.surge.parts.s1_d],['Secondary swell',R.surge.parts.s2_d],['Sea heave',R.surge.parts.sea_d],['Tide effect',R.surge.parts.tide_d],['Total demerits',R.surge.raw,'mid'],['Score (60=best)',R.surge.score,'tot']]},
   ];
@@ -1099,14 +1115,14 @@ function render(){
     <div class="metric-head"><div class="metric-name">${c.name}<span>${c.sub}</span></div>
       <div class="chip" style="background:${COL[c.m.cls]}">${c.m.label}<small>${c.m.score}</small></div></div>
     ${railHTML(c.rail)}
-    <div class="rail-scale"><span>0 · best</span><span>worst · ${c.rail.scaleMax}</span></div>
-    <div class="brk">${c.rows.map(r=>`<div class="r ${r[2]==='tot'?'tot':''}" ${r[2]==='mid'?'style="color:#9fc4d4"':''}><span>${r[0]}</span><b>${r[1]===''?'':F(r[1])}</b></div>`).join('')}</div></div>`).join('');
+    <div class="rail-scale"><span>0 · best</span><span>worst · ${c.rail.scaleMax}${c.name==='Chop'?' cm':''}</span></div>
+    <div class="brk">${c.rows.map(r=>`<div class="r ${r[2]==='tot'?'tot':''}" ${r[2]==='mid'?'style="color:#9fc4d4"':''}><span>${r[0]}</span><b>${r[1]===''?'':(typeof r[1]==='number'?F(r[1]):r[1])}</b></div>`).join('')}</div></div>`).join('');
 
   document.getElementById('transmit').innerHTML=[
     ['Primary · SS transmit',(R.s1Tx*100).toFixed(0)+'%'],['Secondary · SS transmit',(R.s2Tx*100).toFixed(0)+'%'],
     ['Wind-wave · SS transmit',(R.wwArrival*100).toFixed(0)+'%'],['Primary · BL transmit',(R.blTx1*100).toFixed(0)+'%'],
     ['Fetch wind-sea','Hs '+F(R.wsHs,2)+'m · Tp '+F(R.wsTp,1)+'s · '+Math.round(R.wsFetch)+'m'],
-    ['Chop q7 (fetch+ww)',F(R.q7)],['Chop split (fetch / ww)',F(R.wind_d)+' / '+F(R.chopWW)]
+    ['Chop face height',Math.round(R.chopCm)+' cm'],['Chop: fetch / wind-wave',Math.round(R.hWsCm)+' / '+Math.round(R.hWwCm)+' cm'],['(ref) old q7 energy',F(R.q7)]
   ].map(r=>`<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
 
   drawSweep(I);
