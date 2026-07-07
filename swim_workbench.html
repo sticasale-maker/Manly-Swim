@@ -234,7 +234,7 @@
         <select id="sweepY"><option value="score">Y: score (0–60, higher=better)</option><option value="raw">Y: demerits (higher=worse)</option></select>
       </div>
       <div id="sweepPlot"></div>
-      <div class="legend"><span><i style="background:var(--ocean)"></i> Entry</span><span><i style="background:#7fc8a9"></i> Swim</span><span><i style="background:#e0a64d"></i> Surge</span><span><i style="background:#fff"></i> current</span></div>
+      <div class="legend"><span><i style="background:var(--ocean)"></i> Entry</span><span><i style="background:#7fc8a9"></i> Chop</span><span><i style="background:#e0a64d"></i> Swim</span><span><i style="background:#fff"></i> current</span></div>
     </div>
   </div>
 </div>
@@ -316,7 +316,7 @@ const SITE_DEFAULTS = {
   fetchBoundBayConf:  337,    // bay→confined edge (deg), wraps through N — NNW; open quarter is NNW→ENE
   fetchBoundConfOpen: 22,     // confined→open edge (deg)
   fetchBoundOpenBay:  67,     // open→bay edge (deg) — ENE; open ocean sweep runs NNE→NE→ENE
-  fetchBlendDeg:      5,      // smoothstep half-width at each edge (deg)
+  fetchBlendDeg:      15,     // smoothstep half-width at each edge (deg) — widened 5->15, 5 Jul 2026, now that windSeaGeo blends in Hs space (safe: edges 22/67/320 stay non-overlapping up to ~22)
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
   // the ~6 km approach. Once its period lengthens (strong/sustained wind), its wavelength
@@ -659,8 +659,38 @@ function windSeaGeo(windKmh, deg, durHrs) {
   const U = (windKmh || 0) / 3.6;
   const capH = SITE.windSeaDurCapH || 24;
   const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
-  const Fgeo = fetchGeoBL(deg);
-  const sea = spmGrowth(U, Math.min(durEquivFetch(U, t), Fgeo));
+  const Fdur = durEquivFetch(U, t);   // duration ceiling (direction-independent)
+  const Fgeo = fetchGeoBL(deg);       // blended geographic fetch (m) — display + back-compat only
+  // ── Blend in WAVE-HEIGHT space, not fetch metres (5 Jul 2026) ────────────────
+  // spmGrowth saturates with fetch, so blending fetch LENGTH linearly across a
+  // sector edge dumps almost all the Hs change into the first slice of the ramp —
+  // that was the near-vertical cliff (and the NE trough walls) in the wind-dir
+  // sweep. Instead compute each zone's duration-capped sea and smoothstep the
+  // resulting Hs/Tp across the SAME edges fetchGeoBL uses. Now widening
+  // fetchBlendDeg smooths the score ramp cleanly. Zone selection away from edges
+  // is byte-identical to the old fetch-space path.
+  const a = ((((deg || 0) % 360) + 360) % 360);
+  const Fc = SITE.fetchConfinedM ?? 6700, Fo = SITE.fetchOpenM ?? 1e6, Fb = SITE.fetchBayM ?? 300;
+  const bBayConf = SITE.fetchBoundBayConf ?? 320, bConfOpen = SITE.fetchBoundConfOpen ?? 22, bOpenBay = SITE.fetchBoundOpenBay ?? 45;
+  const T = SITE.fetchBlendDeg ?? 5;
+  const seaFor = (F) => spmGrowth(U, Math.min(Fdur, F));
+  const ss = (e0, e1, x) => { const k = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return k * k * (3 - 2 * k); };
+  const seaC = seaFor(Fc), seaO = seaFor(Fo), seaB = seaFor(Fb);
+  const edges = [[bBayConf, seaB, seaC], [bConfOpen, seaC, seaO], [bOpenBay, seaO, seaB]];
+  let sea = null;
+  for (const [B, loSea, hiSea] of edges) {
+    const dd = ((a - B + 540) % 360) - 180;
+    if (Math.abs(dd) <= T) {
+      const w = ss(-T, T, dd);
+      sea = { hs: loSea.hs + (hiSea.hs - loSea.hs) * w, tp: loSea.tp + (hiSea.tp - loSea.tp) * w };
+      break;
+    }
+  }
+  if (!sea) {
+    if (a > bBayConf || a <= bConfOpen) sea = seaC;   // confined (through N)
+    else if (a <= bOpenBay)             sea = seaO;   // open ocean
+    else                                sea = seaB;   // sheltered bay
+  }
   return { hs: sea.hs, tp: sea.tp, fetch: Fgeo, survive: 1 }; // corridor-survival OFF: a fetch sea still under its own wind is wind-forced (choppy at 7 s), not detached/refracted swell; refraction-death applies only to arriving NS swell, a separate term. surviveWeight() retained below for reference.
 }
 
@@ -995,6 +1025,12 @@ function gemTransmit(dirDeg,periodS){return nsDispLookup(dirDeg,periodS);}
 function inputObj(){return {s1H:ST.s1H,s1D:ST.s1D,s1P:ST.s1P, s2H:ST.s2on?ST.s2H:0,s2D:ST.s2D,s2P:ST.s2P, windKmh:ST.wK,windD:ST.wD,windDurHrs:ST.wFetch, wwH:ST.wwH,wwD:ST.wwD,wwP:ST.wwP, tideM:ST.tide};}
 /* CHOP steep-face height bands (cm) — Marco 6 Jul 2026: >10cm ripply, 20 choppy, 30 messy */
 const CHOP_FACE={ripply:10,choppy:20,messy:30,scaleMax:45};
+/* BL directional chop exposure (0..1) — fraction of the open-sea steep-face chop that
+   reaches the Bower Lane point from each wind bearing. Fit to Marco's 20km/h/4h anchors
+   (dir:points): 320:53 330:44 340:40 350:35 0:30 25:30 30:35 60:40 90:53; calm (0)
+   through the land-sheltered S/W arc (100°–310°). Smoothstep between knots. */
+const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[60,0.556],[90,0.194],[100,0],[310,0],[320,0.194],[330,0.444],[340,0.556],[350,0.694],[360,0.833]];
+function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i<P.length;i++){if(a<=P[i][0]){const x0=P[i-1][0],y0=P[i-1][1],x1=P[i][0],y1=P[i][1];let t=(a-x0)/(x1-x0);t=t*t*(3-2*t);return y0+(y1-y0)*t;}}return P[P.length-1][1];}
 function calc(I){
   const dur=(I.windDurHrs!=null?I.windDurHrs:6);
   const d={windKmh:I.windKmh,windDir:I.windD,windDurHrs:dur,
@@ -1008,12 +1044,16 @@ function calc(I){
   const wp=r.water.parts;
   const surge={label:r.water.label,cls:r.water.cls,score:r.water.score,raw:r.water.raw,
     parts:{s1_d:wp.swell1,s2_d:wp.swell2,sea_d:wp.windWave,tide_d:wp.tide}};
-  const ws=windSeaGeo(I.windKmh,I.windD,dur);
-  /* ── CHOP = STEEP-FACE HEIGHT (cm), not H²×P energy. chopSlapWeight = the steep
-     (chop) fraction of each sea; wind-wave is dir-gated by BL transmit; the two
-     sources combine energy-additive (quadrature). Bands are the face heights above. ── */
+  const ws=windSeaGeo(I.windKmh,I.windD,dur); // kept for surge / display
+  /* ── CHOP = STEEP-FACE HEIGHT (cm). Fetch wind-sea = OPEN duration-limited sea ×
+     BL directional EXPOSURE (chopExposure, calibrated to Marco's 320°–90° anchors at
+     20km/h/4h). Replaces the hard fetch sectors → smooth, sheltered through E/S/W.
+     Wind-wave stays dir-gated by BL transmit. Two sources combine energy-additive. ── */
   const _wwP=I.wwP||5, _wwH=I.wwH||0;
-  const hWs = ws.hs * chopSlapWeight(ws.hs, ws.tp);
+  const _U=(I.windKmh||0)/3.6;
+  const _oS=spmGrowth(_U, durEquivFetch(_U, dur));   // open sea, direction-independent
+  const _expo=chopExposure(I.windD);
+  const hWs = _oS.hs * chopSlapWeight(_oS.hs, _oS.tp) * _expo;
   const _blTxWw = Math.max(0,Math.min(1, blDispLookup((I.wwD!=null?I.wwD:I.windD), _wwP)));
   const hWw = _wwH * chopSlapWeight(_wwH,_wwP) * _blTxWw;
   const chopCm = 100*Math.sqrt(hWs*hWs + hWw*hWw);
@@ -1025,7 +1065,7 @@ function calc(I){
   return {entry:r.entry,swim,surge,
     wind_d,ww_d:dm.windWave,windEntry:dm.windEntry,s1_d:dm.swell1,s2_d:dm.swell2,
     o,tide_d,total,q7,chopWW,
-    chopCm, hWsCm:100*hWs, hWwCm:100*hWw,
+    chopCm, hWsCm:100*hWs, hWwCm:100*hWw, chopExpo:_expo, chopOpenHs:_oS.hs, chopOpenTp:_oS.tp,
     s1Tx:Math.max(0,nsDispLookup(I.s1D,I.s1P)),
     s2Tx:Math.max(0,nsDispLookup(I.s2D||0,I.s2P||8)),
     wwArrival:Math.max(0,nsDispLookup((I.wwD!=null?I.wwD:I.windD),I.wwP||5)),
@@ -1114,7 +1154,7 @@ function render(){
     {name:'Entry',sub:'getting in',m:R.entry,rail:chipRail.entry,
      rows:[['Wind + wind-wave',R.windEntry],['Primary swell',R.s1_d],['Secondary swell',R.s2_d],['Subtotal (before tide)',R.o,'mid'],['Tide effect',R.tide_d],['Total demerits',R.total,'tot']]},
     {name:'Chop',sub:'steep-face height',m:R.swim,rail:chipRail.swim,
-     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['fetch '+Math.round(R.wsFetch)+'m → '+F(R.wsHs,2)+'m/'+F(R.wsTp,1)+'s',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
+     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['open '+F(R.chopOpenHs,2)+'m/'+F(R.chopOpenTp,1)+'s × expo '+Math.round(R.chopExpo*100)+'%',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
     {name:'Swim',sub:'swell + heave + tide',m:R.surge,rail:chipRail.surge,
      rows:[['Primary swell',R.surge.parts.s1_d],['Secondary swell',R.surge.parts.s2_d],['Sea heave',R.surge.parts.sea_d],['Tide effect',R.surge.parts.tide_d],['Total demerits',R.surge.raw,'mid'],['Score (60=best)',R.surge.score,'tot']]},
   ];
@@ -1152,10 +1192,16 @@ SWEEP_AXES.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.
 axSel.value=0;axSel.onchange=render;document.getElementById('sweepY').onchange=render;
 function drawSweep(baseI){
   const axis=SWEEP_AXES[+axSel.value],ymode=document.getElementById('sweepY').value;
-  const N=120,W=560,H=250,padL=40,padR=10,padT=12,padB=28,xs=[],se={entry:[],swim:[],surge:[]};
+  const N=240,W=560,H=250,padL=40,padR=10,padT=12,padB=28,xs=[],se={entry:[],swim:[],surge:[]};
+  const sc=(raw,mx)=>Math.max(0,Math.min(60, 60 - Math.min(Math.max(raw,0),mx)*(60/mx))); // CONTINUOUS score (unrounded) — the displayed score rounds to int, which is what made the curve a staircase
   for(let i=0;i<=N;i++){const v=axis.min+(axis.max-axis.min)*i/N,I=Object.assign({},baseI);axis.set(I,v);const R=calc(I);xs.push(v);
-    if(ymode==='score'){se.entry.push(R.entry.score);se.swim.push(R.swim.score);se.surge.push(R.surge.score);}
-    else{se.entry.push(R.entry.raw);se.swim.push(R.swim.raw);se.surge.push(R.surge.raw);}}
+    if(ymode==='score'){
+      se.entry.push(sc(R.entry.raw, SITE.entryThresholds.scaleMax));
+      se.swim.push(sc(R.chopCm, CHOP_FACE.scaleMax));
+      se.surge.push(sc(R.surge.raw, SITE.surgeThresholds.scaleMax));
+    } else {
+      se.entry.push(R.entry.raw); se.swim.push(R.chopCm); se.surge.push(R.surge.raw);
+    }}
   let ymax=ymode==='score'?60:Math.max(10,...se.entry,...se.swim,...se.surge)*1.08,ymin=0;
   const X=v=>padL+(W-padL-padR)*(v-axis.min)/(axis.max-axis.min),Y=v=>padT+(H-padT-padB)*(1-(v-ymin)/(ymax-ymin));
   const path=a=>a.map((y,i)=>(i?'L':'M')+X(xs[i]).toFixed(1)+' '+Y(y).toFixed(1)).join(' ');
