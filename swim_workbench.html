@@ -964,15 +964,28 @@ const SHEET_BASE='https://docs.google.com/spreadsheets/d/e/2PACX-1vTPPOtn-jlsI3-
 const CFG_URL=SHEET_BASE+'?output=csv';
 const NSDISP_URL=SHEET_BASE+'?gid=2116848706&single=true&output=csv';
 async function loadFromSheet(){
-  setSheet('Loading MASTER + New NS tab \u2026','');
-  try{
-    const [cfgT,nsT]=await Promise.all([
-      fetch(CFG_URL+'&t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('cfg '+r.status);return r.text();}),
-      fetch(NSDISP_URL+'&t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('ns '+r.status);return r.text();})
-    ]);
-    const rows=csvRows(cfgT);
+  setSheet('Loading New NS tab \u2026','');
+  // Fetches DECOUPLED (5 Jul 2026): MASTER (cfg) is fetched only for tideGain and is
+  // optional; the New NS tab carries the model-critical dispersion tables + sensitivities.
+  // allSettled so a MASTER 400 (bare ?output=csv, tab not in publish scope) no longer
+  // rejects the whole load and drops the working NS tab to 50% fallback.
+  const [cfgR,nsR]=await Promise.allSettled([
+    fetch(CFG_URL+'&t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('cfg '+r.status);return r.text();}),
+    fetch(NSDISP_URL+'&t='+Date.now(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('ns '+r.status);return r.text();})
+  ]);
+  // MASTER tideGain — optional. Falls back to SITE default when unreachable.
+  let tideMsg='';
+  if(cfgR.status==='fulfilled'){
+    const rows=csvRows(cfgR.value);
     for(let r=0;r<rows.length;r++){const lbl=(rows[r]&&rows[r][1])||'';if(lbl.includes('Tide gain')){const v=parseFloat(rows[r][15]);if(Number.isFinite(v)&&v>0)SITE.tideGain=v;}}
-    const p=parseNsDispCSV(nsT), bits=[];
+  }else{
+    tideMsg=' \u00b7 \u26a0 MASTER '+((cfgR.reason&&cfgR.reason.message)||'unreachable')+' \u2014 tideGain '+SITE.tideGain+' (default)';
+  }
+  KNOBS.forEach(k=>LIVE[k]=SITE[k]);
+  const t=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+  // New NS tab — model-critical.
+  if(nsR.status==='fulfilled'){
+    const p=parseNsDispCSV(nsR.value), bits=[];
     if(p.table){SITE.nsDisp=p.table;bits.push('SS disp');}
     if(p.blDisp){SITE.blDisp=p.blDisp;bits.push('BL disp');}
     if(p.ssWaveSens!=null)SITE.ssWaveSens=p.ssWaveSens;
@@ -985,9 +998,12 @@ async function loadFromSheet(){
     KNOBS.forEach(k=>LIVE[k]=SITE[k]);
     if(typeof buildParams==='function')buildParams();
     if(typeof render==='function')render();
-    const t=new Date().toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
-    setSheet('\u2713 Loaded '+t+' \u00b7 '+(bits.join(' \u00b7 ')||'sensitivities')+(SITE.nsDisp?'':' \u00b7 \u26a0 SS table missing (50% fallback)'),'ok');
-  }catch(err){setSheet('\u26a0 Sheet fetch failed ('+err.message+') \u2014 built-in defaults + 50% dispersion fallback. Serve over http(s), not file://.','warn');}
+    setSheet('\u2713 Loaded '+t+' \u00b7 '+(bits.join(' \u00b7 ')||'sensitivities')+(SITE.nsDisp?'':' \u00b7 \u26a0 SS table missing (50% fallback)')+tideMsg,'ok');
+  }else{
+    if(typeof buildParams==='function')buildParams();
+    if(typeof render==='function')render();
+    setSheet('\u26a0 New NS fetch failed ('+((nsR.reason&&nsR.reason.message)||'error')+') \u2014 built-in defaults + 50% dispersion fallback. Serve over http(s), not file://.'+tideMsg,'warn');
+  }
 }
 
 
