@@ -4314,7 +4314,6 @@ async function runModelCompare() {
     ['Wind chop', 'wind'],
     ['Wind wave', 'windWave'],
     ['Swell 1',   'swell1'],
-    ['Swell 2',   'swell2'],
     ['Refraction','refrac'],
     ['Tide',      'tide'],
   ];
@@ -5471,19 +5470,11 @@ function renderSnapshot(h, wx) {
   document.getElementById('sSwell1P').textContent = `${Math.round(h.swell1P)}s period`;
   document.getElementById('sTide').textContent    = h.tideM.toFixed(2);
 
-  // Secondary swell
+  // Secondary swell — NOT in the NS model (swell + sea only). The NS merge forces
+  // swell2 to 0, so this card is always hidden. Kept in the DOM (calc reads 0) but
+  // never shown.
   const s2Card = document.getElementById('sSwell2Card');
-  if (s2Card) {
-    if (h.swell2H > 0 || h.swell2Suppressed) {
-      document.getElementById('sSwell2H').textContent = h.swell2Suppressed ? '—' : h.swell2H.toFixed(1);
-      document.getElementById('sSwell2D').textContent = h.swell2Suppressed
-        ? `suppressed (${Math.round(h.swell2Dir)}° ≈ primary)`
-        : `m · ${bearingName(h.swell2Dir)} (${Math.round(h.swell2Dir)}°)`;
-      document.getElementById('sSwell2P').textContent = h.swell2Suppressed ? '' : `${Math.round(h.swell2P)}s period`;
-      document.getElementById('sSwell2D').style.color = h.swell2Suppressed ? 'var(--yellow)' : '';
-      s2Card.style.display = '';
-    } else { s2Card.style.display = 'none'; }
-  }
+  if (s2Card) s2Card.style.display = 'none';
 
   // Wind wave
   const wwCard = document.getElementById('sWindWaveCard');
@@ -5887,25 +5878,21 @@ function renderGemComparison(h) {
     tableStatus +
     driftLine +
     `<div style="color:#9fd;margin-top:4px;">INPUTS:</div>` +
-    `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s &nbsp; S2 ${swell2H}m ${swell2Dir}° ${swell2P}s<br>` +
+    `S1 ${swell1H}m ${swell1Dir}° ${swell1P}s<br>` +
     `WW ${windWaveH}m ${windWaveDir}° ${h.windWaveP||0}s &nbsp; Wind ${windKmh}km/h ${windDir}° &nbsp; Tide ${tideM}m<br>` +
     `<div style="color:#9fd;margin-top:4px;">SENSITIVITIES:</div>` +
-    `ss_wave_sens = ${ess_g} → s1_d, s2_d, ww_d<br>` +
+    `ss_wave_sens = ${ess_g} → s1_d, ww_d<br>` +
     `windSeaSens = ${wsSens_g} → ws_d only (SS fetch wind-sea)<br>` +
     `<div style="font-size:10px;color:#fc8;">on backtest rows Wind=0 ⇒ ws_d≈0, so windSeaSens does nothing; all wind-chop enters via ww_d ×ss_wave_sens</div>` +
     `<div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin-top:6px;">` +
     `<b style="color:#9fd;"></b><b style="color:#7ec8e3;">NS value</b>` +
     `<span>S1 period used</span><span>${swell1P}s (real)</span>` +
-    `<span>S2 period used</span><span>${swell2P||8}s</span>` +
     `<span>WW period used</span><span>${wwP_g}s</span>` +
     `<span>S1 power (H²·P)</span><span>${f(s1pow_g)}</span>` +
-    `<span>S2 power (H²·P)</span><span>${f(s2pow_g)}</span>` +
     `<span>WW power (H²·P)</span><span>${f(wwPow_g)}</span>` +
     `<span>S1 transmit (SS table)</span><span>${(s1Tx_g*100).toFixed(1)}%</span>` +
-    `<span>S2 transmit (SS table)</span><span>${(s2Tx_g*100).toFixed(1)}%</span>` +
     `<span>WW transmit (SS table)</span><span>${(wwTx_g*100).toFixed(1)}%</span>` +
     `<span style="color:#fc8;">s1_d (×ss)</span><span>${f(s1_d_g)}</span>` +
-    `<span style="color:#fc8;">s2_d (×ss)</span><span>${f(s2_d_g)}</span>` +
     `<span style="color:#fc8;">ww_d (×ss)</span><span>${f(ww_d_g)}</span>` +
     `<span style="color:#fc8;">ws_d (×windSea)</span><span>${f(ws_d_g)}</span>` +
     `<span style="color:#fc8;">wind_d (BL chop)</span><span>${f(wind_d_g)}</span>` +
@@ -6414,7 +6401,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260708-134149';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6918,6 +6905,10 @@ function buildTunePanel() {
     const prev = btn.textContent;
     btn.textContent = 'Loading…'; btn.disabled = true;
     try {
+      saveTuneOverrides({});                          // sheet wins: drop local overrides so the
+                                                      // repainted sliders can't disagree with the
+                                                      // (now-empty) override store, and nothing
+                                                      // re-clobbers on the next applyTuneOverrides.
       localStorage.removeItem(NS_DISP_CONFIG_KEY);   // bust local cache
       await loadNsDispConfig(true);                  // force upstream re-pull
       refreshAll();                                  // repaint sliders from fresh sheet values
@@ -7106,9 +7097,6 @@ function syncCalFromForecast() {
     ['Swell 1', (h.swell1H||0).toFixed(2) + 'm'],
     ['Swell 1 P', Math.round(h.swell1P||8) + 's'],
     ['Swell 1 dir', Math.round(h.swell1Dir||0) + '°'],
-    ['Swell 2', (h.swell2H||0).toFixed(2) + 'm'],
-    ['Swell 2 P', Math.round(h.swell2P||8) + 's'],
-    ['Swell 2 dir', Math.round(h.swell2Dir||0) + '°'],
     ['Wind wave', (h.windWaveH||0).toFixed(2) + 'm'],
     ['WW dir', Math.round(h.windWaveDir||0) + '°'],
     ['Tide', (h.tideM||0).toFixed(2) + 'm'],
@@ -7219,7 +7207,6 @@ function runCalibration() {
     ['Wind demerit',      app_wind_d, sh_wind_d, app_wind_d - sh_wind_d],
     ['Wind wave demerit', app_ww_d,   sh_ww_d,   app_ww_d   - sh_ww_d],
     ['Swell 1 demerit',   app_s1_d,   sh_s1_d,   app_s1_d   - sh_s1_d],
-    ['Swell 2 demerit',   app_s2_d,   sh_s2_d,   app_s2_d   - sh_s2_d],
     ['Refraction',        app_rif_d,  sh_rif_d,  app_rif_d  - sh_rif_d],
     ['TOTAL demerits',    app_total,  sh_total,  app_total  - sh_total],
     ['SCORE (60−total)',  app_score,  sh_score,  app_score  - sh_score],
@@ -7244,8 +7231,7 @@ function runCalibration() {
   const lookupInfo = `<div style="margin-top:8px;font-size:10px;color:var(--dim);line-height:1.8;">
     <b style="color:var(--ocean);letter-spacing:1px;">LOOKUPS</b><br>
     Wind ${windDir}° → ${wind_hit}% &nbsp;|&nbsp; WW ${wwDir}° → ${ww_sea_hit}%<br>
-    S1 ${swell1Dir}° → sea ${s1_sea}%${s1_sea===0?' <b style=\'color:var(--amber)\'>← 0%</b>':''}&nbsp;|&nbsp;
-    S2 ${swell2Dir}° → sea ${s2_sea}%${s2_sea===0?' <b style=\'color:var(--amber)\'>← 0%</b>':''}<br>
+    S1 ${swell1Dir}° → sea ${s1_sea}%${s1_sea===0?' <b style=\'color:var(--amber)\'>← 0%</b>':''}<br>
     <b>App:</b> windSens=${SITE.windSens} swellSens=${SITE.swellSens} (real period, no cap)<br>
     <b>Sheet:</b> same sens, real period
   </div>`;
@@ -8295,7 +8281,6 @@ function metricBreakdownHTML(key) {
     const o = (we + dm.swell1 + dm.swell2 + dm.refrac);
     return wrap(
       row('Primary swell', f(dm.swell1)) +
-      row('Secondary swell', f(dm.swell2)) +
       row('Wind (sea ↔ wave)', f(we), '(SS fetch + wind-wave, crossfaded at arc)') +
       (Math.abs(dm.refrac) > 0.05 ? row('Refraction', f(dm.refrac)) : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
@@ -8322,7 +8307,6 @@ function metricBreakdownHTML(key) {
     const swellSub = (w.swell1 || 0) + (w.swell2 || 0);
     return wrap(
       row('Primary swell (BL)', f(w.swell1)) +
-      row('Secondary swell (BL)', f(w.swell2)) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Swell subtotal', f(swellSub)) +
       row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
