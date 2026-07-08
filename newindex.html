@@ -5295,6 +5295,13 @@ function renderSnapshot(h, wx) {
   const result = calcScore(h);
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
+  // Calibration pair log — runs on every live render (not just compare mode). Builds
+  // the WW slot from the stashed _ww originals; fire-and-forget, throttled internally.
+  try {
+    const _wwSlot = Object.assign({}, h, h._ww || {});
+    delete _wwSlot._ww; delete _wwSlot._nsFeed;
+    logCalibrationPair(h, result, _wwSlot, calcScore(_wwSlot));
+  } catch (e) {}
   _forecastRendered = true;       // real data is on screen — dots have left the 50% default
   hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
 
@@ -5417,7 +5424,6 @@ function renderSnapshot(h, wx) {
     delete wwSlot._nsFeed;
     delete wwSlot._ww;
     const wwR = calcScore(wwSlot);   // same model as the NS dot; differs only by inputs
-    logCalibrationPair(h, result, wwSlot, wwR);   // fire-and-forget paired-score log
 
     const wwEntryRaw = wwR.entry.raw ?? Math.max(0, 60 - wwR.entry.score);
     setTick('wwTickEntry', bandedPct(wwEntryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]));
@@ -6455,7 +6461,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260708-181325';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
