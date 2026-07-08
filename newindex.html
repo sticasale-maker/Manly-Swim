@@ -3004,16 +3004,16 @@ const OM_WEATHER_URL = `${OM_WEATHER_PROXY}`
 // Fixed:      tideBase='all', tide=o*(t-0.2)  — not tunable
 // =============================================================================
 const SITE_DEFAULTS = {
-  windSens:       0.2,
-  swellSens:      2.5,
+  windSens:       0.15,  // was 0.2; pinned to MASTER P24 (fallback-only param; tab-1 severed)
+  swellSens:      0.9,   // was 2.5; pinned to MASTER P25 (fallback-only; tab-1 severed)
   periodPower:    20,
   swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
   wwSens:         1.8,   // wind-wave demerit scale (held at 1.8 so chop is unaffected by swellSens 2.5; sheet 'WW sens' overrides)
   wwRouteBlend:   0,     // wind-wave DIRECTION filter geometry: 0 = arrival (point, into S Steyne) … 1 = route (line, S Steyne→Shelly). Blend in between.
-  periodExp:      1.15,   // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
+  periodExp:      1.2,    // pinned to MASTER R24 (was 1.15); tab-1 severed. sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.35,   // sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d+s2_d), clamped below
+  tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d+s2_d), clamped below
   tideRef:        1.0,    // neutral tide height (m, WW datum): tideM>ref amplifies swell, tideM<ref credits (reduces) it. Bidirectional pivot.
   tideCreditClamp:0.4,    // max fraction of swell demerits the low-tide credit may remove (0.4 = −40% floor; big swell at dead-low is reduced, never erased)
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
@@ -3122,8 +3122,8 @@ let SITE = {
   tideGate: function(dirDeg) {
     const a = ((dirDeg % 360) + 360) % 360;
     const dir = a > 180 ? 360 - a : a;
-    const start = this.tideGateStart ?? 70;
-    const full  = this.tideGateFull ?? 90;
+    const start = 70;  // Entry tide-gate bounds now app-owned (were tab-1 col R r25/r26).
+    const full  = 90;  // Curve lives in code, like bowerTideGate — no sheet dependency.
     const span  = Math.max(1, full - start);
     const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
@@ -3215,12 +3215,9 @@ function applySwimConfig(rows) {
     const v = parseFloat(raw);
     return Number.isFinite(v) ? v : null;
   };
-  const pExp = numR(23);  // R24 — period exponent
-  const tgS  = numR(24);  // R25 — tide gate start (°)
-  const tgF  = numR(25);  // R26 — tide gate full (°)
+  const pExp = numR(23);  // R24 — period exponent (fallback path only)
   if (pExp != null) SITE.periodExp     = pExp;
-  if (tgS  != null) SITE.tideGateStart = tgS;
-  if (tgF  != null) SITE.tideGateFull  = tgF;
+  // tide-gate start/full (R25/R26) no longer read — Entry gate is app-owned (70/90).
 
   // Optional wind-wave tuning — label-matched anywhere in the tuning column, so
   // they load wherever you add them in the sheet and fall back to defaults if absent.
@@ -3327,6 +3324,13 @@ function applySwimConfig(rows) {
 }
 
 async function loadConfig(forceUpstream = FORCE_FRESH) {
+  // ── TAB 1 (config/MASTER) SEVERED ─────────────────────────────────────────
+  // Everything this tab supplied is now a code default that matches the sheet:
+  // scalars (windSens/swellSens/periodExp/periodPower/swellPeriodMult/wwSens) and
+  // the wind/sea/rif lookup arrays are baked in SITE_DEFAULTS; tideGain is New NS
+  // C7; both tide gates are app-owned; the Bower path is dead. No live gem number
+  // depends on tab 1, and the orig fallback reads the baked values. Never fetch it.
+  return;
   try {
     const cached = JSON.parse(localStorage.getItem(SWIM_CONFIG_KEY) || 'null');
     if (!forceUpstream && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
@@ -3337,8 +3341,6 @@ async function loadConfig(forceUpstream = FORCE_FRESH) {
       SITE.periodPower    = c.periodPower;
       SITE.swellPeriodMult = c.swellPeriodMult || 5;
       if (c.periodExp     != null) SITE.periodExp     = c.periodExp;
-      if (c.tideGateStart != null) SITE.tideGateStart = c.tideGateStart;
-      if (c.tideGateFull  != null) SITE.tideGateFull  = c.tideGateFull;
       SITE.wwSens          = (c.wwSens != null) ? c.wwSens : SITE_DEFAULTS.wwSens;
       SITE.tideGain        = (c.tideGain != null) ? c.tideGain : SITE_DEFAULTS.tideGain;
       SITE.wwRouteBlend    = c.wwRouteBlend || 0;
@@ -3372,8 +3374,6 @@ async function loadConfig(forceUpstream = FORCE_FRESH) {
         periodPower:    SITE.periodPower,
         swellPeriodMult: SITE.swellPeriodMult,
         periodExp:       SITE.periodExp,
-        tideGateStart:   SITE.tideGateStart,
-        tideGateFull:    SITE.tideGateFull,
         wwSens:          SITE.wwSens,
         tideGain:        SITE.tideGain,
         wwRouteBlend:    SITE.wwRouteBlend,
@@ -5205,6 +5205,88 @@ function renderDayWindow(dateTimeStr){
   svg.innerHTML = cells + box + caret + labels + ticks;
 }
 
+// ── DUAL-SCORE CALIBRATION LOGGER ────────────────────────────────────────────
+// Persists one paired row per clock-hour to Supabase `calibration_pairs`, capturing
+// three scores from a single forecast slot so the teacher→student gap decomposes:
+//   • NS-disp  (result)                 = teacher: NS inputs → SS/BL New-NS tables
+//   • WW-disp  (wwR)                    = WW inputs → same NS tables (isolates INPUT divergence)
+//   • WW-orig  (calcScore(slot,'orig')) = WW inputs → legacy 1-D model = the live FALLBACK
+// Raw input vectors for BOTH feeds are logged too, so the correction can later be
+// refit from raw features, not just collapsed scalars. Fire-and-forget; never throws
+// into the render path. Call at the end of renderWWTicks where h/result/wwSlot/wwR
+// are in scope: logCalibrationPair(h, result, wwSlot, wwR);
+async function logCalibrationPair(h, result, wwSlot, wwR) {
+  try {
+    const fts = h && h.dateTime;                 // the hour object's timestamp field
+    if (!fts) return;
+    const hourKey = String(fts).slice(0, 13);    // yyyy-mm-ddThh — hourly throttle
+    if (localStorage.getItem('swim_pair_last') === hourKey) return;
+
+    // Third score: WW inputs through the legacy model = the actual fallback.
+    let wwOrig = null;
+    try { wwOrig = calcScore(wwSlot, 'orig'); } catch (e) {}
+
+    const num  = (x) => (x == null ? null : Math.round(x * 1000) / 1000);
+    // entry.raw can be null in edge cases; mirror the app's own fallback.
+    const eraw = (m) => (m.raw != null ? m.raw : Math.max(0, 60 - m.score));
+    const ww   = h._ww || {};
+
+    const deviceId = localStorage.getItem('swim_device_id') ||
+      (function () { const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        localStorage.setItem('swim_device_id', id); return id; })();
+
+    const payload = {
+      forecast_ts: fts,
+      logged_at:   new Date().toISOString(),
+      device_id:   deviceId,
+      app_build:   (typeof APP_BUILD !== 'undefined') ? APP_BUILD : null,
+      ns_status:   (typeof window !== 'undefined' && window._nsStatus) ? window._nsStatus : 'unknown',
+
+      // Teacher — NS-disp
+      ns_entry_raw: num(eraw(result.entry)), ns_entry_cls: result.entry.cls,
+      ns_swim_raw:  num(result.swim.raw),    ns_swim_cls:  result.swim.cls,
+      ns_surge_raw: num(result.water.raw),   ns_surge_cls: result.water.cls,
+
+      // Student A — WW inputs, NS tables (isolates input divergence)
+      wd_entry_raw: num(eraw(wwR.entry)),    wd_entry_cls: wwR.entry.cls,
+      wd_swim_raw:  num(wwR.swim.raw),       wd_swim_cls:  wwR.swim.cls,
+      wd_surge_raw: num(wwR.water.raw),      wd_surge_cls: wwR.water.cls,
+
+      // Student B — WW inputs, legacy model (the fallback)
+      wo_entry_raw: wwOrig ? num(eraw(wwOrig.entry)) : null, wo_entry_cls: wwOrig ? wwOrig.entry.cls : null,
+      wo_swim_raw:  wwOrig ? num(wwOrig.swim.raw)    : null, wo_swim_cls:  wwOrig ? wwOrig.swim.cls  : null,
+      wo_surge_raw: wwOrig ? num(wwOrig.water.raw)   : null, wo_surge_cls: wwOrig ? wwOrig.water.cls : null,
+
+      // NS-merged input vector (teacher inputs)
+      ns_swell1_h: num(h.swell1H), ns_swell1_p: num(h.swell1P), ns_swell1_dir: num(h.swell1Dir),
+      ns_swell2_h: num(h.swell2H), ns_swell2_p: num(h.swell2P), ns_swell2_dir: num(h.swell2Dir),
+      ns_ww_h:     num(h.windWaveH), ns_ww_p:   num(h.windWaveP), ns_ww_dir:    num(h.windWaveDir),
+
+      // WW-original input vector (student inputs)
+      ww_swell1_h: num(ww.swell1H), ww_swell1_p: num(ww.swell1P), ww_swell1_dir: num(ww.swell1Dir),
+      ww_swell2_h: num(ww.swell2H), ww_swell2_p: num(ww.swell2P), ww_swell2_dir: num(ww.swell2Dir),
+      ww_ww_h:     num(ww.windWaveH), ww_ww_p:   num(ww.windWaveP), ww_ww_dir:    num(ww.windWaveDir),
+
+      // Shared drivers (identical for both feeds)
+      wind_kmh: num(h.windKmh), wind_dir: num(h.windDir), tide_m: num(h.tideM),
+    };
+
+    const res = await fetch(BB_SUPABASE_URL + '/rest/v1/calibration_pairs', {
+      method: 'POST',
+      headers: {
+        'apikey': BB_SUPABASE_KEY,
+        'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal,resolution=ignore-duplicates',
+      },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok || res.status === 409) localStorage.setItem('swim_pair_last', hourKey);
+  } catch (e) {
+    console.warn('calibration pair log skipped', e);   // never disturb the forecast
+  }
+}
+
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) {
     diag('renderSnapshot BAILED — ' + (!h ? 'no row object' : 'row has no dateTime'));
@@ -5335,6 +5417,7 @@ function renderSnapshot(h, wx) {
     delete wwSlot._nsFeed;
     delete wwSlot._ww;
     const wwR = calcScore(wwSlot);   // same model as the NS dot; differs only by inputs
+    logCalibrationPair(h, result, wwSlot, wwR);   // fire-and-forget paired-score log
 
     const wwEntryRaw = wwR.entry.raw ?? Math.max(0, 60 - wwR.entry.score);
     setTick('wwTickEntry', bandedPct(wwEntryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]));
@@ -6372,7 +6455,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260708-172431';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
