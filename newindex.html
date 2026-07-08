@@ -4232,7 +4232,15 @@ function calcScore(d, modelOverride) {
   const _chopU    = (windKmh || 0) / 3.6;
   const _chopOS   = spmGrowth(_chopU, durEquivFetch(_chopU, windDurHrs));  // open sea, dir-independent
   const _chopExpo = chopExposure(windDir);
-  const _hWsFace  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;        // fetch wind-sea steep face (m)
+  // Sheltered-arc residual floor (prototyped in workbench, ported 8 Jul 2026): on blocked
+  // bearings (100–310°, expo→0) the wind still whips a small local sea over the ~300m of
+  // bay water. max() (not additive — same sea, two lower bounds): the open-ocean term
+  // dominates the exposed arc; the 300m bay chop takes over through the sheltered arc.
+  // Reuses fetchBayM; also softens the old knife-edge at the 100°/310° exposure knots.
+  const _chopRes  = spmGrowth(_chopU, SITE.fetchBayM ?? 300);              // local bay residual
+  const _hWsOpen  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;         // open ocean survived into BL
+  const _hWsBay   = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                  // 300m bay floor
+  const _hWsFace  = Math.max(_hWsOpen, _hWsBay);                                             // fetch wind-sea steep face (m)
   const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;    // wind-wave steep face (m)
   const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);             // quadrature, cm
 
@@ -6406,7 +6414,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260708-132447';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
