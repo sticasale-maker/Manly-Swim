@@ -4064,7 +4064,12 @@ function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
   // on the same forecast slot for side-by-side comparison.
-  const useGem = modelOverride ? (modelOverride === 'gem') : GEM_MODEL;
+  // Per-row failover: a row uses the NS-dispersion path ONLY if it actually carries
+  // NS-fed data (_nsFeed). When the nearshore feed is down, rows hold raw WW+OM values,
+  // so they must be scored through the 'orig' (WW-region) branch instead of the NS
+  // tables. Healthy state is unchanged: all displayed rows are _nsFeed, so this
+  // collapses to GEM_MODEL. An explicit modelOverride still wins (CAL/compare/logger).
+  const useGem = modelOverride ? (modelOverride === 'gem') : (GEM_MODEL && d._nsFeed === true);
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = d;
@@ -5287,6 +5292,27 @@ async function logCalibrationPair(h, result, wwSlot, wwR) {
   }
 }
 
+// Fallback banner — shown when the displayed hour is NOT NS-fed (nearshore feed down,
+// scores came from the WW 'orig' backup). Injected once above the time/metrics block.
+function setNsFallbackBanner(isFallback) {
+  try {
+    let el = document.getElementById('nsFallbackBanner');
+    if (!el) {
+      const anchor = document.getElementById('metricsTime');
+      if (!anchor) return;
+      const host = anchor.parentElement || anchor;
+      el = document.createElement('div');
+      el.id = 'nsFallbackBanner';
+      el.style.cssText = 'display:none;margin:8px 0;padding:8px 10px;border-radius:8px;'
+        + 'background:#8a1f1f;color:#fff;font-size:11px;font-weight:700;letter-spacing:.3px;'
+        + 'text-align:center;line-height:1.35;';
+      el.textContent = '\u26A0 ESTIMATED CONDITIONS \u2014 live nearshore feed unavailable, showing modelled backup.';
+      (host.parentElement || host).insertBefore(el, host);
+    }
+    el.style.display = isFallback ? 'block' : 'none';
+  } catch (e) {}
+}
+
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) {
     diag('renderSnapshot BAILED — ' + (!h ? 'no row object' : 'row has no dateTime'));
@@ -5295,12 +5321,13 @@ function renderSnapshot(h, wx) {
   const result = calcScore(h);
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
+  setNsFallbackBanner(!h._nsFeed);   // show backup banner when this hour isn't NS-fed
   // Calibration pair log — runs on every live render (not just compare mode). Builds
   // the WW slot from the stashed _ww originals; fire-and-forget, throttled internally.
   try {
     const _wwSlot = Object.assign({}, h, h._ww || {});
     delete _wwSlot._ww; delete _wwSlot._nsFeed;
-    logCalibrationPair(h, result, _wwSlot, calcScore(_wwSlot));
+    logCalibrationPair(h, result, _wwSlot, calcScore(_wwSlot, 'gem'));  // wd_ = WW inputs thru NS tables
   } catch (e) {}
   _forecastRendered = true;       // real data is on screen — dots have left the 50% default
   hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
@@ -5423,7 +5450,7 @@ function renderSnapshot(h, wx) {
     const wwSlot = Object.assign({}, h, wwWave);
     delete wwSlot._nsFeed;
     delete wwSlot._ww;
-    const wwR = calcScore(wwSlot);   // same model as the NS dot; differs only by inputs
+    const wwR = calcScore(wwSlot, 'gem');   // same model as the NS dot; differs only by inputs
 
     const wwEntryRaw = wwR.entry.raw ?? Math.max(0, 60 - wwR.entry.score);
     setTick('wwTickEntry', bandedPct(wwEntryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]));
@@ -6461,7 +6488,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260708-182917';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
