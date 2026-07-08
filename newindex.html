@@ -3022,9 +3022,12 @@ const SITE_DEFAULTS = {
   // span. Band width on the rail = (nextEdge − thisEdge) / scaleMax, so the edges
   // chosen relative to scaleMax fully determine how proportioned the bands look.
   //
-  // SWIM — q7 = wind_d + ww_d (LOWER = better) — col AK rows 9–12:
-  //   glassy = q7 < AK9, ripply ≤ AK10, choppy ≤ AK11, else messy. AK12 = scaleMax (rail end + score cap).
-  swimThresholds: { glassy: 4, ripply: 10, choppy: 14, scaleMax: 14 },
+  // CHOP — steep-face height in CM (LOWER = better) — bands ported from workbench
+  //   CHOP_FACE (Marco 6 Jul 2026): Smooth < 10cm, Ripply < 20, Choppy < 30, else Messy;
+  //   scaleMax 45. Named glassy/ripply/choppy for back-compat with the classifier, but
+  //   the values are now CENTIMETRES, not q7 energy. NOTE: New NS tab AN2:AQ13 CHOP rows
+  //   must be migrated to 10/20/30/45 or the sheet parse will clobber these back to q7.
+  swimThresholds: { glassy: 10, ripply: 20, choppy: 30, scaleMax: 45 },
   // ENTRY — `total` demerits (LOWER = better) — col AK rows 5–8:
   //   easy = total ≤ AK5, doable ≤ AK6, caution ≤ AK7, else dangerous. AK8 = scaleMax (rail end).
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
@@ -3880,6 +3883,16 @@ function chopSlapWeight(H, T) {
   return t * t * (3 - 2 * t);
 }
 
+// BL directional chop exposure (0..1) — fraction of the open-sea steep-face chop
+// that reaches the Bower Lane point from each wind bearing. Ported from workbench
+// (Marco 6 Jul 2026): fit to the 20 km/h / 4 h anchors (dir:points) 320:53 330:44
+// 340:40 350:35 0:30 25:30 30:35 60:40 90:53; calm (0) through the land-sheltered
+// S/W arc (100°–310°). Smoothstep between knots. Replaces the hard fetch-sector
+// model for the CHOP steep-face metric; windSeaGeo (three-zone) still drives the
+// legacy q7-energy reference and the SURGE heave.
+const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[60,0.556],[90,0.194],[100,0],[310,0],[320,0.194],[330,0.444],[340,0.556],[350,0.694],[360,0.833]];
+function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i<P.length;i++){if(a<=P[i][0]){const x0=P[i-1][0],y0=P[i-1][1],x1=P[i][0],y1=P[i][1];let t=(a-x0)/(x1-x0);t=t*t*(3-2*t);return y0+(y1-y0)*t;}}return P[P.length-1][1];}
+
 // Legacy shim — kept so any un-migrated caller still resolves. Uses the smoothed
 // BL openness as a 0..1 gate (NOT the old transmit table).
 function chopTransmit(deg) {
@@ -4205,9 +4218,23 @@ function calcScore(d, modelOverride) {
   // distinct waves, not two estimates of one, so nothing to double-count and no switch
   // needed - each just adds its slap. (The old max()/wwTxBL dedup assumed a directional
   // overlap the rose shows doesn't exist.)
-  const chopQ7 = (wind_d_raw + ww_d_BL_raw) * blChopImpact;
+  const chopQ7 = (wind_d_raw + ww_d_BL_raw) * blChopImpact;   // (ref) legacy energy — kept for the breakdown readout only
   // wind_d exposed for the demerits breakdown (scaled fetch-sea half).
   const wind_d = wind_d_raw * blChopImpact;
+
+  // ── CHOP = STEEP-FACE HEIGHT (cm) ── ported from workbench calc() (Marco 6 Jul 2026).
+  // Fetch wind-sea = OPEN duration-limited sea (direction-INDEPENDENT) × BL directional
+  // EXPOSURE (chopExposure) — NOT windSeaGeo's three-zone fetch. Wind-wave stays dir-gated
+  // by the BL transmit table (reuse wwTxBL / _wwP_bl from above). The two sources combine
+  // energy-additive (quadrature). A short steep fetch sea has near-zero H²·P energy but a
+  // real steep face, which the old q7 energy path discarded — this is the fix. No gain knob:
+  // chopCm is physical height; tune the cm band edges (swimThresholds) or CHOP_EXPO, not a sens.
+  const _chopU    = (windKmh || 0) / 3.6;
+  const _chopOS   = spmGrowth(_chopU, durEquivFetch(_chopU, windDurHrs));  // open sea, dir-independent
+  const _chopExpo = chopExposure(windDir);
+  const _hWsFace  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;        // fetch wind-sea steep face (m)
+  const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;    // wind-wave steep face (m)
+  const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);             // quadrature, cm
 
   return {
     score: Math.max(0, Math.round(60 - total)),
@@ -4234,17 +4261,16 @@ function calcScore(d, modelOverride) {
       if (total <= t.caution) return { label:'Caution',   cls:'yellow', score: s, raw: total };
       return                         { label:'Dangerous', cls:'red',     score: s, raw: total };
     })(),
-    // Metric 2: CHOP — graceful handover between the two wind-chop sources.
-    //   The wind-wave (ww_d) arrives from a RESTRICTED arc (its SS dispersion
-    //   transmit wwTxForChop); our fetch wind-sea (wind_d) covers everywhere else.
-    //   Symmetric crossfade at the switch angle so they never double-count:
-    //   q7 = wind_d × (1 − w) + ww_d × w, where w = wind-wave arc weight.
+    // Metric 2: CHOP — STEEP-FACE HEIGHT (cm). q7 now carries chopCm (fetch wind-sea
+    //   face × BL exposure, in quadrature with the dir-gated wind-wave face). Bands are
+    //   cm edges (swimThresholds, now centimetres). Classifier logic unchanged — a short
+    //   steep fetch sea that read ~0 on the old energy path now shows its real face height.
     swim: (() => {
-      const q7  = chopQ7;
+      const q7  = chopCm;
       const t  = SITE.swimThresholds;
       // Convert to 0–60 scale (inverted, matching Entry & Surge): 60=best, 0=worst.
-      // q7 is capped at the Messy edge for scale purposes (beyond that is fully Messy).
-      const cap = t.scaleMax > 0 ? t.scaleMax : 14;
+      // q7 (cm) is capped at the Messy edge for scale purposes (beyond that is fully Messy).
+      const cap = t.scaleMax > 0 ? t.scaleMax : 45;
       const s60 = Math.max(0, Math.round(60 - Math.min(q7, cap) * (60 / cap)));
       if (q7 <  t.glassy) return { label:'Smooth', cls:'green',  score: s60, raw: q7 };
       if (q7 <= t.ripply) return { label:'Ripply', cls:'amber',  score: s60, raw: q7 };
@@ -6380,7 +6406,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260706-222113';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6685,9 +6711,9 @@ if (!GEM_MODEL) {
 const TUNE_PARAMS = [
   { key:'ssWaveSens', label:'SS wave sensitivity (ss_wave_sens)', min:0, max:3, step:0.05, hint:'New NS tab C2. Scales swell1 + swell2 + wind-wave demerits (energy = H²·P × transmit × this).' },
   { key:'windSeaSens', label:'Wind-sea sensitivity', min:0, max:3, step:0.05, hint:'Scales the fetch-derived wind-sea (CHOP = BL point, ENTRY = SS point blended vs NS). Higher = wind builds more score.' },
-  { key:'swimThresholds.glassy', label:'CHOP · Smooth edge', min:0, max:14, step:0.5, hint:'q7 below this = Smooth. Retune since CHOP now uses real wind-sea energy.' },
-  { key:'swimThresholds.ripply', label:'CHOP · Ripply edge', min:0, max:20, step:0.5, hint:'q7 ≤ this = Ripply.' },
-  { key:'swimThresholds.choppy', label:'CHOP · Choppy edge', min:0, max:40, step:0.5, hint:'q7 ≤ this = Choppy, else Messy.' },
+  { key:'swimThresholds.glassy', label:'CHOP · Smooth edge (cm)', min:0, max:30, step:0.5, hint:'Steep-face height (cm) below this = Smooth. CHOP is now physical face height, not q7 energy.' },
+  { key:'swimThresholds.ripply', label:'CHOP · Ripply edge (cm)', min:0, max:45, step:0.5, hint:'Face height (cm) ≤ this = Ripply.' },
+  { key:'swimThresholds.choppy', label:'CHOP · Choppy edge (cm)', min:0, max:60, step:0.5, hint:'Face height (cm) ≤ this = Choppy, else Messy.' },
   { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:8, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
   { key:'blChopImpact', label:'CHOP · BL chop impact (bl_chop_impact)', min:0, max:4, step:0.05, hint:'New NS tab V3. Single knob scaling the WHOLE BL chop crossfade (wind-sea + wind-wave), no handover jump. Feeds CHOP metric and Swim.' },
   { key:'chopSwimWeight', label:'SURGE · chop weight into Surge (chop_swim_weight)', min:1, max:8, step:0.1, hint:'New NS tab cell V7 ("Chop contribution to Swim"). Extra multiplier on chop WHERE IT ENTERS SURGE only. Chop energy is small next to swell but adds annoyance — turn this up to make chop move the SURGE band. Does NOT affect the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = legacy 1:1.' },
