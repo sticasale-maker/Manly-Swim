@@ -1069,7 +1069,14 @@ function calc(I){
   const _U=(I.windKmh||0)/3.6;
   const _oS=spmGrowth(_U, durEquivFetch(_U, dur));   // open sea, direction-independent
   const _expo=chopExposure(I.windD);
-  const hWs = _oS.hs * chopSlapWeight(_oS.hs, _oS.tp) * _expo;
+  /* Sheltered-arc residual: even on blocked bearings the wind still whips a small local
+     sea over the ~300m of bay water. Floor (not additive — same sea, two lower bounds):
+     open-ocean term survives into BL via exposure and dominates the exposed arc; the 300m
+     bay chop takes over through the sheltered arc where _expo→0. Reuses fetchBayM. */
+  const _res=spmGrowth(_U, SITE.fetchBayM ?? 300);   // local bay residual, dir-independent
+  const _hWsOpen = _oS.hs  * chopSlapWeight(_oS.hs,  _oS.tp)  * _expo;
+  const _hWsBay  = _res.hs * chopSlapWeight(_res.hs, _res.tp);
+  const hWs = Math.max(_hWsOpen, _hWsBay);
   const _blTxWw = Math.max(0,Math.min(1, blDispLookup((I.wwD!=null?I.wwD:I.windD), _wwP)));
   const hWw = _wwH * chopSlapWeight(_wwH,_wwP) * _blTxWw;
   const chopCm = 100*Math.sqrt(hWs*hWs + hWw*hWw);
@@ -1082,6 +1089,7 @@ function calc(I){
     wind_d,ww_d:dm.windWave,windEntry:dm.windEntry,s1_d:dm.swell1,s2_d:dm.swell2,
     o,tide_d,total,q7,chopWW,
     chopCm, hWsCm:100*hWs, hWwCm:100*hWw, chopExpo:_expo, chopOpenHs:_oS.hs, chopOpenTp:_oS.tp,
+    hWsOpenCm:100*_hWsOpen, hWsBayCm:100*_hWsBay, chopResHs:_res.hs, chopResTp:_res.tp,
     s1Tx:Math.max(0,nsDispLookup(I.s1D,I.s1P)),
     s2Tx:Math.max(0,nsDispLookup(I.s2D||0,I.s2P||8)),
     wwArrival:Math.max(0,nsDispLookup((I.wwD!=null?I.wwD:I.windD),I.wwP||5)),
@@ -1170,7 +1178,7 @@ function render(){
     {name:'Entry',sub:'getting in',m:R.entry,rail:chipRail.entry,
      rows:[['Wind + wind-wave',R.windEntry],['Primary swell',R.s1_d],['Secondary swell',R.s2_d],['Subtotal (before tide)',R.o,'mid'],['Tide effect',R.tide_d],['Total demerits',R.total,'tot']]},
     {name:'Chop',sub:'steep-face height',m:R.swim,rail:chipRail.swim,
-     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['open '+F(R.chopOpenHs,2)+'m/'+F(R.chopOpenTp,1)+'s × expo '+Math.round(R.chopExpo*100)+'%',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
+     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['open '+F(R.chopOpenHs,2)+'m/'+F(R.chopOpenTp,1)+'s × expo '+Math.round(R.chopExpo*100)+'% = '+Math.round(R.hWsOpenCm)+' cm',''],['bay 300m residual '+F(R.chopResHs,2)+'m/'+F(R.chopResTp,1)+'s = '+Math.round(R.hWsBayCm)+' cm',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
     {name:'Swim',sub:'swell + heave + tide',m:R.surge,rail:chipRail.surge,
      rows:[['Primary swell',R.surge.parts.s1_d],['Secondary swell',R.surge.parts.s2_d],['Sea heave',R.surge.parts.sea_d],['Tide effect',R.surge.parts.tide_d],['Total demerits',R.surge.raw,'mid'],['Score (60=best)',R.surge.score,'tot']]},
   ];
