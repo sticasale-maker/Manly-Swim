@@ -4066,7 +4066,14 @@ function calcScore(d, modelOverride) {
   // so they must be scored through the 'orig' (WW-region) branch instead of the NS
   // tables. Healthy state is unchanged: all displayed rows are _nsFeed, so this
   // collapses to GEM_MODEL. An explicit modelOverride still wins (CAL/compare/logger).
-  const useGem = modelOverride ? (modelOverride === 'gem') : (GEM_MODEL && d._nsFeed === true);
+  // The NS feed (Worker route) and the NS dispersion table (New NS sheet tab) are
+  // separate sources and fail independently. Both are required for the GEM branch:
+  // without the table nsDispLookup() returns a flat 0.5 transmit for every direction
+  // and period, which is not a fallback, it is a wrong answer wearing the right
+  // branch's clothes. Missing either → score through 'orig' (self-sufficient: the
+  // 1-D lookup arrays and tideGain are pinned in SITE_DEFAULTS).
+  const useGem = modelOverride ? (modelOverride === 'gem')
+                               : (GEM_MODEL && d._nsFeed === true && !!SITE.nsDisp);
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = d;
@@ -5291,6 +5298,32 @@ async function logCalibrationPair(h, result, wwSlot, wwR) {
 
 // Fallback banner — shown when the displayed hour is NOT NS-fed (nearshore feed down,
 // scores came from the WW 'orig' backup). Injected once above the time/metrics block.
+// ── Silent degradation tell (operator-facing, not swimmer-facing) ────────────
+// When the NS dispersion table is missing, calcScore falls back to the legacy
+// 'orig' branch. That is a valid model, not a broken one, so swimmers get a sound
+// score and no alarming banner. But it must not fail silently for the operator:
+// a small amber dot is appended to the version stamp in the header (which nobody
+// but Marco reads), and exactly one analytics beacon is fired per session. The
+// beacon lands in Supabase log_events as event='ns_degraded'.
+let _nsDegradedSent = false;
+function markNsDegraded(reason) {
+  try {
+    const el = document.getElementById('headerVersion');
+    if (el && el.dataset.nsDegraded !== '1') {
+      el.dataset.nsDegraded = '1';
+      const dot = document.createElement('span');
+      dot.textContent = '\u25CF';
+      dot.style.cssText = 'margin-left:4px;color:var(--yellow);';
+      el.appendChild(dot);
+      el.title = 'Degraded: ' + reason;
+    }
+    if (!_nsDegradedSent && typeof window.track === 'function') {
+      _nsDegradedSent = true;
+      window.track('ns_degraded', { reason: String(reason).slice(0, 60) });
+    }
+  } catch (e) {}
+}
+
 function setNsFallbackBanner(isFallback) {
   try {
     let el = document.getElementById('nsFallbackBanner');
@@ -5319,6 +5352,7 @@ function renderSnapshot(h, wx) {
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   setNsFallbackBanner(!h._nsFeed);   // show backup banner when this hour isn't NS-fed
+  if (!SITE.nsDisp) markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
   // Calibration pair log — runs on every live render (not just compare mode). Builds
   // the WW slot from the stashed _ww originals; fire-and-forget, throttled internally.
   try {
@@ -6485,7 +6519,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260709-192136';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
