@@ -11,16 +11,15 @@
 //  CACHE_VERSION is stamped automatically by CI — do not edit by hand.
 // ─────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = '20260709-205807';
+const CACHE_VERSION = '20260703-newindex';
 const CACHE_NAME    = 'swim-manly-' + CACHE_VERSION;
 
 // App shell assets to pre-cache on install (relative to /Manly-Swim/)
 const SHELL_ASSETS = [
   './',
   './index.html',
-  './newindex.html',
+  './vecchio.html',
   './manifest.webmanifest',
-  './manifest-newindex.webmanifest',
   './images/logos/splash.png',
   './images/logos/icon-180.png',
   './images/logos/favicon-32.png',
@@ -127,10 +126,12 @@ self.addEventListener('fetch', event => {
         return caches.match(event.request).then(cached => {
           if (cached) return cached;
           // If it's a navigation request and we have no cache, serve the app shell
-          // that MATCHES the launched app — otherwise an offline newindex launch
-          // would wrongly render index.
+          // that MATCHES the launched app. index.html is nuovo; vecchio.html is the
+          // fallback app it redirects to when the NS feed or the NS dispersion table
+          // is unavailable. An offline vecchio launch must not render nuovo, which
+          // would immediately fail its preflight and bounce straight back here.
           if (event.request.mode === 'navigate') {
-            const shell = url.pathname.includes('newindex') ? './newindex.html' : './index.html';
+            const shell = url.pathname.includes('vecchio') ? './vecchio.html' : './index.html';
             return caches.match(shell).then(m => m || caches.match('./index.html'));
           }
           return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
