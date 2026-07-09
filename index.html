@@ -1134,11 +1134,13 @@
     font-family:'Bebas Neue',sans-serif; font-size:12px;
     color:#fff; white-space:nowrap;
   }
-  .tl-score.green  { background:var(--green); }
-  .tl-score.amber  { background:var(--amber); }
-  .tl-score.yellow { background:var(--yellow); }
-  .tl-score.orange { background:#c86414; }
-  .tl-score.red    { background:var(--red); }
+  /* Match the metric rail ramp so the week-ahead pills read green→red like the
+     Entry/Chop/Surge rails and the best-window heat ribbon. Light bands take dark ink. */
+  .tl-score.green  { background:var(--rail-green);  color:#0f2a1a; }
+  .tl-score.amber  { background:var(--rail-amber);  color:#2f2c0d; }
+  .tl-score.yellow { background:var(--rail-yellow); color:#2f1a08; }
+  .tl-score.orange { background:#cf6a2e; color:#fff; }
+  .tl-score.red    { background:var(--rail-red);    color:#fff; }
   .tl-score.dim    { background:rgba(74,143,173,0.2); color:var(--dim); }
   .tl-day-hdr { background:rgba(74,143,173,0.06); font-weight:500; }
   #tl-tooltip {
@@ -1805,9 +1807,18 @@
             onclick="event.stopPropagation(); dismissNewhere();">&#10005;</button>
   </div>
   <script>
-    function markNewhereSeen(){ try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){} }
+    // Inline (runs before the main bundle), so it carries its own cookie mirror.
+    function _nhCk(){ try{ var m=document.cookie.match('(?:^|;\\s*)swim_newhere_seen=([^;]*)'); return m?m[1]:null; }catch(e){ return null; } }
+    function markNewhereSeen(){
+      try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){}
+      try{ document.cookie='swim_newhere_seen=1;path=/;max-age=34560000;SameSite=Lax'; }catch(e){}
+    }
     function dismissNewhere(){ var b=document.getElementById('newhereBanner'); if(b){ b.style.display='none'; } markNewhereSeen(); }
-    (function(){ try{ if(localStorage.getItem('swim_newhere_seen')){ var b=document.getElementById('newhereBanner'); if(b) b.style.display='none'; } }catch(e){} })();
+    (function(){
+      var seen=null; try{ seen=localStorage.getItem('swim_newhere_seen'); }catch(e){}
+      if(!seen && _nhCk()){ seen='1'; try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){} }
+      if(seen){ var b=document.getElementById('newhereBanner'); if(b) b.style.display='none'; }
+    })();
   </script>
 
 
@@ -5083,6 +5094,9 @@ function _aboutEsc(e) { if (e.key === 'Escape') closeAbout(); }
 // the slider (current-hour marker) and the day-picker (whole curve).
 // =============================================================================
 var WG = { entry:'#4a8fad', chop:'#e08a3c', surge:'#4caf50' };
+// Best-window outline. Must contrast with BOTH the dark card (rgba(22,50,66,.6)
+// over #113541) and every heat-ramp cell colour, so it is a bright sand, not --deep.
+var WG_BOX = '#f4ead6';
 
 // 10-step colour ramp built by interpolating the four zone hues (worst→best:
 // red → yellow → amber → green). Gives the heat ribbon finer resolution of the
@@ -5244,12 +5258,12 @@ function renderDayWindow(dateTimeStr){
   merged.forEach(function(w, wi){
     var bx = L + w.lo*cellW, bw = (w.hi - w.lo + 1)*cellW;
     var by = top - 4, bh = 3*rowH + 2*gap + 8;
-    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="#113541" fill-opacity="0.07"/>';
-    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="#113541" stroke-width="3" stroke-dasharray="5 3"/>';
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="'+WG_BOX+'" fill-opacity="0.07"/>';
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="'+WG_BOX+'" stroke-width="2.5" stroke-dasharray="5 3"/>';
     if (plural){
       var bcx = bx + (bw+1)/2;
-      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-7)+'" r="8" fill="#113541"/>';
-      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-3.5)+'" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">'+(wi+1)+'</text>';
+      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-7)+'" r="8" fill="'+WG_BOX+'"/>';
+      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-3.5)+'" font-size="10" font-weight="700" fill="#113541" text-anchor="middle">'+(wi+1)+'</text>';
     }
   });
 
@@ -6584,7 +6598,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260709-215053';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7245,38 +7259,71 @@ async function nuovoPreflight() {
   }, 25000);
 })();
 
+  // ===== DURABLE PREFERENCE STORE =====
+  // localStorage is the primary store, but Safari's ITP evicts it after 7 days of
+  // non-use on a non-installed PWA, and private mode throws on write. Every value
+  // is mirrored into a 400-day cookie; a read that misses localStorage falls back
+  // to the cookie and rehydrates. Values are small (<1KB) so cookie bloat is a
+  // non-issue. Used for: app mode, Custom section picks, splash day-stamp.
+  function _ckGet(name){
+    try {
+      var m = document.cookie.match('(?:^|;\\s*)' + name + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch (e) { return null; }
+  }
+  function _ckSet(name, val){
+    try { document.cookie = name + '=' + encodeURIComponent(val) + ';path=/;max-age=34560000;SameSite=Lax'; } catch (e) {}
+  }
+  function persistGet(key){
+    var v = null;
+    try { v = localStorage.getItem(key); } catch (e) {}
+    if (v == null || v === '') {
+      var c = _ckGet(key);
+      if (c != null && c !== '') { v = c; try { localStorage.setItem(key, c); } catch (e) {} }
+    }
+    return v;
+  }
+  function persistSet(key, val){
+    try { localStorage.setItem(key, val); } catch (e) {}
+    _ckSet(key, val);
+  }
+  window.persistGet = persistGet; window.persistSet = persistSet;
+
   // ===== SPLASH SCREEN =====
   // Phase 1: video plays to completion (or max 10s safety cap).
-  // Phase 2: logo splash shows for at least 2s, then waits for forecast data.
-  //          Hard cap at 6s so it can never stick.
+  // Phase 2: logo splash shows for a flat 4s.
+  // Shown once per calendar day (local time); every later launch that day skips it.
   (function() {
     var videoEl   = document.getElementById('splash-video');
     var videoWrap = document.getElementById('video-splash');
     var logoSplash = document.getElementById('splash-screen');
     if (!videoWrap || !logoSplash) return;
 
-    // Replay the splash only if it's been more than 2h since it last showed;
-    // within that window, reloads skip straight to the app.
-    var SPLASH_KEY = 'swim_splash_seen_v1';
-    var SPLASH_TTL = 2 * 60 * 60 * 1000; // 2 hours
-    try {
-      var last = parseInt(localStorage.getItem(SPLASH_KEY) || '0', 10);
-      if (last && (Date.now() - last) < SPLASH_TTL) {
-        videoWrap.style.display = 'none';
-        logoSplash.style.display = 'none';
-        return;
-      }
-    } catch (e) {}
-    try { localStorage.setItem(SPLASH_KEY, String(Date.now())); } catch (e) {}
+    // Show the splash on the first launch of each local calendar day. Every
+    // subsequent launch or reload that same day goes straight to the app.
+    // Stamped as yyyy-mm-dd in LOCAL time (not UTC) so the rollover is midnight
+    // in Sydney, not 10-11am. Written on show, so a mid-splash reload won't replay it.
+    var SPLASH_KEY = 'swim_splash_day_v1';
+    var _d = new Date();
+    var today = _d.getFullYear() + '-' +
+                ('0' + (_d.getMonth() + 1)).slice(-2) + '-' +
+                ('0' + _d.getDate()).slice(-2);
+    if (persistGet(SPLASH_KEY) === today) {
+      videoWrap.style.display = 'none';
+      logoSplash.style.display = 'none';
+      return;
+    }
+    persistSet(SPLASH_KEY, today);
 
     function fadeEl(el, cb) {
       el.classList.add('fade-out');
       setTimeout(function() { el.style.display = 'none'; if (cb) cb(); }, 650);
     }
 
-    // Phase 2: logo splash with 2s floor, data-ready ceiling, 6s hard cap
+    // Phase 2: logo splash with 4s floor, data-ready ceiling, 4s hard cap.
+    // MIN == MAX by design: the card holds a flat 4s regardless of _forecastRendered.
     function startLogoPhase() {
-      var MIN_MS = 6000, MAX_MS = 6000, started = Date.now();
+      var MIN_MS = 4000, MAX_MS = 4000, started = Date.now();
       function checkLogo() {
         var elapsed = Date.now() - started;
         if (elapsed >= MAX_MS) return fadeEl(logoSplash);
@@ -9204,15 +9251,17 @@ if ('serviceWorker' in navigator) {
   ];
   var MODE_KEY = 'swim_app_mode';            // 'essential' | 'complete' | 'custom'
   var CUSTOM_KEY = 'swim_app_custom';        // JSON map { sectionKey: 0|1 } for Custom mode
-  function getMode(){ try { var m = localStorage.getItem(MODE_KEY); return (m === 'essential' || m === 'complete' || m === 'custom') ? m : 'complete'; } catch (e) { return 'complete'; } }
-  function saveMode(m){ try { localStorage.setItem(MODE_KEY, m); } catch (e) {} }
+  var _pGet = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var _pSet = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
+  function getMode(){ var m = _pGet(MODE_KEY); return (m === 'essential' || m === 'complete' || m === 'custom') ? m : 'complete'; }
+  function saveMode(m){ _pSet(MODE_KEY, m); }
   function getCustom(){
     var map = {};
-    try { var raw = localStorage.getItem(CUSTOM_KEY); if (raw) map = JSON.parse(raw) || {}; } catch (e) { map = {}; }
+    try { var raw = _pGet(CUSTOM_KEY); if (raw) map = JSON.parse(raw) || {}; } catch (e) { map = {}; }
     SECTIONS.forEach(function (s) { if (!(s.key in map)) map[s.key] = effFlags(s).complete; });   // seed first-time Custom from Complete
     return map;
   }
-  function saveCustom(map){ try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(map)); } catch (e) {} }
+  function saveCustom(map){ _pSet(CUSTOM_KEY, JSON.stringify(map)); }
 
   // Admin edits to the two presets — stored per device, used to preview live before publishing to code.
   var ADMIN_KEY = 'swim_admin_sections';   // JSON { key: { essential:0|1, complete:0|1 } }
@@ -9243,7 +9292,15 @@ if ('serviceWorker' in navigator) {
     });
     try { window.dispatchEvent(new Event('resize')); } catch (e) {}  // re-fit any canvas that just became visible
   }
-  function setMode(m){ saveMode(m); apply(m); try { if (window.track) window.track('mode_change', { mode: m }); } catch (e) {} }
+  function setMode(m){
+    // Freeze the seed: getCustom() fills missing keys from the Complete preset but
+    // never writes them back, so an untouched section would silently follow any later
+    // change to its complete: flag (or to an admin override). Persist the full map the
+    // moment Custom is chosen, and the user's layout is theirs for good.
+    if (m === 'custom') saveCustom(getCustom());
+    saveMode(m); apply(m);
+    try { if (window.track) window.track('mode_change', { mode: m }); } catch (e) {}
+  }
   window.setAppMode = setMode; window.getAppMode = getMode;
 
   function buildCustomList(){
@@ -9267,7 +9324,7 @@ if ('serviceWorker' in navigator) {
   }
 
   var METRIC_KEY = 'swim_metric_style';   // 'pic' (picture + slider)  |  'bar' (slider only)
-  function getMetricStyle(){ try { var v = localStorage.getItem(METRIC_KEY); return v === 'bar' ? 'bar' : 'pic'; } catch (e) { return 'pic'; } }
+  function getMetricStyle(){ var v = _pGet(METRIC_KEY); return v === 'bar' ? 'bar' : 'pic'; }
   function applyMetricStyle(v){
     document.body.classList.toggle('metrics-noicon', v === 'bar');
     var ch = document.getElementById('indChoice');
@@ -9276,7 +9333,7 @@ if ('serviceWorker' in navigator) {
     });
     try { window.dispatchEvent(new Event('resize')); } catch (e) {}
   }
-  function setMetricStyle(v){ try { localStorage.setItem(METRIC_KEY, v); } catch (e) {} applyMetricStyle(v); }
+  function setMetricStyle(v){ _pSet(METRIC_KEY, v); applyMetricStyle(v); }
   window.setMetricStyle = setMetricStyle; window.getMetricStyle = getMetricStyle;
 
   function openCustom(){ var p = document.getElementById('customPanel'); if (p) p.classList.add('show'); }
@@ -9393,7 +9450,10 @@ if ('serviceWorker' in navigator) {
     var ch = document.getElementById('indChoice');
     if (ch) ch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setMetricStyle(o.getAttribute('data-ind')); });
     applyMetricStyle(getMetricStyle());   // global display preference, applies in every mode
-    apply(getMode());   // panel starts closed even if Custom is the saved mode; picks are still applied
+    var _m = getMode();
+    if (_m === 'custom') saveCustom(getCustom());   // materialise on load too, for pre-existing Custom users
+    _pSet(MODE_KEY, _m);                            // re-stamp: refreshes the cookie mirror's 400-day clock
+    apply(_m);          // panel starts closed even if Custom is the saved mode; picks are still applied
     if (/[?&]admin=1(\b|&|$)/.test(location.search)) openAdmin();   // ?admin=1 opens the preset editor
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
