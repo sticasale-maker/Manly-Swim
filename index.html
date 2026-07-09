@@ -153,23 +153,28 @@
     background: var(--card);
     border: 1.5px solid var(--green);
     border-radius: var(--radius);
-    padding: 10px 14px;
+    padding: 10px 12px;
     margin: 0 0 8px;
   }
-  .verdict-dot {
-    width: 12px; height: 12px; border-radius: 50%;
-    background: var(--green); flex: 0 0 auto;
+  /* Triangles hug the verdict text, so they travel with it rather than pinning
+     to the bar's edges. min-width:0 lets the label ellipsis before the pill
+     is ever squeezed. */
+  .verdict-group {
+    display: flex; align-items: center; gap: 9px; min-width: 0;
   }
+  .verdict-arrow {
+    width: 0; height: 0; flex: 0 0 auto;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+  }
+  .verdict-arrow.vb-left  { border-left:  9px solid currentColor; }
+  .verdict-arrow.vb-right { border-right: 9px solid currentColor; }
   .verdict-text {
     font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(22px, 6.5vw, 28px); letter-spacing: 2px;
+    font-size: clamp(19px, 5.4vw, 26px); letter-spacing: 1.5px;
     font-weight: 400; text-transform: uppercase; color: var(--green);
     line-height: 1;
-  }
-  .verdict-time {
-    margin-left: auto; color: var(--dim);
-    font-size: clamp(11px, 3vw, 13px); letter-spacing: 0.5px;
-    white-space: nowrap;
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
   /* ── Metrics panel (replaces score hero) ── */
@@ -180,10 +185,6 @@
     border:1px solid var(--border);
     border-radius:var(--radius);
     padding:10px 12px 8px;
-    margin-bottom:8px;
-  }
-  .metrics-time {
-    font-size:13px; color:var(--dim); letter-spacing:0.5px;
     margin-bottom:8px;
   }
   .metrics-grid {
@@ -560,19 +561,36 @@
     box-shadow: 0 4px 24px rgba(74,143,173,0.10);
   }
   .week-ahead-btn {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; flex-direction: column; align-items: stretch; gap: 9px;
     width: 100%; box-sizing: border-box;
     background: none; border: none; cursor: pointer;
     padding: 13px 16px; font-family: inherit; text-align: left;
     -webkit-tap-highlight-color: transparent;
   }
   .week-ahead-btn:hover { background: rgba(74,143,173,0.04); }
+  .wa-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .week-ahead-label {
     font-family: 'Bebas Neue', sans-serif;
     font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
     color: var(--deep); font-weight: 700;
   }
-  .week-ahead-btn .wa-arrow { font-size: 26px; color: var(--ocean); }
+  .wa-when {
+    font-family: 'Inter', sans-serif; font-weight: 500;
+    font-size: 12px; letter-spacing: 0.3px; text-transform: none;
+    color: var(--dim); margin-left: 3px;
+  }
+  .week-ahead-btn .wa-arrow { font-size: 26px; color: var(--ocean); flex: none; }
+  /* Five-day preview of the 7-10am window. Bars are the same 10-step ramp as the
+     Best Swim Window ribbon, so a colour means the same thing in both places. */
+  .wa-strip { display: flex; gap: 5px; }
+  .wa-day { flex: 1 1 0; min-width: 0; display: block; }
+  .wa-bar { display: block; height: 7px; border-radius: 4px; }
+  .wa-bar-none { background: rgba(17,53,65,0.16); }
+  .wa-lbl {
+    display: block; text-align: center; margin-top: 4px;
+    font-size: 11px; letter-spacing: 0.3px; color: var(--dim);
+  }
+  .wa-lbl-none { opacity: 0.45; }
 
   /* ── Timeline back button ── */
   .timeline-back-btn {
@@ -613,10 +631,18 @@
     padding: 13px 16px; font-family: inherit; text-align: left;
   }
   #fv-toggle:hover { background: rgba(74,143,173,0.04); }
+  .fv-head-txt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
   .fv-toggle-label {
     font-family: 'Bebas Neue', sans-serif;
     font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
     color: var(--deep); font-weight: 700;
+  }
+  /* No mono face is loaded (Bebas / Inter / Playfair only), so tabular figures
+     keep the numbers from shuffling as the slider moves. */
+  .fv-sub {
+    font-family: 'Inter', sans-serif; font-size: 11.5px; font-weight: 500;
+    font-variant-numeric: tabular-nums; letter-spacing: 0.2px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
   }
   .fv-toggle-chevron {
     font-size: 26px; color: var(--ocean);
@@ -938,9 +964,12 @@
     padding:14px 16px;
     margin-bottom:10px;
   }
+  /* Moved to the top of .metrics-panel on 9 Jul 2026, replacing the small
+     duplicate that used to sit there. Class name kept so the two media-query
+     overrides on .slider-date / .slider-time still apply. */
   .slider-header {
     display:flex; justify-content:space-between; align-items:center;
-    margin-bottom:14px;
+    margin-bottom:10px;
   }
   .slider-date { font-family:'Bebas Neue',sans-serif; font-size:clamp(20px, 5.5vw, 26px); letter-spacing:1px; color:var(--deep); text-transform:uppercase; white-space:nowrap; font-weight:700; }
   .slider-time { font-family:'Bebas Neue',sans-serif; font-size:clamp(44px, 13vw, 56px); color:var(--deep); line-height:1; }
@@ -1094,8 +1123,8 @@
 
   .slider-ticks {
     display:flex; justify-content:space-between;
-    margin-top:6px;
-    font-size:8px; color:var(--dim);
+    margin-top:7px;
+    font-size:11px; letter-spacing:0.4px; color:var(--dim);
   }
 
   /* ── 5-day timeline ── */
@@ -1726,19 +1755,39 @@
   .wx-bar { background:rgba(22,50,66,0.85); border-color:rgba(180,210,230,0.10); }
   .wx-bar-desc, .wx-bar-feels-label, .wx-bar-feels-val { color:#c8bda0; }
   .metrics-panel { background:rgba(22,50,66,0.60); border-color:rgba(180,210,230,0.10); }
-  .metrics-time { color:rgba(200,189,160,0.85); }
   .metric-block.green, .metric-block.amber, .metric-block.yellow,
   .metric-block.orange, .metric-block.red { background:#c8bda0; }
   .day-btn { background:rgba(22,50,66,0.75); border-color:rgba(180,210,230,0.10); color:rgba(200,189,160,0.85); }
   .slider-wrap { background:rgba(22,50,66,0.50); border-color:rgba(180,210,230,0.08); }
   .slider-date, .slider-time { color:#c8bda0; }
-  .slider-ticks { color:rgba(200,189,160,0.6); }
+  .slider-ticks { color:rgba(200,189,160,0.85); }
   .window-graph-wrap { background:rgba(22,50,66,0.60); border-color:rgba(180,210,230,0.10); }
   .window-graph-title { color:#c8bda0; }
   .window-graph-sub { color:rgba(200,189,160,0.65); }
-  .bb-strip { background:rgba(22,50,66,0.85); border-color:rgba(180,210,230,0.10); }
-  .bb-strip .bb-status { color:#c8bda0; }
-  .bb-strip .bb-sub { color:rgba(200,189,160,0.65); }
+  /* .bb-strip is deliberately NOT in the dark-strip set: it now shares the tan
+     var(--card) background of the Sea Temp / Pollution cards it sits under. Its
+     base rule already uses var(--card), so the override is simply removed. The
+     bb-alert-1/2 border-colour states still fire on top of it. */
+
+  /* ══ TODAY'S NEWS relocated into an overlay, launched from the verdict bar ══
+     The standalone collapsible card is gone; #summary-body is moved (not cloned)
+     into #news-slot at boot so every renderer keeps writing to the same nodes. */
+  #summary-section { display:none !important; }
+  #news-overlay #summary-body { max-height:none; opacity:1; overflow:visible; transition:none; }
+  #news-overlay .summary-item:first-child { padding-top:2px; }
+  .verdict-bar { cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .verdict-bar:active { filter:brightness(0.97); }
+  /* News pill. --ocean (#4a8fad) on --card (#c8bda0) is a 1.9:1 contrast ratio —
+     the old cue was unreadable because of luminance, not size. --sky (#1b4754)
+     under white text clears AA at 5.5:1 and reads as a button, not a caption. */
+  .verdict-news {
+    margin-left:auto; flex:0 0 auto;
+    background:var(--sky); color:#fff;
+    font-size:clamp(11px,3.1vw,13px); font-weight:700;
+    letter-spacing:0.8px; white-space:nowrap;
+    padding:7px 12px; border-radius:999px;
+  }
+  .verdict-bar:active .verdict-news { filter:brightness(1.25); }
 </style>
 </head>
 <body>
@@ -1797,11 +1846,11 @@
 
   <!-- Newcomer call-to-action → opens About (dismissible, hides after first view) -->
   <div class="newhere-banner" id="newhereBanner" role="button" tabindex="0"
-       onclick="openAbout(); markNewhereSeen();"
-       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openAbout();markNewhereSeen();}"
-       aria-label="About this app — how to read it">
+       onclick="markNewhereSeen(); location.href='guide.html';"
+       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();markNewhereSeen();location.href='guide.html';}"
+       aria-label="How to read it — swimmer's guide">
     <span class="newhere-icon" aria-hidden="true">&#128075;</span>
-    <span class="newhere-text">First time here? <strong>How to read this app</strong></span>
+    <span class="newhere-text">First time here? <strong>How to read it</strong></span>
     <span class="newhere-arrow" aria-hidden="true">&rarr;</span>
     <button class="newhere-dismiss" aria-label="Dismiss this tip"
             onclick="event.stopPropagation(); dismissNewhere();">&#10005;</button>
@@ -1832,6 +1881,17 @@
       <div class="db-modal-meta" id="db-modal-meta"></div>
       <div class="db-modal-summary" id="db-modal-summary">Loading recent reports…</div>
       <div class="db-modal-foot">Reports summarised from the VIZ diving community.</div>
+    </div>
+  </div>
+
+  <!-- Today's News — opened from the verdict bar. #summary-body is relocated here at boot. -->
+  <div id="news-overlay" class="db-modal-overlay" onclick="if(event.target===this)closeNews()">
+    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="news-modal-title">
+      <div class="db-modal-head">
+        <div class="db-modal-title" id="news-modal-title">Today's News</div>
+        <button class="db-modal-close" onclick="closeNews()" aria-label="Close">&#10005;</button>
+      </div>
+      <div id="news-slot"></div>
     </div>
   </div>
 
@@ -1899,9 +1959,17 @@
       /* indicator-style chooser (two live examples) inside the Custom panel */
       .ind-head { margin: 14px 0 7px; font-size: 10.5px; letter-spacing: .6px; color: var(--dim); text-transform: uppercase; font-weight: 600; }
       .ind-choice { display: flex; gap: 10px; }
-      .ind-opt { flex: 1; min-width: 0; background: var(--foam); border: 2px solid var(--border); border-radius: 12px;
-        padding: 10px; cursor: pointer; font-family: inherit; }
-      .ind-opt[aria-pressed="true"] { border-color: var(--ocean); background: #fff; }
+      /* var(--border) is rgba(180,210,230,0.10) and var(--foam) is the same tan as
+         the panel behind it, so the unselected option had neither frame nor fill.
+         Both options now read as cards; selection is carried by the ocean border,
+         the white fill and a soft ring, not by "has a border at all". */
+      .ind-opt { flex: 1; min-width: 0; background: rgba(255,255,255,0.34);
+        border: 2px solid rgba(17,53,65,0.28); border-radius: 12px;
+        padding: 10px; cursor: pointer; font-family: inherit;
+        transition: border-color .15s, background .15s, box-shadow .15s; }
+      .ind-opt:active { background: rgba(255,255,255,0.5); }
+      .ind-opt[aria-pressed="true"] { border-color: var(--ocean); background: #fff;
+        box-shadow: 0 0 0 3px rgba(74,143,173,0.18); }
       .ind-label { margin-top: 9px; font-size: 12px; color: var(--text); text-align: center; }
       .ind-demo { display: grid; align-items: center; gap: 8px; }
       .ind-demo-pic { grid-template-columns: auto 1fr; }
@@ -1965,10 +2033,16 @@
     </div>
 
     <!-- Overall verdict — synthesised from the three metrics, updates with the slider -->
-    <div class="verdict-bar" id="verdictBar">
-      <span class="verdict-dot" id="verdictDot" aria-hidden="true"></span>
-      <span class="verdict-text" id="verdictText">Loading&#8230;</span>
-      <span class="verdict-time" id="verdictTime">&mdash;</span>
+    <div class="verdict-bar" id="verdictBar" role="button" tabindex="0"
+         onclick="openNews()"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNews();}"
+         aria-label="Today's news">
+      <span class="verdict-group">
+        <span class="verdict-arrow vb-left" id="verdictArrowL" aria-hidden="true"></span>
+        <span class="verdict-text" id="verdictText">Loading&#8230;</span>
+        <span class="verdict-arrow vb-right" id="verdictArrowR" aria-hidden="true"></span>
+      </span>
+      <span class="verdict-news">News Here</span>
     </div>
 
     <!-- Metrics + time slider share one light-blue board -->
@@ -1976,12 +2050,14 @@
 
     <!-- Metrics panel -->
     <div class="metrics-panel">
-      <div class="metrics-time" id="metricsTime">—</div>
-      <button id="cmpFeedsBtn" onclick="toggleCmpFeeds()"
-        style="position:absolute;top:8px;right:8px;font-family:'Bebas Neue',sans-serif;
-               font-size:13px;letter-spacing:0.5px;padding:3px 9px;border-radius:8px;
-               border:1.5px solid var(--border);background:var(--card);color:var(--deep);
-               cursor:pointer;z-index:5;">WW compare: off</button>
+      <div class="slider-header">
+        <div class="slider-date" id="sliderDate">—</div>
+        <div class="slider-time" id="sliderTime">—</div>
+      </div>
+      <!-- WW-compare button removed from the swimmer-facing UI (9 Jul 2026).
+           The feature itself is intact: ?compare=1 still adds body.cmp-feeds,
+           which shows the WW tick on each rail plus the #cmpDebug readout.
+           toggleCmpFeeds() remains callable from the console. -->
       <div id="cmpDebug" style="display:none;font-family:'Inter',sans-serif;font-size:9.5px;
            line-height:1.5;color:var(--deep);background:rgba(255,255,255,0.6);
            border:1px solid var(--border);border-radius:8px;padding:5px 7px;margin-bottom:6px;
@@ -2071,10 +2147,6 @@
     <!-- Time slider -->
     <div class="slider-wrap">
       <div class="day-picker" id="dayPicker"></div>
-      <div class="slider-header">
-        <div class="slider-date" id="sliderDate">—</div>
-        <div class="slider-time" id="sliderTime">—</div>
-      </div>
       <input type="range" id="timeSlider" min="0" max="0" value="0" oninput="onSlider(this.value)">
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
@@ -2126,9 +2198,105 @@
       </div>
     </div>
 
+<!-- THE WEEK AHEAD button → opens the 5-day heatmap panel -->
+  <div class="week-ahead-card">
+  <button class="week-ahead-btn" onclick="switchTab('timeline')" aria-label="View the 5-day heatmap">
+    <span class="wa-head">
+      <span class="week-ahead-label">THE WEEK AHEAD<span class="wa-when">(7&#8211;10am)</span></span>
+      <span class="wa-arrow">&#9660;</span>
+    </span>
+    <span class="wa-strip" id="waStrip"></span>
+  </button>
+  </div>
+
+<!-- FORECASTED VALUES — everything here updates with the slider -->
+    <div class="forecast-values">
+      <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
+        <span class="fv-head-txt">
+          <span class="fv-toggle-label">Forecast details</span>
+          <span class="fv-sub" id="fvSub">&mdash;</span>
+        </span>
+        <span class="fv-toggle-chevron">▾</span>
+      </button>
+      <div id="fv-body">
+
+      <div class="weather-strip" id="weatherStrip">
+        <div class="wx-item">
+          <div class="wx-icon">🌡</div>
+          <div class="wx-val" id="wxTemp">—</div>
+          <div class="wx-unit">°C · FEELS <span id="wxFeels">—</span>°</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon" id="wxWindIcon">💨</div>
+          <div class="wx-val" id="wxWind">—</div>
+          <div class="wx-unit">km/h · <span id="wxWindDir">—</span></div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon" id="wxSkyIcon">☁️</div>
+          <div class="wx-val" id="wxCloud">—</div>
+          <div class="wx-unit">% cloud</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon">🌧</div>
+          <div class="wx-val" id="wxRain">—</div>
+          <div class="wx-unit">% rain</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon">🌊</div>
+          <div class="wx-val" id="seaTempVal">—</div>
+          <div class="wx-unit">°C sea</div>
+        </div>
+      </div>
+
+      <!-- Conditions bar -->
+      <div class="conditions-bar">
+        <div class="cond-card">
+          <div class="cond-label">Wind</div>
+          <div class="cond-value" id="sWind">—</div>
+          <div class="cond-unit" id="sWindDir">—</div>
+        </div>
+        <div class="cond-card">
+          <div class="cond-label">Primary Swell</div>
+          <div class="cond-value" id="sSwell1H">—</div>
+          <div class="cond-unit" id="sSwell1D">—</div>
+          <div class="cond-sub" id="sSwell1P">—</div>
+        </div>
+        <div class="cond-card" id="sSwell2Card" style="display:none">
+          <div class="cond-label">Secondary Swell</div>
+          <div class="cond-value" id="sSwell2H">—</div>
+          <div class="cond-unit" id="sSwell2D">—</div>
+          <div class="cond-sub" id="sSwell2P">—</div>
+        </div>
+        <div class="cond-card" id="sWindWaveCard" style="display:none">
+          <div class="cond-label">Wind Wave</div>
+          <div class="cond-value" id="sWindWaveH">—</div>
+          <div class="cond-unit" id="sWindWaveD">—</div>
+          <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
+        </div>
+        <div class="cond-card" style="flex:none; min-width:0;">
+          <div class="cond-label">Tide</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div>
+              <div class="cond-value" id="sTide" style="font-size:22px;">—</div>
+              <div class="cond-unit">metres</div>
+            </div>
+            <div style="font-size:11px; color:var(--dim); line-height:1.8; white-space:nowrap;" id="sunInfo">
+              <div><span style="font-size:14px;">🌅</span> <strong style="color:var(--ocean);" id="sunriseTime">—</strong></div>
+              <div><span style="font-size:14px;">🌇</span> <strong style="color:var(--ocean);" id="sunsetTime">—</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      </div><!-- /fv-body -->
+    </div>
+
+
     <!-- ── "Nice to meet you" — community self-introductions ──────────────── -->
     <style>
-      #ntmSection { margin:0 0 10px; }
+      /* Community card, not a forecast card — so it does not use var(--card).
+         Swap this one value to restyle the whole block. */
+      #ntmSection { margin:0 0 10px; --ntm-bg:#b3c6c2; }
       @keyframes ntmPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(74,143,173,0); } 50%{ box-shadow:0 0 0 6px rgba(74,143,173,0.30); } }
       @keyframes ntmGlow {
         0%,100% {
@@ -2149,7 +2317,7 @@
       #ntmSection.ntm-attn .ntm-newdot { display:block; animation:ntmDot 1.5s ease-in-out infinite; }
       @keyframes ntmDot { 0%{ box-shadow:0 0 8px 2px rgba(64,224,255,0.9), 0 0 0 0 rgba(64,224,255,0.6); } 70%,100%{ box-shadow:0 0 8px 2px rgba(64,224,255,0.45), 0 0 0 7px rgba(64,224,255,0); } }
       @media (prefers-reduced-motion: reduce){ #ntmSection.ntm-attn .ntm-newdot { animation:none; } }
-      .ntm-card { background:var(--card); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+      .ntm-card { background:var(--ntm-bg); backdrop-filter:blur(12px); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
       .ntm-head { display:flex; align-items:center; gap:11px; padding:11px 14px; cursor:pointer; -webkit-tap-highlight-color:transparent; }
       .ntm-wave { font-size:20px; line-height:1; flex:none; }
       .ntm-head-txt { flex:1; min-width:0; }
@@ -2182,7 +2350,7 @@
       .ntm-photo-btn { width:62px; height:62px; border-radius:50%; border:1.5px dashed rgba(74,143,173,0.45); display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--dim); font-size:9px; gap:2px; background:transparent; cursor:pointer; overflow:hidden; flex:none; line-height:1.2; text-align:center; }
       .ntm-photo-btn img { width:100%; height:100%; object-fit:cover; }
       .ntm-photo-hint { font-size:11px; color:var(--dim); line-height:1.5; flex:1; }
-      .ntm-field { width:100%; box-sizing:border-box; margin-top:8px; padding:9px 11px; border:1px solid rgba(74,143,173,0.25); border-radius:10px; background:var(--foam); font-family:'Inter',sans-serif; font-size:12px; color:var(--text); }
+      .ntm-field { width:100%; box-sizing:border-box; margin-top:8px; padding:9px 11px; border:1px solid rgba(74,143,173,0.25); border-radius:10px; background:rgba(255,255,255,0.55); font-family:'Inter',sans-serif; font-size:12px; color:var(--text); }
       .ntm-send { width:100%; margin-top:12px; padding:11px; border:none; border-radius:11px; background:var(--ocean); color:#fff; font-family:'Inter',sans-serif; font-size:13px; letter-spacing:.5px; cursor:pointer; }
       .ntm-send:disabled { opacity:.6; }
       .ntm-msg { text-align:center; font-size:11px; line-height:1.5; color:var(--dim); margin-top:9px; min-height:14px; }
@@ -2321,93 +2489,6 @@
     </div>
   </section>
 
-<!-- THE WEEK AHEAD button → opens the 5-day heatmap panel -->
-  <div class="week-ahead-card">
-  <button class="week-ahead-btn" onclick="switchTab('timeline')" aria-label="View 5-day heatmap">
-    <span class="week-ahead-label">THE WEEK AHEAD</span>
-    <span class="wa-arrow">&#9660;</span>
-  </button>
-  </div>
-
-<!-- FORECASTED VALUES — everything here updates with the slider -->
-    <div class="forecast-values">
-      <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
-        <span class="fv-toggle-label">Forecast details</span>
-        <span class="fv-toggle-chevron">▾</span>
-      </button>
-      <div id="fv-body">
-
-      <div class="weather-strip" id="weatherStrip">
-        <div class="wx-item">
-          <div class="wx-icon">🌡</div>
-          <div class="wx-val" id="wxTemp">—</div>
-          <div class="wx-unit">°C · FEELS <span id="wxFeels">—</span>°</div>
-        </div>
-        <div class="wx-item">
-          <div class="wx-icon" id="wxWindIcon">💨</div>
-          <div class="wx-val" id="wxWind">—</div>
-          <div class="wx-unit">km/h · <span id="wxWindDir">—</span></div>
-        </div>
-        <div class="wx-item">
-          <div class="wx-icon" id="wxSkyIcon">☁️</div>
-          <div class="wx-val" id="wxCloud">—</div>
-          <div class="wx-unit">% cloud</div>
-        </div>
-        <div class="wx-item">
-          <div class="wx-icon">🌧</div>
-          <div class="wx-val" id="wxRain">—</div>
-          <div class="wx-unit">% rain</div>
-        </div>
-        <div class="wx-item">
-          <div class="wx-icon">🌊</div>
-          <div class="wx-val" id="seaTempVal">—</div>
-          <div class="wx-unit">°C sea</div>
-        </div>
-      </div>
-
-      <!-- Conditions bar -->
-      <div class="conditions-bar">
-        <div class="cond-card">
-          <div class="cond-label">Wind</div>
-          <div class="cond-value" id="sWind">—</div>
-          <div class="cond-unit" id="sWindDir">—</div>
-        </div>
-        <div class="cond-card">
-          <div class="cond-label">Primary Swell</div>
-          <div class="cond-value" id="sSwell1H">—</div>
-          <div class="cond-unit" id="sSwell1D">—</div>
-          <div class="cond-sub" id="sSwell1P">—</div>
-        </div>
-        <div class="cond-card" id="sSwell2Card" style="display:none">
-          <div class="cond-label">Secondary Swell</div>
-          <div class="cond-value" id="sSwell2H">—</div>
-          <div class="cond-unit" id="sSwell2D">—</div>
-          <div class="cond-sub" id="sSwell2P">—</div>
-        </div>
-        <div class="cond-card" id="sWindWaveCard" style="display:none">
-          <div class="cond-label">Wind Wave</div>
-          <div class="cond-value" id="sWindWaveH">—</div>
-          <div class="cond-unit" id="sWindWaveD">—</div>
-          <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
-        </div>
-        <div class="cond-card" style="flex:none; min-width:0;">
-          <div class="cond-label">Tide</div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <div>
-              <div class="cond-value" id="sTide" style="font-size:22px;">—</div>
-              <div class="cond-unit">metres</div>
-            </div>
-            <div style="font-size:11px; color:var(--dim); line-height:1.8; white-space:nowrap;" id="sunInfo">
-              <div><span style="font-size:14px;">🌅</span> <strong style="color:var(--ocean);" id="sunriseTime">—</strong></div>
-              <div><span style="font-size:14px;">🌇</span> <strong style="color:var(--ocean);" id="sunsetTime">—</strong></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      </div><!-- /fv-body -->
-    </div>
-
 <!-- Feedback -->
     <div class="about-panel" id="feedbackCard" style="padding:20px;margin-top:10px;">
       <p style="color:var(--deep); font-size:15px; font-weight:700; margin-bottom:14px;">Feedback is precious to improve!</p>
@@ -2447,7 +2528,12 @@
       <p style="font-size:13px;margin-bottom:14px;">Conditions forecast for swimming South Steyne ↔ Shelly Beach, generated by our proprietary wave-modeling engine.</p>
 
       <p style="font-size:16px;font-weight:600;color:var(--deep);margin-bottom:6px;">HOW TO READ IT</p>
-      <img src="images/interpret.png" alt="How to read the Swim Manly forecast" style="width:100%;height:auto;display:block;border-radius:10px;margin:0 0 20px 0;border:1px solid var(--border);">
+      <img src="images/interpret.png" alt="How to read the Swim Manly forecast" style="width:100%;height:auto;display:block;border-radius:10px;margin:0 0 12px 0;border:1px solid var(--border);">
+      <a href="guide.html" style="display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;padding:13px 14px;margin:0 0 20px 0;background:var(--ocean);color:#fff;border-radius:12px;font-size:15px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(74,143,173,0.22);">
+        <span aria-hidden="true">&#128214;</span>
+        <span>How to read it</span>
+        <span aria-hidden="true" style="margin-left:auto;opacity:0.75;">&rarr;</span>
+      </a>
 
       <p style="font-size:16px;font-weight:600;color:var(--deep);margin-bottom:6px;">OUR GOAL</p>
       <p style="font-size:13px;margin-bottom:10px;">To help you make informed decisions before you head to the beach. This app is a completely non-profit, community-led initiative born from our shared passion for the Cabbage Tree Bay Aquatic Reserve. Whether you're a local or coming from further afield, we hope this tool makes your swim a little easier, safer, and more enjoyable.</p>
@@ -5097,6 +5183,9 @@ var WG = { entry:'#4a8fad', chop:'#e08a3c', surge:'#4caf50' };
 // Best-window outline. Must contrast with BOTH the dark card (rgba(22,50,66,.6)
 // over #113541) and every heat-ramp cell colour, so it is a bright sand, not --deep.
 var WG_BOX = '#f4ead6';
+// Axis ink. The card is dark (rgba(22,50,66,.6) over #113541), so --dim (#4a5f6e)
+// is all but invisible on it. Sand reads on the card and beside every cell colour.
+var WG_INK = '#e8dfc8';
 
 // 10-step colour ramp built by interpolating the four zone hues (worst→best:
 // red → yellow → amber → green). Gives the heat ribbon finer resolution of the
@@ -5139,7 +5228,7 @@ function renderDayWindow(dateTimeStr){
 
   var rows = _matrix.filter(function(r){ return r.dateTime && r.dateTime.indexOf(day) === 0; });
   if (rows.length < 2){
-    svg.innerHTML = '<text x="180" y="92" text-anchor="middle" class="wg-axis">No forecast for this day</text>';
+    svg.innerHTML = '<text x="180" y="92" text-anchor="middle" font-size="12" fill="'+WG_INK+'">No forecast for this day</text>';
     if (bestEl) bestEl.textContent = '—'; return;
   }
 
@@ -5158,7 +5247,7 @@ function renderDayWindow(dateTimeStr){
   // Only show / score swimmable hours: 5am–9pm. Everything else is dropped from the ribbon.
   pts = pts.filter(function(p){ return p.t >= 5 && p.t <= 21; });
   if (!pts.length){
-    svg.innerHTML = '<text x="180" y="40" text-anchor="middle" font-size="12" fill="#4a5f6e">No 5am–9pm forecast for this day</text>';
+    svg.innerHTML = '<text x="180" y="40" text-anchor="middle" font-size="12" fill="'+WG_INK+'">No 5am–9pm forecast for this day</text>';
     svg.setAttribute('viewBox','0 0 360 70');
     if (bestEl) bestEl.textContent = '—'; return;
   }
@@ -5166,8 +5255,8 @@ function renderDayWindow(dateTimeStr){
   // Window eligibility: hard-clamped to 5am-9pm (swimmable hours), season-independent.
   function inWindow(t){ return t >= 5 && t <= 21; }
 
-  // Combined swimmability — weighted: Entry 3, Chop 2, Surge 1.
-  function combo(p){ return (3*p.entry + 2*p.chop + 1*p.surge) / 6; }
+  // Combined swimmability — shared with the Week Ahead strip (see wgCombo).
+  function combo(p){ return wgCombo(p.entry, p.chop, p.surge); }
   var combos = pts.map(combo);
   var bestVal = -1;
   pts.forEach(function(p,i){ if (inWindow(p.t) && combos[i] > bestVal) bestVal = combos[i]; });
@@ -5228,10 +5317,13 @@ function renderDayWindow(dateTimeStr){
   if (bestEl) bestEl.textContent = bandTxt;
 
   // ── Heat ribbon: 3 zone-coloured rows (Entry / Chop / Surge), one cell per hour ──
-  var W = 360, L = 46, R = 8, top = 16, rowH = 26, gap = 5, cols = pts.length;
+  // top: 22 leaves headroom for the window index badges (r=8, centred at top-12,
+  // so their crown lands at y=2). fullH: ribH+26 clears the hour-tick baseline at
+  // ribH+16 plus the descender on the "p" of 12p/3p/6p/9p. Both were clipped before.
+  var W = 360, L = 46, R = 8, top = 22, rowH = 26, gap = 5, cols = pts.length;
   var cellW = (W - L - R) / cols;
   var ribH  = top + 3*rowH + 2*gap;
-  var fullH = ribH + 18;
+  var fullH = ribH + 26;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + fullH);
 
   var ROWS = [['Entry','entry'], ['Chop','chop'], ['Surge','surge']];
@@ -5250,7 +5342,7 @@ function renderDayWindow(dateTimeStr){
   pts.forEach(function(p, i){
     var hh = Math.round(p.t);
     if (Math.abs(p.t - hh) > 0.01 || hh % 3 !== 0) return;
-    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 12)+'" font-size="11" fill="#4a5f6e" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
+    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 16)+'" font-size="11" font-weight="600" fill="'+WG_INK+'" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
   });
 
   // Best-window box(es) — bold outline + soft fill wash + index badge when plural
@@ -5262,8 +5354,8 @@ function renderDayWindow(dateTimeStr){
     box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="'+WG_BOX+'" stroke-width="2.5" stroke-dasharray="5 3"/>';
     if (plural){
       var bcx = bx + (bw+1)/2;
-      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-7)+'" r="8" fill="'+WG_BOX+'"/>';
-      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-3.5)+'" font-size="10" font-weight="700" fill="#113541" text-anchor="middle">'+(wi+1)+'</text>';
+      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-8)+'" r="8" fill="'+WG_BOX+'"/>';
+      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-4.5)+'" font-size="10" font-weight="700" fill="#113541" text-anchor="middle">'+(wi+1)+'</text>';
     }
   });
 
@@ -5398,9 +5490,10 @@ function setNsFallbackBanner(isFallback) {
   try {
     let el = document.getElementById('nsFallbackBanner');
     if (!el) {
-      const anchor = document.getElementById('metricsTime');
-      if (!anchor) return;
-      const host = anchor.parentElement || anchor;
+      // Anchored on the panel itself now that the small time line is gone; the
+      // banner still lands immediately above the metrics panel, as before.
+      const host = document.querySelector('.metrics-panel');
+      if (!host) return;
       el = document.createElement('div');
       el.id = 'nsFallbackBanner';
       el.style.cssText = 'display:none;margin:8px 0;padding:8px 10px;border-radius:8px;'
@@ -5411,6 +5504,16 @@ function setNsFallbackBanner(isFallback) {
     }
     el.style.display = isFallback ? 'block' : 'none';
   } catch (e) {}
+}
+
+// Big day + time above the metrics rails. renderSnapshot drives it as well as
+// renderSlider, because the backtest and history-preview paths call renderSnapshot
+// on its own and would otherwise leave the header showing the wrong hour.
+function setSlotHeader(dt) {
+  const dEl = document.getElementById('sliderDate');
+  const tEl = document.getElementById('sliderTime');
+  if (dEl) dEl.textContent = dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'}).toUpperCase();
+  if (tEl) tEl.textContent = dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
 }
 
 function renderSnapshot(h, wx) {
@@ -5449,8 +5552,8 @@ function renderSnapshot(h, wx) {
 
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
-  document.getElementById('metricsTime').textContent =
-    dt.toLocaleString('en-AU', { weekday:'short', day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  setSlotHeader(dt);
+  updateFvSub(h);
 
   // Three metric blocks. useRaw=true shows the raw band-scale value (e.g. Swim's
   // q7) so the displayed number matches the scale the colour-band thresholds are
@@ -5599,17 +5702,17 @@ function renderSnapshot(h, wx) {
     };
     const v = map[worst] || map.green;
     const tEl  = document.getElementById('verdictText');
-    const dEl  = document.getElementById('verdictDot');
-    const tmEl = document.getElementById('verdictTime');
+    const aL   = document.getElementById('verdictArrowL');
+    const aR   = document.getElementById('verdictArrowR');
     const barEl = document.getElementById('verdictBar');
     if (barEl) barEl.style.borderColor = v.c;
     if (tEl) { tEl.textContent = v.t; tEl.style.color = v.c; }
-    if (dEl) dEl.style.background = v.c;
-    if (tmEl) {
-      const wd = dt.toLocaleDateString('en-AU', { weekday:'short' });
-      const tm = dt.toLocaleTimeString('en-AU', { hour:'2-digit', minute:'2-digit' }).toLowerCase();
-      tmEl.textContent = wd + ' ' + tm;
-    }
+    // The triangles are CSS borders drawn in currentColor, so setting `color`
+    // tints them without touching four border-*-color properties each.
+    if (aL) aL.style.color = v.c;
+    if (aR) aR.style.color = v.c;
+    // The slot's day + time used to live on the right of this bar; it now carries
+    // the "Tap for news" affordance instead. The slider already states the time.
   })();
 
   // TUNE mode: reset the "My call" handles to the model's new auto positions
@@ -5812,10 +5915,7 @@ function renderSlider(matrix) {
   // Header date + time
   const h  = matrix[_sliderIdx];
   const dt = new Date(h.dateTime.replace(' ','T'));
-  document.getElementById('sliderDate').textContent =
-    dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'}).toUpperCase();
-  document.getElementById('sliderTime').textContent =
-    dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+  setSlotHeader(dt);
 
   renderTideGraph();
 }
@@ -6123,6 +6223,65 @@ function onSlider(val) {
   renderSlider(_matrix);
 }
 
+// Morning swim window. WA_LO/WA_HI are inclusive hour bounds and must stay in
+// step with the "(7-10am)" caption on the button.
+var WA_LO = 7, WA_HI = 10;
+
+// Combined swimmability: Entry 3, Chop 2, Surge 1, all on the 0-60 score scale.
+// The single definition — renderDayWindow's best-window search and the week strip
+// both call it, so a change to the weighting can never apply to only one of them.
+function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
+
+// Five-day preview under the Week Ahead label. Each bar is the MEAN combo across
+// 7-10am for that day — not the best hour, which would flatter a day with one
+// good slot and three bad ones. Days whose window has already passed (today,
+// after 10am) render as a muted bar rather than disappearing, so the five
+// columns always line up with the five days in the heatmap behind the button.
+function renderWeekStrip(matrix){
+  var host = document.getElementById('waStrip');
+  if (!host || !matrix || !matrix.length) return;
+  var days = [];
+  matrix.forEach(function(r){
+    var d = r.dateTime.substring(0, 10);
+    if (days.indexOf(d) === -1) days.push(d);
+  });
+  var html = '';
+  days.slice(0, 5).forEach(function(d){
+    var lbl = new Date(d + 'T00:00').toLocaleDateString('en-AU', { weekday: 'short' });
+    var rows = matrix.filter(function(r){
+      if (r.dateTime.substring(0, 10) !== d) return false;
+      var hh = parseInt(r.dateTime.substring(11, 13), 10);
+      return hh >= WA_LO && hh <= WA_HI;
+    });
+    if (!rows.length){
+      html += '<span class="wa-day"><span class="wa-bar wa-bar-none"></span>'
+            + '<span class="wa-lbl wa-lbl-none">' + lbl + '</span></span>';
+      return;
+    }
+    var sum = 0;
+    rows.forEach(function(r){ var q = calcScore(r); sum += wgCombo(q.entry.score, q.swim.score, q.water.score); });
+    html += '<span class="wa-day"><span class="wa-bar" style="background:' + _wgColor(sum / rows.length) + '"></span>'
+          + '<span class="wa-lbl">' + lbl + '</span></span>';
+  });
+  host.innerHTML = html;
+}
+
+// One-line summary under "Forecast details", so the collapsed row carries a
+// reading instead of only a chevron. Mirrors the slider's current hour.
+function updateFvSub(h){
+  var el = document.getElementById('fvSub');
+  if (!el) return;
+  if (!h) { el.textContent = '\u2014'; return; }
+  var p = [];
+  if (h.swell1H   != null) p.push(Number(h.swell1H).toFixed(1) + ' m');
+  if (h.swell1P   != null) p.push(Math.round(h.swell1P) + ' s');
+  if (h.swell1Dir != null) p.push(bearingName(h.swell1Dir));
+  if (h.windKmh   != null) {
+    p.push(Math.round(h.windKmh) + ' km/h' + (h.windDir != null ? ' ' + bearingName(h.windDir) : ''));
+  }
+  el.textContent = p.length ? p.join('  \u00B7  ') : '\u2014';
+}
+
 function renderTimeline(matrix, wxMatrix) {
   const container = document.getElementById('timelineContent');
   const days = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
@@ -6159,6 +6318,10 @@ function renderTimeline(matrix, wxMatrix) {
 
   html += '</tbody></table>';
   container.innerHTML = html;
+
+  // Piggyback on every place the timeline is rebuilt — that is exactly the set of
+  // moments the 5-day matrix has changed. Costs ~20 calcScore calls.
+  renderWeekStrip(matrix);
 }
 
 function jumpToSlider(idx) {
@@ -6337,7 +6500,7 @@ async function loadAndRender(forceRefresh = false) {
           if (!matrix.length) throw new Error('WW returned empty forecast');
           saveCache(WW_CACHE_KEY, { data: wwData, matrix });
           diag('WW ok — ' + matrix.length + ' rows');
-          setStatus('Live · ' + FEED_LABEL);
+          setStatus('');
           setSrc('ww', 'ok');
           document.getElementById('lastUpdated').textContent =
             'Updated ' + new Date().toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
@@ -6598,7 +6761,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260709-221858';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7594,13 +7757,40 @@ function runCalibration() {
 let _bannerGenerated = false;
 
 // SUMMARY section — collapsed by default, expands on tap
-function toggleSummary() {
-  const body = document.getElementById('summary-body');
-  const btn  = document.getElementById('summary-toggle');
-  if (!body || !btn) return;
-  const collapsed = body.classList.toggle('summary-collapsed');
-  btn.setAttribute('aria-expanded', String(!collapsed));
+// ── TODAY'S NEWS ─────────────────────────────────────────────────────────────
+// The old collapsible card is retired. #summary-body is MOVED (not cloned) into
+// #news-slot at boot, so fetchSummary / renderDiverBanner / the weather banner all
+// keep writing to #banner-water-text, #db-inline-summary and #banner-wx-text with
+// no change. The empty #summary-section shell stays in the DOM (display:none) so
+// nothing that queries it throws.
+var _newsEsc = function (e) { if (e.key === 'Escape') closeNews(); };
+function openNews() {
+  const ov = document.getElementById('news-overlay');
+  if (!ov) return;
+  ov.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  document.addEventListener('keydown', _newsEsc);
+  try { if (window.track) window.track('open_news', {}); } catch (e) {}
 }
+function closeNews() {
+  const ov = document.getElementById('news-overlay');
+  if (ov) ov.classList.remove('open');
+  document.body.style.overflow = '';
+  document.removeEventListener('keydown', _newsEsc);
+}
+function toggleSummary() { openNews(); }   // legacy alias — old callers still work
+(function mountNews() {
+  function mount() {
+    const body = document.getElementById('summary-body');
+    const slot = document.getElementById('news-slot');
+    if (body && slot && body.parentNode !== slot) {
+      body.classList.remove('summary-collapsed');
+      slot.appendChild(body);
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount);
+  else mount();
+})();
 
 function toggleForecastValues() {
   const body = document.getElementById('fv-body');
@@ -9222,7 +9412,7 @@ if ('serviceWorker' in navigator) {
    │ Wind-chop map                    │     0     │    1     │
    │ Tide graph                       │     1     │    1     │
    │ Today's news (summary)           │     0     │    1     │
-   │ The week ahead (button)          │     1     │    1     │
+   │ The week ahead                   │     1     │    1     │
    │ Forecasted values                │     0     │    1     │
    │ Feedback                         │     0     │    1     │
    └──────────────────────────────────┴───────────┴──────────┘
@@ -9233,7 +9423,7 @@ if ('serviceWorker' in navigator) {
    ════════════════════════════════════════════════════════════════════════════ */
 (function () {
   var SECTIONS = [
-    { key:'verdict', label:"Overall verdict", sel:'#verdictBar', essential:1, complete:1 },
+    { key:'verdict', label:"Overall verdict + news", sel:'#verdictBar', essential:1, complete:1, core:1 },
     { key:'metrics', label:"Metrics (Entry/Swim/Surge)", sel:'.metrics-panel', essential:1, complete:1, core:1 },
     { key:'wxbar', label:"Weather bar (sky + feels)", sel:'#wxBar', essential:1, complete:1 },
     { key:'slider', label:"Time slider", sel:'.slider-wrap', essential:1, complete:1, core:1 },
@@ -9243,8 +9433,7 @@ if ('serviceWorker' in navigator) {
     { key:'swellmap', label:"Swell map", sel:'#swellGraphWrap', essential:0, complete:1 },
     { key:'chopmap', label:"Wind-chop map", sel:'#chopGraphWrap', essential:0, complete:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', essential:0, complete:1 },
-    { key:'summary', label:"Today's news (summary)", sel:'#summary-section', essential:0, complete:1 },
-    { key:'weekahead', label:"The week ahead (button)", sel:'.week-ahead-card', essential:0, complete:1 },
+    { key:'weekahead', label:"The week ahead", sel:'.week-ahead-card', essential:0, complete:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', essential:0, complete:1 },
     { key:'intros', label:"Nice to meet you", sel:'#ntmSection', essential:1, complete:1 },
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', essential:0, complete:1 }
