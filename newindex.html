@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="images/logos/icon-180.png?v=3">
 <link rel="icon" type="image/png" sizes="32x32" href="images/logos/favicon-32.png?v=3">
 <link rel="icon" type="image/png" sizes="16x16" href="images/logos/favicon-16.png?v=3">
-<link rel="manifest" href="manifest-newindex.webmanifest">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#113541">
 <title>Swim Manly — Ocean swim forecast</title>
 <meta property="og:type" content="website">
@@ -4655,8 +4655,14 @@ function buildHourlyMatrix(j) {
 // Reads static nearshore.json (test build) or the /nearshore Worker route.
 // Returns a map keyed by 'YYYY-MM-DD HH:00:00' (AEST) → {swell1*, windWave*}.
 // =============================================================================
+// Short-lived memo so the startup preflight and loadAndRender's own call share a
+// single network round-trip. 60s only covers the gap between them; a later manual
+// refresh (minutes away) always re-fetches. Failures are NOT memoized.
+let _nsMemo = null, _nsMemoAt = 0;
+
 async function fetchNearshore() {
   if (!NS_FEED_ENABLED) { window._nsStatus = 'disabled'; return null; }
+  if (_nsMemo && (Date.now() - _nsMemoAt) < 60000) return _nsMemo;
   const url = NS_WORKER_URL
     ? `${NS_WORKER_URL}?t=${Date.now()}`
     : `${NS_STATIC_URL}?t=${Date.now()}`;
@@ -4666,6 +4672,7 @@ async function fetchNearshore() {
     const j = await res.json();
     window._nsStatus = 'ok';
     try { saveCache(NS_CACHE_KEY, j); } catch (e) {}   // stash raw JSON for instant repeat opens
+    _nsMemo = j; _nsMemoAt = Date.now();
     return j;
   } catch (e) {
     if (!window._nsStatus) window._nsStatus = 'fetch failed: ' + (e.message || e);
@@ -5227,7 +5234,11 @@ function renderDayWindow(dateTimeStr){
 // three scores from a single forecast slot so the teacher→student gap decomposes:
 //   • NS-disp  (result)                 = teacher: NS inputs → SS/BL New-NS tables
 //   • WW-disp  (wwR)                    = WW inputs → same NS tables (isolates INPUT divergence)
-//   • WW-orig  (calcScore(slot,'orig')) = WW inputs → legacy 1-D model = the live FALLBACK
+//   • WW-orig  (calcScore(slot,'orig')) = WW inputs → VECCHIO (Gem-Cla50-50 2-D table).
+//     The `'orig'` override string is historical; since 9 Jul 2026 that branch is
+//     vecchio, so this column is now exactly what vecchio.html — the real fallback
+//     app — computes for the same hour. Previously it was the 1-D lk.sea/lk.rif
+//     arrays, which a 225-slot sweep showed under-call SE groundswell by two bands.
 // Raw input vectors for BOTH feeds are logged too, so the correction can later be
 // refit from raw features, not just collapsed scalars. Fire-and-forget; never throws
 // into the render path. Call at the end of renderWWTicks where h/result/wwSlot/wwR
@@ -6528,7 +6539,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260709-202932';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7058,11 +7069,73 @@ function buildTunePanel() {
   }
 }
 
+// ── FAILOVER TO VECCHIO ──────────────────────────────────────────────────────
+// nuovo needs BOTH the NS feed (Worker /nearshore) and the NS dispersion table
+// (New NS tab). They fail independently, and nuovo cannot score without either.
+// Its metrics have no WW-fed equivalent: the NS tables map node 103218 (bay
+// mouth) → South Steyne, whereas the Gem-Cla50-50 table maps the WW offshore
+// point → South Steyne. The missing leg (offshore → mouth) is direction- and
+// period-dependent refraction around North Head, not a scalar. So the fallback
+// is the OTHER APP, not another branch in this one.
+//
+// vecchio.html is inside the PWA scope ("./" in manifest.webmanifest), so
+// location.replace() keeps the user in standalone mode: no address bar, no
+// visible URL change, no reinstall, nothing to communicate.
+//
+// Sticky for the session: an intermittent NS must not ping-pong the user between
+// two apps with different rails. Once on vecchio, stay until the app is closed.
+const FALLBACK_URL = 'vecchio.html';
+const FALLBACK_KEY = 'swim_fallback_v1';
+const NO_FALLBACK  = location.search.includes('nofallback=1');
+
+function failoverToVecchio(reason) {
+  try { sessionStorage.setItem(FALLBACK_KEY, String(reason)); } catch (e) {}
+  // Beacon synchronously — window.track's 4s queued flush would not survive the
+  // navigation, and this is the one event we cannot afford to lose.
+  try {
+    navigator.sendBeacon(
+      'https://bold-rain-6ded.sticasale.workers.dev/log',
+      new Blob([JSON.stringify({ events: [{
+        event: 'failover_vecchio',
+        props: { reason: String(reason).slice(0, 60), ns_status: window._nsStatus || null },
+        app_build: (typeof APP_BUILD !== 'undefined') ? APP_BUILD : null,
+      }] })], { type: 'text/plain' })
+    );
+  } catch (e) {}
+  location.replace(FALLBACK_URL + location.search);
+}
+
+// Runs BEFORE first paint. Returns true if nuovo may proceed, false if we have
+// navigated away. Both sources are localStorage-cached (NS feed 2h, New NS tab
+// 1h), so a warm open decides with no network at all.
+async function nuovoPreflight() {
+  if (NO_FALLBACK) return true;                     // ?nofallback=1 — debug nuovo's failure state
+
+  let sticky = null;
+  try { sticky = sessionStorage.getItem(FALLBACK_KEY); } catch (e) {}
+  if (sticky) { location.replace(FALLBACK_URL + location.search); return false; }
+
+  try { await loadNsDispConfig(); } catch (e) { /* leaves SITE.nsDisp null */ }
+  if (!SITE.nsDisp) { failoverToVecchio('ns_disp_table_missing'); return false; }
+
+  let ns = null;
+  try { ns = await fetchNearshore(); } catch (e) { /* fetchNearshore throws, not null */ }
+  if (!ns) { failoverToVecchio('ns_feed_unavailable'); return false; }
+
+  return true;                                       // memoized; loadAndRender reuses it
+}
+
 (async function startup() {
   diag('startup (protocol=' + location.protocol + ', online=' + navigator.onLine + ')');
   // Apply any saved manual tuning first — it's a local read, no network, so it
   // can safely precede the forecast paint and keeps the first render correct.
   try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
+
+  // ── Failover gate — BEFORE first paint ───────────────────────────────────────
+  // If either NS source is gone we navigate to vecchio.html and never render here.
+  // Both are cached, so the warm path costs nothing; a cold path pays one CSV
+  // fetch (New NS tab) plus the NS feed it was going to fetch anyway (memoized).
+  if (!(await nuovoPreflight())) return;
 
   // ── Start the forecast fetch IMMEDIATELY ─────────────────────────────────────
   // It must NOT wait on the Google-Sheet config downloads. On a cold first open
