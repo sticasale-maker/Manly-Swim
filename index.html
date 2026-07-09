@@ -2340,6 +2340,13 @@
       .ntm-litem { display:flex; gap:11px; align-items:flex-start; padding:10px 0; }
       .ntm-litem + .ntm-litem { border-top:1px solid var(--border); }
       .ntm-avatar.sm { width:42px; height:42px; font-size:16px; }
+      /* Swimmers' photos are painted as a CSS background, never an <img>: no
+         long-press "Save Image", no right-click "Save image as", no drag-out,
+         no tap-to-open. Box is hard-locked so it can never scale. */
+      .ntm-avatar.ph { background-color:transparent; background-size:cover; background-position:center; background-repeat:no-repeat;
+        pointer-events:none; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+        -webkit-user-drag:none; user-drag:none; }
+      .ntm-avatar.ph.sm { min-width:42px; max-width:42px; min-height:42px; max-height:42px; }
       .ntm-name.sm { font-size:18px; }
       .ntm-litem .ntm-meta { margin:2px 0 5px; }
       .ntm-introbtn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin-top:12px; padding:9px; border:1px dashed rgba(74,143,173,0.4); border-radius:11px; background:transparent; color:var(--ocean); font-family:'Inter',sans-serif; font-size:12px; cursor:pointer; }
@@ -2579,11 +2586,13 @@ const FEED_LABEL = 'NSW Nearshore + WillyWeather';
 // Beachwatch and Open-Meteo are non-fatal: the forecast still scores without them.
 // The NS feed and NS table are not — losing either sends us to vecchio.html, so a
 // red dot on those two is only ever visible with ?nofallback=1.
+// label = the short code shown in the strip; full = the name kept for the tooltip
+// and the aria-label, so the source is still discoverable without the initials.
 const SRC_DEFS = [
-  { key: 'ns',   label: 'NSW Nearshore' },
-  { key: 'ww',   label: 'WillyWeather' },
-  { key: 'om',   label: 'Open-Meteo' },
-  { key: 'bw',   label: 'Beachwatch' },
+  { key: 'ns',   label: 'NS', full: 'NSW Nearshore' },
+  { key: 'ww',   label: 'WW', full: 'WillyWeather' },
+  { key: 'om',   label: 'OM', full: 'Open-Meteo' },
+  { key: 'bw',   label: 'BW', full: 'Beachwatch' },
 ];
 const _srcStatus = { ns: 'idle', ww: 'idle', om: 'idle', bw: 'idle' };
 
@@ -2597,8 +2606,9 @@ function renderSourceStrip() {
   const host = document.getElementById('srcStrip');
   if (!host) return;
   host.innerHTML = '';
-  SRC_DEFS.forEach(({ key, label }) => {
+  SRC_DEFS.forEach(({ key, label, full }) => {
     const st = _srcStatus[key] || 'idle';
+    const name = full || label;
     const item = document.createElement('span');
     item.className = 'src-item';
     const dot = document.createElement('span');
@@ -2607,7 +2617,9 @@ function renderSourceStrip() {
     txt.textContent = label;
     item.appendChild(dot);
     item.appendChild(txt);
-    item.title = label + ': ' + ({ ok: 'live', warn: 'cached', down: 'unavailable', idle: 'loading' }[st]);
+    const state = { ok: 'live', warn: 'cached', down: 'unavailable', idle: 'loading' }[st];
+    item.title = name + ': ' + state;
+    item.setAttribute('aria-label', name + ': ' + state);
     host.appendChild(item);
   });
 }
@@ -6703,7 +6715,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-005005';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -9620,6 +9632,25 @@ if ('serviceWorker' in navigator) {
   }
   function esc(s){ return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
 
+  /* Only ever paint a URL that came out of our own public intro-photos bucket.
+     This whitelist is what makes it safe to drop the value into a CSS url(). */
+  var PHOTO_PREFIX = SB + '/storage/v1/object/public/intro-photos/';
+  function photoOk(u){
+    return !!u && typeof u === 'string' &&
+           u.indexOf(PHOTO_PREFIX) === 0 &&
+           !/["'()\\\s]/.test(u.slice(PHOTO_PREFIX.length));
+  }
+  /* Assign the background after innerHTML, so the URL never travels through a
+     style="" attribute where it could be parsed as CSS. */
+  function paintPhotos(root){
+    var els = root.querySelectorAll('.ntm-avatar.ph[data-bg]');
+    for (var i = 0; i < els.length; i++) {
+      var u = els[i].getAttribute('data-bg');
+      if (photoOk(u)) els[i].style.backgroundImage = "url('" + u + "')";
+      els[i].removeAttribute('data-bg');
+    }
+  }
+
   /* photo: centre-crop to a 512px square JPEG Blob */
   function photoBlob(file){
     return new Promise(function (resolve, reject) {
@@ -9697,14 +9728,15 @@ if ('serviceWorker' in navigator) {
     if (intro) {
       if (list.length) {
         intro.innerHTML = '<div class="ntm-list">' + list.map(function (x) {
-          var av = x.photo_url
-            ? '<img class="ntm-avatar sm" src="' + esc(x.photo_url) + '" alt="">'
+          var av = photoOk(x.photo_url)
+            ? '<div class="ntm-avatar sm ph" role="img" aria-label="" draggable="false" data-bg="' + esc(x.photo_url) + '"></div>'
             : '<div class="ntm-avatar sm">' + esc(initials(x.name)) + '</div>';
           return '<div class="ntm-litem">' + av +
             '<div style="flex:1;min-width:0;"><div class="ntm-name sm">' + esc(x.name) + '</div>' +
             '<div class="ntm-meta">' + esc(fmtDate(x.publish_date)) + '</div>' +
             '<div class="ntm-text">' + esc(x.body) + '</div></div></div>';
         }).join('') + '</div>';
+        paintPhotos(intro);
       } else {
         intro.innerHTML = '<div class="ntm-empty">No hellos yet &mdash; want to be the first?</div>';
       }
