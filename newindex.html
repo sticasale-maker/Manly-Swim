@@ -2912,14 +2912,11 @@ const _ICON_ZONE = { green: 0, amber: 1, yellow: 2, red: 3 };
 const _ICON_WORD = {
   entry: ['easy', 'doable', 'caution', 'dangerous'],
   swim:  ['smooth', 'ripply', 'choppy', 'messy'],
-  surge: ['smooth', 'ripply', 'choppy', 'messy']
+  surge: ['steady', 'drifty', 'surgy', 'washy']
 };
-// Image filename prefix per metric. Internal keys are historical (entry / swim /
-// surge) but the on-disk pictograms follow the CURRENT display names:
-//   entry key -> entry-*.png (Entry), swim key -> chop-*.png (Chop diagnostic),
-//   surge key -> swim-*.png (Swim). Chop & Swim share the smooth/ripply/choppy/
-//   messy stages by design.
-const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'swim' };
+// Image filename prefix per metric. Internal key stays 'swim' (DOM ids, modal,
+// thresholds all keyed on it) but the on-disk pictograms are named chop-*.png.
+const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'surge' };
 function renderMetricIcon(blockId, cls) {
   const host = document.getElementById(blockId + 'Icon');
   if (!host) return;
@@ -3014,7 +3011,7 @@ const SITE_DEFAULTS = {
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
   tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d+s2_d), clamped below
-  tideRef:        1.0,    // neutral tide height (m, WW datum): tideM>ref amplifies swell, tideM<ref credits (reduces) it. Bidirectional pivot.
+  tideRef:        0.7,    // neutral tide height (m, WW datum): tideM>ref amplifies swell, tideM<ref credits (reduces) it. Bidirectional pivot.
   tideCreditClamp:0.4,    // max fraction of swell demerits the low-tide credit may remove (0.4 = −40% floor; big swell at dead-low is reduced, never erased)
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
   // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
@@ -3159,7 +3156,7 @@ let SITE = {
     // amplifies, below it credits (reduced), clamped so a big swell at dead-low is
     // reduced, never erased. No gate name → weight 1 (ungated).
     const gate = gateName ? (d => this[gateName](d)) : (() => 1);
-    const ref  = this.tideRef ?? 1.0;
+    const ref  = this.tideRef ?? 0.7;
     const w = (parts.s1_d || 0) * gate(parts.s1Dir || 0)
             + (parts.s2_d || 0) * gate(parts.s2Dir || 0)
             + (parts.ww_d || 0) * gate(parts.wwDir || 0);
@@ -6488,7 +6485,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260709-184012';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6805,7 +6802,7 @@ const TUNE_PARAMS = [
   { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'total demerits ≤ this = Easy. Lowest of the three (LOWER demerits = better).' },
   { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'total ≤ this = Doable.' },
   { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'total ≤ this = Caution, else Dangerous. Highest of the three.' },
-  { key:'tideRef', label:'TIDE · neutral height (m)', min:0, max:2, step:0.05, hint:'Pivot on the WW datum. Above it high water amplifies swell; below it low water credits (reduces) swell. Rides on s1_d+s2_d only. Default 1.0 = mid-tide.' },
+  { key:'tideRef', label:'TIDE · neutral height (m)', min:0, max:2, step:0.05, hint:'Pivot on the WW datum. Above it high water amplifies swell; below it low water credits (reduces) swell. Rides on s1_d+s2_d only. Default 0.7 m.' },
   { key:'tideCreditClamp', label:'TIDE · low-tide credit clamp', min:0, max:1, step:0.05, hint:'Cap on how much low tide can cut swell demerits. 0.4 = at most -40%, so a big swell at dead-low is reduced, never erased. 0 = no low-tide credit.' },
 ];
 
