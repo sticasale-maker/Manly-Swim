@@ -1402,6 +1402,13 @@
   .legend-item { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--dim); }
   .legend-dot { width:8px; height:8px; border-radius:50%; }
   .last-updated { font-size:9px; color:var(--dim); letter-spacing:0.5px; }
+  .src-strip { display:flex; flex-wrap:wrap; justify-content:center; gap:4px 12px; margin-top:7px; }
+  .src-item { display:flex; align-items:center; gap:5px; font-size:9px; color:var(--dim); letter-spacing:0.4px; }
+  .src-dot { width:6px; height:6px; border-radius:50%; flex:0 0 auto; background:var(--dim); }
+  .src-dot.ok    { background:#1a9e6e; }
+  .src-dot.warn  { background:#d4900a; }
+  .src-dot.down  { background:#c0392b; }
+  .src-dot.idle  { background:var(--dim); opacity:0.45; }
   .page-footer {
     border-top:1px solid var(--border);
     margin-top:40px; padding-top:16px;
@@ -2464,6 +2471,8 @@
   <!-- Footer -->
   <div class="page-footer">
     <div class="last-updated" id="lastUpdated">Loading…</div>
+    <!-- Data-source health. Populated by renderSourceStrip() from _srcStatus. -->
+    <div class="src-strip" id="srcStrip" aria-label="Data source status"></div>
   </div>
   <div class="status-bar" id="statusBar">Loading…</div>
 
@@ -2491,6 +2500,55 @@ const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const NS_STATIC_URL   = 'nearshore.json';   // same directory on GitHub Pages
 const NS_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/nearshore'; // live Worker route; '' = use static nearshore.json
 const NS_FEED_ENABLED = true;
+// Status-line provenance. In nuovo, WillyWeather supplies ONLY wind + tide; swell,
+// sea and periods come from the NSW Nearshore feed (node 103218). Naming WW alone
+// would credit the one source that doesn't drive the forecast. vecchio.html keeps
+// its own 'WillyWeather Manly' string — there, WW genuinely is the whole input.
+const FEED_LABEL = 'NSW Nearshore + WillyWeather';
+
+// ── DATA-SOURCE HEALTH STRIP ─────────────────────────────────────────────────
+// A dot per upstream, shown in the footer. Honest about what each one actually
+// supplies, so a red dot tells the reader which part of the forecast is degraded
+// rather than implying the whole app is broken.
+//   ok   (green)  — fetched live this load
+//   warn (amber)  — served from cache, or upstream returned stale/partial data
+//   down (red)    — unavailable; that source's contribution is missing
+//   idle (grey)   — not attempted yet
+// Beachwatch and Open-Meteo are non-fatal: the forecast still scores without them.
+// The NS feed and NS table are not — losing either sends us to vecchio.html, so a
+// red dot on those two is only ever visible with ?nofallback=1.
+const SRC_DEFS = [
+  { key: 'ns',   label: 'NSW Nearshore' },
+  { key: 'ww',   label: 'WillyWeather' },
+  { key: 'om',   label: 'Open-Meteo' },
+  { key: 'bw',   label: 'Beachwatch' },
+];
+const _srcStatus = { ns: 'idle', ww: 'idle', om: 'idle', bw: 'idle' };
+
+function setSrc(key, state) {
+  if (!(key in _srcStatus)) return;
+  _srcStatus[key] = state;
+  renderSourceStrip();
+}
+
+function renderSourceStrip() {
+  const host = document.getElementById('srcStrip');
+  if (!host) return;
+  host.innerHTML = '';
+  SRC_DEFS.forEach(({ key, label }) => {
+    const st = _srcStatus[key] || 'idle';
+    const item = document.createElement('span');
+    item.className = 'src-item';
+    const dot = document.createElement('span');
+    dot.className = 'src-dot ' + st;
+    const txt = document.createElement('span');
+    txt.textContent = label;
+    item.appendChild(dot);
+    item.appendChild(txt);
+    item.title = label + ': ' + ({ ok: 'live', warn: 'cached', down: 'unavailable', idle: 'loading' }[st]);
+    host.appendChild(item);
+  });
+}
 // NS feed had NO cache — every open paid the full cold-fetch latency of the NSW
 // nearshore Worker (the slowest endpoint, ~10-15s cold). Cache it like WW so repeat
 // visits show NS instantly while a fresh copy loads in the background.
@@ -6234,7 +6292,7 @@ async function loadAndRender(forceRefresh = false) {
         renderTimeline(_matrix, {});
         const ago = Math.round((now - wwCache.fetchedAt) / 60000);
         setStatus(cacheIsFresh(wwCache, WW_CACHE_TTL)
-          ? `Cached ${ago} min ago · WillyWeather Manly`
+          ? `Cached ${ago} min ago · ${FEED_LABEL}`
           : `Loading… (showing ${ago} min old data)`);
       } catch(e2) { /* silent — live fetch will overwrite */ }
     }
@@ -6244,7 +6302,8 @@ async function loadAndRender(forceRefresh = false) {
       matrix  = wwCache.matrix || [];
       diag('using fresh cache (' + matrix.length + ' rows)');
       const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
-      setStatus(`Cached ${ago} min ago · WillyWeather Manly`);
+      setStatus(`Cached ${ago} min ago · ${FEED_LABEL}`);
+      setSrc('ww', 'warn');   // served from the WW cache, not fetched this load
       document.getElementById('lastUpdated').textContent =
         'Data from ' + new Date(wwCache.fetchedAt).toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
     } else {
@@ -6264,7 +6323,8 @@ async function loadAndRender(forceRefresh = false) {
           if (!matrix.length) throw new Error('WW returned empty forecast');
           saveCache(WW_CACHE_KEY, { data: wwData, matrix });
           diag('WW ok — ' + matrix.length + ' rows');
-          setStatus('Live · WillyWeather Manly');
+          setStatus('Live · ' + FEED_LABEL);
+          setSrc('ww', 'ok');
           document.getElementById('lastUpdated').textContent =
             'Updated ' + new Date().toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
           break;
@@ -6350,6 +6410,7 @@ async function loadAndRender(forceRefresh = false) {
         withTimeout(fetchNearshore(),  12000),
       ]);
 
+      setSrc('om', (omRes.status === 'fulfilled' && omRes.value) ? 'ok' : 'down');
       if (omRes.status === 'fulfilled' && omRes.value) {
         wwData  = mergeOMarine(wwData, omRes.value);
         _matrix = mergeOMarineMatrix(_matrix, omRes.value);
@@ -6363,20 +6424,25 @@ async function loadAndRender(forceRefresh = false) {
           if (nsMap && Object.keys(nsMap).length) {
             _matrix = mergeNearshoreMatrix(_matrix, nsMap);
             wwData  = mergeNearshoreSnapshot(wwData, nsMap);
+            setSrc('ns', nsRes.value._stale ? 'warn' : 'ok');  // Worker tags served last-known-good
             diag('NS feed merged — ' + Object.keys(nsMap).length + ' hours');
           } else {
+            setSrc('ns', 'warn');   // reached, but no usable hours
             diag('NS feed parsed empty — WW+OM retained');
           }
         } catch (nsErr) {
+          setSrc('ns', 'down');     // fetched but unusable — worse than 'warn'
           diag('NS merge error (isolated): ' + nsErr.message);
         }
       } else if (NS_FEED_ENABLED) {
+        setSrc('ns', 'down');
         diag('NS feed unavailable — WW+OM retained');
       }
       if (wxRes.status === 'fulfilled' && wxRes.value) {
         _wxMatrix = wxRes.value.hourly || {};
         _wxDaily  = wxRes.value.daily  || {};
       }
+      setSrc('bw', (bwRes.status === 'fulfilled' && bwRes.value) ? 'ok' : 'down');
       try { renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null); }
       catch (pErr) { diag('renderPollution error (isolated): ' + pErr.message); console.warn('renderPollution failed (isolated):', pErr); }
 
@@ -7109,6 +7175,7 @@ async function nuovoPreflight() {
   // Apply any saved manual tuning first — it's a local read, no network, so it
   // can safely precede the forecast paint and keeps the first render correct.
   try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
+  try { renderSourceStrip(); } catch(e) {}   // grey dots until each fetch reports in
 
   // ── Failover gate — BEFORE first paint ───────────────────────────────────────
   // If either NS source is gone we navigate to vecchio.html and never render here.
