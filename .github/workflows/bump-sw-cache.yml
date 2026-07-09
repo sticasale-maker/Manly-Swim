@@ -5,8 +5,9 @@ on:
       - main
     paths:
       - 'index.html'
-      - 'newindex.html'
+      - 'vecchio.html'
       - 'sw.js'
+      - 'manifest.webmanifest'
       - 'reporter.html'
       - 'images/**'
       - 'icon_small.png'
@@ -22,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Stamp build version into sw.js, index.html and newindex.html
+      - name: Stamp build version into sw.js, index.html and vecchio.html
         run: |
           NEW_VERSION="$(TZ='Australia/Sydney' date +'%Y%m%d-%H%M%S')"
           echo "New build version: $NEW_VERSION"
@@ -35,7 +36,7 @@ jobs:
           else
             echo "sw.js not found - skipping cache bump."
           fi
-          # 2) index.html visible build stamp — declared with var (verified against the live file).
+          # 2) index.html (nuovo) visible build stamp — declared with var.
           if [ -f index.html ]; then
             sed -i "s/var APP_BUILD = '[^']*';/var APP_BUILD = '${NEW_VERSION}';/" index.html
             grep -q "var APP_BUILD = '${NEW_VERSION}';" index.html \
@@ -44,23 +45,26 @@ jobs:
           else
             echo "index.html not found - skipping stamp."
           fi
-          # 3) newindex.html visible build stamp — NS A/B test build, same stamp scheme.
-          if [ -f newindex.html ]; then
-            sed -i "s/var APP_BUILD = '[^']*';/var APP_BUILD = '${NEW_VERSION}';/" newindex.html
-            grep -q "var APP_BUILD = '${NEW_VERSION}';" newindex.html \
-              || { echo "ERROR: APP_BUILD stamp did not apply in newindex.html"; exit 1; }
-            grep "var APP_BUILD" newindex.html
+          # 3) vecchio.html (the NS-outage fallback app) — same stamp, same guard.
+          #    Without this, tuning vecchio leaves its APP_BUILD frozen and users
+          #    keep the cached copy: the failover would serve stale bytes exactly
+          #    when it matters. Absent on purpose is fine; silently unstamped is not.
+          if [ -f vecchio.html ]; then
+            sed -i "s/var APP_BUILD = '[^']*';/var APP_BUILD = '${NEW_VERSION}';/" vecchio.html
+            grep -q "var APP_BUILD = '${NEW_VERSION}';" vecchio.html \
+              || { echo "ERROR: APP_BUILD stamp did not apply in vecchio.html"; exit 1; }
+            grep "var APP_BUILD" vecchio.html
           else
-            echo "newindex.html not found - skipping stamp."
+            echo "vecchio.html not found - skipping stamp."
           fi
       - name: Commit the bump
         run: |
-          if git diff --quiet -- sw.js index.html newindex.html; then
+          if git diff --quiet -- sw.js index.html vecchio.html; then
             echo "Nothing changed - nothing to commit."
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add sw.js index.html newindex.html
+          git add sw.js index.html vecchio.html
           git commit -m "chore: stamp build version [skip ci]"
           git push
