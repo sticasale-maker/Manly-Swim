@@ -4067,11 +4067,11 @@ function calcScore(d, modelOverride) {
   // tables. Healthy state is unchanged: all displayed rows are _nsFeed, so this
   // collapses to GEM_MODEL. An explicit modelOverride still wins (CAL/compare/logger).
   // The NS feed (Worker route) and the NS dispersion table (New NS sheet tab) are
-  // separate sources and fail independently. Both are required for the GEM branch:
+  // separate sources and fail independently. Both are required for the nuovo branch:
   // without the table nsDispLookup() returns a flat 0.5 transmit for every direction
   // and period, which is not a fallback, it is a wrong answer wearing the right
-  // branch's clothes. Missing either → score through 'orig' (self-sufficient: the
-  // 1-D lookup arrays and tideGain are pinned in SITE_DEFAULTS).
+  // branch's clothes. Missing either → score through VECCHIO (the Gem-Cla50-50 2-D
+  // table, i.e. the model index.html runs in production). See the else-branch below.
   const useGem = modelOverride ? (modelOverride === 'gem')
                                : (GEM_MODEL && d._nsFeed === true && !!SITE.nsDisp);
   const lk = SITE.lookup;
@@ -4141,21 +4141,29 @@ function calcScore(d, modelOverride) {
     const wsSS  = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs);
     ws_d = nrg(wsSS.hs, wsSS.tp) * ess * wsSens;
   } else {
-    // ── Original model ────────────────────────────────────────────────────
-    const s1p      = swellPower(swell1H, swell1P);
-    const s2p      = swellPower(swell2H || 0, swell2P || 8);
+    // ── VECCHIO — Gem-Cla50-50 2-D energy table ─────────────────────────────
+    // The fallback when NS is unavailable (feed down, or dispersion table down).
+    // This is the model index.html runs in production: gemLookup(dir, period)
+    // replaces the 1-D seaHit + separate refraction term, so refraction is
+    // absorbed into the table and rif_d = 0. Real wind-wave period, no cap.
+    //
+    // Replaced the old 1-D 'orig' arrays here (9 Jul 2026) after a 225-slot
+    // sweep showed those arrays UNDER-CALL SE groundswell by up to two bands
+    // (2.5m/120°/13s: vecchio 109.3 = Dangerous, orig 34 = Caution). The 1-D
+    // lk.sea array collapses to 20% transmit at 123° and 0% past 146°, which is
+    // wrong for a beach at the north end of a south-facing embayment. Since the
+    // fallback runs precisely when the weather is bad, that error ran the wrong
+    // way. lk.sea / lk.rif are no longer read by any live scoring path.
+    const wwP       = windWaveP || 5;
+    const wwArrival = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    const wwTx      = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
+    const s1Tx      = Math.max(0, gemLookup(swell1Dir, swell1P));
+    const s2Tx      = Math.max(0, gemLookup(swell2Dir || 0, swell2P || 8));
 
-    const wwArrival = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir)) / 100;
-    const wwTx     = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
-    const s1sea    = Math.max(0, dirLookup(lk.sea, swell1Dir));
-    const s1rif    =             dirLookup(lk.rif, swell1Dir);
-    const s2sea    = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
-    const s2rif    =             dirLookup(lk.rif, swell2Dir || 0);
-
-    ww_d  = swellPower(windWaveH || 0, 5) * wwTx * wwSens;
-    s1_d  = s1p * (s1sea / 100) * SITE.swellSens;
-    s2_d  = s2p * (s2sea / 100) * SITE.swellSens;
-    rif_d = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
+    ww_d  = swellPower(windWaveH || 0, wwP)        * wwTx * wwSens;
+    s1_d  = swellPower(swell1H, swell1P)           * s1Tx * SITE.swellSens;
+    s2_d  = swellPower(swell2H || 0, swell2P || 8) * s2Tx * SITE.swellSens;
+    rif_d = 0; // absorbed into gemLookup
   }
 
   // BL wind-sea (wind_d) is DELIBERATELY EXCLUDED from the Entry total (2 Jul 2026):
@@ -5352,7 +5360,8 @@ function renderSnapshot(h, wx) {
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   setNsFallbackBanner(!h._nsFeed);   // show backup banner when this hour isn't NS-fed
-  if (!SITE.nsDisp) markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
+  if (!SITE.nsDisp)  markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
+  if (!SITE.gemTable) markNsDegraded('gem_table_missing');      // vecchio fallback has no table either
   // Calibration pair log — runs on every live render (not just compare mode). Builds
   // the WW slot from the stashed _ww originals; fire-and-forget, throttled internally.
   try {
@@ -6519,7 +6528,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260709-193129';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7069,7 +7078,10 @@ function buildTunePanel() {
   // the 0.5 transmit fallback. This does not block or delay the forecast.
   (async function loadConfigInBackground() {
     try { await loadConfig(); }       catch(e) { console.warn('loadConfig failed at startup:', e); }
-    // loadGemConfig() disabled — SITE.gemTable is retired (null); no live path reads it.
+    // loadGemConfig() RE-ENABLED (9 Jul 2026): SITE.gemTable is no longer retired.
+    // It feeds the vecchio fallback branch in calcScore. Without it gemLookup
+    // returns a flat 0.5 transmit for every direction and period.
+    try { await loadGemConfig(); }    catch(e) { console.warn('loadGemConfig failed at startup:', e); }
     try { await loadNsDispConfig(); } catch(e) { console.warn('loadNsDispConfig failed at startup:', e); }
     try { await loadChopShelterConfig(); } catch(e) { console.warn('loadChopShelterConfig failed at startup:', e); }
 
