@@ -2763,12 +2763,17 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '    <div class="st-ret"><input type="date" id="stRetDate"><button id="stRetRun">Run</button></div>' +
       '    <div id="stRetOut"><div class="st-empty">Pick your ad date, then Run.</div></div>' +
       '  </div>' +
+      '  <div class="st-sec">Preferences \u2014 <b>devices</b>, by current setting</div>' +
+      '  <div class="st-grid2">' +
+      '    <div><div class="st-sec">Rail style</div><div class="st-card" id="stRails"></div></div>' +
+      '    <div><div class="st-sec">Current mode</div><div class="st-card" id="stModeNow"></div></div>' +
+      '  </div>' +
+      '  <div class="st-card" id="stExposure"></div>' +
+      '  <div class="st-sec">Activity \u2014 <b>taps</b>, not devices</div>' +
       '  <div class="st-grid2">' +
       '    <div><div class="st-sec">Metric opened</div><div class="st-card" id="stMetrics"></div></div>' +
-      '    <div><div class="st-sec">View mode</div><div class="st-card" id="stModes"></div></div>' +
+      '    <div><div class="st-sec">Mode switches</div><div class="st-card" id="stModes"></div></div>' +
       '  </div>' +
-      '  <div class="st-sec">Rail style \u2014 devices by current preference</div>' +
-      '  <div class="st-card" id="stRails"></div>' +
       '  <div class="st-grid2">' +
       '    <div><div class="st-sec">Acquisition source</div><div class="st-card" id="stSources"></div></div>' +
       '    <div><div class="st-sec">Top events</div><div class="st-card" id="stEvents"></div></div>' +
@@ -2833,57 +2838,65 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       }
       setStatus(asked > days ? ('Since launch \u2014 ' + days + (days === 1 ? ' day' : ' days')) : '');
       renderSummary(data);
-      loadRails(days);           // separate RPC: distinct-device split, not an event count
+      loadPrefs(days);          // separate RPC: distinct-device split, not an event count
     } catch (e) { setStatus('Could not load (' + ((e && e.message) || e) + ')'); }
   }
 
-  /* Rail style: how many devices show the condition pictogram above each rail
-     ('pic') versus the bare slider ('bar'). Backed by analytics_rail_style(),
-     which takes each device's MOST RECENT rail_style event inside the window —
-     so a device that toggles back and forth is counted once, on its last choice.
-     Devices that never emitted the event (pre-rollout builds) are absent, hence
-     the explicit total: it is the denominator, not the device count overall. */
-  async function loadRails(days) {
-    var node = el('stRails'); if (!node) return;
-    node.innerHTML = '<div class="st-empty">Loading\u2026</div>';
+  /* PREFERENCES vs ACTIVITY.
+     analytics_summary()'s `modes` and `metrics` are count(*) over mode_change /
+     view_metric events: they measure TAPS. A swimmer who never touches the mode
+     toggle contributes nothing, and one who flips three times contributes three.
+     Useful for "is this control being used", useless for "what are people on".
+
+     analytics_prefs() answers the second question. Every device emits rail_style
+     and view_mode once per session at init, so the untouched majority is counted
+     too. The RPC keeps only each device's most recent row, then splits on
+     `explicit`: whether that setting was ever deliberately chosen, or is just the
+     default the device was born with.
+
+     The exposure line is the one that makes the rail-style split readable at all.
+     The picture/slider control lives inside the Custom panel, so most people have
+     never been shown it. 'Picture (default)' is not a preference — it is silence. */
+  async function loadPrefs(days) {
+    var r = el('stRails'), m = el('stModeNow'), x = el('stExposure');
+    if (r) r.innerHTML = '<div class="st-empty">Loading\u2026</div>';
+    if (m) m.innerHTML = '<div class="st-empty">Loading\u2026</div>';
+    if (x) x.innerHTML = '';
     try {
-      var rows = await rpc('analytics_rail_style', { p_token: tok(), p_days: days });
-      node.innerHTML = railBars(rows || []);
-    } catch (e) { node.innerHTML = '<div class="st-empty">\u2014</div>'; }
+      var d = await rpc('analytics_prefs', { p_token: tok(), p_days: days });
+      if (!d || !Object.keys(d).length) throw new Error('not authorised');
+      if (r) r.innerHTML = prefBars(d.rails || [], 'style', { pic: 'Picture', bar: 'Slider only' });
+      if (m) m.innerHTML = prefBars(d.modes || [], 'mode', { complete: 'Complete', essential: 'Essential', custom: 'Custom' });
+      if (x) x.innerHTML = exposureLine(d.exposure || {});
+    } catch (e) {
+      if (r) r.innerHTML = '<div class="st-empty">\u2014</div>';
+      if (m) m.innerHTML = '<div class="st-empty">\u2014</div>';
+    }
   }
 
-  function railBars(rows) {
-    if (!rows.length) return '<div class="st-empty">No rail-style data yet.</div>';
-    var LAB = { pic: 'With picture', bar: 'Slider only' };
+  /* rows: [{ <key>: value, explicit: bool, devices: n }] */
+  function prefBars(rows, key, labelMap) {
+    if (!rows.length) return '<div class="st-empty">No data yet.</div>';
     var total = rows.reduce(function (t, r) { return t + (r.devices || 0); }, 0) || 1;
     var bars = rows.map(function (r) {
       var n = r.devices || 0, pct = Math.round(100 * n / total);
-      var lab = LAB[r.style] || (r.style || '\u2014');
+      var base = (labelMap && labelMap[r[key]]) ? labelMap[r[key]] : (r[key] || '\u2014');
+      var lab = base + (r.explicit ? ' (chosen)' : ' (default)');
       return '<div class="st-bar"><span class="st-bl">' + esc(lab) +
-             '</span><span class="st-bt"><span class="st-bf" style="width:' + pct +
-             '%"></span></span><span class="st-bn">' + n + ' \u00b7 ' + pct + '%</span></div>';
+             '</span><span class="st-bt"><span class="st-bf" style="width:' + pct + '%' +
+             (r.explicit ? '' : ';opacity:.45') + '"></span></span><span class="st-bn">' +
+             n + ' \u00b7 ' + pct + '%</span></div>';
     }).join('');
-    return bars + '<div class="st-axis"><span>' + total + (total === 1 ? ' device' : ' devices') +
-           ' with a recorded choice</span><span></span></div>';
+    return bars + '<div class="st-axis"><span>' + total + (total === 1 ? ' device' : ' devices') + '</span><span></span></div>';
   }
 
-  function tile(label, val) {
-    return '<div class="st-tile"><div class="st-tval">' + esc(val) + '</div><div class="st-tlab">' + esc(label) + '</div></div>';
-  }
-
-  function renderSummary(d) {
-    var t = d.totals || {}, s = d.stickiness || {};
-    var ratio = (s.mau ? Math.round(100 * (s.dau || 0) / s.mau) : 0);
-    el('stTiles').innerHTML =
-      tile('Devices', t.devices || 0) + tile('Sessions', t.sessions || 0) +
-      tile('Events', t.events || 0) + tile('New', t.new_devices || 0) +
-      tile('Sticky', ratio + '%');
-    el('stStick').textContent = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU)';
-    el('stDaily').innerHTML = dailyChart(d.daily || []);
-    el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Surge' });
-    el('stModes').innerHTML = mixBars(d.modes || [], 'mode', null);
-    el('stSources').innerHTML = listRows(d.sources || [], 'source', 'devices');
-    el('stEvents').innerHTML = listRows(d.top_events || [], 'event', 'n');
+  function exposureLine(x) {
+    var dev = x.devices || 0, saw = x.saw_choice || 0;
+    if (!dev) return '<div class="st-empty">\u2014</div>';
+    var pct = Math.round(100 * saw / dev);
+    return '<div class="st-lr"><span>Opened the Custom panel \u2014 the only place the rail-style choice lives</span><b>' +
+           saw + ' / ' + dev + ' \u00b7 ' + pct + '%</b></div>' +
+           '<div class="st-axis"><span>Everyone else has never been offered the choice; read \u201cdefault\u201d rows as silence, not preference.</span><span></span></div>';
   }
 
   function dailyChart(rows) {
@@ -6686,7 +6699,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-184114';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -9346,11 +9359,16 @@ if ('serviceWorker' in navigator) {
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', essential:0, complete:1 }
   ];
   var MODE_KEY = 'swim_app_mode';            // 'essential' | 'complete' | 'custom'
+  // MODE_KEY is re-stamped on every load to refresh its 400-day cookie clock, so
+  // "the key exists" cannot distinguish a chosen mode from the 'complete' default.
+  // This second key is written only by saveMode(), which only runs from a tap.
+  var MODE_CHOSEN_KEY = 'swim_app_mode_chosen';
   var CUSTOM_KEY = 'swim_app_custom';        // JSON map { sectionKey: 0|1 } for Custom mode
   var _pGet = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
   var _pSet = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
   function getMode(){ var m = _pGet(MODE_KEY); return (m === 'essential' || m === 'complete' || m === 'custom') ? m : 'complete'; }
-  function saveMode(m){ _pSet(MODE_KEY, m); }
+  function saveMode(m){ _pSet(MODE_KEY, m); _pSet(MODE_CHOSEN_KEY, '1'); }
+  function modeWasChosen(){ return _pGet(MODE_CHOSEN_KEY) === '1'; }
   function getCustom(){
     var map = {};
     try { var raw = _pGet(CUSTOM_KEY); if (raw) map = JSON.parse(raw) || {}; } catch (e) { map = {}; }
@@ -9431,11 +9449,16 @@ if ('serviceWorker' in navigator) {
   }
   function setMetricStyle(v){
     _pSet(METRIC_KEY, v); applyMetricStyle(v);
-    try { if (window.track) window.track('rail_style', { style: v, changed: 1 }); } catch (e) {}
+    try { if (window.track) window.track('rail_style', { style: v, explicit: true, changed: 1 }); } catch (e) {}
   }
   window.setMetricStyle = setMetricStyle; window.getMetricStyle = getMetricStyle;
 
-  function openCustom(){ var p = document.getElementById('customPanel'); if (p) p.classList.add('show'); }
+  function openCustom(){
+    var p = document.getElementById('customPanel'); if (p) p.classList.add('show');
+    // Exposure: the rail-style picker lives in here and nowhere else. Without this
+    // beacon there is no denominator for "of the people who saw the choice, ...".
+    try { if (window.track) window.track('open_custom', {}); } catch (e) {}
+  }
   function closeCustom(){ var p = document.getElementById('customPanel'); if (p) p.classList.remove('show'); }
 
   // ── Admin preset editor (open with ?admin=1 or window.openAdmin()) ──
@@ -9549,11 +9572,21 @@ if ('serviceWorker' in navigator) {
     var ch = document.getElementById('indChoice');
     if (ch) ch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setMetricStyle(o.getAttribute('data-ind')); });
     applyMetricStyle(getMetricStyle());   // global display preference, applies in every mode
-    // Report the preference once per session, so the dashboard sees the whole
-    // population and not just the minority who touched the toggle. Devices on
-    // the untouched default emit 'pic' here and are counted like everyone else.
-    try { if (window.track) window.track('rail_style', { style: getMetricStyle() }); } catch (e) {}
     var _m = getMode();
+    // Report both preferences once per session, BEFORE the _pSet re-stamp below,
+    // so the dashboard sees the whole population and not just the minority who
+    // touched a control. `explicit` separates a deliberate choice from the value
+    // the device was born with — without it, "default" and "chosen" are the same
+    // string and the split is meaningless.
+    try {
+      if (window.track) {
+        window.track('rail_style', { style: getMetricStyle(), explicit: _pGet(METRIC_KEY) != null });
+        // Back-fill for devices that chose a mode before MODE_CHOSEN_KEY existed:
+        // 'complete' is the only value reachable without a tap, so any other value
+        // is itself proof of choice.
+        window.track('view_mode',  { mode: _m,                explicit: modeWasChosen() || _m !== 'complete' });
+      }
+    } catch (e) {}
     if (_m === 'custom') saveCustom(getCustom());   // materialise on load too, for pre-existing Custom users
     _pSet(MODE_KEY, _m);                            // re-stamp: refreshes the cookie mirror's 400-day clock
     apply(_m);          // panel starts closed even if Custom is the saved mode; picks are still applied
