@@ -3578,6 +3578,87 @@ async function loadConfig(forceUpstream = FORCE_FRESH) {
   }
 }
 
+// ── CONFIG DRIFT CHECK ────────────────────────────────────────────────────────────
+// READ-ONLY. Never mutates SITE, never throws into the render path, never runs unless
+// called. Prints: code default vs live value for every scalar and every band edge, so
+// a sheet cell that has quietly parted company with the code is visible in one glance.
+//
+// WHY THIS EXISTS: SITE_DEFAULTS is dead the instant the sheet loads. It reads like
+// documentation but is only a fallback, so it gets updated during refactors while the
+// sheet — the thing that actually runs — does not. The failure is silent: a wrong
+// sensitivity looks wrong on screen, but wrong band edges just quietly mislabel.
+//
+// A DIFFERENCE IS NOT AN ERROR. The sheet is the source of truth and is expected to
+// override. This surfaces the delta; judging it is Marco's job. Sanity warnings below
+// are advisory only — nothing is rejected or clamped.
+//
+// Note: a value equal to its default is ambiguous — the sheet may hold that same value,
+// or the cell may be blank and the default used. This cannot distinguish the two.
+//
+// Usage:  swimConfigDrift()            in the console, any time after load
+//         ...?drift=1                  auto-runs once, ~4 s after load
+function swimConfigDrift() {
+  try {
+    if (typeof SITE === 'undefined' || typeof SITE_DEFAULTS === 'undefined') {
+      console.warn('[drift] SITE not ready'); return;
+    }
+    const near = (a, b) => (typeof a === 'number' && typeof b === 'number')
+      ? Math.abs(a - b) < 1e-9 : a === b;
+    const fmt = (v) => (typeof v === 'number' ? +v.toFixed(4) : v);
+
+    const scalars = [], edges = [], tables = [];
+    for (const k of Object.keys(SITE_DEFAULTS)) {
+      const d = SITE_DEFAULTS[k], l = SITE[k];
+      if (typeof d === 'function' || typeof l === 'function') continue;
+      if (Array.isArray(d) || Array.isArray(l)) {
+        const shape = (x) => !Array.isArray(x) ? String(x)
+          : Array.isArray(x[0]) ? `${x.length}×${x[0].length}` : `${x.length}`;
+        tables.push({ key: k, default: shape(d), live: shape(l),
+                      changed: shape(d) !== shape(l) ? 'SHAPE' : '' });
+      } else if (d && typeof d === 'object') {
+        for (const sk of Object.keys(d))
+          edges.push({ metric: k.replace('Thresholds',''), edge: sk,
+                       default: fmt(d[sk]), live: fmt(l ? l[sk] : undefined),
+                       drift: (l && !near(d[sk], l[sk])) ? '← SHEET' : '' });
+      } else {
+        scalars.push({ key: k, default: fmt(d), live: fmt(l),
+                       drift: !near(d, l) ? '← SHEET' : '' });
+      }
+    }
+
+    const drifted = scalars.filter(r => r.drift).length + edges.filter(r => r.drift).length;
+    console.log(`%c[drift] ${drifted} value(s) overridden by the sheet`,
+                'font-weight:bold', '· APP_BUILD', (typeof APP_BUILD !== 'undefined' ? APP_BUILD : '?'));
+    console.log('%cScalars', 'font-weight:bold');   console.table(scalars);
+    console.log('%cBand edges', 'font-weight:bold'); console.table(edges);
+    console.log('%cTables (shape only)', 'font-weight:bold'); console.table(tables);
+
+    // Advisory sanity checks. ADVISORY. Nothing here mutates or rejects anything.
+    const warn = [];
+    const check = (name, obj, keys) => {
+      if (!obj) { warn.push(`${name}: missing`); return; }
+      const v = keys.map(k => obj[k]);
+      if (v.some(x => typeof x !== 'number' || !isFinite(x))) { warn.push(`${name}: non-numeric edge`); return; }
+      for (let i = 1; i < v.length; i++)
+        if (!(v[i] > v[i-1])) warn.push(`${name}: not strictly ascending (${keys[i-1]}=${v[i-1]} → ${keys[i]}=${v[i]})`);
+      if (v[0] < 0) warn.push(`${name}: negative first edge`);
+    };
+    check('entry', SITE.entryThresholds, ['easy','doable','caution','scaleMax']);
+    check('chop',  SITE.swimThresholds,  ['glassy','ripply','choppy','scaleMax']);
+    check('surge', SITE.surgeThresholds, ['steady','drifty','surgy','scaleMax']);
+    if (warn.length) { console.warn('[drift] advisory — NOT errors, nothing was changed:'); warn.forEach(w => console.warn('  • ' + w)); }
+    else console.log('%c[drift] all band edges strictly ascending', 'color:#1a9e6e');
+    return { drifted, warnings: warn.length };
+  } catch (e) {
+    console.warn('[drift] check skipped', e);   // never disturb the app
+  }
+}
+if (typeof window !== 'undefined') window.swimConfigDrift = swimConfigDrift;
+if (typeof location !== 'undefined' && /[?&]drift=1(&|$)/.test(location.search)) {
+  // Delayed so the sheet + NS overlay have both landed. Fire-and-forget; read-only.
+  setTimeout(function () { try { swimConfigDrift(); } catch (e) {} }, 4000);
+}
+
 // =============================================================================
 // WIND POWER TABLE (shared with dive app)
 // =============================================================================
@@ -6807,7 +6888,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-201906';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
