@@ -2769,6 +2769,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '    <div><div class="st-sec">Current mode</div><div class="st-card" id="stModeNow"></div></div>' +
       '  </div>' +
       '  <div class="st-card" id="stExposure"></div>' +
+      '  <div class="st-sec">Guide page</div>' +
+      '  <div class="st-card" id="stGuide"></div>' +
       '  <div class="st-sec">Activity \u2014 <b>taps</b>, not devices</div>' +
       '  <div class="st-grid2">' +
       '    <div><div class="st-sec">Metric opened</div><div class="st-card" id="stMetrics"></div></div>' +
@@ -2858,9 +2860,10 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
      The picture/slider control lives inside the Custom panel, so most people have
      never been shown it. 'Picture (default)' is not a preference — it is silence. */
   async function loadPrefs(days) {
-    var r = el('stRails'), m = el('stModeNow'), x = el('stExposure');
+    var r = el('stRails'), m = el('stModeNow'), x = el('stExposure'), g = el('stGuide');
     if (r) r.innerHTML = '<div class="st-empty">Loading\u2026</div>';
     if (m) m.innerHTML = '<div class="st-empty">Loading\u2026</div>';
+    if (g) g.innerHTML = '<div class="st-empty">Loading\u2026</div>';
     if (x) x.innerHTML = '';
     try {
       var d = await rpc('analytics_prefs', { p_token: tok(), p_days: days });
@@ -2868,10 +2871,35 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       if (r) r.innerHTML = prefBars(d.rails || [], 'style', { pic: 'Picture', bar: 'Slider only' });
       if (m) m.innerHTML = prefBars(d.modes || [], 'mode', { complete: 'Complete', essential: 'Essential', custom: 'Custom' });
       if (x) x.innerHTML = exposureLine(d.exposure || {});
+      if (g) g.innerHTML = guideLine(d.guide || {}, (d.exposure || {}).devices || 0);
     } catch (e) {
       if (r) r.innerHTML = '<div class="st-empty">\u2014</div>';
       if (m) m.innerHTML = '<div class="st-empty">\u2014</div>';
+      if (g) g.innerHTML = '<div class="st-empty">\u2014</div>';
     }
+  }
+
+  /* guide.html is a separate document with its own beacon. It shares this app's
+     localStorage device id (same origin), so `devices` here is directly
+     comparable to the app's device count: it is the fraction of swimmers who
+     ever opened the guide, not an unrelated hit counter. `views` counts loads,
+     so views > devices means people came back to it. */
+  function guideLine(g, appDevices) {
+    var views = g.views || 0, devs = g.devices || 0;
+    if (!views) return '<div class="st-empty">No guide views yet.</div>';
+    var reach = appDevices ? Math.round(100 * devs / appDevices) : 0;
+    var perDev = devs ? (views / devs).toFixed(1) : '0';
+    var rows = '<div class="st-lr"><span>Views</span><b>' + views + '</b></div>' +
+               '<div class="st-lr"><span>Devices that opened it</span><b>' + devs +
+               (appDevices ? (' / ' + appDevices + ' \u00b7 ' + reach + '%') : '') + '</b></div>' +
+               '<div class="st-lr"><span>Views per device</span><b>' + perDev + '</b></div>';
+    var srcs = g.sources || [];
+    if (srcs.length) {
+      rows += srcs.map(function (t) {
+        return '<div class="st-lr"><span>via ' + esc(t.src) + '</span><b>' + (t.n || 0) + '</b></div>';
+      }).join('');
+    }
+    return rows;
   }
 
   /* rows: [{ <key>: value, explicit: bool, devices: n }] */
@@ -6699,7 +6727,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-185318';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;

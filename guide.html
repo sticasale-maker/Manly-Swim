@@ -851,5 +851,75 @@
 })();
 </script>
 
+<script>
+// =============================================================================
+// GUIDE PAGE VIEW — anonymous beacon, same contract as the app's analytics.
+// guide.html sits on the same origin as index.html, so it reads the SAME
+// localStorage device id. That is the whole point: it lets the dashboard answer
+// "how many of the app's devices ever opened the guide", not just "how many
+// hits did this file get". A fresh session id per load, as in the app.
+// No PII. Fire-and-forget via sendBeacon as text/plain (a "simple" request, so
+// no CORS preflight). Never throws. Does NOT touch visit_counter — the guide
+// must never inflate the app's visit number.
+// =============================================================================
+(function () {
+  var LOG_URL = 'https://bold-rain-6ded.sticasale.workers.dev/log';
+
+  function uuid() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  function deviceId() {
+    try {
+      var id = localStorage.getItem('swim_device_id');   // shared with the app
+      if (!id) { id = uuid(); localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return uuid(); }
+  }
+
+  var PWA = false;
+  try {
+    PWA = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          (navigator.standalone === true);
+  } catch (e) {}
+
+  var REFERRER = '';
+  try { REFERRER = document.referrer || ''; } catch (e) {}
+
+  var UTM = {}, SRC = '';
+  try {
+    var sp = new URLSearchParams(location.search);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) {
+      var v = sp.get(k); if (v) UTM[k.replace('utm_', '')] = String(v).slice(0, 120);
+    });
+    SRC = String(sp.get('src') || '').slice(0, 40);   // which link sent them here, if tagged
+  } catch (e) {}
+
+  try {
+    var payload = JSON.stringify({
+      events: [{
+        device_id:  deviceId(),
+        session_id: uuid(),
+        event:      'guide_open',
+        props:      SRC ? { src: SRC } : {},
+        referrer:   REFERRER,
+        utm:        UTM,
+        app_build:  null,
+        pwa:        PWA
+      }]
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(LOG_URL, new Blob([payload], { type: 'text/plain' }));
+    } else {
+      fetch(LOG_URL, { method: 'POST', body: payload,
+        headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(function () {});
+    }
+  } catch (e) {}
+})();
+</script>
+
 </body>
 </html>
