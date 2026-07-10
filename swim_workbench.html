@@ -160,9 +160,20 @@
       <div class="rowflex"><input type="checkbox" id="blEdit"> <b>Edit mode</b> &mdash; drag a vertex to set transmit</div>
       <div class="btns">
         <button id="blCopyCol">Copy this period</button>
+        <button id="blPasteCol">Paste this period</button>
         <button id="blCopyAll">Copy 36&times;16</button>
+        <button id="blPasteAll">Paste 36&times;16</button>
+      </div>
+      <div class="btns">
         <button id="blRevert">Revert edits</button>
         <button id="blPush">Push to sheet</button>
+      </div>
+      <div id="blPasteBox" style="display:none;margin-top:6px">
+        <textarea id="blPasteTxt" rows="6" spellcheck="false"
+          style="width:100%;box-sizing:border-box;font-family:'DM Mono',monospace;font-size:11px;
+                 background:#08202c;color:#cfe9f3;border:1px solid #2a5568;border-radius:6px;padding:6px"
+          placeholder="Paste here (Ctrl+V), then Apply"></textarea>
+        <div class="btns"><button id="blPasteApply">Apply</button><button id="blPasteCancel">Cancel</button></div>
       </div>
       <div class="note" id="blEditNote"></div>
       <div class="note" id="blRingNote"></div>
@@ -525,6 +536,14 @@ function blDispLookup(dirDeg, periodS) {
   if (!tbl) return 0.5;
   return dispBilinear(tbl, dirDeg, periodS);   // 36 rows, wrap not fold
 }
+
+// The BL table is a WAVE table: swell (dp_swl) and sea (dp_sea, carried as windWaveDir)
+// only. Wind has its own BL dispersion — windSeaBL() shaped by CHOP_EXPO. Never index
+// this table with a wind bearing. Number.isFinite keeps 0° (due north, a valid arrival),
+// which the old `windWaveDir || windDir` truthiness test silently discarded.
+function waveTxBL(dirDeg, periodS) {
+  return Number.isFinite(dirDeg) ? Math.max(0, blDispLookup(dirDeg, periodS)) : 0;
+}
 function parseNsDispCSV(text) {
   const rows = text.split('\n').map(line => {
     const cols = []; let cur = '', inQ = false;
@@ -759,9 +778,9 @@ function blSwimWater(d, chop, wsBL) {
   // SAME sea — forecast wind-wave (arrival, via BL disp table) and local fetch windchop
   // (via fetch mask) — are CROSSFADED by wwTxBL exactly like CHOP, so they never double-
   // count. wwTxBL high → forecast sea dominates; low → local windchop covers the rest.
-  const wwTxBL_s  = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, wwP)));
+  const wwTxBL_s  = Math.max(0, Math.min(1, waveTxBL(windWaveDir, wwP)));
   const wwHeave   = 1 - chopSlapWeight(windWaveH || 0, wwP);
-  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave * Math.max(0, blDispLookup(windWaveDir || windDir, wwP)); // forecast sea heave (arrival)
+  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave * waveTxBL(windWaveDir, wwP); // forecast sea heave (arrival) — sea partition only
   const wchHeave  = 1 - chopSlapWeight(_wsBL.hs, _wsBL.tp);
   const wchHeaveE = (_wsBL.hs * _wsBL.hs) * Math.max(0, _wsBL.tp) * wchHeave * (_wsBL.survive != null ? _wsBL.survive : 1); // fetch windchop heave × corridor survival
   const seaHeaveE = wchHeaveE + wwHeaveE;  // ADDITIVE - fetch(320-45) & forecast sea(35-125) don't overlap (NS rose), so no dedup; mirrors CHOP
@@ -814,7 +833,7 @@ function calcScore(d, modelOverride) {
   // sensitivity) — a single knob (bl_chop_impact) scales the whole crossfade below,
   // so there is no magnitude jump at the wind-sea ↔ wind-wave handover angle.
   const _wwP_bl   = windWaveP || 5;
-  const wwTxBL    = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, _wwP_bl)));
+  const wwTxBL    = Math.max(0, Math.min(1, waveTxBL(windWaveDir, _wwP_bl)));
   const ww_d_BL_raw = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, _wwP_bl) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL; // × STEEPNESS slap fraction; wwTxBL uses REAL _wwP_bl. NO sensitivity
 
   // Wind-wave directional geometry — blend ARRIVAL (point: energy refracting into
@@ -1126,7 +1145,7 @@ function calc(I){
   const _hWsOpen = _oS.hs  * chopSlapWeight(_oS.hs,  _oS.tp)  * _expo;
   const _hWsBay  = _res.hs * chopSlapWeight(_res.hs, _res.tp);
   const hWs = Math.max(_hWsOpen, _hWsBay);
-  const _blTxWw = Math.max(0,Math.min(1, blDispLookup((I.wwD!=null?I.wwD:I.windD), _wwP)));
+  const _blTxWw = Math.max(0,Math.min(1, waveTxBL(I.wwD, _wwP)));   // BL = wave table; wind never indexes it
   const hWw = _wwH * chopSlapWeight(_wwH,_wwP) * _blTxWw;
   const chopCm = 100*Math.sqrt(hWs*hWs + hWw*hWw);
   const CF=CHOP_FACE;
@@ -1707,7 +1726,91 @@ async function blPush(){
   }
 }
 
-document.getElementById('blCopyCol').onclick = ()=>copyText(blTSV(true),  `the ${ST.ringP}s column (19 rows)`);
+/* ---- PASTE ----------------------------------------------------------------
+   Accepts what Google Sheets actually puts on the clipboard: rows separated by
+   newlines, cells by tabs. Also tolerates commas, stray %, CR, blank trailing lines,
+   and a 37th row (the sheet's 360° wrap) which is dropped.
+
+   Nothing is written until EVERY value parses and lands in 0–100. A half-applied
+   column would be worse than a rejected paste: you would not know which rows moved.
+   Values go through blCellSet, so they land in BL_EDITS and Revert / Push still work. */
+function parsePasteGrid(txt, wantCols){
+  const lines = String(txt||'').replace(/\r/g,'').split('\n').map(l=>l.trim()).filter(l=>l.length);
+  if(!lines.length) return { err:'clipboard is empty' };
+  let rows = lines.map(l => l.split(/[\t,;]+|\s{2,}/).map(c=>c.trim()).filter(c=>c.length));
+  // single column pasted as one value per line
+  if(wantCols===1 && rows.every(r=>r.length===1)) rows = rows.map(r=>[r[0]]);
+  // a lone line holding all the values, space separated
+  if(rows.length===1 && rows[0].length !== wantCols && wantCols===1)
+    rows = rows[0].map(v=>[v]);
+  if(rows.length === NS_DISP_ROWS+1) rows = rows.slice(0, NS_DISP_ROWS); // drop the 360° wrap row
+  if(rows.length !== NS_DISP_ROWS)
+    return { err:`expected ${NS_DISP_ROWS} rows (0°–350°), got ${rows.length}` };
+
+  const out = [];
+  for(let i=0;i<rows.length;i++){
+    if(rows[i].length !== wantCols)
+      return { err:`row ${i+1} (${i*10}°) has ${rows[i].length} value${rows[i].length===1?'':'s'}, expected ${wantCols}` };
+    const vals = [];
+    for(let j=0;j<wantCols;j++){
+      const raw = rows[i][j].replace('%','');
+      const v = parseFloat(raw);
+      if(!isFinite(v)) return { err:`row ${i+1} (${i*10}°), col ${j+1}: "${rows[i][j]}" is not a number` };
+      if(v < 0 || v > 100) return { err:`row ${i+1} (${i*10}°), col ${j+1}: ${v} is outside 0–100` };
+      vals.push(v);
+    }
+    out.push(vals);
+  }
+  return { rows: out };
+}
+
+function applyPaste(txt, wholeTable){
+  if(!SITE.blDisp) return setBlEdit('BL table not loaded — nothing to paste into.','warn');
+  const wantCols = wholeTable ? 16 : 1;
+  const res = parsePasteGrid(txt, wantCols);
+  if(res.err) return setBlEdit(`Paste rejected: ${res.err}. Nothing was changed.`,'err');
+
+  let n = 0;
+  for(let i=0;i<NS_DISP_ROWS;i++){
+    if(wholeTable){ for(let c=0;c<16;c++){ blCellSet(i*10, c+NS_DISP_PMIN, res.rows[i][c]); n++; } }
+    else { blCellSet(i*10, ST.ringP, res.rows[i][0]); n++; }
+  }
+  render();
+  const dirty = Object.keys(BL_EDITS).length;
+  setBlEdit(`Pasted ${n} value${n>1?'s':''} into ${wholeTable ? 'the full table' : ST.ringP+'s'} — `
+    + `${dirty} cell${dirty===1?'':'s'} now differ from the sheet. Push to write them.`, 'ok');
+}
+
+let _pasteWhole = false;
+function openPasteBox(wholeTable){
+  _pasteWhole = wholeTable;
+  const box = document.getElementById('blPasteBox'), ta = document.getElementById('blPasteTxt');
+  box.style.display = 'block'; ta.value = ''; ta.focus();
+  setBlEdit(`Paste ${wholeTable ? `${NS_DISP_ROWS} rows \u00d7 16 columns` : `${NS_DISP_ROWS} values (one per row, 0\u00b0\u2192350\u00b0)`} into the box, then Apply.`,'');
+}
+function closePasteBox(){ document.getElementById('blPasteBox').style.display = 'none'; }
+
+/* Try the clipboard directly (needs a user gesture + https/localhost). Firefox has no
+   readText for pages, and http:// origins are refused — fall back to the textarea
+   rather than telling the user it cannot be done. */
+async function pasteFromClipboard(wholeTable){
+  if(!SITE.blDisp) return setBlEdit('BL table not loaded — nothing to paste into.','warn');
+  try{
+    const txt = await navigator.clipboard.readText();
+    if(!txt || !txt.trim()) throw new Error('empty');
+    closePasteBox();
+    applyPaste(txt, wholeTable);
+  }catch(e){
+    openPasteBox(wholeTable);
+  }
+}
+
+document.getElementById('blPasteCol').onclick   = ()=>pasteFromClipboard(false);
+document.getElementById('blPasteAll').onclick   = ()=>pasteFromClipboard(true);
+document.getElementById('blPasteApply').onclick = ()=>{ const t=document.getElementById('blPasteTxt').value; closePasteBox(); applyPaste(t, _pasteWhole); };
+document.getElementById('blPasteCancel').onclick= ()=>{ closePasteBox(); setBlEdit('Paste cancelled.',''); };
+
+document.getElementById('blCopyCol').onclick = ()=>copyText(blTSV(true),  `the ${ST.ringP}s column (${NS_DISP_ROWS} rows)`);
 document.getElementById('blCopyAll').onclick = ()=>copyText(blTSV(false), 'the full 36×16 table');
 document.getElementById('blRevert').onclick  = ()=>{ blRevert(); setBlEdit('Reverted to the sheet values held in memory.','ok'); };
 document.getElementById('blPush').onclick    = blPush;
