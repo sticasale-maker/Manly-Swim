@@ -1494,11 +1494,13 @@ function drawMap(){
   applyZoom();
   while(ov.firstChild)ov.removeChild(ov.firstChild); handlePos={};
   const g=el('g',{});ov.appendChild(g);
-  if(ST.blRing)drawBlRing(g);
+  // drawBlRing draws the scale + BOTH lobes; it must run whenever EITHER is on.
+  // (It gated on ST.blRing alone until 11 Jul 2026, so the SS lobe never drew.)
+  if(ST.blRing||ST.ssRing)drawBlRing(g);
   if(ST.roseSwell)drawDataRose(g,'swell');
   if(ST.roseSea)drawDataRose(g,'sea');
   if(ST.roseWind)drawDataRose(g,'wind');
-  if(ST.blChord&&(ST.blRing||ST.roseSwell||ST.roseSea||ST.roseWind))drawBlChord(g);
+  if(ST.blChord&&(ST.blRing||ST.ssRing))drawBlChord(g);
   if(ST.fan)drawFan(g);
   drawSwellLine(g,ST.s1D,ST.s1P,CSSv('--s1')||'#19b3e6',5,'s1');
   if(ST.s2on)drawSwellLine(g,ST.s2D,ST.s2P,CSSv('--s2')||'#e0a64d',4,'s2');
@@ -1706,7 +1708,7 @@ function bearingFromPoint(p){const dx=p.x-ST.pivot.x,dy=p.y-ST.pivot.y;let b=Mat
 let drag=null;
 ov.addEventListener('pointerdown',e=>{const p=svgPoint(e);
   // BL lobe vertex takes priority when edit mode is on
-  const _tgtOn = (tgt()==='bl') ? ST.blRing : ST.ssRing;
+  const _tgtOn = (tgt()==='bl') ? ST.blRing : ST.ssRing;   // target lobe must be visible to grab it
   if(ST.blEdit && _tgtOn && lobeVerts.length){
     let best=null, bd=1e9;
     lobeVerts.forEach(v=>{const d=Math.hypot(p.x-v.x,p.y-v.y); if(d<bd){bd=d;best=v;}});
@@ -1762,6 +1764,11 @@ function setBlEdit(msg,cls){ const e=document.getElementById('blEditNote'); if(e
 function updateBlEditNote(){
   const tk = tgt(), T = tblOf(tk);
   if(!tblArr(tk)){ setBlEdit(`${T.name} table not loaded — nothing to edit. Check the sheet status line above; a parse failure disables the vertices.`,'warn'); return; }
+  const visible = (tk==='bl') ? ST.blRing : ST.ssRing;
+  if(ST.blEdit && !visible){
+    setBlEdit(`Edit mode is on but the <b>${T.name}</b> lobe is hidden — tick its checkbox above to drag it.`,'warn');
+    return;
+  }
   const all = Object.values(BL_EDITS);
   const mine = all.filter(e=>e.tk===tk), other = all.filter(e=>e.tk!==tk);
   const otherNote = other.length ? ` <span style="opacity:.7">(+${other.length} pending on ${tblOf(other[0].tk).name})</span>` : '';
