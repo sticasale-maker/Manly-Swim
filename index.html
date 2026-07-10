@@ -3891,6 +3891,35 @@ function blDispLookup(dirDeg, periodS) {
   return dispBilinear(tbl, dirDeg, periodS, SITE.blDispFold);
 }
 
+// ── THE BL TABLE IS A WAVE TABLE ─────────────────────────────────────────────
+// It may be indexed ONLY by a wave ARRIVAL direction: the swell partition (dp_swl)
+// or the sea partition (dp_sea, carried as windWaveDir). A WIND bearing is a
+// different physical quantity that merely shares units, and wind has its own
+// dispersion at BL — windSeaBL() shaped by the CHOP_EXPO exposure curve. Feeding
+// windDir into blDispLookup was a category error (fixed 11 Jul 2026): it was the
+// only thing that ever reached the table's 190°–350° rows, and it did so with the
+// wrong kind of direction.
+//
+// The old idiom was `windWaveDir || windDir`, which is a TRUTHINESS test, not a
+// null check: windWaveDir === 0 is due north, a perfectly good bearing, and it was
+// being thrown away. Number.isFinite keeps 0 and rejects null/undefined/NaN.
+//
+// No direction → no transmit. Returning 0 drops the term rather than routing the
+// energy through an arbitrary row. The caller's H² already zeroes the term whenever
+// the height is absent, so this only bites when a height arrives without a bearing —
+// which is a malformed feed, and should read as zero, not as a guess.
+function waveTxBL(dirDeg, periodS) {
+  if (!Number.isFinite(dirDeg)) { warnNoWaveDir(); return 0; }
+  return Math.max(0, blDispLookup(dirDeg, periodS));
+}
+let _noWaveDirWarned = false;
+function warnNoWaveDir() {
+  if (_noWaveDirWarned) return;
+  _noWaveDirWarned = true;
+  console.warn('[BL] wind-wave arrival direction missing on at least one row — BL transmit '
+    + 'treated as 0 for that term. The BL table is never indexed by windDir.');
+}
+
 // Parse the "New NS" tab CSV into { table:[19][16], ssWaveSens:Number }.
 // ss_wave_sens: row index 1, col index 2.
 // Period header row: index 9, cols 3–18 (periods 2–17).
@@ -4301,15 +4330,17 @@ function blSwimWater(d, chop) {
   // short and steep, so it is all slap and no heave. Verified on 133 live hours —
   // band occupancy 92/35/6/0 → 92/38/3/0, p50 and p90 rawBL unchanged to 2 decimals.
   const wwHeave   = 1 - chopSlapWeight(windWaveH || 0, wwP);
+  // Sea partition only. No windDir fallback — see waveTxBL().
   const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave
-                    * Math.max(0, blDispLookup(windWaveDir || windDir, wwP));
+                    * waveTxBL(windWaveDir, wwP);
   const s1_d = s1 * ess, sea_d = wwHeaveE * ess;
   // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied to
   // the BL swell terms AND the crossfaded sea heave (sea_d). Tide modulates the
   // entrance-shelf depth, so it shoals ALL incoming long-period energy — sea and swell
   // alike (added 5 Jul 2026, matching Entry which already passes sea/ww). Short-period
   // chop stays off tide by design. Shared tideGain (MASTER); splittable to bl_tide_gain later.
-  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d: sea_d, wwDir: windWaveDir || windDir }, 'bowerTideGate');
+  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d: sea_d,
+    wwDir: Number.isFinite(windWaveDir) ? windWaveDir : swell1Dir }, 'bowerTideGate');  // sea partition; never windDir
   // CHOP (the slap fraction) was removed from Surge on 3 Jul 2026 — the standalone CHOP
   // metric carries it, and mixing it in muddied the swell/wash signal this rail shows.
   // NOTE: Surge is NOT "swell + tide only". The wind-sea's HEAVE fraction (sea_d) is still
@@ -4368,7 +4399,9 @@ function calcScore(d, modelOverride) {
   // sensitivity) — a single knob (bl_chop_impact) scales the whole crossfade below,
   // so there is no magnitude jump at the wind-sea ↔ wind-wave handover angle.
   const _wwP_bl   = windWaveP || 5;
-  const wwTxBL    = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, _wwP_bl)));
+  // Sea partition only. The fetch-grown wind chop below has its OWN dispersion
+  // (windSeaBL + chopExposure); it must never be routed through the BL wave table.
+  const wwTxBL    = Math.max(0, Math.min(1, waveTxBL(windWaveDir, _wwP_bl)));
   const ww_d_BL_raw = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, _wwP_bl) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL; // × STEEPNESS slap fraction; wwTxBL uses REAL _wwP_bl. NO sensitivity
 
   // Wind-wave directional geometry — blend ARRIVAL (point: energy refracting into
@@ -6281,7 +6314,7 @@ function renderGemComparison(h) {
     blFp = _s.toFixed(0) + ' (' + _n + ' cells)';
   }
   var blS1Tx = (typeof blDispLookup === 'function') ? (blDispLookup(swell1Dir, swell1P) * 100).toFixed(1) + '%' : '?';
-  var blWWTx = (typeof blDispLookup === 'function') ? (blDispLookup(windWaveDir || windDir, wwP_g) * 100).toFixed(1) + '%' : '?';
+  var blWWTx = (typeof waveTxBL === 'function') ? (waveTxBL(windWaveDir, wwP_g) * 100).toFixed(1) + '%' : '?';
 
   dbg.innerHTML =
     `<div style="color:#7ec8e3;font-weight:700;letter-spacing:1px;margin-bottom:4px;">DEBUG · ${time}</div>` +
@@ -6883,7 +6916,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-230521';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
