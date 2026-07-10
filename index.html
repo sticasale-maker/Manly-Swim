@@ -2927,6 +2927,25 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
            '<div class="st-axis"><span>Everyone else has never been offered the choice; read \u201cdefault\u201d rows as silence, not preference.</span><span></span></div>';
   }
 
+  function tile(label, val) {
+    return '<div class="st-tile"><div class="st-tval">' + esc(val) + '</div><div class="st-tlab">' + esc(label) + '</div></div>';
+  }
+
+  function renderSummary(d) {
+    var t = d.totals || {}, s = d.stickiness || {};
+    var ratio = (s.mau ? Math.round(100 * (s.dau || 0) / s.mau) : 0);
+    el('stTiles').innerHTML =
+      tile('Devices', t.devices || 0) + tile('Sessions', t.sessions || 0) +
+      tile('Events', t.events || 0) + tile('New', t.new_devices || 0) +
+      tile('Sticky', ratio + '%');
+    el('stStick').textContent = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU)';
+    el('stDaily').innerHTML = dailyChart(d.daily || []);
+    el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Surge' });
+    el('stModes').innerHTML = mixBars(d.modes || [], 'mode', null);
+    el('stSources').innerHTML = listRows(d.sources || [], 'source', 'devices');
+    el('stEvents').innerHTML = listRows(d.top_events || [], 'event', 'n');
+  }
+
   function dailyChart(rows) {
     if (!rows.length) return '<div class="st-empty">No data yet.</div>';
     var W = 320, H = 120, gap = 1.5;
@@ -6727,7 +6746,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-190144';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
