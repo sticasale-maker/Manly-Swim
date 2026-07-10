@@ -815,6 +815,11 @@
     cursor: default; opacity: 0.6;
   }
   .bb-btn:disabled:hover { background: transparent; color: var(--dim); }
+  /* Second-tap confirm state ("are you sure?") */
+  .bb-btn.bb-confirm {
+    border-color: var(--red); color: var(--red);
+  }
+  .bb-btn.bb-confirm:hover { background: var(--red); color: #fff; }
 
   /* ── Shark strip ── */
   .shark-strip {
@@ -2122,7 +2127,7 @@
     <div class="forecast-values">
       <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
         <span class="fv-head-txt">
-          <span class="fv-toggle-label">Forecast details</span>
+          <span class="fv-toggle-label">Forecast inside the bay</span>
           <span class="fv-sub" id="fvSub">&mdash;</span>
         </span>
         <span class="fv-toggle-chevron">▾</span>
@@ -6911,7 +6916,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260711-081647';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7144,12 +7149,15 @@ function bbRenderFromData(reports) {
     btn.textContent = `Again in ${h > 0 ? h + 'h ' : ''}${m}m`;
   } else {
     btn.disabled    = false;
-    btn.textContent = 'Report';
+    // Don't clobber the "Sure?" prompt if the user is mid-confirm
+    if (!_bbConfirming) { btn.classList.remove('bb-confirm'); btn.textContent = 'Report'; }
   }
 }
 
 // Load and render (with a short cache to avoid hammering Supabase on every render tick)
 let _bbCache = null, _bbCacheAt = 0;
+// Two-tap confirm state for the Report button
+let _bbConfirming = false, _bbConfirmTimer = null;
 async function bbLoad() {
   try {
     if (Date.now() - _bbCacheAt < BB_CACHE_TTL && _bbCache) {
@@ -7166,13 +7174,38 @@ async function bbLoad() {
   }
 }
 
-async function bbReport() {
+// Revert the button from its "Sure?" state back to "Report"
+function bbCancelConfirm() {
+  _bbConfirming = false;
+  if (_bbConfirmTimer) { clearTimeout(_bbConfirmTimer); _bbConfirmTimer = null; }
+  const btn = document.getElementById('bbBtn');
+  if (btn && !btn.disabled) { btn.classList.remove('bb-confirm'); btn.textContent = 'Report'; }
+}
+
+// First tap arms an "are you sure?" prompt; second tap actually sends.
+// The prompt auto-cancels after 4s if untouched.
+function bbReport() {
   const now      = Date.now();
   const lastMine = bbGetLastMine();
   if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
 
+  if (!_bbConfirming) {
+    _bbConfirming = true;
+    const btn = document.getElementById('bbBtn');
+    if (btn) { btn.classList.add('bb-confirm'); btn.textContent = 'Sure?'; }
+    _bbConfirmTimer = setTimeout(bbCancelConfirm, 4000);
+    return;
+  }
+
+  // Second tap → confirmed, send it
+  _bbConfirming = false;
+  if (_bbConfirmTimer) { clearTimeout(_bbConfirmTimer); _bbConfirmTimer = null; }
+  bbSend();
+}
+
+async function bbSend() {
   const btn = document.getElementById('bbBtn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  if (btn) { btn.classList.remove('bb-confirm'); btn.disabled = true; btn.textContent = 'Sending…'; }
 
   try {
     const deviceId = await bbDeviceId();
@@ -8138,12 +8171,12 @@ async function generateBannerSummary() {
   let waterText = '';
 
   const swellIntroStr = avgS1H >= 1.5
-    ? `${avgS1H.toFixed(1)}m swell rolling in from the ${dominantS1Dir} on a ${Math.round(avgS1P)}s period`
+    ? `${avgS1H.toFixed(1)}m swell inside the bay from the ${dominantS1Dir} on a ${Math.round(avgS1P)}s period`
     : avgS1H >= 0.8
-    ? `${avgS1H.toFixed(1)}m of swell from the ${dominantS1Dir}`
+    ? `${avgS1H.toFixed(1)}m of swell inside the bay from the ${dominantS1Dir}`
     : avgS1H >= 0.3
-    ? `small ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}`
-    : `very little swell to speak of`;
+    ? `small ${avgS1H.toFixed(1)}m swell inside the bay from the ${dominantS1Dir}`
+    : `very little swell inside the bay`;
 
   // How much of that offshore swell actually reaches the bay? The GEM transmit
   // fraction tells us how well the headland is sheltering the entry point. When
@@ -8186,13 +8219,13 @@ async function generateBannerSummary() {
     // Opening — swell/entry context
     if (domEntry === 'Dangerous') {
       parts.push(pick([
-        `The entry is genuinely tough today — ${swellIntroStr} out wide is dumping shore break onto the beach at South Steyne and the wash is messy. If you're getting in at all, evaluate a more sheltered entry further inside the bay; otherwise it's a day to stay on the sand.`,
-        `Big conditions at the South Steyne entry today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} out wide is creating a washing-machine effect at the beach. If anything, weigh up an entry from inside the bay where it's more sheltered — or give it a miss entirely.`,
+        `The entry is genuinely tough today — ${swellIntroStr} is dumping shore break onto the beach at South Steyne and the wash is messy. If you're getting in at all, evaluate a more sheltered entry further inside the bay; otherwise it's a day to stay on the sand.`,
+        `Big conditions at the South Steyne entry today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} is creating a washing-machine effect at the beach. If anything, weigh up an entry from inside the bay where it's more sheltered — or give it a miss entirely.`,
       ]));
     } else if (domEntry === 'Caution') {
       parts.push(pick([
-        `Entry needs a bit of care today — ${swellIntroStr} out wide means the beach at South Steyne is a little lively. Nothing unmanageable, but be careful: watch a few waves before you commit, and if you're unsure use the steps instead.`,
-        `Worth being a bit patient getting in today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} out wide and the beach entry at South Steyne is a bit bouncy. Be careful and have a look before you leap — if you're unsure, the steps are the safer option.`,
+        `Entry needs a bit of care today — ${swellIntroStr} means the beach at South Steyne is a little lively. Nothing unmanageable, but be careful: watch a few waves before you commit, and if you're unsure use the steps instead.`,
+        `Worth being a bit patient getting in today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} and the beach entry at South Steyne is a bit bouncy. Be careful and have a look before you leap — if you're unsure, the steps are the safer option.`,
       ]));
     } else {
       // Entry is fine, open with swell context
@@ -8209,7 +8242,7 @@ async function generateBannerSummary() {
       } else if (avgS1H >= 0.5) {
         parts.push(pick([
           `${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} — gentle and pleasant in the bay.`,
-          `Nice easy ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir} rolling through the bay.`,
+          `Nice easy ${avgS1H.toFixed(1)}m swell inside the bay from the ${dominantS1Dir}.`,
         ]));
       }
     }
