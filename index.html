@@ -3155,24 +3155,41 @@ const SITE_DEFAULTS = {
   tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d+s2_d), clamped below
   tideRef:        0.7,    // neutral tide height (m, WW datum): tideM>ref amplifies swell, tideM<ref credits (reduces) it. Bidirectional pivot.
   tideCreditClamp:0.4,    // max fraction of swell demerits the low-tide credit may remove (0.4 = −40% floor; big swell at dead-low is reduced, never erased)
-  // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
-  // All thresholds are PURE NUMBERS in the sheet (no operators). Each metric has
-  // three band edges + an explicit scaleMax (4th cell) that sets the rail's total
-  // span. Band width on the rail = (nextEdge − thisEdge) / scaleMax, so the edges
-  // chosen relative to scaleMax fully determine how proportioned the bands look.
+  // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
+  // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
+  // used before the sheet loads, or when a cell is blank. On the NS path the live values
+  // come from the "New NS" tab, block AN2:AQ13 — col AN = metric, AO = band label,
+  // AP = colour, AQ = the value. (Ignore any reference to "col AK" elsewhere; that was
+  // index.html's OLD location and no longer feeds this path. See applySwimConfig.)
+  //
+  //   Entry:  AQ2 easy    AQ3 doable   AQ4 caution  AQ5 scaleMax
+  //   Chop:   AQ6 smooth  AQ7 ripply   AQ8 choppy   AQ9 scaleMax
+  //   Surge:  AQ10 steady AQ11 drifty  AQ12 surgy   AQ13 scaleMax
+  //
+  // All values are PURE NUMBERS (no operators). Each metric has three ascending band
+  // edges plus a scaleMax. ALL THREE METRICS NOW CLASSIFY ON DEMERITS: lower = better,
+  // edges ASCEND toward bad. (Surge was v6-descending until 3 Jul 2026; the display
+  // score is still 60 − rawBL, but the CLASSIFIER reads rawBL directly. Do not read the
+  // edges as v6.)
+  //
+  // scaleMax is NOT the display scale. It is the far end of the LAST band on the rail:
+  // renderRails/bandedPct walks [0, e1, e2, e3, scaleMax], gives each band an equal 25%
+  // of the rail, and interpolates the dot inside its band. So scaleMax only bounds the
+  // worst band. A Surge scaleMax of 40 alongside a 0–60 display score is CONSISTENT.
   //
   // CHOP — steep-face height in CM (LOWER = better) — bands ported from workbench
   //   CHOP_FACE (Marco 6 Jul 2026): Smooth < 10cm, Ripply < 20, Choppy < 30, else Messy;
   //   scaleMax 45. Named glassy/ripply/choppy for back-compat with the classifier, but
-  //   the values are now CENTIMETRES, not q7 energy. NOTE: New NS tab AN2:AQ13 CHOP rows
-  //   must be migrated to 10/20/30/45 or the sheet parse will clobber these back to q7.
+  //   the values are now CENTIMETRES, not q7 energy. NOTE: New NS AQ6:AQ9 must hold
+  //   10/20/30/45 or the sheet parse will clobber these back to q7-scale numbers.
   swimThresholds: { glassy: 10, ripply: 20, choppy: 30, scaleMax: 45 },
-  // ENTRY — `total` demerits (LOWER = better) — col AK rows 5–8:
-  //   easy = total ≤ AK5, doable ≤ AK6, caution ≤ AK7, else dangerous. AK8 = scaleMax (rail end).
+  // ENTRY — `total` demerits (LOWER = better). easy ≤ AQ2, doable ≤ AQ3, caution ≤ AQ4,
+  //   else dangerous. AQ5 = scaleMax. (caution:50 here is a stale fallback; sheet loads 45.)
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
-  // SURGE — v6 = 60 − rawSwell (HIGHER = better, rail inverted: best on left) — col AK rows 13–16:
-  //   steady = v6 > AK13, drifty > AK14, surgy ≥ AK15, else washy. AK16 = scaleMax (bottom/worst end of the v6 range).
-  surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 }, // demerit edges, ASCEND toward bad (like Entry). Steady≤15, Drifty≤30, Surgy≤45, else Washy.
+  // SURGE — rawBL demerits (LOWER = better), same direction as Entry. steady ≤ AQ10,
+  //   drifty ≤ AQ11, surgy ≤ AQ12, else washy. AQ13 = scaleMax (far end of the Washy band).
+  //   Rail is drawn best-on-left. Display score = max(0, round(60 − rawBL)).
+  surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 },
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
   nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
   ssWaveSens:     2.35, // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path (tuned 2 Jul 2026)
@@ -3210,6 +3227,11 @@ const SITE_DEFAULTS = {
   fetchBoundConfOpen: 22,     // confined→open edge (deg)
   fetchBoundOpenBay:  67,     // open→bay edge (deg) — ENE; open ocean sweep runs NNE→NE→ENE
   fetchBlendDeg:      5,      // smoothstep half-width at each edge (deg)
+  // Confined→open (22°) gets its own, wider half-width: that edge is the wind clearing
+  // North Head, a transition that runs over ~25° of azimuth, not 10°. The other two
+  // edges MUST stay narrow — widening them bleeds local fetch into the 35–125° arc
+  // where the forecast wind-wave term (wwHeaveE) already carries the sea, double-counting.
+  fetchBlendDegConfOpen: 14,  // smoothstep half-width at the confined→open edge (deg)
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
   // the ~6 km approach. Once its period lengthens (strong/sustained wind), its wavelength
@@ -3981,11 +4003,26 @@ function fetchGeoBL(deg) {
   const Fc = SITE.fetchConfinedM ?? 6700, Fo = SITE.fetchOpenM ?? 1e6, Fb = SITE.fetchBayM ?? 300;
   const bBayConf = SITE.fetchBoundBayConf ?? 320, bConfOpen = SITE.fetchBoundConfOpen ?? 22, bOpenBay = SITE.fetchBoundOpenBay ?? 45;
   const T = SITE.fetchBlendDeg ?? 5;
+  const Tco = SITE.fetchBlendDegConfOpen ?? 14;   // wider: North Head clearing, ~25° of azimuth
   const ss = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
-  const edges = [[bBayConf, Fb, Fc], [bConfOpen, Fc, Fo], [bOpenBay, Fo, Fb]];
-  for (const [B, lo, hi] of edges) {
+  // lg() floors at 1 m: `??` lets a literal 0 through from a blank sheet cell, and
+  // Math.log(0) = -Infinity would poison the score with NaN. Linear blending is immune.
+  const lg = (x) => Math.log(Math.max(1, x));
+  // Per-edge: [centre, lowSideFetch, highSideFetch, halfWidth, useLogBlend]
+  // Only confined→open blends geometrically. hs ∝ √F and Fo/Fc ≈ 149×, so a LINEAR blend
+  // there is already 5×Fc after 2.8% of the arc — it saturates inside ~2° and reads as a
+  // cliff (heave 0.016→0.568 across 17°→19°). Log puts the 22° midpoint at the geometric
+  // mean, 82 km, not the arithmetic 503 km, and hs then climbs smoothly.
+  // The other two edges stay LINEAR on purpose: open→bay spans 3333× into the 35–125° arc
+  // where forecast wind-wave (wwHeaveE) takes over the sea, and log-blending it un-pins hs
+  // from the duration cap mid-edge, making that transition sharper, not smoother.
+  const edges = [[bBayConf, Fb, Fc, T, false], [bConfOpen, Fc, Fo, Tco, true], [bOpenBay, Fo, Fb, T, false]];
+  for (const [B, lo, hi, w, useLog] of edges) {
     const dd = ((a - B + 540) % 360) - 180;
-    if (Math.abs(dd) <= T) return lo + (hi - lo) * ss(-T, T, dd);
+    if (Math.abs(dd) <= w) {
+      const s = ss(-w, w, dd);
+      return useLog ? Math.exp(lg(lo) + (lg(hi) - lg(lo)) * s) : lo + (hi - lo) * s;
+    }
   }
   if (a > bBayConf || a <= bConfOpen) return Fc;  // confined (through N)
   if (a <= bOpenBay) return Fo;                    // open ocean
@@ -4126,6 +4163,9 @@ async function loadChopShelterConfig(force) {
 //   tide_d   = o*(t-0.2)
 // =============================================================================
 // =============================================================================
+// [RETIRED — HISTORICAL ONLY. Describes the config-tab bowerLookup path, removed.
+// The LIVE Surge is blSwimWater() below, which uses blDispLookup (New NS) and DOES
+// include a wind-sea heave term. Do not read the formula below as current.]
 // BOWER LANE SURGE — physically distinct from the S Steyne entry point.
 // Surge = the swell wash felt at the Bower / Shelly end of Cabbage Tree Bay,
 // sourced from the CTB ("Bower") directional tables (SITE.bowerLookup), NOT the
@@ -4178,11 +4218,14 @@ function blSwimWater(d, chop, wsBL) {
   // alike (added 5 Jul 2026, matching Entry which already passes sea/ww). Short-period
   // chop stays off tide by design. Shared tideGain (MASTER); splittable to bl_tide_gain later.
   const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d: sea_d, wwDir: windWaveDir || windDir }, 'bowerTideGate');
-  // Chop REMOVED from Surge (3 Jul 2026). Surge now reflects swell + tide only —
-  // the standalone CHOP metric carries chop, and mixing it in muddied the swell/
-  // wash signal this rail is meant to show. chop_d held at 0 so the parts object /
-  // breakdown popup stay structurally intact; the CHOP metric (chopQ7), the swell
-  // terms, chop_swim_weight and bl_chop_impact are all untouched.
+  // CHOP (the slap fraction) was removed from Surge on 3 Jul 2026 — the standalone CHOP
+  // metric carries it, and mixing it in muddied the swell/wash signal this rail shows.
+  // NOTE: Surge is NOT "swell + tide only". The wind-sea's HEAVE fraction (sea_d) is still
+  // summed into rawBL below — over a typical 133h forecast it is ~37% of rawBL vs ~49%
+  // swell, ~13% tide. Only the SLAP fraction went to CHOP; slap + heave = 1, lossless.
+  // chop_d is held at 0 so the parts object / breakdown popup stay structurally intact;
+  // the CHOP metric (chopQ7), the swell terms, chop_swim_weight and bl_chop_impact are
+  // all untouched.
   const chop_d = 0;
   const rawBL = s1_d + s2_d + sea_d + tide_d;  // swell + crossfaded sea-heave (sea_d, tide-amplified) + tide; steepness slap/heave split, 5 Jul 2026
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
@@ -5371,73 +5414,91 @@ function renderDayWindow(dateTimeStr){
 // refit from raw features, not just collapsed scalars. Fire-and-forget; never throws
 // into the render path. Call at the end of renderWWTicks where h/result/wwSlot/wwR
 // are in scope: logCalibrationPair(h, result, wwSlot, wwR);
+// Isolate-scope guard against the TOCTOU window in logCalibrationPair: the localStorage
+// latch is only written AFTER `await fetch` resolves, so two renders in the same tick
+// (initial paint, then the NS-feed merge re-render) both pass the localStorage check and
+// both POST. This Set closes that window within the page; localStorage still covers reloads.
+const _pairInflight = new Set();
 async function logCalibrationPair(h, result, wwSlot, wwR) {
   try {
     const fts = h && h.dateTime;                 // the hour object's timestamp field
     if (!fts) return;
     const hourKey = String(fts).slice(0, 13);    // yyyy-mm-ddThh — hourly throttle
     if (localStorage.getItem('swim_pair_last') === hourKey) return;
+    if (_pairInflight.has(hourKey)) return;   // a concurrent render already has this hour
+    _pairInflight.add(hourKey);
+    try {
 
-    // Third score: WW inputs through the legacy model = the actual fallback.
-    let wwOrig = null;
-    try { wwOrig = calcScore(wwSlot, 'orig'); } catch (e) {}
+      // Third score: WW inputs through the legacy model = the actual fallback.
+      let wwOrig = null;
+      try { wwOrig = calcScore(wwSlot, 'orig'); } catch (e) {}
 
-    const num  = (x) => (x == null ? null : Math.round(x * 1000) / 1000);
-    // entry.raw can be null in edge cases; mirror the app's own fallback.
-    const eraw = (m) => (m.raw != null ? m.raw : Math.max(0, 60 - m.score));
-    const ww   = h._ww || {};
+      const num  = (x) => (x == null ? null : Math.round(x * 1000) / 1000);
+      // entry.raw can be null in edge cases; mirror the app's own fallback.
+      const eraw = (m) => (m.raw != null ? m.raw : Math.max(0, 60 - m.score));
+      const ww   = h._ww || {};
 
-    const deviceId = localStorage.getItem('swim_device_id') ||
-      (function () { const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-        localStorage.setItem('swim_device_id', id); return id; })();
+      const deviceId = localStorage.getItem('swim_device_id') ||
+        (function () { const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+          localStorage.setItem('swim_device_id', id); return id; })();
 
-    const payload = {
-      forecast_ts: fts,
-      logged_at:   new Date().toISOString(),
-      device_id:   deviceId,
-      app_build:   (typeof APP_BUILD !== 'undefined') ? APP_BUILD : null,
-      ns_status:   (typeof window !== 'undefined' && window._nsStatus) ? window._nsStatus : 'unknown',
+      const payload = {
+        forecast_ts: fts,
+        logged_at:   new Date().toISOString(),
+        device_id:   deviceId,
+        app_build:   (typeof APP_BUILD !== 'undefined') ? APP_BUILD : null,
+        ns_status:   (typeof window !== 'undefined' && window._nsStatus) ? window._nsStatus : 'unknown',
 
-      // Teacher — NS-disp
-      ns_entry_raw: num(eraw(result.entry)), ns_entry_cls: result.entry.cls,
-      ns_swim_raw:  num(result.swim.raw),    ns_swim_cls:  result.swim.cls,
-      ns_surge_raw: num(result.water.raw),   ns_surge_cls: result.water.cls,
+        // Teacher — NS-disp
+        ns_entry_raw: num(eraw(result.entry)), ns_entry_cls: result.entry.cls,
+        ns_swim_raw:  num(result.swim.raw),    ns_swim_cls:  result.swim.cls,
+        ns_surge_raw: num(result.water.raw),   ns_surge_cls: result.water.cls,
 
-      // Student A — WW inputs, NS tables (isolates input divergence)
-      wd_entry_raw: num(eraw(wwR.entry)),    wd_entry_cls: wwR.entry.cls,
-      wd_swim_raw:  num(wwR.swim.raw),       wd_swim_cls:  wwR.swim.cls,
-      wd_surge_raw: num(wwR.water.raw),      wd_surge_cls: wwR.water.cls,
+        // Student A — WW inputs, NS tables (isolates input divergence)
+        wd_entry_raw: num(eraw(wwR.entry)),    wd_entry_cls: wwR.entry.cls,
+        wd_swim_raw:  num(wwR.swim.raw),       wd_swim_cls:  wwR.swim.cls,
+        wd_surge_raw: num(wwR.water.raw),      wd_surge_cls: wwR.water.cls,
 
-      // Student B — WW inputs, legacy model (the fallback)
-      wo_entry_raw: wwOrig ? num(eraw(wwOrig.entry)) : null, wo_entry_cls: wwOrig ? wwOrig.entry.cls : null,
-      wo_swim_raw:  wwOrig ? num(wwOrig.swim.raw)    : null, wo_swim_cls:  wwOrig ? wwOrig.swim.cls  : null,
-      wo_surge_raw: wwOrig ? num(wwOrig.water.raw)   : null, wo_surge_cls: wwOrig ? wwOrig.water.cls : null,
+        // Student B — WW inputs, legacy model (the fallback)
+        wo_entry_raw: wwOrig ? num(eraw(wwOrig.entry)) : null, wo_entry_cls: wwOrig ? wwOrig.entry.cls : null,
+        wo_swim_raw:  wwOrig ? num(wwOrig.swim.raw)    : null, wo_swim_cls:  wwOrig ? wwOrig.swim.cls  : null,
+        wo_surge_raw: wwOrig ? num(wwOrig.water.raw)   : null, wo_surge_cls: wwOrig ? wwOrig.water.cls : null,
 
-      // NS-merged input vector (teacher inputs)
-      ns_swell1_h: num(h.swell1H), ns_swell1_p: num(h.swell1P), ns_swell1_dir: num(h.swell1Dir),
-      ns_swell2_h: num(h.swell2H), ns_swell2_p: num(h.swell2P), ns_swell2_dir: num(h.swell2Dir),
-      ns_ww_h:     num(h.windWaveH), ns_ww_p:   num(h.windWaveP), ns_ww_dir:    num(h.windWaveDir),
+        // NS-merged input vector (teacher inputs)
+        ns_swell1_h: num(h.swell1H), ns_swell1_p: num(h.swell1P), ns_swell1_dir: num(h.swell1Dir),
+        ns_swell2_h: num(h.swell2H), ns_swell2_p: num(h.swell2P), ns_swell2_dir: num(h.swell2Dir),
+        ns_ww_h:     num(h.windWaveH), ns_ww_p:   num(h.windWaveP), ns_ww_dir:    num(h.windWaveDir),
 
-      // WW-original input vector (student inputs)
-      ww_swell1_h: num(ww.swell1H), ww_swell1_p: num(ww.swell1P), ww_swell1_dir: num(ww.swell1Dir),
-      ww_swell2_h: num(ww.swell2H), ww_swell2_p: num(ww.swell2P), ww_swell2_dir: num(ww.swell2Dir),
-      ww_ww_h:     num(ww.windWaveH), ww_ww_p:   num(ww.windWaveP), ww_ww_dir:    num(ww.windWaveDir),
+        // WW-original input vector (student inputs)
+        ww_swell1_h: num(ww.swell1H), ww_swell1_p: num(ww.swell1P), ww_swell1_dir: num(ww.swell1Dir),
+        ww_swell2_h: num(ww.swell2H), ww_swell2_p: num(ww.swell2P), ww_swell2_dir: num(ww.swell2Dir),
+        ww_ww_h:     num(ww.windWaveH), ww_ww_p:   num(ww.windWaveP), ww_ww_dir:    num(ww.windWaveDir),
 
-      // Shared drivers (identical for both feeds)
-      wind_kmh: num(h.windKmh), wind_dir: num(h.windDir), tide_m: num(h.tideM),
-    };
+        // Shared drivers (identical for both feeds)
+        wind_kmh: num(h.windKmh), wind_dir: num(h.windDir), tide_m: num(h.tideM),
+      };
 
-    const res = await fetch(BB_SUPABASE_URL + '/rest/v1/calibration_pairs', {
-      method: 'POST',
-      headers: {
-        'apikey': BB_SUPABASE_KEY,
-        'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal,resolution=ignore-duplicates',
-      },
-      body: JSON.stringify(payload),
-    });
-    if (res.ok || res.status === 409) localStorage.setItem('swim_pair_last', hourKey);
+      // `on_conflict` MUST name the columns of the unique index that actually fires.
+      // PostgREST infers the PRIMARY KEY (id) when the param is absent, and id is generated,
+      // so `resolution=ignore-duplicates` never matched — every replay returned 409.
+      // The live constraint is calibration_pairs_uniq (forecast_ts, device_id).
+      const res = await fetch(BB_SUPABASE_URL + '/rest/v1/calibration_pairs?on_conflict=forecast_ts,device_id', {
+        method: 'POST',
+        headers: {
+          'apikey': BB_SUPABASE_KEY,
+          'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal,resolution=ignore-duplicates',
+        },
+        body: JSON.stringify(payload),
+      });
+      // 409 kept as a success case: a stale build, or a row written before on_conflict
+      // landed, still means this hour is recorded — latch and stop retrying it.
+      if (res.ok || res.status === 409) localStorage.setItem('swim_pair_last', hourKey);
+    } finally {
+      // Released on network failure too, so a later render can retry this hour.
+      _pairInflight.delete(hourKey);
+    }
   } catch (e) {
     console.warn('calibration pair log skipped', e);   // never disturb the forecast
   }
@@ -6746,7 +6807,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-191151';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
