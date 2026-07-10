@@ -152,12 +152,22 @@
 
       <div class="rowflex"><input type="checkbox" id="dirTo" checked> Draw directions as <b>TO</b> (travel) &mdash; off = FROM</div>
 
-      <div class="grp-t">BL dispersion lobe</div>
-      <div class="rowflex"><input type="checkbox" id="blRing"> Transmit lobe (radius = transmit)</div>
+      <div class="grp-t">Dispersion lobes <small>radius = transmit</small></div>
+      <div class="rowflex"><input type="checkbox" id="blRing"> <span class="swatch" style="background:#4fd1e6"></span> <b>BL</b> lobe &mdash; Bower Lane (Chop + Surge)</div>
+      <div class="rowflex"><input type="checkbox" id="ssRing"> <span class="swatch" style="background:#ff8c42"></span> <b>SS</b> lobe &mdash; South Steyne (Entry)</div>
       <div class="rowflex"><input type="checkbox" id="blAll"> Overlay all periods (outlines)</div>
-      <div class="rowflex"><input type="checkbox" id="blChord" checked> Node &rarr; BL chord</div>
+      <div class="rowflex"><input type="checkbox" id="blChord" checked> Chords from the node to BL / SS</div>
       <div class="ctl p"><label>Lobe period</label><input type="range" id="ringP" min="2" max="17" step="1" value="11"><div class="val"><input id="ringP_n"> <span class="unit">s</span></div></div>
-      <div class="rowflex"><input type="checkbox" id="blEdit"> <b>Edit mode</b> &mdash; drag a vertex to set transmit</div>
+
+      <div class="grp-t">Table editor</div>
+      <div class="rowflex">
+        <label style="margin-right:8px">Target</label>
+        <select id="editTarget" style="background:#08202c;color:#cfe9f3;border:1px solid #2a5568;border-radius:6px;padding:3px 6px;font-family:'DM Mono',monospace;font-size:11px">
+          <option value="bl">BL &mdash; Bower Lane (cols W:AL)</option>
+          <option value="ss">SS &mdash; South Steyne (cols D:S)</option>
+        </select>
+      </div>
+      <div class="rowflex"><input type="checkbox" id="blEdit"> <b>Edit mode</b> &mdash; drag a vertex of the target lobe</div>
       <div class="btns">
         <button id="blCopyCol">Copy this period</button>
         <button id="blPasteCol">Paste this period</button>
@@ -1057,8 +1067,8 @@ const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
   wK:12,wD:200,wFetch:6, wwH:0.3,wwD:200,wwP:4, tide:1.0,
   pivot:{x:762,y:569}, crests:true, fan:false, rose:true, north:0,
   roseSwell:false, roseSea:false, roseWind:false, roseE:true,
-  blRing:false, blAll:false, blChord:true, ringP:11, dirTo:true, zoomIn:false,
-  blEdit:false};
+  blRing:false, ssRing:false, blAll:false, blChord:true, ringP:11, dirTo:true, zoomIn:false,
+  blEdit:false, editTarget:'bl'};
 const MW=1520, MH=952;
 
 /* ---- Three points of interest, placed directly on map_flat.png (1520x952) ----
@@ -1228,14 +1238,17 @@ function drawRose(g){const cx=1450,cy=72,R=42;g.appendChild(el('circle',{cx,cy,r
 /* Bearing of a pixel delta, in the same convention vecFrom() consumes (north offset applied). */
 function bearingFromDelta(dx,dy){ return ((Math.atan2(dx,-dy)*180/Math.PI) + ST.north + 360) % 360; }
 
-/* The chord node -> BL. `travel` = the way the water runs; `arrival` = the direction a wave
-   must COME FROM to run down that chord, i.e. the BL-table row that actually points at BL. */
-function nodeToBL(){
-  const dx = PT_CHOP.x - FCST_NODE.x, dy = PT_CHOP.y - FCST_NODE.y;
+/* Chord from the forecast node to a point. `travel` = the way the water runs;
+   `arrival` = the direction a wave must COME FROM to run down that chord, i.e. the
+   table row that actually points at that point. */
+function nodeChord(pt){
+  const dx = pt.x - FCST_NODE.x, dy = pt.y - FCST_NODE.y;
   const travel  = bearingFromDelta(dx,dy);
   const arrival = (travel + 180) % 360;
   return { dx, dy, travel, arrival, len: Math.hypot(dx,dy) };
 }
+function nodeToBL(){ return nodeChord(PT_CHOP); }
+function nodeToSS(){ return nodeChord(PT_ENTRY); }
 
 /* Direction helper: the data is indexed by ARRIVAL bearing (where it comes FROM).
    ST.dirTo=true draws every petal / lobe / ray along the TRAVEL bearing instead — the way
@@ -1276,59 +1289,141 @@ function blTransmitAt(dirDeg, periodS){
   if(!SITE.blDisp) return null;
   return Math.max(0, Math.min(1, blDispLookup(dirDeg, periodS)));
 }
-/* ---- BL table edit model -------------------------------------------------
-   The table is 19 rows (dir 0..180 @10°) x 16 cols (period 2..17s @1s). Both the
-   vertex bearings and the period slider sit exactly on grid, so blDispLookup's
-   bilinear interpolation collapses to a single cell: dragging vertex `dir` at
-   period P writes cell [dir/10][P-2] and nothing else.
-   All 36 bearings are their own row (the sheet carries 0°–350°), so every vertex owns
-   exactly one cell and the lobe is free to be asymmetric. */
-const BL_EDITS = {};                       // "dir:period" -> {dir, period, from, to}
-const blKey = (d,P) => d + ':' + P;
-const blFold = d => ((d%360)+360)%360;     // wrap only — 200° is row 20, not a mirror of 160°
-function blCellGet(dir, P){                // dir must be a multiple of 10
-  if(!SITE.blDisp) return null;
-  const r = SITE.blDisp[blFold(dir)/10]; if(!r) return null;
+/* ---- DISPERSION TABLE REGISTRY --------------------------------------------
+   Two tables, one editor. They differ only in which SITE array they live in, which
+   sheet columns they occupy, and which point on the map they describe.
+
+   Both are 36 rows (dir 0..350 @10 deg) x 16 cols (period 2..17s). Vertex bearings and
+   the period slider both sit exactly on grid, so dispBilinear's interpolation collapses
+   to a single cell: dragging vertex `dir` at period P writes [dir/10][P-2] and nothing
+   else. No fold — every bearing owns its own cell, so the lobes are free to be
+   asymmetric, which is the whole reason for retiring the 19-row mirror.
+
+   SHEET GEOMETRY (from parseNsDispCSV, the only thing that has ever read these blocks
+   correctly): CSV rows 10..45, CSV row 0 = sheet row 1, so sheet row = 11 + dir/10.
+     SS: dir label col B (idx 2),  values D:S   (idx 3..18)  -> sheet col 4  + (P-2)
+     BL: dir label col V (idx 21), values W:AL  (idx 22..37) -> sheet col 23 + (P-2)
+   The Apps Script does not trust that arithmetic — it matches the dir label in the
+   label column. The A1 shown in the UI is a prediction, not a promise. */
+const TBL = {
+  bl: { name:'BL', long:'Bower Lane', site:'blDisp', metrics:'Chop + Surge',
+        colour:'#4fd1e6', fill:'#19b3e6', pt:PT_CHOP,
+        dirCol:22, col0:23, sheetSpan:'W:AL' },  // labels col V (CSV idx 21), values W:AL
+  ss: { name:'SS', long:'South Steyne', site:'nsDisp', metrics:'Entry',
+        colour:'#ff8c42', fill:'#e8641c', pt:PT_ENTRY,
+        dirCol:3,  col0:4,  sheetSpan:'D:S'  },   // labels col C (CSV idx 2), values D:S
+};
+const tgt = () => ST.editTarget;                    // 'bl' | 'ss'
+const tblOf = tk => TBL[tk];
+const tblArr = tk => SITE[TBL[tk].site];            // the live 36x16 array, or null
+
+const BL_SHEET = { row0: 11, tab: 'New NS' };       // dir 0 -> row 11 ... dir 350 -> row 46
+const colA1 = n => { let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-1-m)/26; } return s; };
+const cellA1 = (tk,dir,P) => colA1(TBL[tk].col0 + (P-2)) + (BL_SHEET.row0 + dir/10);
+const blCellA1 = (dir,P) => cellA1(tgt(), dir, P);  // back-compat for the tooltip
+
+/* Edits are held in memory, keyed by table, until pushed. */
+const BL_EDITS = {};                                // "bl:200:11" -> {tk,dir,period,from,to}
+const blKey = (tk,d,P) => tk + ':' + d + ':' + P;
+const blFold = d => ((d%360)+360)%360;              // wrap only, never mirror
+
+function blCellGet(tk, dir, P){
+  const t = tblArr(tk); if(!t) return null;
+  const r = t[blFold(dir)/10]; if(!r) return null;
   const v = r[P-2]; return v==null ? null : Math.max(0, Math.min(100, +v));
 }
-function blCellSet(dir, P, pct){
-  if(!SITE.blDisp) return;
+function blCellSet(tk, dir, P, pct){
+  const t = tblArr(tk); if(!t) return;
   const fd = blFold(dir), ri = fd/10, ci = P-2;
-  const row = SITE.blDisp[ri]; if(!row) return;
-  const before = (BL_EDITS[blKey(fd,P)]||{}).from;
+  const row = t[ri]; if(!row) return;
+  const k = blKey(tk,fd,P);
+  const before = (BL_EDITS[k]||{}).from;
   const from = (before!=null) ? before : (+row[ci]||0);
   const to = Math.max(0, Math.min(100, Math.round(pct*10)/10));
   row[ci] = to;
-  if(Math.abs(to-from) < 0.05) delete BL_EDITS[blKey(fd,P)];
-  else BL_EDITS[blKey(fd,P)] = { dir:fd, period:P, from, to };
+  if(Math.abs(to-from) < 0.05) delete BL_EDITS[k];
+  else BL_EDITS[k] = { tk, dir:fd, period:P, from, to };
 }
-function blRevert(){
-  Object.values(BL_EDITS).forEach(e=>{ if(SITE.blDisp) SITE.blDisp[e.dir/10][e.period-2] = e.from; });
-  for(const k in BL_EDITS) delete BL_EDITS[k];
+function blRevert(tk){
+  Object.values(BL_EDITS).forEach(e=>{
+    if(tk && e.tk !== tk) return;
+    const t = tblArr(e.tk); if(t) t[e.dir/10][e.period-2] = e.from;
+    delete BL_EDITS[blKey(e.tk,e.dir,e.period)];
+  });
   render();
 }
+const editsFor = tk => Object.values(BL_EDITS).filter(e=>e.tk===tk);
 
-/* Vertex positions for the current period — 36 points, one per 10°. */
-let lobeVerts = [];                        // [{dir, drawDir, x, y, tx, dirty}]
-function lobeGeom(P){
+/* Vertex positions for one table at one period. Both lobes share the node as origin,
+   because the chords you read them against both start there. */
+let lobeVerts = [];                                  // vertices of the EDIT TARGET only
+function lobeGeom(tk, P){
   const cx = FCST_NODE.x, cy = FCST_NODE.y, out = [];
   for(let d=0; d<360; d+=10){
-    const pct = blCellGet(d, P); if(pct==null) return [];
+    const pct = blCellGet(tk, d, P); if(pct==null) return [];
     const tx = pct/100, v = vecFrom(drawBear(d)), r = tx*LOBE_R100;
-    out.push({ dir:d, x:cx+v.x*r, y:cy+v.y*r, tx, dirty: !!BL_EDITS[blKey(blFold(d),P)] });
+    out.push({ tk, dir:d, x:cx+v.x*r, y:cy+v.y*r, tx, dirty: !!BL_EDITS[blKey(tk,blFold(d),P)] });
   }
   return out;
 }
-function lobePathFor(P){
-  const g = lobeGeom(P); if(!g.length) return null;
+function lobePathFor(tk, P){
+  const g = lobeGeom(tk, P); if(!g.length) return null;
   return 'M ' + g.map(v=>v.x.toFixed(1)+' '+v.y.toFixed(1)).join(' L ') + ' Z';
 }
-function drawBlRing(g){
-  const cx = FCST_NODE.x, cy = FCST_NODE.y;
-  const gg = el('g',{});
-  lobeVerts = [];
 
-  // % reference circles, so the lobe can be read off without a colour key
+/* One lobe. `editable` decides whether the knobs are grabbable and drawn large. */
+function drawLobe(g, tk, editable){
+  const T = tblOf(tk), cx = FCST_NODE.x, cy = FCST_NODE.y;
+  const gg = el('g',{});
+
+  if(!tblArr(tk)){
+    gg.appendChild(el('circle',{cx,cy,r:0.5*LOBE_R100,fill:'rgba(120,140,150,0.16)',
+      stroke:T.colour,'stroke-width':2,'stroke-dasharray':'8 6',opacity:0.5}));
+    const t=el('title'); t.textContent=T.name+' table not loaded — flat 50% fallback'; gg.appendChild(t);
+    g.appendChild(gg); return;
+  }
+
+  if(ST.blAll){
+    [3,5,7,9,11,13,15,17].forEach((P,i,arr)=>{
+      const d = lobePathFor(tk,P); if(!d) return;
+      const sel = (P===ST.ringP);
+      gg.appendChild(el('path',{d, fill:'none', stroke:sel?T.colour:'#7fb0c4',
+        'stroke-width':sel?2.6:1.2, opacity:sel?0.95:(0.20+0.45*i/arr.length),'stroke-linejoin':'round'}));
+    });
+  }
+
+  const verts = lobeGeom(tk, ST.ringP);
+  if(!verts.length){ g.appendChild(gg); return; }
+  if(editable) lobeVerts = verts;
+
+  const d = 'M ' + verts.map(v=>v.x.toFixed(1)+' '+v.y.toFixed(1)).join(' L ') + ' Z';
+  gg.appendChild(el('path',{d, fill:T.fill,'fill-opacity':editable?0.24:0.12,
+    stroke:T.colour,'stroke-width':editable?2.6:1.8,'stroke-linejoin':'round','stroke-linecap':'round',
+    opacity:0.95,'stroke-dasharray':editable?'':'6 4'}));
+
+  verts.forEach(v=>{
+    if(editable && ST.blEdit){
+      const u = vecFrom(drawBear(v.dir));
+      gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+u.x*LOBE_R100,y2:cy+u.y*LOBE_R100,
+        stroke:'rgba(207,233,243,0.10)','stroke-width':1}));
+    }
+    const big = editable && ST.blEdit;
+    const knob = el('circle',{cx:v.x, cy:v.y, r: big?6:3,
+      fill: v.dirty ? '#ffd23f' : (editable ? transmitColor(v.tx) : T.colour),
+      stroke: big ? '#fff' : 'rgba(0,0,0,0.5)', 'stroke-width': big?1.6:0.8,
+      cursor: big ? 'ns-resize' : 'default'});
+    const t = el('title');
+    t.textContent = `${T.name} transmit · from ${v.dir}° (toward ${(v.dir+180)%360}°) · ${ST.ringP}s → `
+      + `${(v.tx*100).toFixed(1)}%  [row ${v.dir}°, sheet ${cellA1(tk, v.dir, ST.ringP)}]`
+      + (v.dirty ? '  ● edited' : '') + (editable ? '' : '  (not the edit target)');
+    knob.appendChild(t); gg.appendChild(knob);
+  });
+  g.appendChild(gg);
+}
+
+/* Reference circles, drawn once under both lobes. */
+function drawLobeScale(g){
+  const cx = FCST_NODE.x, cy = FCST_NODE.y, gg = el('g',{});
   [0.25,0.5,0.75,1].forEach(f=>{
     gg.appendChild(el('circle',{cx,cy,r:f*LOBE_R100,fill:'none',
       stroke:'rgba(207,233,243,0.28)','stroke-width':1,'stroke-dasharray':f===1?'':'3 6'}));
@@ -1337,88 +1432,62 @@ function drawBlRing(g){
       'font-size':11,'font-family':'DM Mono','text-anchor':'middle'});
     t.textContent = (f*100)+'%'; gg.appendChild(t);
   });
-
-  if(!SITE.blDisp){
-    gg.appendChild(el('circle',{cx,cy,r:0.5*LOBE_R100,fill:'rgba(120,140,150,0.20)',
-      stroke:'rgba(150,170,180,0.7)','stroke-width':2,'stroke-dasharray':'8 6'}));
-    g.appendChild(gg); return;
-  }
-
-  if(ST.blAll){
-    [3,5,7,9,11,13,15,17].forEach((P,i,arr)=>{
-      const d = lobePathFor(P); if(!d) return;
-      const isSel = (P===ST.ringP);
-      gg.appendChild(el('path',{d, fill:'none', stroke:isSel?'#ffd23f':'#7fb0c4',
-        'stroke-width':isSel?2.6:1.3, opacity:isSel?0.95:(0.25+0.5*i/arr.length),'stroke-linejoin':'round'}));
-    });
-  }
-
-  const verts = lobeGeom(ST.ringP);
-  if(verts.length){
-    lobeVerts = verts;
-    const d = 'M ' + verts.map(v=>v.x.toFixed(1)+' '+v.y.toFixed(1)).join(' L ') + ' Z';
-    gg.appendChild(el('path',{d, fill:'#19b3e6','fill-opacity':0.24,
-      stroke:'#4fd1e6','stroke-width':2.4,'stroke-linejoin':'round','stroke-linecap':'round',opacity:0.95}));
-
-    verts.forEach(v=>{
-      // radial guide out to 100%, so it is obvious the vertex only runs in and out
-      if(ST.blEdit){
-        const u = vecFrom(drawBear(v.dir));
-        gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+u.x*LOBE_R100,y2:cy+u.y*LOBE_R100,
-          stroke:'rgba(207,233,243,0.10)','stroke-width':1}));
-      }
-      const knob = el('circle',{cx:v.x, cy:v.y, r: ST.blEdit?6:3,
-        fill: v.dirty ? '#ffd23f' : transmitColor(v.tx),
-        stroke: ST.blEdit ? '#fff' : 'rgba(0,0,0,0.5)', 'stroke-width': ST.blEdit?1.6:0.8,
-        cursor: ST.blEdit ? 'ns-resize' : 'default'});
-      const t = el('title');
-      t.textContent = `BL transmit · from ${v.dir}° (toward ${(v.dir+180)%360}°) · ${ST.ringP}s → `
-        + `${(v.tx*100).toFixed(1)}%  [row ${v.dir}°, sheet ${blCellA1(v.dir, ST.ringP)}]`
-        + (v.dirty ? '  ● edited' : '');
-      knob.appendChild(t); gg.appendChild(knob);
-    });
-  }
   g.appendChild(gg);
 }
 
-/* The chord itself + the table row it lands on. */
-function drawBlChord(g){
-  const c = nodeToBL(), cx = FCST_NODE.x, cy = FCST_NODE.y;
+/* Kept for the existing call in drawMap(): draws the scale plus whichever lobes are on,
+   with the edit target on top and grabbable. */
+function drawBlRing(g){
+  lobeVerts = [];
+  drawLobeScale(g);
+  const on = { bl: ST.blRing, ss: ST.ssRing };
+  const t = tgt();
+  ['bl','ss'].filter(k => on[k] && k !== t).forEach(k => drawLobe(g, k, false));
+  if(on[t]) drawLobe(g, t, true);
+}
+
+/* Chord node -> point, with the transmit of the row that points down it. One per
+   visible lobe: the SS chord and the BL chord land on different bearings, and the two
+   tables answer to different rows. */
+function drawChordFor(g, tk){
+  const T = tblOf(tk), c = nodeChord(T.pt), cx = FCST_NODE.x, cy = FCST_NODE.y;
   const gg = el('g',{});
-  gg.appendChild(el('line',{x1:cx,y1:cy,x2:PT_CHOP.x,y2:PT_CHOP.y,
-    stroke:'#ffd23f','stroke-width':3,'stroke-dasharray':'10 7',opacity:0.9}));
-  // Ray in whichever convention the layers are drawn in: TO → down the chord (travel),
-  // FROM → back up the arrival bearing. Same physical wave either way.
+  gg.appendChild(el('line',{x1:cx,y1:cy,x2:T.pt.x,y2:T.pt.y,
+    stroke:T.colour,'stroke-width':3,'stroke-dasharray':'10 7',opacity:0.85}));
   const v = vecFrom(drawBear(c.arrival));
   gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+v.x*LOBE_R100,y2:cy+v.y*LOBE_R100,
-    stroke:'#ffd23f','stroke-width':2,opacity:0.55}));
-  const tx = blTransmitAt(c.arrival, ST.ringP);
+    stroke:T.colour,'stroke-width':2,opacity:0.5}));
+  const pct = blCellGet(tk, Math.round(c.arrival/10)*10 % 360, ST.ringP);
   const lx = cx+v.x*(LOBE_R100+34), ly = cy+v.y*(LOBE_R100+34);
-  const t = el('text',{x:lx,y:ly,fill:'#ffd23f','font-size':21,'font-family':'DM Mono','font-weight':600,
+  const t = el('text',{x:lx,y:ly,fill:T.colour,'font-size':19,'font-family':'DM Mono','font-weight':600,
     'text-anchor':'middle','paint-order':'stroke',stroke:'rgba(0,0,0,0.65)','stroke-width':5});
-  t.textContent = (ST.dirTo ? Math.round(c.travel)+'° to BL' : 'from '+Math.round(c.arrival)+'°')
-                + (tx!=null ? '  '+(tx*100).toFixed(0)+'%' : '');
+  t.textContent = (ST.dirTo ? Math.round(c.travel)+'° to '+T.name : 'from '+Math.round(c.arrival)+'°')
+                + (pct!=null ? '  '+pct.toFixed(0)+'%' : '');
   gg.appendChild(t);
   g.appendChild(gg);
+}
+function drawBlChord(g){
+  if(ST.blRing) drawChordFor(g,'bl');
+  if(ST.ssRing) drawChordFor(g,'ss');
 }
 
 /* Text readout under the ring controls: the chord geometry + the row it lands on. */
 function updateBlRingNote(){
   const box = document.getElementById('blRingNote'); if(!box) return;
-  const c = nodeToBL();
-  const row10 = Math.round(((c.arrival%360)+360)%360 / 10) * 10;
-  const fold  = row10 > 180 ? 360 - row10 : row10;
-  const tx    = blTransmitAt(c.arrival, ST.ringP);
-  const txRow = blTransmitAt(fold, ST.ringP);
-  const conv  = ST.dirTo ? 'TO (travel)' : 'FROM (arrival)';
-  box.innerHTML = SITE.blDisp
-    ? `Chord node&nbsp;103218 &rarr; BL runs <b>${c.travel.toFixed(1)}&deg;</b> (${Math.round(c.len)} px). `
-      + `A wave runs down it only if it arrives <b>from ${c.arrival.toFixed(1)}&deg;</b> &mdash; `
-      + `nearest table row <b>${fold}&deg;</b>. At ${ST.ringP}s that row transmits `
-      + `<b>${(txRow*100).toFixed(0)}%</b>, so the lobe reaches <b>${(txRow*LOBE_R100).toFixed(0)} px</b> `
-      + `out of ${LOBE_R100}. Layers drawn ${conv}. `
-      + `<span class="note2">36 rows, 0&ndash;350&deg;, no fold &mdash; every bearing owns its own cell.</span>`
-    : `<b>BL table not loaded</b> — the lobe is the grey 50% circle and <code>blDispLookup</code> is returning 0.5 for every direction and period. Hit &ldquo;Reload from sheet&rdquo;.`;
+  const tk = tgt(), T = tblOf(tk);
+  if(!tblArr(tk)){
+    box.innerHTML = `<b>${T.name} table not loaded</b> — the lobe is a grey 50% circle and the lookup `
+      + `returns 0.5 for every direction and period. Hit &ldquo;Reload from sheet&rdquo;.`;
+    return;
+  }
+  const c = nodeChord(T.pt);
+  const row10 = (Math.round(c.arrival/10)*10) % 360;
+  const pct   = blCellGet(tk, row10, ST.ringP);
+  box.innerHTML = `<b>${T.name}</b> (${T.long}, drives ${T.metrics}) &middot; sheet cols ${T.sheetSpan}. `
+    + `Chord node&nbsp;103218 &rarr; ${T.name} runs <b>${c.travel.toFixed(1)}&deg;</b> (${Math.round(c.len)} px); `
+    + `a wave runs down it only if it arrives <b>from ${c.arrival.toFixed(1)}&deg;</b> &mdash; row <b>${row10}&deg;</b>, `
+    + `which at ${ST.ringP}s transmits <b>${pct.toFixed(0)}%</b> (${cellA1(tk,row10,ST.ringP)}). `
+    + `<span class="note2">36 rows, 0&ndash;350&deg;, no fold &mdash; every bearing owns its own cell.</span>`;
 }
 
 function drawMap(){
@@ -1590,9 +1659,17 @@ document.getElementById('resetParams').onclick=()=>{KNOBS.forEach(k=>{if(LIVE[k]
 
 // toggles
 document.getElementById('s2on').addEventListener('change',e=>{ST.s2on=e.target.checked;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';render();});
-['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','blAll','blChord','dirTo','zoomIn','blEdit']
+['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','ssRing','blAll','blChord','dirTo','zoomIn','blEdit']
   .forEach(id=>{const c=document.getElementById(id);c.checked=ST[id];
     c.addEventListener('change',e=>{ST[id]=e.target.checked;render();});});
+// edit target: switching it also reveals the lobe you are about to edit
+{const sel=document.getElementById('editTarget');
+ sel.value = ST.editTarget;
+ sel.addEventListener('change',()=>{ ST.editTarget = sel.value;
+   if(ST.editTarget==='ss') ST.ssRing = true; else ST.blRing = true;   // you cannot edit a lobe you cannot see
+   document.getElementById('blRing').checked = ST.blRing;
+   document.getElementById('ssRing').checked = ST.ssRing;
+   render(); });}
 // ring period
 {const r=document.getElementById('ringP'),n=document.getElementById('ringP_n');
  const set=v=>{ST.ringP=Math.max(2,Math.min(17,v));r.value=ST.ringP;n.value=ST.ringP;render();};
@@ -1629,12 +1706,13 @@ function bearingFromPoint(p){const dx=p.x-ST.pivot.x,dy=p.y-ST.pivot.y;let b=Mat
 let drag=null;
 ov.addEventListener('pointerdown',e=>{const p=svgPoint(e);
   // BL lobe vertex takes priority when edit mode is on
-  if(ST.blEdit && ST.blRing && lobeVerts.length){
+  const _tgtOn = (tgt()==='bl') ? ST.blRing : ST.ssRing;
+  if(ST.blEdit && _tgtOn && lobeVerts.length){
     let best=null, bd=1e9;
     lobeVerts.forEach(v=>{const d=Math.hypot(p.x-v.x,p.y-v.y); if(d<bd){bd=d;best=v;}});
     // also allow grabbing anywhere along the vertex's radial guide when the lobe is tiny
     if(best && (bd<18 || bd<Math.max(14, 0.06*LOBE_R100) )){
-      drag={vert:best.dir}; ov.setPointerCapture(e.pointerId); e.preventDefault(); return;
+      drag={vert:best.dir, tk:best.tk}; ov.setPointerCapture(e.pointerId); e.preventDefault(); return;
     }
   }
   const dPiv=Math.hypot(p.x-ST.pivot.x,p.y-ST.pivot.y);
@@ -1648,7 +1726,7 @@ ov.addEventListener('pointermove',e=>{if(!drag)return;const p=svgPoint(e);
   if(drag && drag.vert!=null){
     // radial drag only: transmit = distance from the node, as a % of the 100% circle
     const r = Math.hypot(p.x-FCST_NODE.x, p.y-FCST_NODE.y);
-    blCellSet(drag.vert, ST.ringP, 100 * Math.max(0, Math.min(1, r/LOBE_R100)));
+    blCellSet(drag.tk, drag.vert, ST.ringP, 100 * Math.max(0, Math.min(1, r/LOBE_R100)));
     render(); return;
   }
   if(drag==='pivot'){ST.pivot={x:Math.max(0,Math.min(MW,p.x)),y:Math.max(0,Math.min(MH,p.y))};render();}
@@ -1665,15 +1743,11 @@ ov.addEventListener('pointercancel',()=>drag=null);
        sheet col = 23 + (period-2)  (2s -> W ... 17s -> AL)
    The Apps Script does NOT trust that arithmetic: it finds the row by matching the
    direction label in column V. The A1 shown below is a prediction, not a promise. */
-const BL_SHEET = { row0: 11, col0: 23, tab: 'New NS' };  // dir 0° -> row 11 … dir 350° -> row 46
-const colA1 = n => { let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-1-m)/26; } return s; };
-const blCellA1 = (dir,P) => colA1(BL_SHEET.col0 + (P-2)) + (BL_SHEET.row0 + dir/10);
-
 function blTSV(periodOnly){
-  if(!SITE.blDisp) return '';
+  const t = tblArr(tgt()); if(!t) return '';
   const lines = [];
   for(let i=0;i<NS_DISP_ROWS;i++){         // 36 rows, 0°–350°; the sheet's 360° wrap row is not exported
-    const row = SITE.blDisp[i] || [];
+    const row = t[i] || [];
     lines.push(periodOnly ? String(row[ST.ringP-2] ?? 0)
                           : row.slice(0,16).map(v=>v==null?0:v).join('\t'));
   }
@@ -1686,12 +1760,19 @@ async function copyText(txt, label){
 function setBlEdit(msg,cls){ const e=document.getElementById('blEditNote'); if(e){ e.className='note'+(cls?' '+cls:''); e.innerHTML=msg; } }
 
 function updateBlEditNote(){
-  const n = Object.keys(BL_EDITS).length;
-  if(!SITE.blDisp){ setBlEdit('BL table not loaded — nothing to edit. Check the sheet status line above; a parse failure disables the vertices.','warn'); return; }
-  if(!n){ setBlEdit(`No edits. Tick <b>Edit mode</b>, then drag a vertex in or out. Period <b>${ST.ringP}s</b> writes column <b>${colA1(BL_SHEET.col0+ST.ringP-2)}</b>.`,''); return; }
-  const list = Object.values(BL_EDITS).sort((a,b)=>a.period-b.period||a.dir-b.dir)
-    .map(e=>`${blCellA1(e.dir,e.period)} <span style="opacity:.65">(${e.dir}&deg;/${e.period}s)</span> ${e.from}&rarr;<b>${e.to}</b>`).join(' &middot; ');
-  setBlEdit(`<b>${n} edited cell${n>1?'s':''}</b> — held in memory only until you push: ${list}`,'warn');
+  const tk = tgt(), T = tblOf(tk);
+  if(!tblArr(tk)){ setBlEdit(`${T.name} table not loaded — nothing to edit. Check the sheet status line above; a parse failure disables the vertices.`,'warn'); return; }
+  const all = Object.values(BL_EDITS);
+  const mine = all.filter(e=>e.tk===tk), other = all.filter(e=>e.tk!==tk);
+  const otherNote = other.length ? ` <span style="opacity:.7">(+${other.length} pending on ${tblOf(other[0].tk).name})</span>` : '';
+  if(!mine.length){
+    setBlEdit(`No <b>${T.name}</b> edits. Tick <b>Edit mode</b>, then drag a vertex in or out. `
+      + `Period <b>${ST.ringP}s</b> writes column <b>${colA1(T.col0+ST.ringP-2)}</b>.${otherNote}`,'');
+    return;
+  }
+  const list = mine.sort((a,b)=>a.period-b.period||a.dir-b.dir)
+    .map(e=>`${cellA1(e.tk,e.dir,e.period)} <span style="opacity:.65">(${e.dir}&deg;/${e.period}s)</span> ${e.from}&rarr;<b>${e.to}</b>`).join(' &middot; ');
+  setBlEdit(`<b>${mine.length} edited ${T.name} cell${mine.length>1?'s':''}</b> — in memory only until you push: ${list}${otherNote}`,'warn');
 }
 
 /* Write-back. A published CSV is read-only, so the browser cannot write to the sheet.
@@ -1700,25 +1781,28 @@ function updateBlEditNote(){
    the POST stays a CORS "simple request" — Apps Script never answers a preflight. */
 const BL_PUSH_URL_KEY = 'swim_bl_push_url', BL_PUSH_TOKEN_KEY = 'swim_bl_push_token';
 async function blPush(){
+  // Pushes EVERY pending edit, on both tables — you should never have to remember
+  // which target was selected when you dragged. Each edit carries its own table key.
   const edits = Object.values(BL_EDITS);
-  if(!SITE.blDisp) return setBlEdit('BL table not loaded.','warn');
   if(!edits.length) return setBlEdit('Nothing to push.','warn');
   let url = localStorage.getItem(BL_PUSH_URL_KEY), tok = localStorage.getItem(BL_PUSH_TOKEN_KEY);
   if(!url){ url = prompt('Apps Script Web App /exec URL:'); if(!url) return; localStorage.setItem(BL_PUSH_URL_KEY, url.trim()); }
   if(!tok){ tok = prompt('Shared token (must match TOKEN in the script):'); if(!tok) return; localStorage.setItem(BL_PUSH_TOKEN_KEY, tok.trim()); }
-  setBlEdit(`Pushing ${edits.length} cell${edits.length>1?'s':''} …`,'');
+  const byT = {}; edits.forEach(e=>byT[e.tk]=(byT[e.tk]||0)+1);
+  setBlEdit(`Pushing ${edits.length} cell${edits.length>1?'s':''} (`
+    + Object.keys(byT).map(k=>`${byT[k]} ${tblOf(k).name}`).join(', ') + `) …`,'');
   try{
     const res = await fetch(localStorage.getItem(BL_PUSH_URL_KEY), {
       method:'POST', mode:'cors', redirect:'follow',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ token: localStorage.getItem(BL_PUSH_TOKEN_KEY), tab: BL_SHEET.tab,
-        edits: edits.map(e=>({dir:e.dir, period:e.period, value:e.to})) })
+        edits: edits.map(e=>({table:e.tk, dir:e.dir, period:e.period, value:e.to})) })
     });
     const j = await res.json();
     // A JSON reply means the URL, the token round-trip and CORS all worked. If ok:false,
     // the SCRIPT rejected the payload — do not send the user off checking their URL.
     if(!j.ok){
-      const stale = /max 304|19x16/.test(j.error || '');
+      const stale = /max 304|19x16|bad table|unknown table/i.test(j.error || '');
       setBlEdit(`Sheet script rejected the push: <b>${j.error}</b>.`
         + (stale ? ` That cap is from the 19-row script. Paste the current <code>bl_table_writer.gs</code>, then <b>Manage deployments &rarr; pencil &rarr; Version: New version &rarr; Deploy</b> — /exec serves the old version until you do.`
                  : ` The request reached the Web App, so the URL and token are fine.`)
@@ -1776,19 +1860,20 @@ function parsePasteGrid(txt, wantCols){
 }
 
 function applyPaste(txt, wholeTable){
-  if(!SITE.blDisp) return setBlEdit('BL table not loaded — nothing to paste into.','warn');
+  const tk = tgt(), T = tblOf(tk);
+  if(!tblArr(tk)) return setBlEdit(`${T.name} table not loaded — nothing to paste into.`,'warn');
   const wantCols = wholeTable ? 16 : 1;
   const res = parsePasteGrid(txt, wantCols);
   if(res.err) return setBlEdit(`Paste rejected: ${res.err}. Nothing was changed.`,'err');
 
   let n = 0;
   for(let i=0;i<NS_DISP_ROWS;i++){
-    if(wholeTable){ for(let c=0;c<16;c++){ blCellSet(i*10, c+NS_DISP_PMIN, res.rows[i][c]); n++; } }
-    else { blCellSet(i*10, ST.ringP, res.rows[i][0]); n++; }
+    if(wholeTable){ for(let c=0;c<16;c++){ blCellSet(tk, i*10, c+NS_DISP_PMIN, res.rows[i][c]); n++; } }
+    else { blCellSet(tk, i*10, ST.ringP, res.rows[i][0]); n++; }
   }
   render();
-  const dirty = Object.keys(BL_EDITS).length;
-  setBlEdit(`Pasted ${n} value${n>1?'s':''} into ${wholeTable ? 'the full table' : ST.ringP+'s'} — `
+  const dirty = editsFor(tk).length;
+  setBlEdit(`Pasted ${n} value${n>1?'s':''} into <b>${T.name}</b> ${wholeTable ? '(full table)' : '@ '+ST.ringP+'s'} — `
     + `${dirty} cell${dirty===1?'':'s'} now differ from the sheet. Push to write them.`, 'ok');
 }
 
@@ -1805,7 +1890,7 @@ function closePasteBox(){ document.getElementById('blPasteBox').style.display = 
    readText for pages, and http:// origins are refused — fall back to the textarea
    rather than telling the user it cannot be done. */
 async function pasteFromClipboard(wholeTable){
-  if(!SITE.blDisp) return setBlEdit('BL table not loaded — nothing to paste into.','warn');
+  if(!tblArr(tgt())) return setBlEdit(`${tblOf(tgt()).name} table not loaded — nothing to paste into.`,'warn');
   try{
     const txt = await navigator.clipboard.readText();
     if(!txt || !txt.trim()) throw new Error('empty');
@@ -1821,9 +1906,9 @@ document.getElementById('blPasteAll').onclick   = ()=>pasteFromClipboard(true);
 document.getElementById('blPasteApply').onclick = ()=>{ const t=document.getElementById('blPasteTxt').value; closePasteBox(); applyPaste(t, _pasteWhole); };
 document.getElementById('blPasteCancel').onclick= ()=>{ closePasteBox(); setBlEdit('Paste cancelled.',''); };
 
-document.getElementById('blCopyCol').onclick = ()=>copyText(blTSV(true),  `the ${ST.ringP}s column (${NS_DISP_ROWS} rows)`);
-document.getElementById('blCopyAll').onclick = ()=>copyText(blTSV(false), 'the full 36×16 table');
-document.getElementById('blRevert').onclick  = ()=>{ blRevert(); setBlEdit('Reverted to the sheet values held in memory.','ok'); };
+document.getElementById('blCopyCol').onclick = ()=>copyText(blTSV(true),  `${tblOf(tgt()).name} ${ST.ringP}s column (${NS_DISP_ROWS} rows)`);
+document.getElementById('blCopyAll').onclick = ()=>copyText(blTSV(false), `the full ${tblOf(tgt()).name} 36×16 table`);
+document.getElementById('blRevert').onclick  = ()=>{ const tk=tgt(); blRevert(tk); setBlEdit(`Reverted ${tblOf(tk).name} to the sheet values held in memory.`,'ok'); };
 document.getElementById('blPush').onclick    = blPush;
 
 /* ===================== PNG EXPORT ===================== */
