@@ -142,7 +142,7 @@
       <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
       <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
       <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
-      <div class="rowflex"><input type="checkbox" id="zoom2"> Zoom 2&times; on node 103218</div>
+      <div class="rowflex"><input type="checkbox" id="zoomIn"> Zoom 1.5&times; on node 103218</div>
 
       <div class="grp-t">At node 103218 <small>2025 hindcast &middot; 7512 h</small></div>
       <div class="rowflex"><input type="checkbox" id="roseSwell"> <span class="swatch" style="background:#19b3e6"></span> Swell rose (from)</div>
@@ -598,8 +598,12 @@ function parseNsDispCSV(text) {
     }
     blTable.push(periods);
   }
-  const blOk = (blTable.length === 19 && blTable.every(r => r.length === 16) && blTable.some(r => r.some(v => v > 0)));
-  return (table.length === 19 && table.every(r => r.length === 16))
+  // Shape guards follow NS_DISP_ROWS (36). They read 19 until 11 Jul 2026, which — once
+  // the loops above were widened — made every parse return null and silently killed the
+  // lobe and its edit vertices.
+  const shapeOk = (t) => t.length === NS_DISP_ROWS && t.every(r => r.length === 16);
+  const blOk = shapeOk(blTable) && blTable.some(r => r.some(v => v > 0));
+  return shapeOk(table)
     ? { table, blDisp: blOk ? blTable : null, ssWaveSens, windSeaSens, blWaveSens, blChopImpact, chopSwimWeight, entryThresholds, swimThresholds, surgeThresholds }
     : null;
 }
@@ -1015,11 +1019,16 @@ async function loadFromSheet(){
     KNOBS.forEach(k=>LIVE[k]=SITE[k]);
     if(typeof buildParams==='function')buildParams();
     if(typeof render==='function')render();
-    setSheet('\u2713 Loaded '+t+' \u00b7 '+(bits.join(' \u00b7 ')||'sensitivities')+(SITE.nsDisp?'':' \u00b7 \u26a0 SS table missing (50% fallback)')+tideMsg,'ok');
+    var warn = '';
+    if(!SITE.nsDisp) warn += ' \u00b7 \u26a0 SS table missing (50% fallback)';
+    if(!SITE.blDisp) warn += ' \u00b7 \u26a0 BL table missing \u2014 lobe + edit vertices disabled';
+    if(SITE.nsDisp && SITE.nsDisp.length !== NS_DISP_ROWS) warn += ' \u00b7 \u26a0 SS table is '+SITE.nsDisp.length+' rows, expected '+NS_DISP_ROWS;
+    if(SITE.blDisp && SITE.blDisp.length !== NS_DISP_ROWS) warn += ' \u00b7 \u26a0 BL table is '+SITE.blDisp.length+' rows, expected '+NS_DISP_ROWS;
+    setSheet('\u2713 Loaded '+t+' \u00b7 '+(bits.join(' \u00b7 ')||'sensitivities')+warn+tideMsg, warn?'warn':'ok');
   }else{
     if(typeof buildParams==='function')buildParams();
     if(typeof render==='function')render();
-    setSheet('\u26a0 New NS fetch failed ('+((nsR.reason&&nsR.reason.message)||'error')+') \u2014 built-in defaults + 50% dispersion fallback. Serve over http(s), not file://.'+tideMsg,'warn');
+    setSheet('\u26a0 New NS unavailable or unparseable ('+((nsR.reason&&nsR.reason.message)||'parse returned null \u2014 expected '+NS_DISP_ROWS+' dir rows \u00d7 16 period cols from CSV row 10')+') \u2014 built-in defaults + 50% dispersion fallback. Serve over http(s), not file://.'+tideMsg,'warn');
   }
 }
 
@@ -1029,7 +1038,7 @@ const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
   wK:12,wD:200,wFetch:6, wwH:0.3,wwD:200,wwP:4, tide:1.0,
   pivot:{x:762,y:569}, crests:true, fan:false, rose:true, north:0,
   roseSwell:false, roseSea:false, roseWind:false, roseE:true,
-  blRing:false, blAll:false, blChord:true, ringP:11, dirTo:true, zoom2:false,
+  blRing:false, blAll:false, blChord:true, ringP:11, dirTo:true, zoomIn:false,
   blEdit:false};
 const MW=1520, MH=952;
 
@@ -1141,11 +1150,12 @@ function calc(I){
    One source of truth for the visible rect. The SVG gets it as a viewBox; the <img>
    underneath gets the identical rect as a CSS transform, so the two stay registered.
    Zoom is centred on the NS node, which is what the roses and the lobe hang off. */
+const ZOOM = 1.5;
 function viewRect(){
-  if(!ST.zoom2) return { x:0, y:0, w:MW, h:MH, z:1 };   // 1x = the whole chart, untouched
-  const z = 2, w = MW/z, h = MH/z;
-  // Centred on the node. At 2x the rect (382,331,760,476) sits wholly inside the
-  // 1520x952 chart, so no clamping is needed and the node lands dead centre.
+  if(!ST.zoomIn) return { x:0, y:0, w:MW, h:MH, z:1 };   // 1x = the whole chart, untouched
+  const z = ZOOM, w = MW/z, h = MH/z;
+  // Centred on the node. At 1.5x the rect (255,252,1013,635) sits wholly inside the
+  // 1520x952 chart, so the clamp never fires and the node lands dead centre.
   let x = FCST_NODE.x - w/2, y = FCST_NODE.y - h/2;
   x = Math.max(0, Math.min(MW-w, x));
   y = Math.max(0, Math.min(MH-h, y));
@@ -1561,7 +1571,7 @@ document.getElementById('resetParams').onclick=()=>{KNOBS.forEach(k=>{if(LIVE[k]
 
 // toggles
 document.getElementById('s2on').addEventListener('change',e=>{ST.s2on=e.target.checked;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';render();});
-['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','blAll','blChord','dirTo','zoom2','blEdit']
+['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','blAll','blChord','dirTo','zoomIn','blEdit']
   .forEach(id=>{const c=document.getElementById(id);c.checked=ST[id];
     c.addEventListener('change',e=>{ST[id]=e.target.checked;render();});});
 // ring period
@@ -1658,7 +1668,7 @@ function setBlEdit(msg,cls){ const e=document.getElementById('blEditNote'); if(e
 
 function updateBlEditNote(){
   const n = Object.keys(BL_EDITS).length;
-  if(!SITE.blDisp){ setBlEdit('BL table not loaded — nothing to edit.','warn'); return; }
+  if(!SITE.blDisp){ setBlEdit('BL table not loaded — nothing to edit. Check the sheet status line above; a parse failure disables the vertices.','warn'); return; }
   if(!n){ setBlEdit(`No edits. Tick <b>Edit mode</b>, then drag a vertex in or out. Period <b>${ST.ringP}s</b> writes column <b>${colA1(BL_SHEET.col0+ST.ringP-2)}</b>.`,''); return; }
   const list = Object.values(BL_EDITS).sort((a,b)=>a.period-b.period||a.dir-b.dir)
     .map(e=>`${blCellA1(e.dir,e.period)} <span style="opacity:.65">(${e.dir}&deg;/${e.period}s)</span> ${e.from}&rarr;<b>${e.to}</b>`).join(' &middot; ');
