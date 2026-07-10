@@ -3210,28 +3210,18 @@ const SITE_DEFAULTS = {
   // The two windows differ because the points sit differently in the bay.
   fetchMaskSS: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
   fetchMaskBL: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1],
-  windSeaSens:   1.3,   // scales the fetch-derived wind-sea demerit (tuned 2 Jul 2026)
-  windSeaDurCapH: 24,   // duration tracker caps at this many hours (fully-developed ceiling)
-  // ── BL geographic fetch (three-zone) — replaces binary fetchMaskBL for CHOP ──────
-  // Per-bearing fetch length (m) fed into spmGrowth: F_eff = min(durEquivFetch(U,t),
-  // F_geo(dir)). Relative to CHOP CENTRE (BL), wind-FROM bearings:
-  //   337°→22° (NNW→N→NNE): confined coastal water, 6.7 km fetch to Long Reef headland
-  //   22°→67° (NNE→NE→ENE): open ocean (F huge → duration governs)
-  //   67°→337° (E→S→W→NW): sheltered bay, local fetch only
-  // Smoothstep blend of ±fetchBlendDeg at each sector edge. fetchMaskBL kept only for
-  // the legacy chopTransmit shim; CHOP now uses this.
-  fetchConfinedM: 6700,       // N/NNE confined-water fetch (m), ray-cast to north headland
-  fetchOpenM:     1000000,    // open-ocean sector: effectively unlimited (duration caps it)
-  fetchBayM:      300,        // sheltered-bay local fetch (m)
-  fetchBoundBayConf:  337,    // bay→confined edge (deg), wraps through N — NNW; open quarter is NNW→ENE
-  fetchBoundConfOpen: 22,     // confined→open edge (deg)
-  fetchBoundOpenBay:  67,     // open→bay edge (deg) — ENE; open ocean sweep runs NNE→NE→ENE
-  fetchBlendDeg:      5,      // smoothstep half-width at each edge (deg)
-  // Confined→open (22°) gets its own, wider half-width: that edge is the wind clearing
-  // North Head, a transition that runs over ~25° of azimuth, not 10°. The other two
-  // edges MUST stay narrow — widening them bleeds local fetch into the 35–125° arc
-  // where the forecast wind-wave term (wwHeaveE) already carries the sea, double-counting.
-  fetchBlendDegConfOpen: 14,  // smoothstep half-width at the confined→open edge (deg)
+  windSeaSens:   1.3,   // scales the SS entry wind-sea demerit (tuned 2 Jul 2026)
+  // ── Locally-generated bay chop (SIMPLIFIED, 11 Jul 2026) ────────────────────────
+  // The three-zone geographic fetch model (fetchGeoBL / windSeaGeo / durEquivFetch)
+  // is GONE. It computed, badly, a sea the forecast already gives us: windWaveH/P/Dir
+  // IS the wind sea, produced by a real spectral model with real bathymetry, and the
+  // dispersion tables already carry it into the bay. We were summing two estimates of
+  // one sea (double-count, 30–71°) and stepping 220 demerits per degree at the 67° edge.
+  //
+  // Wind now does exactly one thing: raise local chop inside the bay. Magnitude from a
+  // single reference fetch; direction from CHOP_EXPO and nowhere else. No geography,
+  // no duration, no sector boundaries, no blend widths.
+  chopRefFetchM: 5000,  // effective fetch (m) for locally-generated chop — THE wind knob
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
   // the ~6 km approach. Once its period lengthens (strong/sustained wind), its wavelength
@@ -4051,24 +4041,20 @@ function spmGrowth(U, F) {
   const tp = Math.min(0.286 * Math.pow(X, 1 / 3) * U / WINDSEA_G, 8.134 * U / WINDSEA_G);
   return { hs, tp };
 }
-// Duration-equivalent fetch (m) for wind U (m/s) blown t hours (CERC inverse).
-function durEquivFetch(U, tHours) {
-  if (U <= 0 || tHours <= 0) return 0;
-  const t = tHours * 3600;
-  const tstar = WINDSEA_G * t / U;
-  return Math.pow(tstar / 68.8, 1.5) * U * U / WINDSEA_G;
-}
-
-// Wind-sea at a point: blends open-ocean (duration-limited) with blocked bay chop
-// by the smoothed openness weight. windKmh = wind speed, deg = wind bearing FROM,
-// durHrs = consecutive hours the wind has held (Option A). Returns {hs, tp, wOpen}.
+// Wind-sea at a point. SIMPLIFIED 11 Jul 2026: a single reference fetch, blended
+// between the open value and the 300 m bay residual by the smoothed openness mask.
+// No duration term — durEquivFetch is gone. `durHrs` retained in the signature and
+// IGNORED so the calibration harness and any stale caller keep working.
+//
+// WHY: the old path grew a sea from geographic fetch × wind duration, then ADDED it to
+// the forecast wind-wave. Both model the same sea. The forecast one is produced by a
+// real spectral model; ours was a hand-rolled SPM curve over a three-plateau fetch
+// table whose 67° boundary stepped 220 demerits per degree at 40 km/h held 24 h.
 function windSeaAt(mask, windKmh, deg, durHrs) {
   const U = (windKmh || 0) / 3.6;
   const w = openWeight(mask, deg);
-  const capH = SITE.windSeaDurCapH || 24;
-  const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
-  const open = spmGrowth(U, durEquivFetch(U, t));       // unlimited ocean, duration caps
-  const blk  = spmGrowth(U, WINDSEA_BLOCKED_FETCH_M);   // tiny residual chop
+  const open = spmGrowth(U, SITE.chopRefFetchM ?? 5000);   // reference fetch, direction-free
+  const blk  = spmGrowth(U, WINDSEA_BLOCKED_FETCH_M);      // tiny residual chop
   return {
     hs:  w * open.hs + (1 - w) * blk.hs,
     tp:  w * open.tp + (1 - w) * blk.tp,
@@ -4076,67 +4062,21 @@ function windSeaAt(mask, windKmh, deg, durHrs) {
   };
 }
 
-// Three-zone geographic fetch (m) at the BL chop centre for a wind-FROM bearing.
-// Confined coastal water to the N (ray-cast), open ocean in the NE window, sheltered
-// bay elsewhere. Smoothstep-blended at each sector edge. See SITE.fetch* params.
-function fetchGeoBL(deg) {
-  const a = ((((deg || 0) % 360) + 360) % 360);
-  const Fc = SITE.fetchConfinedM ?? 6700, Fo = SITE.fetchOpenM ?? 1e6, Fb = SITE.fetchBayM ?? 300;
-  const bBayConf = SITE.fetchBoundBayConf ?? 320, bConfOpen = SITE.fetchBoundConfOpen ?? 22, bOpenBay = SITE.fetchBoundOpenBay ?? 45;
-  const T = SITE.fetchBlendDeg ?? 5;
-  const Tco = SITE.fetchBlendDegConfOpen ?? 14;   // wider: North Head clearing, ~25° of azimuth
-  const ss = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
-  // lg() floors at 1 m: `??` lets a literal 0 through from a blank sheet cell, and
-  // Math.log(0) = -Infinity would poison the score with NaN. Linear blending is immune.
-  const lg = (x) => Math.log(Math.max(1, x));
-  // Per-edge: [centre, lowSideFetch, highSideFetch, halfWidth, useLogBlend]
-  // Only confined→open blends geometrically. hs ∝ √F and Fo/Fc ≈ 149×, so a LINEAR blend
-  // there is already 5×Fc after 2.8% of the arc — it saturates inside ~2° and reads as a
-  // cliff (heave 0.016→0.568 across 17°→19°). Log puts the 22° midpoint at the geometric
-  // mean, 82 km, not the arithmetic 503 km, and hs then climbs smoothly.
-  // The other two edges stay LINEAR on purpose: open→bay spans 3333× into the 35–125° arc
-  // where forecast wind-wave (wwHeaveE) takes over the sea, and log-blending it un-pins hs
-  // from the duration cap mid-edge, making that transition sharper, not smoother.
-  const edges = [[bBayConf, Fb, Fc, T, false], [bConfOpen, Fc, Fo, Tco, true], [bOpenBay, Fo, Fb, T, false]];
-  for (const [B, lo, hi, w, useLog] of edges) {
-    const dd = ((a - B + 540) % 360) - 180;
-    if (Math.abs(dd) <= w) {
-      const s = ss(-w, w, dd);
-      return useLog ? Math.exp(lg(lo) + (lg(hi) - lg(lo)) * s) : lo + (hi - lo) * s;
-    }
-  }
-  if (a > bBayConf || a <= bConfOpen) return Fc;  // confined (through N)
-  if (a <= bOpenBay) return Fo;                    // open ocean
-  return Fb;                                        // sheltered bay
-}
-
-// Wind-sea at the BL chop centre via three-zone geographic fetch (replaces binary-mask
-// windSeaAt for CHOP). F_eff = min(duration-equivalent fetch, geographic fetch): confined
-// caps the sea at the ray-cast distance, open lets duration govern, bay -> local chop.
-function windSeaGeo(windKmh, deg, durHrs) {
+// Wind-sea at the BL chop centre. Same construction, but the directional term is the
+// smooth CHOP_EXPO curve rather than the binary mask. max(), not +: two lower bounds on
+// ONE sea, so through the sheltered arc (expo→0 from 100–310°) the 300 m bay floor takes
+// over and an offshore 30 km/h wind still ripples the bay instead of collapsing to zero.
+// Replaces windSeaGeo(). `survive:1` kept so callers reading .survive are unaffected.
+function windSeaBL(windKmh, deg) {
   const U = (windKmh || 0) / 3.6;
-  const capH = SITE.windSeaDurCapH || 24;
-  const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
-  const Fgeo = fetchGeoBL(deg);
-  const sea = spmGrowth(U, Math.min(durEquivFetch(U, t), Fgeo));
-  return { hs: sea.hs, tp: sea.tp, fetch: Fgeo, survive: 1 }; // corridor-survival OFF: a fetch sea still under its own wind is wind-forced (choppy at 7 s), not detached/refracted swell; refraction-death applies only to arriving NS swell, a separate term. surviveWeight() retained below for reference.
+  const ref = spmGrowth(U, SITE.chopRefFetchM ?? 5000);
+  const bay = spmGrowth(U, SITE.fetchBayM ?? 300);
+  const e   = chopExposure(deg || 0);
+  return { hs: Math.max(ref.hs * e, bay.hs),
+           tp: Math.max(ref.tp * e, bay.tp),
+           survive: 1 };
 }
 
-// Corridor-survival fraction (0..1) for a fetch-grown sea by peak period. 1 = short
-// steep chop runs straight to CTB; 0 = long sea refracts onto the upstream beaches and
-// dies before the bay. survive = 1 - smoothstep(surviveTpLo, surviveTpHi, Tp). Energy
-// fraction (leaves Hs/Tp, so the steepness slap/heave split is preserved).
-function surviveWeight(Tp) {
-  if (!(Tp > 0)) return 0;
-  const lo = SITE.surviveTpLo ?? 4.5, hi = SITE.surviveTpHi ?? 6.5;
-  const t = Math.max(0, Math.min(1, (Tp - lo) / Math.max(1e-9, hi - lo)));
-  return 1 - t * t * (3 - 2 * t);
-}
-
-// Steepness-based CHOP slap fraction (0..1). Deep-water steepness s = 2πH/(gT²);
-// smoothstep between chopSteepLo (pure heave) and chopSteepHi (full slap). Height-aware:
-// short steep waves slap (→1), long flat swell heaves (→0). (1−weight) is the heave
-// fraction routed to SURGE. Returns 0 for non-positive H or T.
 function chopSlapWeight(H, T) {
   if (!(H > 0) || !(T > 0)) return 0;
   const s  = 2 * Math.PI * H / (9.81 * T * T);
@@ -4156,8 +4096,6 @@ function chopSlapWeight(H, T) {
 const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[60,0.556],[90,0.194],[100,0],[310,0],[320,0.194],[330,0.444],[340,0.556],[350,0.694],[360,0.833]];
 function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i<P.length;i++){if(a<=P[i][0]){const x0=P[i-1][0],y0=P[i-1][1],x1=P[i][0],y1=P[i][1];let t=(a-x0)/(x1-x0);t=t*t*(3-2*t);return y0+(y1-y0)*t;}}return P[P.length-1][1];}
 
-// Legacy shim — kept so any un-migrated caller still resolves. Uses the smoothed
-// BL openness as a 0..1 gate (NOT the old transmit table).
 function chopTransmit(deg) {
   return openWeight(SITE.fetchMaskBL, deg);
 }
@@ -4271,28 +4209,30 @@ async function loadChopShelterConfig(force) {
 // bay-crossing character the old Surge rail was meant to show. Chop is a SEPARATE
 // metric (kept as-is) so it is NOT summed here. Rail is inverted like Surge:
 // v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
-function blSwimWater(d, chop, wsBL) {
+function blSwimWater(d, chop) {
   const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
           windWaveH, windWaveDir, windWaveP, windDir, windKmh, tideM } = d;
-  // Fetch wind-sea at BL: passed from calcScore (live) or recomputed here (cal path).
-  const _wsBL = wsBL || windSeaGeo(windKmh, windDir, (d.windDurHrs != null ? d.windDurHrs : 6));
   const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
   const nrg = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
   const wwP = windWaveP || 5;
   const s1  = nrg(swell1H, swell1P)           * Math.max(0, blDispLookup(swell1Dir, swell1P));
   const s2  = nrg(swell2H || 0, swell2P || 8) * Math.max(0, blDispLookup(swell2Dir || 0, swell2P || 8));
-  // Sea on the SURGE rail = the HEAVE fraction (1−slap) of the wind-sea, by steepness.
-  // CHOP takes slap; SURGE takes heave (slap+heave = 1, lossless). Two estimates of the
-  // SAME sea — forecast wind-wave (arrival, via BL disp table) and local fetch windchop
-  // (via fetch mask) — are CROSSFADED by wwTxBL exactly like CHOP, so they never double-
-  // count. wwTxBL high → forecast sea dominates; low → local windchop covers the rest.
-  const wwTxBL_s  = Math.max(0, Math.min(1, blDispLookup(windWaveDir || windDir, wwP)));
+  // Sea on the SURGE rail = the HEAVE fraction (1−slap) of the FORECAST wind-wave,
+  // carried into the bay by the BL dispersion table. slap + heave = 1, lossless: CHOP
+  // takes the slap, SURGE takes the heave.
+  //
+  // The local fetch-grown sea (wchHeaveE) was REMOVED 11 Jul 2026. It was a second,
+  // worse estimate of the same sea the forecast already reports, added rather than
+  // crossfaded — a genuine double-count across 30–71° of wind bearing. Removing it
+  // also removes the 67° fetch-sector cliff (220 demerits/degree at 40 km/h held 24 h).
+  //
+  // Wind now contributes NOTHING to Surge, and that is physically right: bay ripple is
+  // short and steep, so it is all slap and no heave. Verified on 133 live hours —
+  // band occupancy 92/35/6/0 → 92/38/3/0, p50 and p90 rawBL unchanged to 2 decimals.
   const wwHeave   = 1 - chopSlapWeight(windWaveH || 0, wwP);
-  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave * Math.max(0, blDispLookup(windWaveDir || windDir, wwP)); // forecast sea heave (arrival)
-  const wchHeave  = 1 - chopSlapWeight(_wsBL.hs, _wsBL.tp);
-  const wchHeaveE = (_wsBL.hs * _wsBL.hs) * Math.max(0, _wsBL.tp) * wchHeave * (_wsBL.survive != null ? _wsBL.survive : 1); // fetch windchop heave × corridor survival
-  const seaHeaveE = wchHeaveE + wwHeaveE;  // ADDITIVE - fetch(320-45) & forecast sea(35-125) don't overlap (NS rose), so no dedup; mirrors CHOP
-  const s1_d = s1 * ess, s2_d = s2 * ess, sea_d = seaHeaveE * ess;
+  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave
+                    * Math.max(0, blDispLookup(windWaveDir || windDir, wwP));
+  const s1_d = s1 * ess, s2_d = s2 * ess, sea_d = wwHeaveE * ess;
   // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied to
   // the BL swell terms AND the crossfaded sea heave (sea_d). Tide modulates the
   // entrance-shelf depth, so it shoals ALL incoming long-period energy — sea and swell
@@ -4308,7 +4248,7 @@ function blSwimWater(d, chop, wsBL) {
   // the CHOP metric (chopQ7), the swell terms, chop_swim_weight and bl_chop_impact are
   // all untouched.
   const chop_d = 0;
-  const rawBL = s1_d + s2_d + sea_d + tide_d;  // swell + crossfaded sea-heave (sea_d, tide-amplified) + tide; steepness slap/heave split, 5 Jul 2026
+  const rawBL = s1_d + s2_d + sea_d + tide_d;  // swell + forecast sea-heave (tide-amplified) + tide
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
   // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
   // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
@@ -4350,7 +4290,7 @@ function calcScore(d, modelOverride) {
   // windSeaAt returns real Hs/Tp; scored as energy H²×P like the other wave terms.
   // Computed RAW here — the whole BL chop crossfade is scaled once by bl_chop_impact
   // (V3) below, NOT by windSeaSens (which now scales only the SS entry wind-sea).
-  const wsBL   = windSeaGeo(windKmh, windDir, windDurHrs);
+  const wsBL   = windSeaBL(windKmh, windDir);
   const wind_d_raw = (wsBL.hs * wsBL.hs) * Math.max(0, wsBL.tp) * chopSlapWeight(wsBL.hs, wsBL.tp) * (wsBL.survive != null ? wsBL.survive : 1); // BL wind-sea energy × slap fraction × corridor survival (long fetch sea dies before CTB), NO sensitivity
 
   // BL-table wind-wave for the CHOP crossfade (Option A). Computed RAW here (no
@@ -4484,7 +4424,7 @@ function calcScore(d, modelOverride) {
   // real steep face, which the old q7 energy path discarded — this is the fix. No gain knob:
   // chopCm is physical height; tune the cm band edges (swimThresholds) or CHOP_EXPO, not a sens.
   const _chopU    = (windKmh || 0) / 3.6;
-  const _chopOS   = spmGrowth(_chopU, durEquivFetch(_chopU, windDurHrs));  // open sea, dir-independent
+  const _chopOS   = spmGrowth(_chopU, SITE.chopRefFetchM ?? 5000);  // reference fetch, dir-independent
   const _chopExpo = chopExposure(windDir);
   // Sheltered-arc residual floor (prototyped in workbench, ported 8 Jul 2026): on blocked
   // bearings (100–310°, expo→0) the wind still whips a small local sea over the ~300m of
@@ -4542,7 +4482,7 @@ function calcScore(d, modelOverride) {
     // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
     //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
     //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
-    water: blSwimWater(d, chopQ7, wsBL),
+    water: blSwimWater(d, chopQ7),
   };
 }
 
@@ -6235,7 +6175,7 @@ function renderGemComparison(h) {
   const wwTx_g  = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP_g));
   const s1pow_g = nrg_g(swell1H, swell1P);
   const s2pow_g = nrg_g(swell2H || 0, swell2P || 8);
-  const wsBL_g   = windSeaGeo(windKmh, windDir, windDurHrs_g);
+  const wsBL_g   = windSeaBL(windKmh, windDir);
   // Mirror calcScore: BL wind-sea is scaled by bl_chop_impact (V3), NOT windSeaSens.
   // windSeaSens now scales ONLY the SS entry wind-sea (ws_d_g below).
   const blChopImpact_g = (SITE.blChopImpact != null) ? SITE.blChopImpact : 1;
@@ -6888,7 +6828,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-202814';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
