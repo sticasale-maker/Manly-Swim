@@ -1715,14 +1715,25 @@ async function blPush(){
         edits: edits.map(e=>({dir:e.dir, period:e.period, value:e.to})) })
     });
     const j = await res.json();
-    if(!j.ok) throw new Error(j.error || 'script refused');
+    // A JSON reply means the URL, the token round-trip and CORS all worked. If ok:false,
+    // the SCRIPT rejected the payload — do not send the user off checking their URL.
+    if(!j.ok){
+      const stale = /max 304|19x16/.test(j.error || '');
+      setBlEdit(`Sheet script rejected the push: <b>${j.error}</b>.`
+        + (stale ? ` That cap is from the 19-row script. Paste the current <code>bl_table_writer.gs</code>, then <b>Manage deployments &rarr; pencil &rarr; Version: New version &rarr; Deploy</b> — /exec serves the old version until you do.`
+                 : ` The request reached the Web App, so the URL and token are fine.`)
+        + ` Edits are still in memory — nothing was lost.`, 'err');
+      return;
+    }
     for(const k in BL_EDITS) delete BL_EDITS[k];
-    setBlEdit(`✓ Wrote ${j.written} cell${j.written>1?'s':''} to <b>${j.tab}</b> (${(j.cells||[]).join(', ')}). `
-      + `The published CSV lags a few minutes — hit “Reload from sheet” after it catches up.`,'ok');
+    setBlEdit(`✓ Wrote ${j.written} cell${j.written>1?'s':''} to <b>${j.tab}</b>`
+      + (j.version ? ` <span style="opacity:.6">(script ${j.version})</span>` : '')
+      + `. The published CSV lags a few minutes — hit “Reload from sheet” after it catches up.`,'ok');
     render();
   }catch(err){
-    setBlEdit(`Push failed: ${err.message}. Check the /exec URL, the token, and that the Web App is deployed with access “Anyone”. `
-      + `Edits are still in memory — nothing was lost.`,'err');
+    // No JSON came back at all: transport, auth or deployment-access problem.
+    setBlEdit(`Push failed before the script answered: ${err.message}. Check the /exec URL, the token, `
+      + `and that the Web App is deployed with access “Anyone”. Edits are still in memory — nothing was lost.`,'err');
   }
 }
 
