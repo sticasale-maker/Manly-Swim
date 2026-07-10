@@ -2231,7 +2231,8 @@
       .ntm-wave { font-size:20px; line-height:1; flex:none; }
       .ntm-head-txt { flex:1; min-width:0; }
       .ntm-title { font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px; font-size:20px; color:var(--deep); line-height:1; }
-      .ntm-sub { font-size:11px; color:var(--dim); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .ntm-sub { font-size:11px; color:var(--dim); margin-top:2px; overflow:hidden; white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; }
+      .ntm-sub .ntm-q { color:var(--ocean); }
       .ntm-pill { background:var(--sky); color:var(--ocean); font-size:10px; letter-spacing:.5px; border-radius:999px; padding:3px 9px; white-space:nowrap; flex:none; }
       .ntm-pill[hidden] { display:none; }
       .ntm-chev { color:var(--dim); font-size:26px; flex:none; transition:transform .2s; }
@@ -6652,7 +6653,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-131838';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -9640,9 +9641,27 @@ if ('serviceWorker' in navigator) {
       try { seen = newest && (localStorage.getItem('swim_intro_seen') === String(newest)); } catch (e) {}
       sec.classList.toggle('ntm-attn', !!(newest && !seen && !sec.classList.contains('ntm-open')));
     }
-    if (sub) sub.textContent = list.length
-      ? (list.length === 1 ? (list[0].name + ' said hello') : (list.length + ' recent hellos'))
-      : 'Be the first to say hello';
+    // Queue reassurance. `queued` = hellos already approved and waiting for their
+    // publish day (one is featured daily). Someone who posted and was approved
+    // should be able to see, without opening the card, that they are still in
+    // line and have not been dropped. The +N pill says the same thing as a badge;
+    // this says it in words, which is what a person who just posted looks for.
+    var qTail = (queued > 0)
+      ? ' \u2014 <span class="ntm-q">' + queued + ' in the queue for the coming days</span>'
+      : '';
+    if (sub) {
+      if (list.length) {
+        var lead = (list.length === 1)
+          ? (esc(list[0].name) + ' said hello')
+          : (list.length + ' recent hellos');
+        sub.innerHTML = lead + qTail;
+      } else if (queued > 0) {
+        sub.innerHTML = '<span class="ntm-q">' + queued +
+          (queued === 1 ? ' hello' : ' hellos') + ' in the queue for the coming days</span>';
+      } else {
+        sub.textContent = 'Be the first to say hello';
+      }
+    }
     if (pill) { if (queued > 0) { pill.textContent = '+' + queued + ' waiting'; pill.hidden = false; } else pill.hidden = true; }
     if (intro) {
       if (list.length) {
@@ -9693,7 +9712,7 @@ if ('serviceWorker' in navigator) {
       var r = await fetch(RPC + 'submit_intro', { method: 'POST', headers: hdrs,
         body: JSON.stringify({ p_name: name, p_body: body, p_photo_url: photo_url, p_device: deviceId() }) });
       if (!r.ok) { var t = await r.text(); throw new Error(t || ('HTTP ' + r.status)); }
-      setMsg('Thanks! Your hello is in the queue for approval.', true);
+      setMsg('Thanks! Your hello is in the queue \u2014 it will appear in the coming days.', true);
       try { if (window.track) window.track('submit_intro', {}); } catch (e) {}
       notifyAdmin(name, body, photo_url);   // email the moderator via Worker (fire-and-forget)
       nameEl.value = ''; textEl.value = ''; fileEl.value = ''; var ic = $('ntmPhotoIcon'); if (ic) ic.innerHTML = '\uD83D\uDCF7<br>photo';
