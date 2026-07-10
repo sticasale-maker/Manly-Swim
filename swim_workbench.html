@@ -142,6 +142,19 @@
       <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
       <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
       <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
+
+      <div class="grp-t">At node 103218 <small>2025 hindcast &middot; 7512 h</small></div>
+      <div class="rowflex"><input type="checkbox" id="roseSwell"> <span class="swatch" style="background:#19b3e6"></span> Swell rose (from)</div>
+      <div class="rowflex"><input type="checkbox" id="roseSea"> <span class="swatch" style="background:#4fd1a5"></span> Sea rose (from)</div>
+      <div class="rowflex"><input type="checkbox" id="roseWind"> <span class="swatch" style="background:#c9a3ff"></span> Wind rose (from)</div>
+      <div class="rowflex"><input type="checkbox" id="roseE" checked> Weight by energy (&Sigma;H&sup2;P) &mdash; off = hours</div>
+
+      <div class="grp-t">BL dispersion ring</div>
+      <div class="rowflex"><input type="checkbox" id="blRing"> Transmit ring around the node</div>
+      <div class="rowflex"><input type="checkbox" id="blAll"> Fan all periods (concentric)</div>
+      <div class="rowflex"><input type="checkbox" id="blChord" checked> Node &rarr; BL chord</div>
+      <div class="ctl p"><label>Ring period</label><input type="range" id="ringP" min="2" max="17" step="1" value="11"><div class="val"><input id="ringP_n"> <span class="unit">s</span></div></div>
+      <div class="note" id="blRingNote"></div>
       <div class="btns">
         <button id="pivEntry">Pivot: entry</button>
         <button id="pivBower">Pivot: chop</button>
@@ -1010,7 +1023,9 @@ async function loadFromSheet(){
 /* ===================== SHARED STATE ===================== */
 const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
   wK:12,wD:200,wFetch:6, wwH:0.3,wwD:200,wwP:4, tide:1.0,
-  pivot:{x:762,y:569}, crests:true, fan:false, rose:true, north:0};
+  pivot:{x:762,y:569}, crests:true, fan:false, rose:true, north:0,
+  roseSwell:false, roseSea:false, roseWind:false, roseE:true,
+  blRing:false, blAll:false, blChord:true, ringP:11};
 const MW=1520, MH=952;
 
 /* ---- Three points of interest, placed directly on map_flat.png (1520x952) ----
@@ -1035,6 +1050,26 @@ function drawForecastPoint(g){
   poiMarker(fg, FCST_NODE.x, FCST_NODE.y, '#ff3df0', 'NS '+FCST_NODE.id);
   g.appendChild(fg);
 }
+
+/* ===================== NODE 103218 · 2025 HINDCAST ROSES =====================
+   Binned from ns_hindcast.csv / ns_hindcast_wind.csv (NSW Nearshore node 103218),
+   calendar 2025 only: 7512 hourly rows (2025-01-01 11:00 → 2025-12-04 10:00).
+   36 bins x 10 deg, indexed by ARRIVAL bearing (the direction the wave/wind comes FROM),
+   bin i spans [i*10-5, i*10+5).
+     n  = hours in the bin
+     e  = SUM of H^2 * P over the bin (wave energy flux proxy). Wind e = SUM kmh^2.
+     mp = energy-weighted mean period (s); wind mp = mean speed (km/h).
+   Swell spans 60-126 deg and sea 40-135 deg at this node — both already refracted onto
+   the shelf, which is WHY the node cannot see the corner shelter the BL table supplies. */
+const ROSE_2025 = {
+  hours: 7512,
+  swell: { n: [0,0,0,0,0,0,59,475,1130,1021,501,798,2986,542,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], e: [0.0,0.0,0.0,0.0,0.0,0.0,253.9,5293.5,19502.7,12098.1,6943.5,2753.7,5150.1,170.1,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0], mp: [0,0,0,0,0,0,8.5,9.2,10.3,10.6,10.9,10.0,10.8,10.9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
+  sea:   { n: [0,0,0,0,12,71,1135,558,682,656,440,836,2733,339,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   e: [0.0,0.0,0.0,0.0,5.9,313.9,8674.7,3294.3,3707.6,3325.6,1799.9,1889.2,1770.8,21.6,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],   mp: [0,0,0,0,6.5,6.3,6.9,7.0,7.1,7.1,7.2,7.2,7.3,7.4,4.9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] },
+  wind:  { n: [127,175,202,243,239,252,197,136,116,103,100,101,96,99,126,211,252,274,284,272,244,232,185,176,226,417,459,348,242,216,212,209,216,189,182,154],  e: [14935,22246,26978,48381,51783,55946,35851,18144,13731,14060,13430,12283,12585,11744,21913,44349,71618,80703,86807,86397,81932,63748,41400,34726,48538,93362,91131,54580,40045,40218,45767,41429,36366,33455,26691,20313],  mp: [9.9,10.5,10.7,13.1,13.6,13.8,12.6,10.6,9.9,10.6,10.7,10.4,10.5,9.7,11.4,13.1,15.5,15.9,15.8,16.0,16.8,14.9,13.2,12.2,12.7,13.6,12.8,11.1,11.2,11.7,12.5,12.7,11.5,12.1,11.1,10.2] },
+};
+const ROSE_COL = { swell:'#19b3e6', sea:'#4fd1a5', wind:'#c9a3ff' };
+const ROSE_R_MAX = 205;   // px, longest petal
+const RING_R0 = 232, RING_R1 = 300;  // px, transmit annulus (sits outside the petals)
 
 /* ===================== MODEL ADAPTER (workbench inputs -> app calcScore) ===================== */
 function gemTransmit(dirDeg,periodS){return nsDispLookup(dirDeg,periodS);}
@@ -1129,9 +1164,133 @@ function drawRose(g){const cx=1450,cy=72,R=42;g.appendChild(el('circle',{cx,cy,r
     g.appendChild(el('line',{x1:cx,y1:cy,x2:cx+vx*R,y2:cy+vy*R,stroke:lab==='N'?'#e85d5d':'rgba(207,233,243,0.7)','stroke-width':lab==='N'?2.5:1.4}));
     const t=el('text',{x:cx+vx*(R+11),y:cy+vy*(R+11)+4,fill:'#cfe9f3','font-size':13,'text-anchor':'middle','font-family':'DM Mono'});t.textContent=lab;g.appendChild(t);});}
 
+/* ===================== NODE ROSES + BL DISPERSION RING ===================== */
+/* Bearing of a pixel delta, in the same convention vecFrom() consumes (north offset applied). */
+function bearingFromDelta(dx,dy){ return ((Math.atan2(dx,-dy)*180/Math.PI) + ST.north + 360) % 360; }
+
+/* The chord node -> BL. `travel` = the way the water runs; `arrival` = the direction a wave
+   must COME FROM to run down that chord, i.e. the BL-table row that actually points at BL. */
+function nodeToBL(){
+  const dx = PT_CHOP.x - FCST_NODE.x, dy = PT_CHOP.y - FCST_NODE.y;
+  const travel  = bearingFromDelta(dx,dy);
+  const arrival = (travel + 180) % 360;
+  return { dx, dy, travel, arrival, len: Math.hypot(dx,dy) };
+}
+
+/* One rose: 36 petals, radius ∝ sqrt(weight) so AREA is proportional to the weight
+   (a linear radius lies about the big bins — the eye reads area, not length). */
+function drawDataRose(g, key){
+  const src = ROSE_2025[key]; if(!src) return;
+  const w = ST.roseE ? src.e : src.n;
+  const max = Math.max.apply(null, w); if(!(max>0)) return;
+  const cx = FCST_NODE.x, cy = FCST_NODE.y, col = ROSE_COL[key];
+  const gg = el('g',{opacity:0.72});
+  for(let i=0;i<36;i++){
+    if(!(w[i]>0)) continue;
+    const R = ROSE_R_MAX * Math.sqrt(w[i]/max);
+    const b = i*10, half = 4.4;                       // 0.6° gap between petals
+    const a = vecFrom(b-half), c = vecFrom(b+half);
+    // Petal points OUTWARD along the arrival bearing (where it comes from), matching the
+    // swell arrows, which also point back up-swell from the pivot.
+    const p = `M ${cx} ${cy} L ${cx+a.x*R} ${cy+a.y*R} A ${R} ${R} 0 0 1 ${cx+c.x*R} ${cy+c.y*R} Z`;
+    const pe = el('path',{d:p, fill:col, stroke:col, 'stroke-width':1, opacity:0.5});
+    const t = el('title'); 
+    t.textContent = `${key} · from ${b}° · ${src.n[i]} h (${(100*src.n[i]/ROSE_2025.hours).toFixed(1)}%) · `
+      + (key==='wind' ? `mean ${src.mp[i]} km/h` : `ΣH²P ${src.e[i]} · mean ${src.mp[i]} s`);
+    pe.appendChild(t); gg.appendChild(pe);
+  }
+  g.appendChild(gg);
+}
+
+/* BL dispersion table as an annulus around the node.
+   Sector i = table row i*10°, coloured by transmit at the chosen period.
+   The table folds 180–360 back onto 0–180, so the ring is MIRROR-SYMMETRIC about the
+   N–S axis. That is a property of the table, not of the bay — it is drawn honestly so
+   you can see it. */
+function blTransmitAt(dirDeg, periodS){
+  if(!SITE.blDisp) return null;
+  return Math.max(0, Math.min(1, blDispLookup(dirDeg, periodS)));
+}
+function drawBlRing(g){
+  const cx = FCST_NODE.x, cy = FCST_NODE.y;
+  const periods = ST.blAll ? [3,5,7,9,11,13,15,17] : [ST.ringP];
+  const bands = periods.length;
+  const gg = el('g',{});
+  periods.forEach((P,pi)=>{
+    const r0 = RING_R0 + (RING_R1-RING_R0) * (pi/bands);
+    const r1 = RING_R0 + (RING_R1-RING_R0) * ((pi+1)/bands) - (bands>1?1.5:0);
+    for(let b=0;b<360;b+=10){
+      const tx = blTransmitAt(b,P);
+      const half = 4.7;
+      const a0 = vecFrom(b-half), a1 = vecFrom(b+half);
+      const d = `M ${cx+a0.x*r0} ${cy+a0.y*r0} L ${cx+a0.x*r1} ${cy+a0.y*r1}`
+              + ` A ${r1} ${r1} 0 0 1 ${cx+a1.x*r1} ${cy+a1.y*r1}`
+              + ` L ${cx+a1.x*r0} ${cy+a1.y*r0} A ${r0} ${r0} 0 0 0 ${cx+a0.x*r0} ${cy+a0.y*r0} Z`;
+      const seg = el('path',{ d, fill: tx==null ? 'rgba(120,140,150,0.35)' : transmitColor(tx),
+                              opacity: tx==null ? 0.5 : (0.30 + tx*0.62),
+                              stroke:'rgba(0,0,0,0.30)','stroke-width':0.5 });
+      const t = el('title');
+      t.textContent = tx==null ? `BL table not loaded — 50% fallback`
+                    : `BL transmit · from ${b}° · ${P}s → ${(tx*100).toFixed(0)}%`
+                      + (b>180 ? `  (mirror of ${360-b}°)` : '');
+      seg.appendChild(t); gg.appendChild(seg);
+    }
+  });
+  // period labels on the concentric bands
+  if(ST.blAll) periods.forEach((P,pi)=>{
+    const r = RING_R0 + (RING_R1-RING_R0)*((pi+0.5)/bands), v = vecFrom(270);
+    const t = el('text',{x:cx+v.x*r, y:cy+v.y*r+4, fill:'#cfe9f3','font-size':11,'font-family':'DM Mono',
+      'text-anchor':'middle','paint-order':'stroke',stroke:'rgba(0,0,0,0.7)','stroke-width':3});
+    t.textContent = P+'s'; gg.appendChild(t);
+  });
+  g.appendChild(gg);
+}
+
+/* The chord itself + the table row it lands on. */
+function drawBlChord(g){
+  const c = nodeToBL(), cx = FCST_NODE.x, cy = FCST_NODE.y;
+  const gg = el('g',{});
+  gg.appendChild(el('line',{x1:cx,y1:cy,x2:PT_CHOP.x,y2:PT_CHOP.y,
+    stroke:'#ffd23f','stroke-width':3,'stroke-dasharray':'10 7',opacity:0.9}));
+  // Ray back up the ARRIVAL bearing — the row of the table that points down the chord.
+  const v = vecFrom(c.arrival);
+  gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+v.x*RING_R1,y2:cy+v.y*RING_R1,
+    stroke:'#ffd23f','stroke-width':2,opacity:0.55}));
+  const lx = cx+v.x*(RING_R1+34), ly = cy+v.y*(RING_R1+34);
+  const P = ST.blAll ? ST.ringP : ST.ringP;
+  const tx = blTransmitAt(c.arrival, P);
+  const t = el('text',{x:lx,y:ly,fill:'#ffd23f','font-size':21,'font-family':'DM Mono','font-weight':600,
+    'text-anchor':'middle','paint-order':'stroke',stroke:'rgba(0,0,0,0.65)','stroke-width':5});
+  t.textContent = Math.round(c.arrival)+'° → BL' + (tx!=null ? '  '+(tx*100).toFixed(0)+'%' : '');
+  gg.appendChild(t);
+  g.appendChild(gg);
+}
+
+/* Text readout under the ring controls: the chord geometry + the row it lands on. */
+function updateBlRingNote(){
+  const box = document.getElementById('blRingNote'); if(!box) return;
+  const c = nodeToBL();
+  const row10 = Math.round(((c.arrival%360)+360)%360 / 10) * 10;
+  const fold  = row10 > 180 ? 360 - row10 : row10;
+  const tx    = blTransmitAt(c.arrival, ST.ringP);
+  const txRow = blTransmitAt(fold, ST.ringP);
+  box.innerHTML = SITE.blDisp
+    ? `Chord node&nbsp;103218 &rarr; BL is <b>${c.travel.toFixed(1)}&deg;</b> (${Math.round(c.len)} px). `
+      + `A wave runs down it only if it arrives <b>from ${c.arrival.toFixed(1)}&deg;</b> &mdash; `
+      + `nearest table row <b>${fold}&deg;</b>. At ${ST.ringP}s that row transmits `
+      + `<b>${(txRow*100).toFixed(0)}%</b> (interpolated at ${c.arrival.toFixed(1)}&deg;: ${(tx*100).toFixed(0)}%). `
+      + `<span class="note2">Ring is mirror-symmetric N&ndash;S because the table folds 180&ndash;360&deg; back onto 0&ndash;180&deg;.</span>`
+    : `<b>BL table not loaded</b> — the ring is drawn grey and <code>blDispLookup</code> is returning the 0.5 fallback for every direction and period. Hit “Reload from sheet”.`;
+}
+
 function drawMap(){
   while(ov.firstChild)ov.removeChild(ov.firstChild); handlePos={};
   const g=el('g',{});ov.appendChild(g);
+  if(ST.blRing)drawBlRing(g);
+  if(ST.roseSwell)drawDataRose(g,'swell');
+  if(ST.roseSea)drawDataRose(g,'sea');
+  if(ST.roseWind)drawDataRose(g,'wind');
+  if(ST.blChord&&(ST.blRing||ST.roseSwell||ST.roseSea||ST.roseWind))drawBlChord(g);
   if(ST.fan)drawFan(g);
   drawSwellLine(g,ST.s1D,ST.s1P,CSSv('--s1')||'#19b3e6',5,'s1');
   if(ST.s2on)drawSwellLine(g,ST.s2D,ST.s2P,CSSv('--s2')||'#e0a64d',4,'s2');
@@ -1152,6 +1311,7 @@ function railHTML(m){let segs=[],mk=0;
 function render(){
   const I=inputObj(), R=calc(I);
   drawMap();
+  updateBlRingNote();
   const chipRail={
     entry:{kind:'lowGood',value:R.entry.raw,scaleMax:SITE.entryThresholds.scaleMax,bounds:[SITE.entryThresholds.easy,SITE.entryThresholds.doable,SITE.entryThresholds.caution]},
     swim:{kind:'lowGood',value:R.chopCm,scaleMax:CHOP_FACE.scaleMax,bounds:[CHOP_FACE.ripply,CHOP_FACE.choppy,CHOP_FACE.messy]},
@@ -1290,8 +1450,15 @@ document.getElementById('resetParams').onclick=()=>{KNOBS.forEach(k=>{if(LIVE[k]
 
 // toggles
 document.getElementById('s2on').addEventListener('change',e=>{ST.s2on=e.target.checked;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';render();});
-['crests','fan','rose'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{ST[id]=e.target.checked;render();}));
-document.getElementById('crests').checked=ST.crests;document.getElementById('rose').checked=ST.rose;
+['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','blAll','blChord']
+  .forEach(id=>{const c=document.getElementById(id);c.checked=ST[id];
+    c.addEventListener('change',e=>{ST[id]=e.target.checked;render();});});
+// ring period
+{const r=document.getElementById('ringP'),n=document.getElementById('ringP_n');
+ const set=v=>{ST.ringP=Math.max(2,Math.min(17,v));r.value=ST.ringP;n.value=ST.ringP;render();};
+ r.addEventListener('input',()=>set(+r.value));
+ n.addEventListener('change',()=>set(parseFloat(n.value)||11));
+ set(ST.ringP);}
 // north offset
 {const r=document.getElementById('north'),n=document.getElementById('north_n');const set=v=>{ST.north=v;r.value=v;n.value=v;render();};r.addEventListener('input',()=>set(+r.value));n.addEventListener('change',()=>set(parseFloat(n.value)||0));}
 // pivots
