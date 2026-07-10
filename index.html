@@ -3153,6 +3153,11 @@ const SITE_DEFAULTS = {
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
   tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × max(0, tideM − tideRef) × (s1_d + ww_d)
+  // Dispersion-table shape. TRUE = legacy 19-row mirror (fold 181–359° onto 1–179°).
+  // The parser flips these to false once the sheet's 190°–350° rows carry values.
+  // Defaulting to true means a missing/half-filled sheet can never move a live score.
+  nsDispFold:     true,
+  blDispFold:     true,
   tideRef:        0.7,    // neutral tide height (m, WW datum): at or below ref the tide adds nothing; above it high water amplifies. MONOTONE — a rising tide can only ever raise demerits (11 Jul 2026, low-tide credit retired).
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
@@ -3190,9 +3195,9 @@ const SITE_DEFAULTS = {
   //   Rail is drawn best-on-left. Display score = max(0, round(60 − rawBL)).
   surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 },
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
-  nsDisp:         null, // NS "New NS" tab SS dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked)
+  nsDisp:         null, // NS "New NS" tab SS dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked). See SITE.nsDispFold.
   ssWaveSens:     2.35, // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path (tuned 2 Jul 2026)
-  blDisp:         null, // BL (Bower Lane / bay) dispersion table: [19 dirs 0–180°][16 periods 2–17s] TRANSMIT % — New NS tab V10:AL28
+  blDisp:         null, // BL (Bower Lane / bay) dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT % — New NS tab, cols W:AL. See SITE.blDispFold.
   blWaveSens:     2.35, // New NS tab V2 (bl_wave_sens) — BL swell+sea sensitivity for the Swim metric
   blChopImpact:   1.3,  // New NS tab V3 (bl_chop_impact) — "BL chop impact": single knob scaling the whole BL chop crossfade (wind-sea + wind-wave), no handover jump
   chopSwimWeight: 1.0,  // New NS tab cell V7 (chop_swim_weight, "Chop contribution to Swim") — extra multiplier on chop WHERE IT ENTERS SWIM ONLY. Chop energy is physically small next to swell but adds annoyance; this lets chop move the SWIM band without touching the standalone CHOP metric, the swell terms, or bl_chop_impact. 1.0 = chop enters Swim 1:1 (legacy).
@@ -3814,25 +3819,34 @@ async function retryGemTable() {
 // Direction ≥190° (or folded >180°) → 0 (fully blocked, land side).
 // =============================================================================
 const NS_DISP_PMIN = 2, NS_DISP_PMAX = 17; // period column range (s)
+// The New NS tab carries 36 direction rows, 0°–350° @10°, plus a 360° WRAP ROW that
+// duplicates 0° (skipped by the parser). Until 11 Jul 2026 only the first 19 rows were
+// read and both lookups folded 181–359° back onto 1–179°, so 200° silently returned
+// row 160°'s value and a 300° wind scored as a 60° wind. Rows 190–350 were dead cells.
+const NS_DISP_ROWS = 36;
 
-function nsDispLookup(dirDeg, periodS) {
-  const tbl = SITE.nsDisp;
-  if (!tbl) return 0.5; // fallback if table not loaded
-
-  // Direction: fold 180–360 back onto 0–180 (mirror). Anything landward is 0 in
-  // the table's 150–180 rows anyway, so folding keeps behaviour continuous.
+// A table whose west half (rows 190°–350°) is entirely blank cannot be read unfolded:
+// every westerly would drop to 0% transmit the moment the fold came off. When the
+// parser finds that half empty it sets the table's `fold` flag, and the lookup keeps
+// the legacy mirror. Fill the rows in the sheet and the 36-row path switches itself on.
+// So: the table declares its own shape, and deploying this file cannot move a score.
+function dispBilinear(tbl, dirDeg, periodS, folded) {
   let d = ((dirDeg % 360) + 360) % 360;
-  if (d > 180) d = 360 - d;
-
   const per = Math.max(NS_DISP_PMIN, Math.min(NS_DISP_PMAX, periodS || 8));
 
-  // Row index: dir 0°=row0, 180°=row18, step=10°
-  const ri = d / 10;
-  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
-  const rf = ri - r0;
+  let r0, r1, rf;
+  if (folded) {
+    if (d > 180) d = 360 - d;                    // legacy mirror, rows 0–18 only
+    const ri = d / 10;
+    r0 = Math.floor(ri); r1 = Math.min(18, r0 + 1); rf = ri - r0;
+  } else {
+    const ri = d / 10;                           // 0°=row0 … 350°=row35
+    const rb = Math.floor(ri) % NS_DISP_ROWS;
+    r0 = rb; r1 = (rb + 1) % NS_DISP_ROWS;       // 350° interpolates across the seam into 0°
+    rf = ri - Math.floor(ri);
+  }
 
-  // Col index: period 2s=col0, 17s=col15, step=1s
-  const ci = per - NS_DISP_PMIN;
+  const ci = per - NS_DISP_PMIN;                 // 2s=col0 … 17s=col15
   const c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1);
   const cf = ci - c0;
 
@@ -3845,26 +3859,19 @@ function nsDispLookup(dirDeg, periodS) {
   return Math.max(0, tx / 100); // transmit fraction
 }
 
-// BL (Bower Lane / bay) dispersion lookup — identical interp to nsDispLookup but
-// reads the BL table (New NS tab V10:AL28). Feeds the Swim metric (ex-Surge).
+// SS dispersion lookup — the local South-Steyne corner shelter the node 103218 feed
+// does not resolve. Returns transmit fraction (0–1). 0.5 when the table is missing.
+function nsDispLookup(dirDeg, periodS) {
+  const tbl = SITE.nsDisp;
+  if (!tbl) return 0.5;
+  return dispBilinear(tbl, dirDeg, periodS, SITE.nsDispFold);
+}
+
+// BL (Bower Lane / bay) dispersion lookup — same interp, its own table (New NS W:AL).
 function blDispLookup(dirDeg, periodS) {
   const tbl = SITE.blDisp;
   if (!tbl) return 0.5;
-  let d = ((dirDeg % 360) + 360) % 360;
-  if (d > 180) d = 360 - d;
-  const per = Math.max(NS_DISP_PMIN, Math.min(NS_DISP_PMAX, periodS || 8));
-  const ri = d / 10;
-  const r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1);
-  const rf = ri - r0;
-  const ci = per - NS_DISP_PMIN;
-  const c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1);
-  const cf = ci - c0;
-  const tx =
-    tbl[r0][c0] * (1-rf) * (1-cf) +
-    tbl[r0][c1] * (1-rf) *    cf  +
-    tbl[r1][c0] *    rf  * (1-cf) +
-    tbl[r1][c1] *    rf  *    cf;
-  return Math.max(0, tx / 100);
+  return dispBilinear(tbl, dirDeg, periodS, SITE.blDispFold);
 }
 
 // Parse the "New NS" tab CSV into { table:[19][16], ssWaveSens:Number }.
@@ -3924,32 +3931,45 @@ function parseNsDispCSV(text) {
   if ([uSteady,uDrifty,uSurgy,uMax].every(v => v != null))
     surgeThresholds = { steady:uSteady, drifty:uDrifty, surgy:uSurgy, scaleMax:uMax };
 
-  // SS dispersion table: rows 10–28, cols 3–18 (dir label in col 2).
-  const table = [];
-  for (let r = 10; r <= 28; r++) {
-    const row = rows[r] || [];
-    const periods = [];
-    for (let c = 3; c <= 18; c++) {
-      const v = num(row[c]);
-      periods.push(v == null ? 0 : v); // blank → 0 transmit (blocked)
+  // Dispersion tables: CSV rows 10–45 = bearings 0°–350° (36 rows). CSV row 46 is the
+  // 360° wrap duplicate of row 0 and is deliberately not read.
+  //   SS block: dir label col 2 (B), 16 period values cols 3–18 (D–S)
+  //   BL block: dir label col 21 (V), 16 period values cols 22–37 (W–AL)
+  // `westFilled` counts non-blank cells in rows 190°–350° (indices 19–35). Zero means
+  // that half of the table was never populated, and the lookup must keep folding or
+  // every westerly collapses to 0% transmit. See dispBilinear().
+  const readBlock = (c0, c1) => {
+    const t = [];
+    let westFilled = 0;
+    for (let r = 10; r <= 45; r++) {
+      const row = rows[r] || [];
+      const periods = [];
+      for (let c = c0; c <= c1; c++) {
+        const v = num(row[c]);
+        if (v != null && (r - 10) >= 19) westFilled++;
+        periods.push(v == null ? 0 : v); // blank → 0 transmit (blocked)
+      }
+      t.push(periods);
     }
-    table.push(periods);
-  }
-  // BL dispersion table: V10:AL28 — dir label in col V(21), 16 period values in W:AL (cols 22–37).
-  const blTable = [];
-  for (let r = 10; r <= 28; r++) {
-    const row = rows[r] || [];
-    const periods = [];
-    for (let c = 22; c <= 37; c++) {
-      const v = num(row[c]);
-      periods.push(v == null ? 0 : v);
-    }
-    blTable.push(periods);
-  }
-  const blOk = (blTable.length === 19 && blTable.every(r => r.length === 16) && blTable.some(r => r.some(v => v > 0)));
-  return (table.length === 19 && table.every(r => r.length === 16))
-    ? { table, blDisp: blOk ? blTable : null, ssWaveSens, windSeaSens, tideGain, blWaveSens, blChopImpact, chopSwimWeight, entryThresholds, swimThresholds, surgeThresholds }
-    : null;
+    return { t, westFilled };
+  };
+  const ss = readBlock(3, 18);
+  const bl = readBlock(22, 37);
+  const shapeOk = (t) => t.length === NS_DISP_ROWS && t.every(r => r.length === 16);
+
+  const table   = ss.t;
+  const blTable = bl.t;
+  const blOk = shapeOk(blTable) && blTable.some(r => r.some(v => v > 0));
+  if (!shapeOk(table)) return null;
+
+  return {
+    table,
+    nsDispFold: ss.westFilled === 0,   // true → legacy mirror; false → full 36-row wrap
+    blDisp: blOk ? blTable : null,
+    blDispFold: bl.westFilled === 0,
+    ssWaveSens, windSeaSens, tideGain, blWaveSens, blChopImpact, chopSwimWeight,
+    entryThresholds, swimThresholds, surgeThresholds,
+  };
 }
 
 async function loadNsDispConfig(force) {
@@ -3963,8 +3983,14 @@ async function loadNsDispConfig(force) {
   };
   try {
     const cached = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
-    if (!force && !FORCE_FRESH && cached && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL && cached.table) {
+    // A cache written by a pre-36-row build holds 19 rows and no fold flags. Reading it
+    // into the new lookup would index rows 19–35 as undefined. Treat it as a miss.
+    const cacheShapeOk = cached && cached.table && cached.table.length === NS_DISP_ROWS
+                         && (!cached.blDisp || cached.blDisp.length === NS_DISP_ROWS);
+    if (!force && !FORCE_FRESH && cached && cacheShapeOk && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
       SITE.nsDisp = cached.table;
+      SITE.nsDispFold = (cached.nsDispFold !== false);   // absent → safe legacy mirror
+      SITE.blDispFold = (cached.blDispFold !== false);
       if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
       if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
       if (cached.tideGain != null) SITE.tideGain = cached.tideGain;
@@ -3973,9 +3999,12 @@ async function loadNsDispConfig(force) {
       if (cached.blChopImpact != null) SITE.blChopImpact = cached.blChopImpact;
       if (cached.chopSwimWeight != null) SITE.chopSwimWeight = cached.chopSwimWeight;
       applyThresh(cached);
-      diag('NS disp: cache hit (' + cached.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ', BL=' + (SITE.blDisp?'y':'n') + ')');
+      diag('NS disp: cache hit (' + cached.table.length + ' rows, SS ' + (SITE.nsDispFold?'FOLDED':'36-row')
+        + ', BL ' + (SITE.blDisp ? (SITE.blDispFold?'FOLDED':'36-row') : 'n')
+        + ', ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ')');
       return;
     }
+    if (cached && cached.table && !cacheShapeOk) diag('NS disp: cache discarded (' + cached.table.length + '-row table, expected ' + NS_DISP_ROWS + ')');
   } catch(e) {}
   diag('NS disp: fetching...');
   try {
@@ -3985,6 +4014,8 @@ async function loadNsDispConfig(force) {
     const parsed = parseNsDispCSV(text);
     if (parsed) {
       SITE.nsDisp = parsed.table;
+      SITE.nsDispFold = parsed.nsDispFold;
+      SITE.blDispFold = parsed.blDispFold;
       if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
       if (parsed.windSeaSens != null) SITE.windSeaSens = parsed.windSeaSens;
       if (parsed.tideGain != null) SITE.tideGain = parsed.tideGain;
@@ -3994,15 +4025,23 @@ async function loadNsDispConfig(force) {
       if (parsed.chopSwimWeight != null) SITE.chopSwimWeight = parsed.chopSwimWeight;
       applyThresh(parsed);
       localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
-        fetchedAt: Date.now(), table: parsed.table, ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens, tideGain: parsed.tideGain,
+        fetchedAt: Date.now(), table: parsed.table, nsDispFold: parsed.nsDispFold, blDispFold: parsed.blDispFold,
+        ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens, tideGain: parsed.tideGain,
         blDisp: parsed.blDisp, blWaveSens: parsed.blWaveSens, blChopImpact: parsed.blChopImpact, chopSwimWeight: parsed.chopSwimWeight,
         entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
       }));
-      diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens
-        + ', BL table=' + (parsed.blDisp?'loaded':'MISSING') + ' bl_wave_sens=' + SITE.blWaveSens
+      diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows'
+        + ', SS ' + (parsed.nsDispFold ? 'FOLDED — 190–350° empty' : '36-row, no fold')
+        + ', BL ' + (parsed.blDisp ? (parsed.blDispFold ? 'FOLDED — 190–350° empty' : '36-row, no fold') : 'MISSING')
+        + ', ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ', bl_wave_sens=' + SITE.blWaveSens
         + (parsed.swimThresholds ? ', CHOP ' + parsed.swimThresholds.glassy + '/' + parsed.swimThresholds.ripply + '/' + parsed.swimThresholds.choppy : '') + ')');
+      if (parsed.nsDispFold || parsed.blDispFold) console.warn(
+        '[NS disp] Sheet rows 190°–350° are blank in ' +
+        [parsed.nsDispFold && 'SS', parsed.blDispFold && 'BL'].filter(Boolean).join(' + ') +
+        '. Holding the legacy 19-row mirror: 200° reads row 160°, a 300° wind scores as 60°. ' +
+        'Fill those rows and the full 36-row lookup switches on by itself.');
     } else {
-      diag('NS disp: parse returned null — check New NS tab (expected 19 dir rows × 16 period cols from row 11)');
+      diag('NS disp: parse returned null — check New NS tab (expected ' + NS_DISP_ROWS + ' dir rows × 16 period cols from row 11)');
     }
   } catch(e) {
     diag('NS disp: FAIL — ' + (e.message || e));
@@ -6825,7 +6864,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-215356';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
