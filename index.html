@@ -1515,88 +1515,7 @@
   /* ── Weather code emoji map ── */
   /* handled in JS */
 
-  /* ===== SPLASH SCREEN ===== */
-  #splash-screen {
-    position: fixed;
-    inset: 0;
-    background: var(--deep, #0a1628);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 28px;
-    z-index: 9999;
-    transition: opacity 0.6s ease;
-  }
-  #splash-screen.fade-out {
-    opacity: 0;
-    pointer-events: none;
-  }
-  #splash-screen img {
-    width: 320px;
-    height: 320px;
-    border-radius: 56px;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
-  }
-  #splash-screen .splash-title {
-    font-size: 32px;
-    font-weight: 700;
-    letter-spacing: 4px;
-    color: #ffffff;
-    text-transform: uppercase;
-    margin: 0;
-  }
-  #splash-screen .splash-title span {
-    color: var(--ocean, #00b4d8);
-  }
-  #splash-screen .splash-sub {
-    font-size: 14px;
-    color: rgba(255,255,255,0.65);
-    text-align: center;
-    max-width: 320px;
-    line-height: 1.6;
-    margin: 0;
-  }
-  #splash-screen .splash-copy {
-    font-size: 11px;
-    color: rgba(255,255,255,0.35);
-    position: absolute;
-    bottom: 24px;
-  }
-  #splash-screen .splash-warning {
-    background: rgba(212,144,10,0.15);
-    border: 1.5px solid var(--yellow, #d4900a);
-    border-radius: 14px;
-    padding: 14px 22px;
-    text-align: center;
-    max-width: 320px;
-  }
-  #splash-screen .splash-warning-title {
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    color: #ffc94d;
-    margin: 0 0 6px;
-  }
-  #splash-screen .splash-warning-stage {
-    font-size: 13px;
-    color: rgba(255,255,255,0.8);
-    letter-spacing: 0.5px;
-    margin: 0 0 4px;
-  }
-  #splash-screen .splash-warning-note {
-    font-size: 14px;
-    color: #ffe6b3;
-    letter-spacing: 0.5px;
-    margin: 0;
-  }
-  #splash-screen .splash-warning-note strong {
-    color: #ffc94d;
-    font-weight: 700;
-  }
-
-  /* ── Video splash (phase 1) ── */
+  /* ── Video splash (the only splash) ── */
   #video-splash {
     position: fixed;
     inset: 0;
@@ -1791,21 +1710,10 @@
 </style>
 </head>
 <body>
-<!-- Phase 1: video splash -->
+<!-- Video splash -->
 <div id="video-splash">
   <video id="splash-video" src="images/logosplash.mp4" autoplay muted playsinline preload="auto"></video>
   <button id="splash-skip" type="button" aria-label="Skip intro">Skip</button>
-</div>
-
-<div id="splash-screen">
-  <p class="splash-title">SWIM <span>MANLY</span></p>
-  <p class="splash-sub">Ocean swim forecast</p>
-  <div class="splash-warning">
-    <p class="splash-warning-title">⚠ Beta release</p>
-    <p class="splash-warning-stage">The model is still in training</p>
-    <p class="splash-warning-note">Scores may be <strong>imprecise</strong> at times, but will keep improving over the coming weeks.</p>
-  </div>
-  <p class="splash-copy">© Marco Bordieri — VIZ Group, June 2026</p>
 </div>
 
 <div id="ptr-indicator">
@@ -2875,7 +2783,9 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     });
     el('stRetRun').addEventListener('click', runRetention);
     var d = new Date(Date.now() - 7 * 864e5);
-    el('stRetDate').value = d.toISOString().slice(0, 10);
+    var def = d.toISOString().slice(0, 10);
+    el('stRetDate').min = LAUNCH_DAY;              // picker cannot reach pre-launch
+    el('stRetDate').value = clampAnchor(def);
   }
 
   function openPanel() { build(); el('statsOverlay').classList.add('show'); document.body.style.overflow = 'hidden'; loadSummary(30); }
@@ -2884,15 +2794,41 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
   function setStatus(t) { var n = el('stStatus'); if (n) n.textContent = t || ''; }
 
+  /* LAUNCH FLOOR — the dashboard never reads behind public release day.
+     Pre-launch rows (Marco's own testing, early ns_degraded beacons) stay in
+     analytics_events untouched; they're simply out of every window we request.
+     To look further back, change LAUNCH_DAY or pass a bigger number by hand:
+       loadSummary(365)  in the browser console, after clearing the clamp.
+     Local Sydney midnight, not UTC — matches how the splash stamps its day. */
+  var LAUNCH_DAY = '2026-07-10';
+  function daysSinceLaunch() {
+    try {
+      var p = LAUNCH_DAY.split('-');
+      var launch = new Date(+p[0], +p[1] - 1, +p[2]);       // local midnight
+      var now = new Date(); now.setHours(0, 0, 0, 0);
+      var d = Math.round((now - launch) / 864e5) + 1;        // inclusive of today
+      return d < 1 ? 1 : d;
+    } catch (e) { return 1; }
+  }
+  function clampDays(days) {
+    var max = daysSinceLaunch();
+    var n = parseInt(days, 10);
+    if (!n || n < 1) n = 1;
+    return n > max ? max : n;
+  }
+  function clampAnchor(a) { return (a && a < LAUNCH_DAY) ? LAUNCH_DAY : a; }
+
   async function loadSummary(days) {
     setStatus('Loading\u2026');
+    var asked = parseInt(days, 10) || 0;
+    days = clampDays(days);
     try {
       var data = await rpc('analytics_summary', { p_token: tok(), p_days: days });
       if (!data || Object.keys(data).length === 0) {
         setStatus('Not authorised. Open with  ?stats=1&token=YOUR_ADMIN_TOKEN');
         return;
       }
-      setStatus('');
+      setStatus(asked > days ? ('Since launch \u2014 ' + days + (days === 1 ? ' day' : ' days')) : '');
       renderSummary(data);
     } catch (e) { setStatus('Could not load (' + ((e && e.message) || e) + ')'); }
   }
@@ -2953,8 +2889,9 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
   }
 
   async function runRetention() {
-    var anchor = el('stRetDate').value;
+    var anchor = clampAnchor(el('stRetDate').value);
     if (!anchor) { el('stRetOut').innerHTML = '<div class="st-empty">Pick a date first.</div>'; return; }
+    el('stRetDate').value = anchor;                // reflect the clamp back to the picker
     el('stRetOut').innerHTML = '<div class="st-empty">Loading\u2026</div>';
     try {
       var rows = await rpc('analytics_retention', { p_token: tok(), p_anchor: anchor, p_weeks: 4 });
@@ -6715,7 +6652,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-084407';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -6773,7 +6710,7 @@ function hideRefreshPrompt() {
       navigator.clipboard.writeText(txt).then(done).catch(() => { prompt('Copy these diagnostics:', txt); });
     } else { prompt('Copy these diagnostics:', txt); }
   });
-  // First check ~10s after launch — comfortably after the 4.2s splash and a couple
+  // First check ~10s after launch — comfortably after the splash video and a couple
   // of fetch attempts. Re-check a few more times in case the connection is slow.
   setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 10000);
   setTimeout(() => { if (!_forecastRendered) showRefreshPrompt(); }, 18000);
@@ -7407,14 +7344,13 @@ async function nuovoPreflight() {
   window.persistGet = persistGet; window.persistSet = persistSet;
 
   // ===== SPLASH SCREEN =====
-  // Phase 1: video plays to completion (or max 10s safety cap).
-  // Phase 2: logo splash shows for a flat 4s.
+  // One phase: the video plays to completion (or a 10s safety cap), then fades.
+  // The old phase-2 logo/beta card has been removed.
   // Shown once per calendar day (local time); every later launch that day skips it.
   (function() {
     var videoEl   = document.getElementById('splash-video');
     var videoWrap = document.getElementById('video-splash');
-    var logoSplash = document.getElementById('splash-screen');
-    if (!videoWrap || !logoSplash) return;
+    if (!videoWrap) return;
 
     // Show the splash on the first launch of each local calendar day. Every
     // subsequent launch or reload that same day goes straight to the app.
@@ -7427,7 +7363,6 @@ async function nuovoPreflight() {
                 ('0' + _d.getDate()).slice(-2);
     if (persistGet(SPLASH_KEY) === today) {
       videoWrap.style.display = 'none';
-      logoSplash.style.display = 'none';
       return;
     }
     persistSet(SPLASH_KEY, today);
@@ -7437,46 +7372,30 @@ async function nuovoPreflight() {
       setTimeout(function() { el.style.display = 'none'; if (cb) cb(); }, 650);
     }
 
-    // Phase 2: logo splash with 4s floor, data-ready ceiling, 4s hard cap.
-    // MIN == MAX by design: the card holds a flat 4s regardless of _forecastRendered.
-    function startLogoPhase() {
-      var MIN_MS = 4000, MAX_MS = 4000, started = Date.now();
-      function checkLogo() {
-        var elapsed = Date.now() - started;
-        if (elapsed >= MAX_MS) return fadeEl(logoSplash);
-        if (_forecastRendered && elapsed >= MIN_MS) return fadeEl(logoSplash);
-        setTimeout(checkLogo, 200);
-      }
-      checkLogo();
-    }
-
-    // Phase 1: wait for video ended event, with a 10s safety cap
-    var phase1Done = false;
-    function endPhase1() {
-      if (phase1Done) return;
-      phase1Done = true;
-      fadeEl(videoWrap, startLogoPhase);
+    // Wait for the video's ended event, with a 10s safety cap.
+    var done = false;
+    function endSplash() {
+      if (done) return;
+      done = true;
+      fadeEl(videoWrap);
     }
 
     if (videoEl) {
-      videoEl.addEventListener('ended', endPhase1);
+      videoEl.addEventListener('ended', endSplash);
       // Safety cap — if video stalls or takes too long
-      setTimeout(endPhase1, 10000);
+      setTimeout(endSplash, 10000);
       // If video fails to load at all, skip straight through
-      videoEl.addEventListener('error', endPhase1);
+      videoEl.addEventListener('error', endSplash);
     } else {
-      // No video element — go straight to logo phase
       videoWrap.style.display = 'none';
-      startLogoPhase();
     }
 
-    // Skip button — bypasses both phase 1 (video) and phase 2 (logo splash)
+    // Skip button — dismisses the video immediately
     var skipBtn = document.getElementById('splash-skip');
     if (skipBtn) {
       skipBtn.addEventListener('click', function() {
-        phase1Done = true;            // prevent endPhase1 firing again after video ends
+        done = true;                  // prevent endSplash firing again after video ends
         videoWrap.style.display = 'none';
-        logoSplash.style.display = 'none';
       });
     }
   })();
