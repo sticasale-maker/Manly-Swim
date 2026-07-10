@@ -54,7 +54,7 @@
 
   /* map */
   .map{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0b1f2b;line-height:0;margin-bottom:12px}
-  .map img{width:100%;display:block;-webkit-user-drag:none}
+  .map img{width:100%;display:block;-webkit-user-drag:none;transform-origin:50% 50%;transition:transform .18s ease}
   .map svg{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0;z-index:6;
     background:linear-gradient(180deg,rgba(3,30,44,0.96),rgba(3,30,44,0.9));backdrop-filter:blur(6px);
@@ -142,6 +142,7 @@
       <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
       <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
       <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
+      <div class="rowflex"><input type="checkbox" id="zoom2"> Zoom 2&times; on node 103218</div>
 
       <div class="grp-t">At node 103218 <small>2025 hindcast &middot; 7512 h</small></div>
       <div class="rowflex"><input type="checkbox" id="roseSwell"> <span class="swatch" style="background:#19b3e6"></span> Swell rose (from)</div>
@@ -149,11 +150,21 @@
       <div class="rowflex"><input type="checkbox" id="roseWind"> <span class="swatch" style="background:#c9a3ff"></span> Wind rose (from)</div>
       <div class="rowflex"><input type="checkbox" id="roseE" checked> Weight by energy (&Sigma;H&sup2;P) &mdash; off = hours</div>
 
-      <div class="grp-t">BL dispersion ring</div>
-      <div class="rowflex"><input type="checkbox" id="blRing"> Transmit ring around the node</div>
-      <div class="rowflex"><input type="checkbox" id="blAll"> Fan all periods (concentric)</div>
+      <div class="rowflex"><input type="checkbox" id="dirTo" checked> Draw directions as <b>TO</b> (travel) &mdash; off = FROM</div>
+
+      <div class="grp-t">BL dispersion lobe</div>
+      <div class="rowflex"><input type="checkbox" id="blRing"> Transmit lobe (radius = transmit)</div>
+      <div class="rowflex"><input type="checkbox" id="blAll"> Overlay all periods (outlines)</div>
       <div class="rowflex"><input type="checkbox" id="blChord" checked> Node &rarr; BL chord</div>
-      <div class="ctl p"><label>Ring period</label><input type="range" id="ringP" min="2" max="17" step="1" value="11"><div class="val"><input id="ringP_n"> <span class="unit">s</span></div></div>
+      <div class="ctl p"><label>Lobe period</label><input type="range" id="ringP" min="2" max="17" step="1" value="11"><div class="val"><input id="ringP_n"> <span class="unit">s</span></div></div>
+      <div class="rowflex"><input type="checkbox" id="blEdit"> <b>Edit mode</b> &mdash; drag a vertex to set transmit</div>
+      <div class="btns">
+        <button id="blCopyCol">Copy this period</button>
+        <button id="blCopyAll">Copy 19&times;16</button>
+        <button id="blRevert">Revert edits</button>
+        <button id="blPush">Push to sheet</button>
+      </div>
+      <div class="note" id="blEditNote"></div>
       <div class="note" id="blRingNote"></div>
       <div class="btns">
         <button id="pivEntry">Pivot: entry</button>
@@ -1025,7 +1036,8 @@ const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
   wK:12,wD:200,wFetch:6, wwH:0.3,wwD:200,wwP:4, tide:1.0,
   pivot:{x:762,y:569}, crests:true, fan:false, rose:true, north:0,
   roseSwell:false, roseSea:false, roseWind:false, roseE:true,
-  blRing:false, blAll:false, blChord:true, ringP:11};
+  blRing:false, blAll:false, blChord:true, ringP:11, dirTo:true, zoom2:false,
+  blEdit:false};
 const MW=1520, MH=952;
 
 /* ---- Three points of interest, placed directly on map_flat.png (1520x952) ----
@@ -1069,7 +1081,7 @@ const ROSE_2025 = {
 };
 const ROSE_COL = { swell:'#19b3e6', sea:'#4fd1a5', wind:'#c9a3ff' };
 const ROSE_R_MAX = 205;   // px, longest petal
-const RING_R0 = 232, RING_R1 = 300;  // px, transmit annulus (sits outside the petals)
+const LOBE_R100 = 300;   // px at 100% transmit; radius IS the transmit (0% = the node itself)
 
 /* ===================== MODEL ADAPTER (workbench inputs -> app calcScore) ===================== */
 function gemTransmit(dirDeg,periodS){return nsDispLookup(dirDeg,periodS);}
@@ -1132,6 +1144,32 @@ function calc(I){
     wsHs:ws.hs,wsTp:ws.tp,wsFetch:ws.fetch, demerits:dm};
 }
 
+/* ===================== VIEW / ZOOM =====================
+   One source of truth for the visible rect. The SVG gets it as a viewBox; the <img>
+   underneath gets the identical rect as a CSS transform, so the two stay registered.
+   Zoom is centred on the NS node, which is what the roses and the lobe hang off. */
+function viewRect(){
+  if(!ST.zoom2) return { x:0, y:0, w:MW, h:MH, z:1 };   // 1x = the whole chart, untouched
+  const z = 2, w = MW/z, h = MH/z;
+  // Centred on the node. At 2x the rect (382,331,760,476) sits wholly inside the
+  // 1520x952 chart, so no clamping is needed and the node lands dead centre.
+  let x = FCST_NODE.x - w/2, y = FCST_NODE.y - h/2;
+  x = Math.max(0, Math.min(MW-w, x));
+  y = Math.max(0, Math.min(MH-h, y));
+  return { x, y, w, h, z };
+}
+function applyZoom(){
+  const v = viewRect();
+  ov.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+  const bg = document.getElementById('bg');
+  if(!bg) return;
+  if(v.z === 1){ bg.style.transform = 'none'; bg.style.transformOrigin = '50% 50%'; return; }
+  // Register the <img> to the same rect: scale about the rect's centre-point fraction.
+  const fx = (v.x + v.w/2)/MW, fy = (v.y + v.h/2)/MH;
+  bg.style.transformOrigin = `${(fx*100).toFixed(3)}% ${(fy*100).toFixed(3)}%`;
+  bg.style.transform = `translate(${((0.5-fx)*100).toFixed(3)}%, ${((0.5-fy)*100).toFixed(3)}%) scale(${v.z})`;
+}
+
 /* ===================== MAP DRAW ===================== */
 const SVGNS='http://www.w3.org/2000/svg', ov=document.getElementById('ov');
 const COL={green:'var(--green)',amber:'var(--amber)',yellow:'var(--yellow)',red:'var(--red)'};
@@ -1177,6 +1215,11 @@ function nodeToBL(){
   return { dx, dy, travel, arrival, len: Math.hypot(dx,dy) };
 }
 
+/* Direction helper: the data is indexed by ARRIVAL bearing (where it comes FROM).
+   ST.dirTo=true draws every petal / lobe / ray along the TRAVEL bearing instead — the way
+   the water actually runs — so the rose points at the shore it hits, not out to sea. */
+function drawBear(arrivalDeg){ return ST.dirTo ? (arrivalDeg + 180) % 360 : arrivalDeg; }
+
 /* One rose: 36 petals, radius ∝ sqrt(weight) so AREA is proportional to the weight
    (a linear radius lies about the big bins — the eye reads area, not length). */
 function drawDataRose(g, key){
@@ -1184,65 +1227,136 @@ function drawDataRose(g, key){
   const w = ST.roseE ? src.e : src.n;
   const max = Math.max.apply(null, w); if(!(max>0)) return;
   const cx = FCST_NODE.x, cy = FCST_NODE.y, col = ROSE_COL[key];
-  const gg = el('g',{opacity:0.72});
+  const gg = el('g',{});
   for(let i=0;i<36;i++){
     if(!(w[i]>0)) continue;
     const R = ROSE_R_MAX * Math.sqrt(w[i]/max);
-    const b = i*10, half = 4.4;                       // 0.6° gap between petals
+    const from = i*10, b = drawBear(from), half = 4.4;   // 0.6° gap between petals
     const a = vecFrom(b-half), c = vecFrom(b+half);
-    // Petal points OUTWARD along the arrival bearing (where it comes from), matching the
-    // swell arrows, which also point back up-swell from the pivot.
     const p = `M ${cx} ${cy} L ${cx+a.x*R} ${cy+a.y*R} A ${R} ${R} 0 0 1 ${cx+c.x*R} ${cy+c.y*R} Z`;
-    const pe = el('path',{d:p, fill:col, stroke:col, 'stroke-width':1, opacity:0.5});
-    const t = el('title'); 
-    t.textContent = `${key} · from ${b}° · ${src.n[i]} h (${(100*src.n[i]/ROSE_2025.hours).toFixed(1)}%) · `
+    const pe = el('path',{d:p, fill:col, 'fill-opacity':0.72, stroke:col, 'stroke-width':1.4,
+                          'stroke-opacity':0.95, 'stroke-linejoin':'round'});
+    const t = el('title');
+    t.textContent = `${key} · from ${from}° → toward ${(from+180)%360}° · ${src.n[i]} h `
+      + `(${(100*src.n[i]/ROSE_2025.hours).toFixed(1)}%) · `
       + (key==='wind' ? `mean ${src.mp[i]} km/h` : `ΣH²P ${src.e[i]} · mean ${src.mp[i]} s`);
     pe.appendChild(t); gg.appendChild(pe);
   }
   g.appendChild(gg);
 }
 
-/* BL dispersion table as an annulus around the node.
-   Sector i = table row i*10°, coloured by transmit at the chosen period.
-   The table folds 180–360 back onto 0–180, so the ring is MIRROR-SYMMETRIC about the
-   N–S axis. That is a property of the table, not of the bay — it is drawn honestly so
-   you can see it. */
+/* BL dispersion table as a LOBE around the node: the radius IS the transmit.
+   r(dir) = transmit(dir, P) × LOBE_R100. 0% collapses to the node, 100% reaches the
+   outer ring. Shape carries the number; colour is only a second cue.
+   The table folds 180–360 back onto 0–180, so the lobe is MIRROR-SYMMETRIC about the
+   N–S axis. That is a property of the table, not of the bay — drawn honestly. */
 function blTransmitAt(dirDeg, periodS){
   if(!SITE.blDisp) return null;
   return Math.max(0, Math.min(1, blDispLookup(dirDeg, periodS)));
 }
+/* ---- BL table edit model -------------------------------------------------
+   The table is 19 rows (dir 0..180 @10°) x 16 cols (period 2..17s @1s). Both the
+   vertex bearings and the period slider sit exactly on grid, so blDispLookup's
+   bilinear interpolation collapses to a single cell: dragging vertex `dir` at
+   period P writes cell [dir/10][P-2] and nothing else.
+   Directions >180° are the table's FOLD, not extra cells — dragging the 200° arm
+   edits row 160° and both arms move together. That is the table telling the truth
+   about itself. */
+const BL_EDITS = {};                       // "dir:period" -> {dir, period, from, to}
+const blKey = (d,P) => d + ':' + P;
+function blFold(d){ d = ((d%360)+360)%360; return d>180 ? 360-d : d; }
+function blCellGet(dir, P){                // dir must be a multiple of 10
+  if(!SITE.blDisp) return null;
+  const r = SITE.blDisp[blFold(dir)/10]; if(!r) return null;
+  const v = r[P-2]; return v==null ? null : Math.max(0, Math.min(100, +v));
+}
+function blCellSet(dir, P, pct){
+  if(!SITE.blDisp) return;
+  const fd = blFold(dir), ri = fd/10, ci = P-2;
+  const row = SITE.blDisp[ri]; if(!row) return;
+  const before = (BL_EDITS[blKey(fd,P)]||{}).from;
+  const from = (before!=null) ? before : (+row[ci]||0);
+  const to = Math.max(0, Math.min(100, Math.round(pct*10)/10));
+  row[ci] = to;
+  if(Math.abs(to-from) < 0.05) delete BL_EDITS[blKey(fd,P)];
+  else BL_EDITS[blKey(fd,P)] = { dir:fd, period:P, from, to };
+}
+function blRevert(){
+  Object.values(BL_EDITS).forEach(e=>{ if(SITE.blDisp) SITE.blDisp[e.dir/10][e.period-2] = e.from; });
+  for(const k in BL_EDITS) delete BL_EDITS[k];
+  render();
+}
+
+/* Vertex positions for the current period — 36 points, one per 10°. */
+let lobeVerts = [];                        // [{dir, drawDir, x, y, tx, dirty}]
+function lobeGeom(P){
+  const cx = FCST_NODE.x, cy = FCST_NODE.y, out = [];
+  for(let d=0; d<360; d+=10){
+    const pct = blCellGet(d, P); if(pct==null) return [];
+    const tx = pct/100, v = vecFrom(drawBear(d)), r = tx*LOBE_R100;
+    out.push({ dir:d, x:cx+v.x*r, y:cy+v.y*r, tx, dirty: !!BL_EDITS[blKey(blFold(d),P)] });
+  }
+  return out;
+}
+function lobePathFor(P){
+  const g = lobeGeom(P); if(!g.length) return null;
+  return 'M ' + g.map(v=>v.x.toFixed(1)+' '+v.y.toFixed(1)).join(' L ') + ' Z';
+}
 function drawBlRing(g){
   const cx = FCST_NODE.x, cy = FCST_NODE.y;
-  const periods = ST.blAll ? [3,5,7,9,11,13,15,17] : [ST.ringP];
-  const bands = periods.length;
   const gg = el('g',{});
-  periods.forEach((P,pi)=>{
-    const r0 = RING_R0 + (RING_R1-RING_R0) * (pi/bands);
-    const r1 = RING_R0 + (RING_R1-RING_R0) * ((pi+1)/bands) - (bands>1?1.5:0);
-    for(let b=0;b<360;b+=10){
-      const tx = blTransmitAt(b,P);
-      const half = 4.7;
-      const a0 = vecFrom(b-half), a1 = vecFrom(b+half);
-      const d = `M ${cx+a0.x*r0} ${cy+a0.y*r0} L ${cx+a0.x*r1} ${cy+a0.y*r1}`
-              + ` A ${r1} ${r1} 0 0 1 ${cx+a1.x*r1} ${cy+a1.y*r1}`
-              + ` L ${cx+a1.x*r0} ${cy+a1.y*r0} A ${r0} ${r0} 0 0 0 ${cx+a0.x*r0} ${cy+a0.y*r0} Z`;
-      const seg = el('path',{ d, fill: tx==null ? 'rgba(120,140,150,0.35)' : transmitColor(tx),
-                              opacity: tx==null ? 0.5 : (0.30 + tx*0.62),
-                              stroke:'rgba(0,0,0,0.30)','stroke-width':0.5 });
+  lobeVerts = [];
+
+  // % reference circles, so the lobe can be read off without a colour key
+  [0.25,0.5,0.75,1].forEach(f=>{
+    gg.appendChild(el('circle',{cx,cy,r:f*LOBE_R100,fill:'none',
+      stroke:'rgba(207,233,243,0.28)','stroke-width':1,'stroke-dasharray':f===1?'':'3 6'}));
+    const v = vecFrom(drawBear(ST.dirTo?90:270));
+    const t = el('text',{x:cx+v.x*f*LOBE_R100, y:cy+v.y*f*LOBE_R100-5, fill:'rgba(207,233,243,0.6)',
+      'font-size':11,'font-family':'DM Mono','text-anchor':'middle'});
+    t.textContent = (f*100)+'%'; gg.appendChild(t);
+  });
+
+  if(!SITE.blDisp){
+    gg.appendChild(el('circle',{cx,cy,r:0.5*LOBE_R100,fill:'rgba(120,140,150,0.20)',
+      stroke:'rgba(150,170,180,0.7)','stroke-width':2,'stroke-dasharray':'8 6'}));
+    g.appendChild(gg); return;
+  }
+
+  if(ST.blAll){
+    [3,5,7,9,11,13,15,17].forEach((P,i,arr)=>{
+      const d = lobePathFor(P); if(!d) return;
+      const isSel = (P===ST.ringP);
+      gg.appendChild(el('path',{d, fill:'none', stroke:isSel?'#ffd23f':'#7fb0c4',
+        'stroke-width':isSel?2.6:1.3, opacity:isSel?0.95:(0.25+0.5*i/arr.length),'stroke-linejoin':'round'}));
+    });
+  }
+
+  const verts = lobeGeom(ST.ringP);
+  if(verts.length){
+    lobeVerts = verts;
+    const d = 'M ' + verts.map(v=>v.x.toFixed(1)+' '+v.y.toFixed(1)).join(' L ') + ' Z';
+    gg.appendChild(el('path',{d, fill:'#19b3e6','fill-opacity':0.24,
+      stroke:'#4fd1e6','stroke-width':2.4,'stroke-linejoin':'round','stroke-linecap':'round',opacity:0.95}));
+
+    verts.forEach(v=>{
+      // radial guide out to 100%, so it is obvious the vertex only runs in and out
+      if(ST.blEdit){
+        const u = vecFrom(drawBear(v.dir));
+        gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+u.x*LOBE_R100,y2:cy+u.y*LOBE_R100,
+          stroke:'rgba(207,233,243,0.10)','stroke-width':1}));
+      }
+      const knob = el('circle',{cx:v.x, cy:v.y, r: ST.blEdit?6:3,
+        fill: v.dirty ? '#ffd23f' : transmitColor(v.tx),
+        stroke: ST.blEdit ? '#fff' : 'rgba(0,0,0,0.5)', 'stroke-width': ST.blEdit?1.6:0.8,
+        cursor: ST.blEdit ? 'ns-resize' : 'default'});
       const t = el('title');
-      t.textContent = tx==null ? `BL table not loaded — 50% fallback`
-                    : `BL transmit · from ${b}° · ${P}s → ${(tx*100).toFixed(0)}%`
-                      + (b>180 ? `  (mirror of ${360-b}°)` : '');
-      seg.appendChild(t); gg.appendChild(seg);
-    }
-  });
-  // period labels on the concentric bands
-  if(ST.blAll) periods.forEach((P,pi)=>{
-    const r = RING_R0 + (RING_R1-RING_R0)*((pi+0.5)/bands), v = vecFrom(270);
-    const t = el('text',{x:cx+v.x*r, y:cy+v.y*r+4, fill:'#cfe9f3','font-size':11,'font-family':'DM Mono',
-      'text-anchor':'middle','paint-order':'stroke',stroke:'rgba(0,0,0,0.7)','stroke-width':3});
-    t.textContent = P+'s'; gg.appendChild(t);
-  });
+      t.textContent = `BL transmit · from ${v.dir}° (toward ${(v.dir+180)%360}°) · ${ST.ringP}s → `
+        + `${(v.tx*100).toFixed(1)}%` + (v.dir>180 ? `  [row ${blFold(v.dir)}°, mirrored]` : ` [row ${v.dir}°]`)
+        + (v.dirty ? '  ● edited' : '');
+      knob.appendChild(t); gg.appendChild(knob);
+    });
+  }
   g.appendChild(gg);
 }
 
@@ -1252,16 +1366,17 @@ function drawBlChord(g){
   const gg = el('g',{});
   gg.appendChild(el('line',{x1:cx,y1:cy,x2:PT_CHOP.x,y2:PT_CHOP.y,
     stroke:'#ffd23f','stroke-width':3,'stroke-dasharray':'10 7',opacity:0.9}));
-  // Ray back up the ARRIVAL bearing — the row of the table that points down the chord.
-  const v = vecFrom(c.arrival);
-  gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+v.x*RING_R1,y2:cy+v.y*RING_R1,
+  // Ray in whichever convention the layers are drawn in: TO → down the chord (travel),
+  // FROM → back up the arrival bearing. Same physical wave either way.
+  const v = vecFrom(drawBear(c.arrival));
+  gg.appendChild(el('line',{x1:cx,y1:cy,x2:cx+v.x*LOBE_R100,y2:cy+v.y*LOBE_R100,
     stroke:'#ffd23f','stroke-width':2,opacity:0.55}));
-  const lx = cx+v.x*(RING_R1+34), ly = cy+v.y*(RING_R1+34);
-  const P = ST.blAll ? ST.ringP : ST.ringP;
-  const tx = blTransmitAt(c.arrival, P);
+  const tx = blTransmitAt(c.arrival, ST.ringP);
+  const lx = cx+v.x*(LOBE_R100+34), ly = cy+v.y*(LOBE_R100+34);
   const t = el('text',{x:lx,y:ly,fill:'#ffd23f','font-size':21,'font-family':'DM Mono','font-weight':600,
     'text-anchor':'middle','paint-order':'stroke',stroke:'rgba(0,0,0,0.65)','stroke-width':5});
-  t.textContent = Math.round(c.arrival)+'° → BL' + (tx!=null ? '  '+(tx*100).toFixed(0)+'%' : '');
+  t.textContent = (ST.dirTo ? Math.round(c.travel)+'° to BL' : 'from '+Math.round(c.arrival)+'°')
+                + (tx!=null ? '  '+(tx*100).toFixed(0)+'%' : '');
   gg.appendChild(t);
   g.appendChild(gg);
 }
@@ -1274,16 +1389,19 @@ function updateBlRingNote(){
   const fold  = row10 > 180 ? 360 - row10 : row10;
   const tx    = blTransmitAt(c.arrival, ST.ringP);
   const txRow = blTransmitAt(fold, ST.ringP);
+  const conv  = ST.dirTo ? 'TO (travel)' : 'FROM (arrival)';
   box.innerHTML = SITE.blDisp
-    ? `Chord node&nbsp;103218 &rarr; BL is <b>${c.travel.toFixed(1)}&deg;</b> (${Math.round(c.len)} px). `
+    ? `Chord node&nbsp;103218 &rarr; BL runs <b>${c.travel.toFixed(1)}&deg;</b> (${Math.round(c.len)} px). `
       + `A wave runs down it only if it arrives <b>from ${c.arrival.toFixed(1)}&deg;</b> &mdash; `
       + `nearest table row <b>${fold}&deg;</b>. At ${ST.ringP}s that row transmits `
-      + `<b>${(txRow*100).toFixed(0)}%</b> (interpolated at ${c.arrival.toFixed(1)}&deg;: ${(tx*100).toFixed(0)}%). `
-      + `<span class="note2">Ring is mirror-symmetric N&ndash;S because the table folds 180&ndash;360&deg; back onto 0&ndash;180&deg;.</span>`
-    : `<b>BL table not loaded</b> — the ring is drawn grey and <code>blDispLookup</code> is returning the 0.5 fallback for every direction and period. Hit “Reload from sheet”.`;
+      + `<b>${(txRow*100).toFixed(0)}%</b>, so the lobe reaches <b>${(txRow*LOBE_R100).toFixed(0)} px</b> `
+      + `out of ${LOBE_R100}. Layers drawn ${conv}. `
+      + `<span class="note2">Lobe is mirror-symmetric N&ndash;S: the table folds 180&ndash;360&deg; back onto 0&ndash;180&deg;.</span>`
+    : `<b>BL table not loaded</b> — the lobe is the grey 50% circle and <code>blDispLookup</code> is returning 0.5 for every direction and period. Hit &ldquo;Reload from sheet&rdquo;.`;
 }
 
 function drawMap(){
+  applyZoom();
   while(ov.firstChild)ov.removeChild(ov.firstChild); handlePos={};
   const g=el('g',{});ov.appendChild(g);
   if(ST.blRing)drawBlRing(g);
@@ -1312,6 +1430,7 @@ function render(){
   const I=inputObj(), R=calc(I);
   drawMap();
   updateBlRingNote();
+  if(typeof updateBlEditNote==='function') updateBlEditNote();
   const chipRail={
     entry:{kind:'lowGood',value:R.entry.raw,scaleMax:SITE.entryThresholds.scaleMax,bounds:[SITE.entryThresholds.easy,SITE.entryThresholds.doable,SITE.entryThresholds.caution]},
     swim:{kind:'lowGood',value:R.chopCm,scaleMax:CHOP_FACE.scaleMax,bounds:[CHOP_FACE.ripply,CHOP_FACE.choppy,CHOP_FACE.messy]},
@@ -1450,7 +1569,7 @@ document.getElementById('resetParams').onclick=()=>{KNOBS.forEach(k=>{if(LIVE[k]
 
 // toggles
 document.getElementById('s2on').addEventListener('change',e=>{ST.s2on=e.target.checked;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';render();});
-['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','blAll','blChord']
+['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','blAll','blChord','dirTo','zoom2','blEdit']
   .forEach(id=>{const c=document.getElementById(id);c.checked=ST[id];
     c.addEventListener('change',e=>{ST[id]=e.target.checked;render();});});
 // ring period
@@ -1482,12 +1601,21 @@ Object.keys(PRESETS).forEach(name=>{const b=document.createElement('button');b.t
   pc.appendChild(b);});
 
 /* ===================== MAP DRAG (pivot + direction handles) ===================== */
-function svgPoint(evt){const rect=ov.getBoundingClientRect(),sx=MW/rect.width,sy=MH/rect.height;
+function svgPoint(evt){const rect=ov.getBoundingClientRect(),v=viewRect(),sx=v.w/rect.width,sy=v.h/rect.height;
   const cx=(evt.touches?evt.touches[0].clientX:evt.clientX)-rect.left,cy=(evt.touches?evt.touches[0].clientY:evt.clientY)-rect.top;
-  return {x:cx*sx,y:cy*sy};}
+  return {x:v.x+cx*sx, y:v.y+cy*sy};}
 function bearingFromPoint(p){const dx=p.x-ST.pivot.x,dy=p.y-ST.pivot.y;let b=Math.atan2(dx,-dy)*180/Math.PI+ST.north;return ((Math.round(b)%360)+360)%360;}
 let drag=null;
 ov.addEventListener('pointerdown',e=>{const p=svgPoint(e);
+  // BL lobe vertex takes priority when edit mode is on
+  if(ST.blEdit && ST.blRing && lobeVerts.length){
+    let best=null, bd=1e9;
+    lobeVerts.forEach(v=>{const d=Math.hypot(p.x-v.x,p.y-v.y); if(d<bd){bd=d;best=v;}});
+    // also allow grabbing anywhere along the vertex's radial guide when the lobe is tiny
+    if(best && (bd<18 || bd<Math.max(14, 0.06*LOBE_R100) )){
+      drag={vert:best.dir}; ov.setPointerCapture(e.pointerId); e.preventDefault(); return;
+    }
+  }
   const dPiv=Math.hypot(p.x-ST.pivot.x,p.y-ST.pivot.y);
   const dH1=handlePos.s1?Math.hypot(p.x-handlePos.s1.x,p.y-handlePos.s1.y):1e9;
   const dH2=handlePos.s2?Math.hypot(p.x-handlePos.s2.x,p.y-handlePos.s2.y):1e9;
@@ -1496,16 +1624,97 @@ ov.addEventListener('pointerdown',e=>{const p=svgPoint(e);
   if(m===dH1)drag='s1';else if(m===dH2)drag='s2';else drag='pivot';
   ov.setPointerCapture(e.pointerId);e.preventDefault();});
 ov.addEventListener('pointermove',e=>{if(!drag)return;const p=svgPoint(e);
+  if(drag && drag.vert!=null){
+    // radial drag only: transmit = distance from the node, as a % of the 100% circle
+    const r = Math.hypot(p.x-FCST_NODE.x, p.y-FCST_NODE.y);
+    blCellSet(drag.vert, ST.ringP, 100 * Math.max(0, Math.min(1, r/LOBE_R100)));
+    render(); return;
+  }
   if(drag==='pivot'){ST.pivot={x:Math.max(0,Math.min(MW,p.x)),y:Math.max(0,Math.min(MH,p.y))};render();}
   else if(drag==='s1'){setField('s1D',bearingFromPoint(p),0);}
   else if(drag==='s2'){setField('s2D',bearingFromPoint(p),0);}});
 ov.addEventListener('pointerup',()=>drag=null);
 ov.addEventListener('pointercancel',()=>drag=null);
 
+/* ===================== BL TABLE — EXPORT + WRITE-BACK =====================
+   Sheet geometry, derived from parseNsDispCSV (which is the only thing that has ever
+   read this block correctly): the BL table lives at CSV rows 10..28, cols 22..37.
+   CSV row 0 is sheet row 1, so:
+       sheet row = 11 + dir/10      (dir 0 -> row 11 ... dir 180 -> row 29)
+       sheet col = 23 + (period-2)  (2s -> W ... 17s -> AL)
+   The Apps Script does NOT trust that arithmetic: it finds the row by matching the
+   direction label in column V. The A1 shown below is a prediction, not a promise. */
+const BL_SHEET = { row0: 11, col0: 23, tab: 'New NS' };
+const colA1 = n => { let s=''; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=(n-1-m)/26; } return s; };
+const blCellA1 = (dir,P) => colA1(BL_SHEET.col0 + (P-2)) + (BL_SHEET.row0 + dir/10);
+
+function blTSV(periodOnly){
+  if(!SITE.blDisp) return '';
+  const lines = [];
+  for(let i=0;i<19;i++){
+    const row = SITE.blDisp[i] || [];
+    lines.push(periodOnly ? String(row[ST.ringP-2] ?? 0)
+                          : row.slice(0,16).map(v=>v==null?0:v).join('\t'));
+  }
+  return lines.join('\n');
+}
+async function copyText(txt, label){
+  try{ await navigator.clipboard.writeText(txt); setBlEdit(`Copied ${label} to the clipboard.`,'ok'); }
+  catch(e){ setBlEdit(`Clipboard blocked (${e.message}). Needs https or localhost.`,'warn'); }
+}
+function setBlEdit(msg,cls){ const e=document.getElementById('blEditNote'); if(e){ e.className='note'+(cls?' '+cls:''); e.innerHTML=msg; } }
+
+function updateBlEditNote(){
+  const n = Object.keys(BL_EDITS).length;
+  if(!SITE.blDisp){ setBlEdit('BL table not loaded — nothing to edit.','warn'); return; }
+  if(!n){ setBlEdit(`No edits. Tick <b>Edit mode</b>, then drag a vertex in or out. Period <b>${ST.ringP}s</b> writes column <b>${colA1(BL_SHEET.col0+ST.ringP-2)}</b>.`,''); return; }
+  const list = Object.values(BL_EDITS).sort((a,b)=>a.period-b.period||a.dir-b.dir)
+    .map(e=>`${blCellA1(e.dir,e.period)} <span style="opacity:.65">(${e.dir}&deg;/${e.period}s)</span> ${e.from}&rarr;<b>${e.to}</b>`).join(' &middot; ');
+  setBlEdit(`<b>${n} edited cell${n>1?'s':''}</b> — held in memory only until you push: ${list}`,'warn');
+}
+
+/* Write-back. A published CSV is read-only, so the browser cannot write to the sheet.
+   The only clean path without shipping OAuth into a static page is an Apps Script Web
+   App bound to the workbook, called with a shared token. Content-Type is text/plain so
+   the POST stays a CORS "simple request" — Apps Script never answers a preflight. */
+const BL_PUSH_URL_KEY = 'swim_bl_push_url', BL_PUSH_TOKEN_KEY = 'swim_bl_push_token';
+async function blPush(){
+  const edits = Object.values(BL_EDITS);
+  if(!SITE.blDisp) return setBlEdit('BL table not loaded.','warn');
+  if(!edits.length) return setBlEdit('Nothing to push.','warn');
+  let url = localStorage.getItem(BL_PUSH_URL_KEY), tok = localStorage.getItem(BL_PUSH_TOKEN_KEY);
+  if(!url){ url = prompt('Apps Script Web App /exec URL:'); if(!url) return; localStorage.setItem(BL_PUSH_URL_KEY, url.trim()); }
+  if(!tok){ tok = prompt('Shared token (must match TOKEN in the script):'); if(!tok) return; localStorage.setItem(BL_PUSH_TOKEN_KEY, tok.trim()); }
+  setBlEdit(`Pushing ${edits.length} cell${edits.length>1?'s':''} …`,'');
+  try{
+    const res = await fetch(localStorage.getItem(BL_PUSH_URL_KEY), {
+      method:'POST', mode:'cors', redirect:'follow',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ token: localStorage.getItem(BL_PUSH_TOKEN_KEY), tab: BL_SHEET.tab,
+        edits: edits.map(e=>({dir:e.dir, period:e.period, value:e.to})) })
+    });
+    const j = await res.json();
+    if(!j.ok) throw new Error(j.error || 'script refused');
+    for(const k in BL_EDITS) delete BL_EDITS[k];
+    setBlEdit(`✓ Wrote ${j.written} cell${j.written>1?'s':''} to <b>${j.tab}</b> (${(j.cells||[]).join(', ')}). `
+      + `The published CSV lags a few minutes — hit “Reload from sheet” after it catches up.`,'ok');
+    render();
+  }catch(err){
+    setBlEdit(`Push failed: ${err.message}. Check the /exec URL, the token, and that the Web App is deployed with access “Anyone”. `
+      + `Edits are still in memory — nothing was lost.`,'err');
+  }
+}
+
+document.getElementById('blCopyCol').onclick = ()=>copyText(blTSV(true),  `the ${ST.ringP}s column (19 rows)`);
+document.getElementById('blCopyAll').onclick = ()=>copyText(blTSV(false), 'the full 19×16 table');
+document.getElementById('blRevert').onclick  = ()=>{ blRevert(); setBlEdit('Reverted to the sheet values held in memory.','ok'); };
+document.getElementById('blPush').onclick    = blPush;
+
 /* ===================== PNG EXPORT ===================== */
 document.getElementById('snap').onclick=()=>{const img=document.getElementById('bg'),cv=document.getElementById('exportCanvas');cv.width=MW;cv.height=MH;const ctx=cv.getContext('2d');
-  try{ctx.drawImage(img,0,0,MW,MH);}catch(err){alert('Open via a local server or hosted page so the image can be read for export.');return;}
-  const blob=new Blob([`<svg xmlns="${SVGNS}" width="${MW}" height="${MH}" viewBox="0 0 ${MW} ${MH}">${ov.innerHTML}</svg>`],{type:'image/svg+xml'});
+  const V=viewRect();  // export exactly what is on screen (crop + overlay share one rect)
+  try{ctx.drawImage(img,V.x,V.y,V.w,V.h,0,0,MW,MH);}catch(err){alert('Open via a local server or hosted page so the image can be read for export.');return;}
+  const blob=new Blob([`<svg xmlns="${SVGNS}" width="${MW}" height="${MH}" viewBox="${V.x} ${V.y} ${V.w} ${V.h}">${ov.innerHTML}</svg>`],{type:'image/svg+xml'});
   const url=URL.createObjectURL(blob),im=new Image();
   im.onload=()=>{ctx.drawImage(im,0,0);URL.revokeObjectURL(url);const a=document.createElement('a');a.download='swell_'+Math.round(ST.s1D)+'deg.png';a.href=cv.toDataURL('image/png');a.click();};
   im.onerror=()=>alert('Export needs a hosted page (file:// blocks canvas export).');im.src=url;};
