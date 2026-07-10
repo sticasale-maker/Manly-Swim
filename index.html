@@ -3154,8 +3154,9 @@ const SITE_DEFAULTS = {
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
   tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × max(0, tideM − tideRef) × (s1_d + ww_d)
   // Dispersion-table shape. TRUE = legacy 19-row mirror (fold 181–359° onto 1–179°).
-  // The parser flips these to false once the sheet's 190°–350° rows carry values.
-  // Defaulting to true means a missing/half-filled sheet can never move a live score.
+  // blDispFold follows the sheet: the parser flips it to false once rows 190°–350° carry
+  // values. nsDispFold is PINNED true by SS_DISP_LOCK_FOLD — Entry does not move.
+  // Defaulting both to true means a missing/half-filled sheet can never move a live score.
   nsDispFold:     true,
   blDispFold:     true,
   tideRef:        0.7,    // neutral tide height (m, WW datum): at or below ref the tide adds nothing; above it high water amplifies. MONOTONE — a rising tide can only ever raise demerits (11 Jul 2026, low-tide credit retired).
@@ -3825,6 +3826,22 @@ const NS_DISP_PMIN = 2, NS_DISP_PMAX = 17; // period column range (s)
 // row 160°'s value and a 300° wind scored as a 60° wind. Rows 190–350 were dead cells.
 const NS_DISP_ROWS = 36;
 
+// ── ENTRY IS FROZEN ──────────────────────────────────────────────────────────
+// SS_DISP_LOCK_FOLD pins the SS table to the legacy 19-row mirror regardless of what
+// the sheet contains. The SS table is the ONLY dispersion input to Entry (s1Tx, ww_d,
+// and wwTxForChop — the crossfade weight), and Entry is the metric people swim on.
+//
+// The sheet's SS rows 140°–350° are all zeros, so unfolding would change every lookup
+// with a direction past 180°: a 300° wind currently reads row 60 (100% transmit) and
+// would read row 300 (0%). That is a real defect — offshore mornings score wrong — but
+// fixing it moves live Entry numbers, and that is a deliberate decision, not a side
+// effect of a table-shape fix. Frozen until Marco says otherwise.
+//
+// BL is unaffected by this lock: it feeds Chop and Surge only, and follows the sheet.
+// Verified: dispBilinear(..., folded=true) is bit-identical to the pre-11-Jul lookup
+// across every 0.5° bearing x 6 periods (max abs diff 0.000000000000).
+const SS_DISP_LOCK_FOLD = true;
+
 // A table whose west half (rows 190°–350°) is entirely blank cannot be read unfolded:
 // every westerly would drop to 0% transmit the moment the fold came off. When the
 // parser finds that half empty it sets the table's `fold` flag, and the lookup keeps
@@ -3989,8 +4006,8 @@ async function loadNsDispConfig(force) {
                          && (!cached.blDisp || cached.blDisp.length === NS_DISP_ROWS);
     if (!force && !FORCE_FRESH && cached && cacheShapeOk && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
       SITE.nsDisp = cached.table;
-      SITE.nsDispFold = (cached.nsDispFold !== false);   // absent → safe legacy mirror
-      SITE.blDispFold = (cached.blDispFold !== false);
+      SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : (cached.nsDispFold !== false);  // Entry frozen
+      SITE.blDispFold = (cached.blDispFold !== false);   // absent → safe legacy mirror
       if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
       if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
       if (cached.tideGain != null) SITE.tideGain = cached.tideGain;
@@ -3999,7 +4016,7 @@ async function loadNsDispConfig(force) {
       if (cached.blChopImpact != null) SITE.blChopImpact = cached.blChopImpact;
       if (cached.chopSwimWeight != null) SITE.chopSwimWeight = cached.chopSwimWeight;
       applyThresh(cached);
-      diag('NS disp: cache hit (' + cached.table.length + ' rows, SS ' + (SITE.nsDispFold?'FOLDED':'36-row')
+      diag('NS disp: cache hit (' + cached.table.length + ' rows, SS ' + (SS_DISP_LOCK_FOLD?'FOLDED (locked)':(SITE.nsDispFold?'FOLDED':'36-row'))
         + ', BL ' + (SITE.blDisp ? (SITE.blDispFold?'FOLDED':'36-row') : 'n')
         + ', ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ')');
       return;
@@ -4014,7 +4031,7 @@ async function loadNsDispConfig(force) {
     const parsed = parseNsDispCSV(text);
     if (parsed) {
       SITE.nsDisp = parsed.table;
-      SITE.nsDispFold = parsed.nsDispFold;
+      SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : parsed.nsDispFold;  // Entry frozen
       SITE.blDispFold = parsed.blDispFold;
       if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
       if (parsed.windSeaSens != null) SITE.windSeaSens = parsed.windSeaSens;
@@ -4031,14 +4048,16 @@ async function loadNsDispConfig(force) {
         entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
       }));
       diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows'
-        + ', SS ' + (parsed.nsDispFold ? 'FOLDED — 190–350° empty' : '36-row, no fold')
+        + ', SS ' + (SS_DISP_LOCK_FOLD ? 'FOLDED (locked — Entry frozen)' : (parsed.nsDispFold ? 'FOLDED — 190–350° empty' : '36-row, no fold'))
         + ', BL ' + (parsed.blDisp ? (parsed.blDispFold ? 'FOLDED — 190–350° empty' : '36-row, no fold') : 'MISSING')
         + ', ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ', bl_wave_sens=' + SITE.blWaveSens
         + (parsed.swimThresholds ? ', CHOP ' + parsed.swimThresholds.glassy + '/' + parsed.swimThresholds.ripply + '/' + parsed.swimThresholds.choppy : '') + ')');
-      if (parsed.nsDispFold || parsed.blDispFold) console.warn(
-        '[NS disp] Sheet rows 190°–350° are blank in ' +
-        [parsed.nsDispFold && 'SS', parsed.blDispFold && 'BL'].filter(Boolean).join(' + ') +
-        '. Holding the legacy 19-row mirror: 200° reads row 160°, a 300° wind scores as 60°. ' +
+      if (SS_DISP_LOCK_FOLD && !parsed.nsDispFold) console.warn(
+        '[NS disp] SS table has all 36 rows, but SS_DISP_LOCK_FOLD is holding the legacy ' +
+        'mirror so ENTRY cannot move: a >180° direction still reads its reflection ' +
+        '(300° -> row 60). Deliberate. Flip SS_DISP_LOCK_FOLD to false to unfreeze Entry.');
+      if (parsed.blDispFold) console.warn(
+        '[NS disp] BL rows 190°–350° are blank — holding the legacy 19-row mirror for Chop/Surge. ' +
         'Fill those rows and the full 36-row lookup switches on by itself.');
     } else {
       diag('NS disp: parse returned null — check New NS tab (expected ' + NS_DISP_ROWS + ' dir rows × 16 period cols from row 11)');
@@ -6864,7 +6883,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260710-230242';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
