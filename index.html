@@ -7037,7 +7037,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260711-145345';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7437,6 +7437,7 @@ function sightRenderFromData(rows) {
 
   if (sightOnCooldown()) { btn.disabled = true;  btn.textContent = 'Reported ✓'; }
   else                   { btn.disabled = false; btn.textContent = 'Report'; }
+  refreshCommunitySummary();
 }
 
 async function sightLoad() {
@@ -7611,6 +7612,7 @@ function visRenderFromData(rows) {
 
   if (visOnCooldown()) { btn.disabled = true;  btn.textContent = 'Reported ✓'; }
   else                 { btn.disabled = false; btn.textContent = 'Report'; }
+  refreshCommunitySummary();
 }
 
 async function visLoad() {
@@ -8375,6 +8377,44 @@ function runCalibration() {
 // CONDITIONS BANNER — AI-generated summary
 // =============================================================================
 let _bannerGenerated = false;
+let _bannerWaterBase = '';
+
+// Build a short clause from the community reports (visibility + sightings) so the
+// swimming-conditions summary reflects what swimmers are actually reporting.
+function communitySummaryLine() {
+  const parts = [];
+  try {
+    if (Array.isArray(_visCache) && _visCache.length) {
+      const w = [0,0,0,0,0];
+      _visCache.forEach(r => { const b = Number(r.band); if (b >= 1 && b <= 5) w[b-1] = Number(r.w) || 0; });
+      const maxW = Math.max.apply(null, w);
+      if (maxW > 0) {
+        const peak = w.indexOf(maxW);
+        parts.push(`Visibility's ${VIS_BANDS[peak].w.toLowerCase()} (${VIS_BANDS[peak].m}).`);
+      }
+    }
+  } catch (e) {}
+  try {
+    if (Array.isArray(_sightCache) && _sightCache.length) {
+      const names = _sightCache.filter(r => SIGHT_NAME[r.species]).slice(0, 3).map(r => SIGHT_NAME[r.species]);
+      if (names.length) {
+        const list = names.length === 1 ? names[0]
+          : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+        parts.push(`The locals are out: ${list}.`);
+      }
+    }
+  } catch (e) {}
+  if (!parts.length) return '';
+  return ' ' + parts.join(' ');
+}
+function appendCommunity(text) { return (text || '') + communitySummaryLine(); }
+// Re-append the community clause to the stored base text once reports arrive
+// (the summary itself only generates once, so we patch the water line in place).
+function refreshCommunitySummary() {
+  if (!_bannerGenerated) return;
+  const el = document.getElementById('banner-water-text');
+  if (el) el.innerHTML = emphasise(appendCommunity(_bannerWaterBase));
+}
 
 // SUMMARY section — collapsed by default, expands on tap
 // ── TODAY'S NEWS ─────────────────────────────────────────────────────────────
@@ -8760,8 +8800,9 @@ async function generateBannerSummary() {
     domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
     domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
+  _bannerWaterBase = waterText;
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
-  document.getElementById('banner-water-text').innerHTML = emphasise(waterText);
+  document.getElementById('banner-water-text').innerHTML = emphasise(appendCommunity(waterText));
 
   // Mark as generated only now that the banner text has actually been written.
   // (Previously set near the top, so any mid-function throw left this true and
@@ -10744,7 +10785,7 @@ if ('serviceWorker' in navigator) {
       "#annText ul,#annText ol{margin:7px 0;padding-left:20px;}#annText li{margin-bottom:3px;}" +
       "#annText p{margin:0 0 7px;}" +
       "#annHint{text-align:center;color:var(--dim,#4a5f6e);font-size:11px;padding:11px 0 14px;}" +
-      "#annWhatsNew{position:fixed;left:14px;bottom:74px;z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
+      "#annWhatsNew{position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
       "#annWhatsNew.show{display:inline-flex;}" +
       "#annWhatsNew .ann-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red,#c0392b);}" +
       "#annWhatsNew.unseen .ann-dot{display:inline-block;}";
