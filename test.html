@@ -834,14 +834,12 @@
   .sight-chev { color: var(--dim); font-size: 13px; flex-shrink: 0; transition: transform 0.15s; }
   .sight-body { display: none; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(17,53,65,0.13); }
   .sight-body.open { display: block; }
-  .sight-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; }
+  .sight-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
   .sight-row + .sight-row { border-top: 1px solid rgba(17,53,65,0.08); }
   .sight-th {
-    flex: 1; min-width: 0; height: 50px; border-radius: 9px;
-    object-fit: cover; object-position: center 32%;
-    background: var(--sky);
+    height: 56px; width: auto; border-radius: 8px; flex-shrink: 0; background: transparent;
   }
-  .sight-bars { display: flex; align-items: flex-end; gap: 3px; height: 22px; flex-shrink: 0; }
+  .sight-bars { display: flex; align-items: flex-end; gap: 3px; height: 22px; flex-shrink: 0; margin-left: auto; }
   .sight-bars i { width: 5px; border-radius: 2px; background: rgba(17,53,65,0.16); }
   .sight-bars i.on { background: var(--ocean); }
 
@@ -882,10 +880,13 @@
 
   /* ── UNDERWATER VISIBILITY ─────────────────────────────────────────────── */
   .vis-prevail { text-align: center; margin: 2px 0 2px; }
+  /* big, readable prevailing distance in the collapsed head */
+  .vis-mini { display: block; font-size: 9px; letter-spacing: 1.5px; color: var(--dim); line-height: 1; margin-bottom: 2px; }
+  .vis-big { display: block; font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: 1px; color: var(--text); line-height: 0.95; }
   .vis-prevail .lab { font-size: 9px; letter-spacing: 1.5px; color: var(--dim); text-transform: uppercase; }
   .vis-prevail .w { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 1px; color: var(--text); line-height: 1; }
   .vis-prevail .m { font-size: 11px; color: var(--dim); margin-top: 1px; }
-  .vis-bars { display: grid; grid-template-columns: repeat(5,1fr); gap: 6px; align-items: flex-end; height: 70px; margin-top: 18px; }
+  .vis-bars { display: grid; grid-template-columns: repeat(5,1fr); gap: 6px; align-items: flex-end; height: 70px; margin-top: 8px; }
   .vis-bars .vb { border-radius: 5px 5px 0 0; opacity: 0.42; position: relative; }
   .vis-bars .vb.pk { opacity: 1; }
   .vis-bars .vb .vn { position: absolute; top: -14px; left: 0; right: 0; text-align: center; font-size: 10px; color: var(--dim); font-weight: 600; }
@@ -7584,25 +7585,24 @@ function visRenderFromData(rows) {
   });
   const total = counts.reduce((a, b) => a + b, 0);
 
-  title.textContent = 'VISIBILITY';
-
   if (total === 0) {
-    sub.textContent = 'No reports yet — be the first 👁';
+    title.textContent = 'VISIBILITY';
+    sub.textContent = 'No reports yet — tap report';
     if (body) body.innerHTML = '';
   } else {
     // Prevailing + bars use the recency-weighted score so the readout reflects
-    // conditions NOW; the raw count is still shown so people know the sample size.
+    // conditions NOW. The prevailing distance is shown big in the collapsed head.
     const maxW = Math.max.apply(null, weights) || 1;
     const peak = weights.indexOf(Math.max.apply(null, weights));
     const fresh = visAgo(latest);
-    sub.textContent = `${VIS_BANDS[peak].w} · ${VIS_BANDS[peak].m} · ${fresh}`;
+    title.innerHTML = `<span class="vis-mini">VISIBILITY</span><span class="vis-big">${VIS_BANDS[peak].m}</span>`;
+    sub.textContent = `${VIS_BANDS[peak].w} · ${fresh}`;
     if (body) {
       const bars = VIS_BANDS.map((b, i) =>
         `<div class="vb ${i === peak ? 'pk' : ''}" style="height:${(10 + (weights[i] / maxW) * 56).toFixed(1)}px;background:${b.c}"></div>`).join('');
       const axis = VIS_BANDS.map((b, i) => `<span class="${i === peak ? 'pk' : ''}">${b.w}</span>`).join('');
       body.innerHTML =
-        `<div class="vis-prevail"><div class="lab">Prevailing now</div><div class="w">${VIS_BANDS[peak].w.toUpperCase()}</div><div class="m">${VIS_BANDS[peak].m}</div></div>
-         <div class="vis-bars">${bars}</div>
+        `<div class="vis-bars">${bars}</div>
          <div class="vis-axis">${axis}</div>
          <div class="vis-total">Based on ${total} report${total !== 1 ? 's' : ''} · freshest ${fresh}</div>`;
     }
