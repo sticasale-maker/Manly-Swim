@@ -3560,6 +3560,7 @@ let SITE = {
     const ref  = this.tideRef ?? 0.7;
     const w = (parts.s1_d || 0) * gate(parts.s1Dir || 0)
             + (parts.ww_d || 0) * gate(parts.wwDir || 0);
+    if (tideM == null || isNaN(tideM)) return 0;   // no tide forecast this far out → no tide demerit
     return (this.tideGain ?? 0.35) * Math.max(0, tideM - ref) * w;
   },
   get spm() { return 81 / this.periodPower; },
@@ -5059,7 +5060,7 @@ async function fetchWillyWeather(timeoutMs) {
   // reload bypassed the HTTP cache. Force a fresh network read every time.
   // timeoutMs is per-attempt: the caller uses a SHORT first timeout so a cold
   // Worker can't burn 12s before the retry ladder even starts, then widens it.
-  const url = `${WW_WORKER_URL}?location=swimmers&days=5&t=${Date.now()}`;
+  const url = `${WW_WORKER_URL}?location=swimmers&days=7&t=${Date.now()}`;
   const res = await fetchWithTimeout(url, timeoutMs || 12000, { cache: 'no-store' });
   if (!res.ok) throw new Error(`WW ${res.status}`);
   return await res.json();
@@ -7008,6 +7009,39 @@ async function loadAndRender(forceRefresh = false) {
           if (nsMap && Object.keys(nsMap).length) {
             _matrix = mergeNearshoreMatrix(_matrix, nsMap);
             wwData  = mergeNearshoreSnapshot(wwData, nsMap);
+            // Extend past WillyWeather’s horizon (days ~8-10): WW covers ~7 days,
+            // but NS swell + wind-wave reach ~10 days. Append a swell-only outlook
+            // row for every NS hour later than the last WW row. Wind + tide are
+            // absent that far out and left null (wind coalesces null→0; tide is
+            // guarded in tideDir), flagged _swellOnly for later styling.
+            if (_matrix.length) {
+              const lastWWKey = _matrix[_matrix.length - 1].dateTime.substring(0, 13) + ':00:00';
+              const extra = [];
+              for (const k in nsMap) {
+                if (k > lastWWKey) {
+                  const ns = nsMap[k];
+                  extra.push({
+                    dateTime:    k,
+                    swell1H:     ns.swell1H,
+                    swell1P:     ns.swell1P,
+                    swell1Dir:   ns.swell1Dir,
+                    swell2H: 0, swell2Dir: 0, swell2P: 8,
+                    windWaveH:   ns.windWaveH,
+                    windWaveP:   ns.windWaveP,
+                    windWaveDir: ns.windWaveDir,
+                    windKmh: null, windDir: null,
+                    tideM: null,
+                    _nsFeed: true,
+                    _swellOnly: true,
+                  });
+                }
+              }
+              if (extra.length) {
+                _matrix = _matrix.concat(extra).sort((a, b) =>
+                  a.dateTime < b.dateTime ? -1 : a.dateTime > b.dateTime ? 1 : 0);
+                diag('NS-only outlook appended — ' + extra.length + ' swell-only hours');
+              }
+            }
             setSrc('ns', nsRes.value._stale ? 'warn' : 'ok');  // Worker tags served last-known-good
             diag('NS feed merged — ' + Object.keys(nsMap).length + ' hours');
           } else {
