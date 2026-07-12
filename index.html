@@ -106,6 +106,113 @@
     }
   }
 
+  /* ── TUNE WORKBENCH (?tune=1 / ?backtest=1) ──────────────────────────
+     Rebuilt 12 Jul 2026 from tune_workbench_mockup.html. Full-screen overlay:
+     sticky-left column (slot nav + forecast inputs + live scores) and a
+     scrollable-right column of metric-grouped knobs. The slot navigator and the
+     three metric rails are the app's OWN nodes (.slider-wrap + .metrics-panel),
+     re-parented into the left column at build time — so renderSlider /
+     renderDayPicker / renderSnapshot keep driving them by id, unchanged. */
+  #tune-panel.tw-overlay{
+    position:fixed; inset:0; z-index:99999; overflow-y:auto;
+    background:var(--deep); font-family:'Inter',sans-serif; color:#dfe8ec;
+    padding:16px 12px 60px;
+    --tw-entry:#4caf50; --tw-chop:#c9c246; --tw-surge:#e08a3c; --tw-tide:#4a8fad;
+    --tw-line:rgba(17,53,65,0.16);
+  }
+  #tune-panel .tw-wrap{ max-width:900px; margin:0 auto; }
+  #tune-panel .tw-card{
+    background:var(--card); color:var(--text);
+    border:1.5px solid var(--ocean); border-radius:14px;
+    padding:14px 13px 16px; box-shadow:0 18px 50px rgba(0,0,0,0.35);
+  }
+  #tune-panel .tw-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  #tune-panel .tw-title{ font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:1.5px; color:var(--deep); }
+  #tune-panel .tw-min{ border:none; background:transparent; font-size:20px; cursor:pointer; color:var(--dim); line-height:1; }
+  #tune-panel .tw-legend{ font-size:10.5px; color:#5a6b5a; line-height:1.5; margin-bottom:12px; }
+  #tune-panel .tw-legend .tw-prov{ margin-left:0; margin-right:2px; }
+
+  #tune-panel .tw-cols{ display:flex; gap:14px; align-items:flex-start; }
+  #tune-panel .tw-left{ flex:0 0 40%; position:sticky; top:12px; align-self:flex-start; }
+  #tune-panel .tw-right{ flex:1 1 60%; min-width:0; }
+  #tune-panel .schem-label{ font-family:'Bebas Neue',sans-serif; font-size:12px; letter-spacing:1.4px; color:var(--dim); text-transform:uppercase; margin:0 0 6px 2px; }
+
+  /* the re-parented app nodes drop margin so the left column controls the rhythm */
+  #tune-panel .tw-slot, #tune-panel .tw-scores{ margin-bottom:10px; }
+  #tune-panel .tw-slot .slider-wrap,
+  #tune-panel .tw-scores .metrics-panel{ margin-bottom:0; }
+
+  /* forecast inputs card */
+  #tune-panel .tw-inputs{ background:rgba(255,255,255,0.18); border:1px solid var(--tw-line); border-radius:11px; padding:10px; margin-bottom:10px; }
+  #tune-panel .tw-inputs h4{ font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:#5a6b5a; margin-bottom:7px; font-weight:600; }
+  #tune-panel .tw-in-grid{ display:grid; grid-template-columns:1fr 1fr; gap:7px 10px; }
+  #tune-panel .tw-in .lbl{ font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:#6d7d70; }
+  #tune-panel .tw-in .val{ font-family:'Bebas Neue',sans-serif; font-size:16px; line-height:1.1; color:var(--deep); }
+  #tune-panel .tw-in .val small{ font-family:'Inter'; font-size:10px; font-weight:500; color:#5a6b5a; }
+
+  /* grouped knobs */
+  #tune-panel .tw-group{ border:1.5px solid; border-radius:12px; padding:10px 11px 12px; margin-bottom:11px; background:rgba(255,255,255,0.14); }
+  #tune-panel .tw-group.entry{ border-color:var(--tw-entry); }
+  #tune-panel .tw-group.chop{ border-color:var(--tw-chop); }
+  #tune-panel .tw-group.surge{ border-color:var(--tw-surge); }
+  #tune-panel .tw-group.shared{ border-color:var(--tw-tide); border-style:dashed; background:rgba(74,143,173,0.10); }
+  #tune-panel .tw-g-head{ display:flex; align-items:center; gap:8px; margin-bottom:3px; flex-wrap:wrap; }
+  #tune-panel .tw-badge{ font-family:'Bebas Neue',sans-serif; font-size:15px; letter-spacing:1.3px; padding:1px 9px 0; border-radius:6px; color:#10222a; }
+  #tune-panel .entry .tw-badge{ background:var(--tw-entry); }
+  #tune-panel .chop .tw-badge{ background:var(--tw-chop); }
+  #tune-panel .surge .tw-badge{ background:var(--tw-surge); }
+  #tune-panel .shared .tw-badge{ background:var(--tw-tide); color:#eaf3f7; }
+  #tune-panel .tw-feeds{ font-size:9.5px; color:#5a6b5a; }
+
+  #tune-panel .tw-knob{ padding:8px 0; border-top:1px solid var(--tw-line); }
+  #tune-panel .tw-knob:first-of-type{ border-top:none; }
+  #tune-panel .tw-knob-top{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  #tune-panel .tw-knob-name{ font-size:12px; font-weight:600; color:var(--deep); }
+  #tune-panel .tw-knob-tag{ font-family:'Bebas Neue',sans-serif; font-size:9px; letter-spacing:1px; background:var(--tw-chop); color:#10222a; padding:0 5px; border-radius:4px; margin-left:5px; }
+  #tune-panel .tw-knob-val{ font-family:'Bebas Neue',sans-serif; font-size:16px; min-width:52px; text-align:right; color:var(--deep); white-space:nowrap; }
+  #tune-panel .tw-knob-val .tw-flag{ font-family:'Inter',sans-serif; font-size:8.5px; letter-spacing:.5px; margin-left:6px; }
+  #tune-panel .tw-cell{ font-family:ui-monospace,Menlo,monospace; font-size:9px; color:#6d7d70; }
+  #tune-panel .tw-knob-desc{ font-size:10px; color:#4c5a52; line-height:1.4; margin:2px 0 7px; }
+  #tune-panel .tw-to.entry{ color:#2f7a33; font-weight:600; }
+  #tune-panel .tw-to.surge{ color:#a95e1e; font-weight:600; }
+  #tune-panel .tw-prov{ display:inline-block; font-family:'Bebas Neue',sans-serif; font-size:8.5px; letter-spacing:.5px; padding:1px 6px; border-radius:4px; margin-left:6px; vertical-align:1px; }
+  #tune-panel .tw-prov.sheet{ background:#2f7a33; color:#eaffea; }
+  #tune-panel .tw-prov.wired{ background:#2f6f8f; color:#eaf3f7; }
+
+  #tune-panel .tw-knob input[type=range],
+  #tune-panel .tw-band input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:5px; border-radius:3px;
+    background:linear-gradient(90deg,var(--rail-green),var(--rail-amber),var(--rail-yellow),var(--rail-red));
+    outline:none; margin:4px 0 2px;
+  }
+  #tune-panel .tw-knob input[type=range]::-webkit-slider-thumb,
+  #tune-panel .tw-band input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:#fff; border:3px solid var(--ocean); cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.3);
+  }
+  #tune-panel .tw-knob input[type=range]::-moz-range-thumb,
+  #tune-panel .tw-band input[type=range]::-moz-range-thumb{
+    width:15px; height:15px; border-radius:50%; background:#fff; border:3px solid var(--ocean); cursor:pointer;
+  }
+  #tune-panel .tw-bands-row{ display:flex; gap:6px; margin-top:4px; }
+  #tune-panel .tw-band{ flex:1; }
+  #tune-panel .tw-band label{ display:block; font-size:8.5px; color:#5a6b5a; text-transform:uppercase; margin-bottom:2px; }
+  #tune-panel .tw-band .bv{ font-family:'Bebas Neue',sans-serif; font-size:13px; color:var(--deep); }
+
+  #tune-panel .tw-actions{ display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; }
+  #tune-panel .tw-actions button{ flex:1; min-width:80px; padding:7px; border:1px solid var(--border); border-radius:8px; background:#fff; color:var(--deep); font-weight:700; cursor:pointer; }
+  #tune-panel #tune-reload{ width:100%; margin-top:8px; padding:9px; border:1px solid var(--ocean); border-radius:8px; background:var(--ocean); color:#fff; font-weight:700; cursor:pointer; }
+  #tune-panel .tw-hint{ font-size:9px; color:#5a6b5a; margin-top:6px; line-height:1.4; }
+  #tune-panel .tw-hint b{ color:#33474f; }
+  #tune-panel #tune-msg{ font-size:10px; color:var(--ocean); margin-top:6px; min-height:13px; }
+  #tune-panel .tw-debug{ margin-top:14px; }
+
+  @media(max-width:720px){
+    #tune-panel .tw-cols{ display:block; }
+    #tune-panel .tw-left{ position:sticky; top:0; z-index:5; background:var(--card); margin:0 0 10px; padding:6px 0 8px; border-bottom:1px solid var(--tw-line); }
+    #tune-panel .tw-right{ width:100%; }
+    #tune-panel .tw-in-grid{ grid-template-columns:1fr 1fr 1fr; }
+  }
+
   header {
     padding:calc(env(safe-area-inset-top) + 10px) 0 10px;
     display:flex; align-items:flex-end; justify-content:space-between;
@@ -5847,6 +5954,9 @@ function renderSnapshot(h, wx) {
   const dt = new Date(h.dateTime.replace(' ','T'));
   setSlotHeader(dt);
   updateFvSub(h);
+  // Tune workbench: mirror this slot's raw forecast inputs into the sticky-left
+  // inputs card (no-op unless the ?tune=1 panel has been built). UI only.
+  try { updateTuneInputs(h); } catch (e) {}
 
   // Three metric blocks. useRaw=true shows the raw band-scale value (e.g. Swim's
   // q7) so the displayed number matches the scale the colour-band thresholds are
@@ -7051,7 +7161,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260712-135336';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7773,64 +7883,193 @@ function applyTuneOverrides() {
   });
 }
 
+// ── Tune workbench: forecast-inputs card ─────────────────────────────────────
+// Mirrors the current slot's raw forecast inputs into the sticky-left column.
+// Called from renderSnapshot on every slot render (guarded — no-op until the
+// ?tune=1 panel exists). Reads only; never touches scoring.
+function updateTuneInputs(h) {
+  const g = id => document.getElementById(id);
+  if (!g('tw-in-wind') || !h || !h.dateTime) return;
+  const dir = d => (d == null ? '' : ' ' + bearingName(d));
+  const dt  = new Date(h.dateTime.replace(' ', 'T'));
+  const tEl = g('tw-slot-title');
+  if (tEl) tEl.textContent =
+      dt.toLocaleDateString('en-AU', { weekday:'short', day:'numeric', month:'short' })
+      + ' · ' + dt.toLocaleTimeString('en-AU', { hour:'2-digit', minute:'2-digit' });
+  g('tw-in-wind').innerHTML  = (h.windKmh   != null ? Math.round(h.windKmh)        : '—') + ' <small>km/h' + dir(h.windDir) + '</small>';
+  g('tw-in-tide').innerHTML  = (h.tideM     != null ? Number(h.tideM).toFixed(2)   : '—') + ' <small>m</small>';
+  g('tw-in-swell').innerHTML = (h.swell1H   != null ? Number(h.swell1H).toFixed(1) : '—') + ' <small>m' + (h.swell1P != null ? ' · ' + Math.round(h.swell1P) + 's' : '') + dir(h.swell1Dir) + '</small>';
+  g('tw-in-ww').innerHTML    = (h.windWaveH != null ? Number(h.windWaveH).toFixed(1) : '—') + ' <small>m' + dir(h.windWaveDir) + (h.windWaveP != null ? ' · ' + Math.round(h.windWaveP) + 's' : '') + '</small>';
+  const sst = (h.seaTemp != null) ? h.seaTemp : null;
+  g('tw-in-sst').innerHTML   = (sst != null ? Number(sst).toFixed(1) : '—') + ' <small>°C</small>';
+  const srcEl = g('tw-in-src');
+  if (srcEl) { srcEl.textContent = h._nsFeed ? 'NS live' : 'backup'; srcEl.style.color = h._nsFeed ? '#2f7a33' : '#a95e1e'; }
+}
+
+// Right-column knob layout — grouped by the metric each knob feeds, with the
+// SHEET (copy-to-cell) vs Step-A (already sheet-wired live gain) provenance the
+// tune_workbench_mockup calls for. Every `key` here must exist in TUNE_PARAMS:
+// this is layout/provenance only, so min/max/step + all event wiring stay driven
+// by TUNE_PARAMS (export/import/reset/reload iterate it untouched).
+const TW_GROUPS = [
+  { cls:'entry', badge:'ENTRY', feeds:'wave + wind-sea at the corner',
+    knobs:[
+      { key:'ssWaveSens',  name:'SS wave sensitivity', desc:'Weight of swell &amp; wind-wave at entry.',                cell:'ss_wave_sens · C2', prov:'sheet', provTxt:'SHEET · copy to C2' },
+      { key:'windSeaSens', name:'Wind-sea sensitivity', desc:'<b>Entry only</b> — not Chop.',                            cell:'wind_sens · C3',   prov:'sheet', provTxt:'SHEET · copy to C3' },
+    ],
+    bands:{ label:'Bands', edges:'AQ2:AQ5', items:[
+      { key:'entryThresholds.easy',    lab:'Easy ≤' },
+      { key:'entryThresholds.doable',  lab:'Doable ≤' },
+      { key:'entryThresholds.caution', lab:'Caution ≤' },
+    ] } },
+  { cls:'chop', badge:'CHOP', feeds:'surface roughness mid-bay',
+    knobs:[
+      { key:'chopRefFetchM', name:'Chop strength', tag:'LIVE', desc:'Wind’s runway over the bay — higher = bigger chop. The real Chop gain (feeds chopCm).', cell:'chop_ref_fetch_m · C4', prov:'wired', provTxt:'STEP A · wired · C4' },
+    ],
+    bands:{ label:'Bands — face height (cm)', edges:'AQ6:AQ9', items:[
+      { key:'swimThresholds.glassy', lab:'Smooth <' },
+      { key:'swimThresholds.ripply', lab:'Ripply ≤' },
+      { key:'swimThresholds.choppy', lab:'Choppy ≤' },
+    ] } },
+  { cls:'shared', badge:'SHARED', feeds:'one knob, two metrics',
+    knobs:[
+      { key:'tideRef', name:'Tide neutral height', desc:'Above this, high water amplifies. Feeds <span class="tw-to entry">Entry</span> + <span class="tw-to surge">Surge</span>, <b>never Chop</b>. Gain lives at tide_ref · C7.', cell:'tide_ref · C5 · m', prov:'wired', provTxt:'STEP A · wired · C5' },
+    ] },
+  { cls:'surge', badge:'SURGE', feeds:'swell + sea heave across the bay',
+    knobs:[
+      { key:'blWaveSens', name:'BL wave sensitivity', desc:'Weight of BL swell + sea-heave.', cell:'bl_wave_sens · V2', prov:'sheet', provTxt:'SHEET · copy to V2' },
+    ],
+    bands:{ label:'Bands', edges:'AQ10:AQ13', items:[
+      { key:'surgeThresholds.steady', lab:'Steady ≤' },
+      { key:'surgeThresholds.drifty', lab:'Drifty ≤' },
+      { key:'surgeThresholds.surgy',  lab:'Surgy ≤' },
+    ] } },
+];
+
 function buildTunePanel() {
   if (!TUNE_PANEL) return;
   try {
   const fmt = v => (v == null ? '—' : (Math.round(v * 100) / 100));
-  const rowHTML = (p) => {
-    const ov = loadTuneOverrides();
-    const overridden = Object.prototype.hasOwnProperty.call(ov, p.key);
-    const cur = tuneGet(p.key);
+  const TP = {};
+  TUNE_PARAMS.forEach(p => { TP[p.key] = p; });
+
+  // One main knob (name · value/flag · description+provenance · slider).
+  const knobHTML = (k) => {
+    const p = TP[k.key]; if (!p) return '';
+    const ov  = loadTuneOverrides();
+    const overridden = Object.prototype.hasOwnProperty.call(ov, k.key);
+    const cur = tuneGet(k.key);
     const sliderVal = (cur == null) ? p.min : cur;
     return `
-      <div style="margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
-          <span style="font-weight:700;color:var(--deep);">${p.label}</span>
-          <span style="font-family:'Inter',sans-serif;font-size:12px;">
-            <b data-tune-val="${p.key}">${fmt(cur)}</b>
-            <span data-tune-flag="${p.key}" style="margin-left:6px;font-size:9px;letter-spacing:0.5px;color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : 'sheet'}</span>
-          </span>
+      <div class="tw-knob">
+        <div class="tw-knob-top">
+          <span class="tw-knob-name">${k.name}${k.tag ? `<span class="tw-knob-tag">${k.tag}</span>` : ''}</span>
+          <span class="tw-knob-val"><b data-tune-val="${k.key}">${fmt(cur)}</b><span class="tw-flag" data-tune-flag="${k.key}" style="color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : 'sheet'}</span></span>
         </div>
-        <input type="range" data-tune-input="${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}"
-          style="width:100%;margin:4px 0 2px;accent-color:var(--ocean);">
-        <div style="font-size:10px;color:var(--dim);line-height:1.3;">${p.hint}${p.nullable ? ' <button data-tune-clear="'+p.key+'" style="margin-left:4px;font-size:9px;padding:1px 6px;border:1px solid var(--border);border-radius:6px;background:transparent;color:var(--dim);cursor:pointer;">use swell sens</button>' : ''}</div>
+        <div class="tw-knob-desc">${k.desc} <span class="tw-cell">${k.cell}</span> <span class="tw-prov ${k.prov}">${k.provTxt}</span></div>
+        <input type="range" data-tune-input="${k.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}">
       </div>`;
   };
 
+  // Band-edge trio (labels move only — no score gain). Each mini reuses the same
+  // data-tune-* hooks so the shared event/refresh logic drives it too.
+  const bandsHTML = (b) => `
+      <div class="tw-knob">
+        <div class="tw-knob-top"><span class="tw-knob-name">${b.label}</span><span class="tw-prov sheet">bands → ${b.edges}</span></div>
+        <div class="tw-bands-row">
+          ${b.items.map(it => {
+            const p = TP[it.key]; if (!p) return '';
+            const cur = tuneGet(it.key);
+            const sliderVal = (cur == null) ? p.min : cur;
+            return `<div class="tw-band"><label>${it.lab}</label><div class="bv" data-tune-val="${it.key}">${fmt(cur)}</div>
+              <input type="range" data-tune-input="${it.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}"></div>`;
+          }).join('')}
+        </div>
+      </div>`;
+
+  const groupHTML = (g) => `
+      <div class="tw-group ${g.cls}">
+        <div class="tw-g-head"><span class="tw-badge">${g.badge}</span><span class="tw-feeds">${g.feeds}</span></div>
+        ${g.knobs.map(knobHTML).join('')}
+        ${g.bands ? bandsHTML(g.bands) : ''}
+      </div>`;
+
   const panel = document.createElement('div');
   panel.id = 'tune-panel';
-  panel.style.cssText = `position:fixed;right:12px;top:12px;z-index:99999;width:300px;max-height:calc(100vh - 140px);overflow-y:auto;
-    background:var(--foam);border:2px solid var(--ocean);border-radius:14px;padding:14px 16px;
-    box-shadow:0 8px 40px rgba(0,0,0,0.25);font-family:'Inter',sans-serif;font-size:12px;color:var(--text);`;
+  panel.className = 'tw-overlay';
   panel.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <span style="font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--deep);">TUNE · NEW NS</span>
-      <button id="tune-min" title="collapse" style="border:none;background:transparent;font-size:16px;cursor:pointer;color:var(--dim);">–</button>
-    </div>
-    <div id="tune-body">
-      ${TUNE_PARAMS.map(rowHTML).join('')}
-      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
-        <button id="tune-export" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Copy values</button>
-        <button id="tune-import" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Paste values</button>
-        <button id="tune-reset" style="flex:1;min-width:80px;padding:7px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--deep);font-weight:700;cursor:pointer;">Reset</button>
-      </div>
-      <button id="tune-reload" style="width:100%;margin-top:8px;padding:9px;border:1px solid var(--ocean);border-radius:8px;background:var(--ocean);color:#fff;font-weight:700;cursor:pointer;">Reload from sheet</button>
-      <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches.</div>
-      <div id="tune-msg" style="font-size:10px;color:var(--ocean);margin-top:6px;min-height:13px;"></div>
-      <div style="font-size:9px;color:var(--dim);margin-top:4px;line-height:1.4;">
-        Live preview only persists on THIS device. To make it permanent for everyone, set ss_wave_sens in the New NS tab (cell C2). "Copy values" gives you a snapshot to paste back.
+    <div class="tw-wrap">
+      <div class="tw-card">
+        <div class="tw-head">
+          <span class="tw-title">TUNE · NEW NS</span>
+          <button id="tune-min" class="tw-min" title="collapse">–</button>
+        </div>
+        <div class="tw-legend">
+          <span class="tw-prov sheet">SHEET</span> tune here, then copy the value into the named New NS cell to go global.
+          &nbsp;<span class="tw-prov wired">STEP A</span> already sheet-wired — the live gain flows straight from its cell.
+        </div>
+        <div id="tune-body">
+          <div class="tw-cols">
+            <div class="tw-left">
+              <div class="schem-label">Slot</div>
+              <div class="tw-slot" id="tw-slot-slot"></div>
+
+              <div class="schem-label">Forecast inputs · this slot</div>
+              <div class="tw-inputs">
+                <h4 id="tw-slot-title">—</h4>
+                <div class="tw-in-grid">
+                  <div class="tw-in"><div class="lbl">Wind</div><div class="val" id="tw-in-wind">—</div></div>
+                  <div class="tw-in"><div class="lbl">Tide</div><div class="val" id="tw-in-tide">—</div></div>
+                  <div class="tw-in"><div class="lbl">Primary swell</div><div class="val" id="tw-in-swell">—</div></div>
+                  <div class="tw-in"><div class="lbl">Wind-wave</div><div class="val" id="tw-in-ww">—</div></div>
+                  <div class="tw-in"><div class="lbl">Sea temp</div><div class="val" id="tw-in-sst">—</div></div>
+                  <div class="tw-in"><div class="lbl">Source</div><div class="val" id="tw-in-src" style="font-size:12px;">—</div></div>
+                </div>
+              </div>
+
+              <div class="schem-label">Resulting scores</div>
+              <div class="tw-scores" id="tw-scores-slot"></div>
+            </div>
+
+            <div class="tw-right">
+              <div class="schem-label">Controls · grouped by metric</div>
+              ${TW_GROUPS.map(groupHTML).join('')}
+              <div class="tw-actions">
+                <button id="tune-export">Copy values</button>
+                <button id="tune-import">Paste values</button>
+                <button id="tune-reset">Reset</button>
+              </div>
+              <button id="tune-reload">Reload from sheet</button>
+              <div class="tw-hint">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches.</div>
+              <div id="tune-msg"></div>
+              <div class="tw-hint">Live preview only persists on <b>this device</b>. To make a tune global, edit the New NS cell named beside each knob. “Copy values” gives you a snapshot to paste back.</div>
+            </div>
+          </div>
+          <div class="tw-debug" id="tw-debug-slot"></div>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(panel);
 
-  // ── Tune-mode 3-up layout: dock the debug panel to the left of the screen so
-  // debug + scores + tuning are all readable at once on a wide display.
+  // ── Re-parent the app's OWN live nodes into the sticky-left column ──────────
+  // The slot navigator (.slider-wrap: day picker + time slider + ticks) and the
+  // three metric rails (.metrics-panel) move out of .snapshot-board and into the
+  // workbench. They keep every id, so renderSlider / renderDayPicker /
+  // renderSnapshot drive them exactly as before — no reimplementation. The debug
+  // breakdown lands under the columns (no debug-docked class this time).
   document.body.classList.add('tune-mode');
+  const board     = document.querySelector('.snapshot-board');
+  const sliderWrap = board ? board.querySelector('.slider-wrap') : null;
+  const metricsPanel = board ? board.querySelector('.metrics-panel') : null;
+  const slotSlot  = panel.querySelector('#tw-slot-slot');
+  const scoreSlot = panel.querySelector('#tw-scores-slot');
+  if (sliderWrap && slotSlot)   slotSlot.appendChild(sliderWrap);
+  if (metricsPanel && scoreSlot) scoreSlot.appendChild(metricsPanel);
   const dbgEl = document.getElementById('gemDebug');
-  if (dbgEl) {
-    dbgEl.classList.add('debug-docked');
-    document.body.appendChild(dbgEl); // lift out of the centred .wrap so it pins to the viewport
-  }
+  const dbgSlot = panel.querySelector('#tw-debug-slot');
+  if (dbgEl && dbgSlot) dbgSlot.appendChild(dbgEl);
+  // Seed the inputs card + rails from the current slot right away.
+  try { if (_matrix && _matrix.length) updateTuneInputs(_matrix[_sliderIdx]); } catch (e) {}
 
   const msg = (t) => { const m = panel.querySelector('#tune-msg'); if (m) { m.textContent = t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; }, 4000); } };
 
