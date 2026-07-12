@@ -2535,6 +2535,10 @@
       .ntm-avatar.ph.sm { min-width:42px; max-width:42px; min-height:42px; max-height:42px; }
       .ntm-name.sm { font-size:18px; }
       .ntm-litem .ntm-meta { margin:2px 0 5px; }
+      .ntm-like { display:inline-flex; align-items:center; gap:4px; margin-top:6px; min-height:28px; padding:2px 4px; border:none; background:transparent; color:var(--ocean); font-size:13px; cursor:pointer; -webkit-tap-highlight-color:transparent; line-height:1; }
+      .ntm-like .ntm-like-ic { font-size:15px; line-height:1; }
+      .ntm-like .ntm-like-n { font-size:12px; color:var(--dim); min-width:8px; text-align:left; }
+      .ntm-like.on, .ntm-like.on .ntm-like-ic, .ntm-like.on .ntm-like-n { color:#c0392b; }
       .ntm-introbtn { display:flex; align-items:center; justify-content:center; gap:6px; width:100%; margin-top:12px; padding:9px; border:1px dashed rgba(74,143,173,0.4); border-radius:11px; background:transparent; color:var(--ocean); font-family:'Inter',sans-serif; font-size:12px; cursor:pointer; }
       .ntm-footnote { text-align:center; font-size:10px; color:var(--dim); margin-top:9px; }
       .ntm-form { display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
@@ -10699,6 +10703,13 @@ if ('serviceWorker' in navigator) {
   var RPC  = SB + '/rest/v1/rpc/';
   var hdrs = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
   var attnId = null;
+  var DEVICE = (function () {
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) { id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2)); localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return 'unknown'; }
+  })();
 
   function $(id){ return document.getElementById(id); }
   function token(){ try { return (typeof camToken === 'function') ? camToken() : (localStorage.getItem('swim_admin_token') || ''); } catch (e) { return ''; } }
@@ -10835,9 +10846,10 @@ if ('serviceWorker' in navigator) {
           return '<div class="ntm-litem">' + av +
             '<div style="flex:1;min-width:0;"><div class="ntm-name sm">' + esc(x.name) + '</div>' +
             '<div class="ntm-meta">' + esc(fmtDate(x.publish_date)) + '</div>' +
-            '<div class="ntm-text">' + esc(x.body) + '</div></div></div>';
+            '<div class="ntm-text">' + esc(x.body) + '</div>' + '<button type="button" class="ntm-like" data-intro="' + x.id + '" aria-label="Like this hello"><span class="ntm-like-ic">♡</span> <span class="ntm-like-n"></span></button>' + '</div></div>';
         }).join('') + '</div>';
         paintPhotos(intro);
+        paintLikes(intro);
       } else {
         intro.innerHTML = '<div class="ntm-empty">No hellos yet &mdash; want to be the first?</div>';
       }
@@ -10845,6 +10857,43 @@ if ('serviceWorker' in navigator) {
     if (foot) foot.textContent = queued > 0
       ? ('one hello featured per day, others queue (' + queued + ' waiting), all disappear after 7 days')
       : 'one hello featured per day, others queue, all disappear after 7 days';
+  }
+
+  /* Intro likes: count is public (everyone sees N); only the filled/empty heart is
+     per-device, deduped by the app-wide swim_device_id (DEVICE). UI wiring only. */
+  function _applyLike(btn, row){
+    var n = btn.querySelector('.ntm-like-n'), ic = btn.querySelector('.ntm-like-ic');
+    if (n) n.textContent = (row && row.likes > 0) ? row.likes : '';
+    if (row && row.liked) { if (ic) ic.textContent = '♥'; btn.classList.add('on'); }
+    else { if (ic) ic.textContent = '♡'; btn.classList.remove('on'); }
+  }
+  async function paintLikes(root){
+    try {
+      var r = await fetch(RPC + 'intro_likes_for', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_device_id: DEVICE }) });
+      if (!r.ok) return;
+      var rows = await r.json();
+      if (!Array.isArray(rows)) return;
+      rows.forEach(function (row) {
+        var btn = root.querySelector('.ntm-like[data-intro="' + row.intro_id + '"]');
+        if (btn) _applyLike(btn, row);
+      });
+    } catch (e) {}
+  }
+  async function onLikeClick(ev){
+    var btn = ev.target.closest('.ntm-like');
+    if (!btn || btn.disabled) return;
+    var id = btn.getAttribute('data-intro');
+    if (!id) return;
+    btn.disabled = true;
+    try {
+      var r = await fetch(RPC + 'toggle_intro_like', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_intro_id: id, p_device_id: DEVICE }) });
+      if (r.ok) {
+        var rows = await r.json();
+        var row = Array.isArray(rows) ? rows[0] : rows;
+        if (row) _applyLike(btn, row);
+      }
+    } catch (e) {}
+    finally { btn.disabled = false; }
   }
 
   /* submit */
@@ -11046,6 +11095,7 @@ if ('serviceWorker' in navigator) {
       });
     }
     var sb = $('ntmSend'); if (sb) sb.addEventListener('click', submit);
+    var introBox = $('ntmIntro'); if (introBox && !introBox._likeWired) { introBox.addEventListener('click', onLikeClick); introBox._likeWired = true; }
     if (/[?&]intros=1(\b|&|$)/.test(location.search)) openIntroAdmin();
     loadToday();
     refreshAdminFab();
