@@ -6643,13 +6643,15 @@ function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
 function renderWeekStrip(matrix){
   var host = document.getElementById('waStrip');
   if (!host || !matrix || !matrix.length) return;
+  var _n = new Date();
+  var todayStr = _n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0');
   var days = [];
   matrix.forEach(function(r){
     var d = r.dateTime.substring(0, 10);
-    if (days.indexOf(d) === -1) days.push(d);
+    if (d >= todayStr && days.indexOf(d) === -1) days.push(d);
   });
   var html = '';
-  days.slice(0, 5).forEach(function(d){
+  days.slice(0, 7).forEach(function(d){
     var lbl = new Date(d + 'T00:00').toLocaleDateString('en-AU', { weekday: 'short' });
     var rows = matrix.filter(function(r){
       if (r.dateTime.substring(0, 10) !== d) return false;
@@ -6687,7 +6689,9 @@ function updateFvSub(h){
 
 function renderTimeline(matrix, wxMatrix) {
   const container = document.getElementById('timelineContent');
-  const days = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
+  const _n = new Date();
+  const todayStr = `${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;
+  const days = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))].filter(d => d >= todayStr);
 
   let html = `<table class="tl-table">
     <thead><tr>
@@ -9475,7 +9479,7 @@ const HISTORY_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/forecast_history';
 
 async function loadForecastHistory() {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const res = await fetch(
       `${HISTORY_TABLE_URL}?select=*&forecast_dt=gte.${since}&order=forecast_dt.asc`,
       { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
