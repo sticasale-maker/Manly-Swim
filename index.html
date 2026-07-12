@@ -1164,8 +1164,8 @@
   /* Long-range outlook strip (Option C): days 7-10 sit below the 6-day picker */
   .long-range { margin-top: 8px; margin-bottom: 16px; }
   .long-range .lr-label { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: rgba(200,189,160,0.6); margin: 0 2px 5px; }
-  .long-range .lr-row { display: flex; gap: 5px; }
-  .long-range .lr-day { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; background: rgba(22,50,66,0.5); border: 1px solid var(--border); border-radius: 10px; padding: 5px 3px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .long-range .lr-row { display: flex; gap: 5px; justify-content: center; }
+  .long-range .lr-day { flex: 1; min-width: 0; max-width: 50%; display: flex; flex-direction: column; align-items: center; gap: 4px; background: rgba(22,50,66,0.5); border: 1px solid var(--border); border-radius: 10px; padding: 5px 3px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .long-range .lr-day .lr-bar { width: 100%; height: 5px; border-radius: 3px; }
   .long-range .lr-day .lr-dl { font-size: 9.5px; color: rgba(200,189,160,0.82); white-space: nowrap; line-height: 1; }
   .long-range .lr-day.lr-look { border-style: dashed; opacity: 0.7; }
@@ -5306,6 +5306,34 @@ function mergeNearshoreMatrix(matrix, nsMap) {
   });
 }
 
+// Append NS swell-only outlook rows (days ~8-10) past WillyWeather's horizon so the
+// day 6-10 strip fills even on a warm/standalone (tile) launch, not only after the
+// slower live NS fetch. Shared by the cache + live merge paths. Idempotent: once the
+// far rows exist a later merge overlays them and this appends nothing new. Returns
+// how many rows were added.
+function appendNsOutlook(nsMap){
+  if (!_matrix || !_matrix.length || !nsMap) return 0;
+  const lastWWKey = _matrix[_matrix.length - 1].dateTime.substring(0, 13) + ':00:00';
+  const extra = [];
+  for (const k in nsMap) {
+    if (k > lastWWKey) {
+      const ns = nsMap[k];
+      extra.push({
+        dateTime: k,
+        swell1H: ns.swell1H, swell1P: ns.swell1P, swell1Dir: ns.swell1Dir,
+        swell2H: 0, swell2Dir: 0, swell2P: 8,
+        windWaveH: ns.windWaveH, windWaveP: ns.windWaveP, windWaveDir: ns.windWaveDir,
+        windKmh: null, windDir: null, tideM: null,
+        _nsFeed: true, _swellOnly: true,
+      });
+    }
+  }
+  if (extra.length) {
+    _matrix = _matrix.concat(extra).sort((a, b) => a.dateTime < b.dateTime ? -1 : a.dateTime > b.dateTime ? 1 : 0);
+  }
+  return extra.length;
+}
+
 // Same overlay for the single "current" snapshot object.
 function mergeNearshoreSnapshot(wwData, nsMap) {
   if (!nsMap || !wwData || !wwData.dateTime) return wwData;
@@ -6282,9 +6310,12 @@ function renderLongRange(matrix) {
     const swellOnly = rows.length > 0 && rows.every(r => r._swellOnly === true);
     const win = rows.filter(r => { const hh = parseInt(r.dateTime.substring(11,13),10); return hh >= WA_LO && hh <= WA_HI; });
     const use = win.length ? win : rows;
-    let sum = 0;
-    use.forEach(r => { const q = calcScore(r); sum += wgCombo(q.entry.score, q.swim.score, q.water.score); });
-    const col = _wgColor(use.length ? sum / use.length : 0);
+    let col;
+    try {
+      let sum = 0;
+      use.forEach(r => { const q = calcScore(r); sum += wgCombo(q.entry.score, q.swim.score, q.water.score); });
+      col = _wgColor(use.length ? sum / use.length : 0);
+    } catch (e) { col = 'rgba(200,189,160,0.35)'; }   // scoring not ready yet -> neutral bar, never break the strip
     const d = new Date(date + 'T00:00');
     const btn = document.createElement('button');
     btn.className = 'lr-day' + (swellOnly ? ' lr-look' : '') + (date === _selectedDay ? ' lr-active' : '');
@@ -7029,9 +7060,11 @@ async function loadAndRender(forceRefresh = false) {
           if (nsMapC && Object.keys(nsMapC).length) {
             _matrix = mergeNearshoreMatrix(_matrix, nsMapC);
             wwData  = mergeNearshoreSnapshot(wwData, nsMapC);
+            appendNsOutlook(nsMapC);                                   // far days (8-10) on warm/standalone launches, not only after the live fetch
             const reH = _matrix[_sliderIdx] || wwData || null;
             if (reH) renderSnapshot(reH, null);
             renderTimeline(_matrix, {});
+            renderLongRange(_matrix);                                  // repaint the day 6-10 outlook strip with the appended far days
             diag('NS cache applied — ' + Object.keys(nsMapC).length + ' hours (live refresh pending)');
           }
         }
@@ -7066,40 +7099,9 @@ async function loadAndRender(forceRefresh = false) {
           if (nsMap && Object.keys(nsMap).length) {
             _matrix = mergeNearshoreMatrix(_matrix, nsMap);
             wwData  = mergeNearshoreSnapshot(wwData, nsMap);
-            // Extend past WillyWeather’s horizon (days ~8-10): WW covers ~7 days,
-            // but NS swell + wind-wave reach ~10 days. Append a swell-only outlook
-            // row for every NS hour later than the last WW row. Wind + tide are
-            // absent that far out and left null (wind coalesces null→0; tide is
-            // guarded in tideDir), flagged _swellOnly for later styling.
-            if (_matrix.length) {
-              const lastWWKey = _matrix[_matrix.length - 1].dateTime.substring(0, 13) + ':00:00';
-              const extra = [];
-              for (const k in nsMap) {
-                if (k > lastWWKey) {
-                  const ns = nsMap[k];
-                  extra.push({
-                    dateTime:    k,
-                    swell1H:     ns.swell1H,
-                    swell1P:     ns.swell1P,
-                    swell1Dir:   ns.swell1Dir,
-                    swell2H: 0, swell2Dir: 0, swell2P: 8,
-                    windWaveH:   ns.windWaveH,
-                    windWaveP:   ns.windWaveP,
-                    windWaveDir: ns.windWaveDir,
-                    windKmh: null, windDir: null,
-                    tideM: null,
-                    _nsFeed: true,
-                    _swellOnly: true,
-                  });
-                }
-              }
-              if (extra.length) {
-                _matrix = _matrix.concat(extra).sort((a, b) =>
-                  a.dateTime < b.dateTime ? -1 : a.dateTime > b.dateTime ? 1 : 0);
-                diag('NS-only outlook appended — ' + extra.length + ' swell-only hours');
-              }
-            }
-            setSrc('ns', nsRes.value._stale ? 'warn' : 'ok');  // Worker tags served last-known-good
+            const nAdded = appendNsOutlook(nsMap);
+            if (nAdded) diag('NS-only outlook appended — ' + nAdded + ' swell-only hours');
+                        setSrc('ns', nsRes.value._stale ? 'warn' : 'ok');  // Worker tags served last-known-good
             diag('NS feed merged — ' + Object.keys(nsMap).length + ' hours');
           } else {
             setSrc('ns', 'warn');   // reached, but no usable hours
