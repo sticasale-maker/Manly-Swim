@@ -294,6 +294,8 @@ const NS_DISP_PMIN = 2, NS_DISP_PMAX = 17;
 const NS_DISP_ROWS = 36;
 const WINDSEA_BLOCKED_FETCH_M = 300;
 const WINDSEA_G = 9.81;
+const CHOP_SMAX_EPS = 0.045; // corner-rounding on the open/bay fetch crossover (metres; 4.5 cm). eps=0 → exact max()
+const chopSmax = (a, b, eps) => 0.5 * (a + b + Math.sqrt((a - b) * (a - b) + eps * eps));
 /* ===== PORTED FROM newindex.html (APP_BUILD 20260704-110547) — verbatim app model ===== */
 /* Workbench globals to satisfy calcScore's app-path branches */
 var GEM_MODEL = true;        // workbench always runs the live NS/GEM path
@@ -321,7 +323,7 @@ const SITE_DEFAULTS = {
   //
   // SWIM — q7 = wind_d + ww_d (LOWER = better) — col AK rows 9–12:
   //   glassy = q7 < AK9, ripply ≤ AK10, choppy ≤ AK11, else messy. AK12 = scaleMax (rail end + score cap).
-  swimThresholds: { glassy: 4, ripply: 10, choppy: 14, scaleMax: 14 },
+  swimThresholds: { glassy: 4, ripply: 8, choppy: 12, scaleMax: 20 },
   // ENTRY — `total` demerits (LOWER = better) — col AK rows 5–8:
   //   easy = total ≤ AK5, doable ≤ AK6, caution ≤ AK7, else dangerous. AK8 = scaleMax (rail end).
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
@@ -658,24 +660,21 @@ function spmGrowth(U, F) {
   const tp = Math.min(0.286 * Math.pow(X, 1 / 3) * U / WINDSEA_G, 8.134 * U / WINDSEA_G);
   return { hs, tp };
 }
-// Duration-equivalent fetch (m) for wind U (m/s) blown t hours (CERC inverse).
-function durEquivFetch(U, tHours) {
-  if (U <= 0 || tHours <= 0) return 0;
-  const t = tHours * 3600;
-  const tstar = WINDSEA_G * t / U;
-  return Math.pow(tstar / 68.8, 1.5) * U * U / WINDSEA_G;
-}
 
-// Wind-sea at a point: blends open-ocean (duration-limited) with blocked bay chop
-// by the smoothed openness weight. windKmh = wind speed, deg = wind bearing FROM,
-// durHrs = consecutive hours the wind has held (Option A). Returns {hs, tp, wOpen}.
+// Wind-sea at a point. SIMPLIFIED 11 Jul 2026: a single reference fetch, blended
+// between the open value and the 300 m bay residual by the smoothed openness mask.
+// No duration term — durEquivFetch is gone. `durHrs` retained in the signature and
+// IGNORED so the calibration harness and any stale caller keep working.
+//
+// WHY: the old path grew a sea from geographic fetch × wind duration, then ADDED it to
+// the forecast wind-wave. Both model the same sea. The forecast one is produced by a
+// real spectral model; ours was a hand-rolled SPM curve over a three-plateau fetch
+// table whose 67° boundary stepped 220 demerits per degree at 40 km/h held 24 h.
 function windSeaAt(mask, windKmh, deg, durHrs) {
   const U = (windKmh || 0) / 3.6;
   const w = openWeight(mask, deg);
-  const capH = SITE.windSeaDurCapH || 24;
-  const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
-  const open = spmGrowth(U, durEquivFetch(U, t));       // unlimited ocean, duration caps
-  const blk  = spmGrowth(U, WINDSEA_BLOCKED_FETCH_M);   // tiny residual chop
+  const open = spmGrowth(U, SITE.chopRefFetchM ?? 5000);   // reference fetch, direction-free
+  const blk  = spmGrowth(U, WINDSEA_BLOCKED_FETCH_M);      // tiny residual chop
   return {
     hs:  w * open.hs + (1 - w) * blk.hs,
     tp:  w * open.tp + (1 - w) * blk.tp,
@@ -683,65 +682,21 @@ function windSeaAt(mask, windKmh, deg, durHrs) {
   };
 }
 
-// Three-zone geographic fetch (m) at the BL chop centre for a wind-FROM bearing.
-// Confined coastal water to the N (ray-cast), open ocean in the NE window, sheltered
-// bay elsewhere. Smoothstep-blended at each sector edge. See SITE.fetch* params.
-function fetchGeoBL(deg) {
-  const a = ((((deg || 0) % 360) + 360) % 360);
-  const Fc = SITE.fetchConfinedM ?? 6700, Fo = SITE.fetchOpenM ?? 1e6, Fb = SITE.fetchBayM ?? 300;
-  const bBayConf = SITE.fetchBoundBayConf ?? 320, bConfOpen = SITE.fetchBoundConfOpen ?? 22, bOpenBay = SITE.fetchBoundOpenBay ?? 45;
-  const T = SITE.fetchBlendDeg ?? 5;
-  const ss = (e0, e1, x) => { const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
-  const edges = [[bBayConf, Fb, Fc], [bConfOpen, Fc, Fo], [bOpenBay, Fo, Fb]];
-  for (const [B, lo, hi] of edges) {
-    const dd = ((a - B + 540) % 360) - 180;
-    if (Math.abs(dd) <= T) return lo + (hi - lo) * ss(-T, T, dd);
-  }
-  if (a > bBayConf || a <= bConfOpen) return Fc;  // confined (through N)
-  if (a <= bOpenBay) return Fo;                    // open ocean
-  return Fb;                                        // sheltered bay
-}
-
-// Wind-sea at the BL chop centre via three-zone geographic fetch (replaces binary-mask
-// windSeaAt for CHOP). F_eff = min(duration-equivalent fetch, geographic fetch): confined
-// caps the sea at the ray-cast distance, open lets duration govern, bay -> local chop.
-function windSeaGeo(windKmh, deg, durHrs) {
+// Wind-sea at the BL chop centre. SIMPLIFIED (ported from index.html) — a single
+// reference fetch, shaped by the smooth CHOP_EXPO exposure curve rather than the old
+// three-zone geographic fetch. max()/chopSmax, not +: two lower bounds on ONE sea, so
+// through the sheltered arc (expo→0 from 85–300°) the ~300 m bay floor takes over and an
+// offshore wind still ripples the bay instead of collapsing to zero. Replaces
+// windSeaGeo()/fetchGeoBL() and drops the duration term. `survive:1` kept so callers
+// reading .survive are unaffected. NO .fetch field (was display-only).
+function windSeaBL(windKmh, deg) {
   const U = (windKmh || 0) / 3.6;
-  const capH = SITE.windSeaDurCapH || 24;
-  const t = Math.max(0, Math.min(capH, durHrs != null ? durHrs : 6));
-  const Fdur = durEquivFetch(U, t);   // duration ceiling (direction-independent)
-  const Fgeo = fetchGeoBL(deg);       // blended geographic fetch (m) — display + back-compat only
-  // ── Blend in WAVE-HEIGHT space, not fetch metres (5 Jul 2026) ────────────────
-  // spmGrowth saturates with fetch, so blending fetch LENGTH linearly across a
-  // sector edge dumps almost all the Hs change into the first slice of the ramp —
-  // that was the near-vertical cliff (and the NE trough walls) in the wind-dir
-  // sweep. Instead compute each zone's duration-capped sea and smoothstep the
-  // resulting Hs/Tp across the SAME edges fetchGeoBL uses. Now widening
-  // fetchBlendDeg smooths the score ramp cleanly. Zone selection away from edges
-  // is byte-identical to the old fetch-space path.
-  const a = ((((deg || 0) % 360) + 360) % 360);
-  const Fc = SITE.fetchConfinedM ?? 6700, Fo = SITE.fetchOpenM ?? 1e6, Fb = SITE.fetchBayM ?? 300;
-  const bBayConf = SITE.fetchBoundBayConf ?? 320, bConfOpen = SITE.fetchBoundConfOpen ?? 22, bOpenBay = SITE.fetchBoundOpenBay ?? 45;
-  const T = SITE.fetchBlendDeg ?? 5;
-  const seaFor = (F) => spmGrowth(U, Math.min(Fdur, F));
-  const ss = (e0, e1, x) => { const k = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return k * k * (3 - 2 * k); };
-  const seaC = seaFor(Fc), seaO = seaFor(Fo), seaB = seaFor(Fb);
-  const edges = [[bBayConf, seaB, seaC], [bConfOpen, seaC, seaO], [bOpenBay, seaO, seaB]];
-  let sea = null;
-  for (const [B, loSea, hiSea] of edges) {
-    const dd = ((a - B + 540) % 360) - 180;
-    if (Math.abs(dd) <= T) {
-      const w = ss(-T, T, dd);
-      sea = { hs: loSea.hs + (hiSea.hs - loSea.hs) * w, tp: loSea.tp + (hiSea.tp - loSea.tp) * w };
-      break;
-    }
-  }
-  if (!sea) {
-    if (a > bBayConf || a <= bConfOpen) sea = seaC;   // confined (through N)
-    else if (a <= bOpenBay)             sea = seaO;   // open ocean
-    else                                sea = seaB;   // sheltered bay
-  }
-  return { hs: sea.hs, tp: sea.tp, fetch: Fgeo, survive: 1 }; // corridor-survival OFF: a fetch sea still under its own wind is wind-forced (choppy at 7 s), not detached/refracted swell; refraction-death applies only to arriving NS swell, a separate term. surviveWeight() retained below for reference.
+  const ref = spmGrowth(U, SITE.chopRefFetchM ?? 5000);
+  const bay = spmGrowth(U, SITE.fetchBayM ?? 300);
+  const e   = chopExposure(deg || 0);
+  return { hs: chopSmax(ref.hs * e, bay.hs, CHOP_SMAX_EPS),
+           tp: chopSmax(ref.tp * e, bay.tp, CHOP_SMAX_EPS),
+           survive: 1 };
 }
 
 // Corridor-survival fraction (0..1) for a fetch-grown sea by peak period. 1 = short
@@ -773,41 +728,50 @@ function chopSlapWeight(H, T) {
 function chopTransmit(deg) {
   return openWeight(SITE.fetchMaskBL, deg);
 }
-function blSwimWater(d, chop, wsBL) {
-  const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P,
+function blSwimWater(d, chop) {
+  const { swell1H, swell1Dir, swell1P,
           windWaveH, windWaveDir, windWaveP, windDir, windKmh, tideM } = d;
-  // Fetch wind-sea at BL: passed from calcScore (live) or recomputed here (cal path).
-  const _wsBL = wsBL || windSeaGeo(windKmh, windDir, (d.windDurHrs != null ? d.windDurHrs : 6));
   const ess = (SITE.blWaveSens != null) ? SITE.blWaveSens : 1;
   const nrg = (h, p) => (h * h) * Math.max(0, p || 0); // H² × P
   const wwP = windWaveP || 5;
-  const s1  = nrg(swell1H, swell1P)           * Math.max(0, blDispLookup(swell1Dir, swell1P));
-  const s2  = nrg(swell2H || 0, swell2P || 8) * Math.max(0, blDispLookup(swell2Dir || 0, swell2P || 8));
-  // Sea on the SURGE rail = the HEAVE fraction (1−slap) of the wind-sea, by steepness.
-  // CHOP takes slap; SURGE takes heave (slap+heave = 1, lossless). Two estimates of the
-  // SAME sea — forecast wind-wave (arrival, via BL disp table) and local fetch windchop
-  // (via fetch mask) — are CROSSFADED by wwTxBL exactly like CHOP, so they never double-
-  // count. wwTxBL high → forecast sea dominates; low → local windchop covers the rest.
-  const wwTxBL_s  = Math.max(0, Math.min(1, waveTxBL(windWaveDir, wwP)));
+  const s1  = nrg(swell1H, swell1P) * Math.max(0, blDispLookup(swell1Dir, swell1P));
+  // swell2 REMOVED 11 Jul 2026 — the NS feed (node 103218) reports one swell partition
+  // (hs_swl/tp_swl/dp_swl) plus one sea partition. There has been no secondary swell
+  // input since the WW→NS switch; s2_d was multiplying out to zero on every row.
+  // Sea on the SURGE rail = the HEAVE fraction (1−slap) of the FORECAST wind-wave,
+  // carried into the bay by the BL dispersion table. slap + heave = 1, lossless: CHOP
+  // takes the slap, SURGE takes the heave.
+  //
+  // The local fetch-grown sea (wchHeaveE) was REMOVED 11 Jul 2026. It was a second,
+  // worse estimate of the same sea the forecast already reports, added rather than
+  // crossfaded — a genuine double-count across 30–71° of wind bearing. Removing it
+  // also removes the 67° fetch-sector cliff (220 demerits/degree at 40 km/h held 24 h).
+  //
+  // Wind now contributes NOTHING to Surge, and that is physically right: bay ripple is
+  // short and steep, so it is all slap and no heave. Verified on 133 live hours —
+  // band occupancy 92/35/6/0 → 92/38/3/0, p50 and p90 rawBL unchanged to 2 decimals.
   const wwHeave   = 1 - chopSlapWeight(windWaveH || 0, wwP);
-  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave * waveTxBL(windWaveDir, wwP); // forecast sea heave (arrival) — sea partition only
-  const wchHeave  = 1 - chopSlapWeight(_wsBL.hs, _wsBL.tp);
-  const wchHeaveE = (_wsBL.hs * _wsBL.hs) * Math.max(0, _wsBL.tp) * wchHeave * (_wsBL.survive != null ? _wsBL.survive : 1); // fetch windchop heave × corridor survival
-  const seaHeaveE = wchHeaveE + wwHeaveE;  // ADDITIVE - fetch(320-45) & forecast sea(35-125) don't overlap (NS rose), so no dedup; mirrors CHOP
-  const s1_d = s1 * ess, s2_d = s2 * ess, sea_d = seaHeaveE * ess;
+  // Sea partition only. No windDir fallback — see waveTxBL().
+  const wwHeaveE  = (windWaveH || 0) * (windWaveH || 0) * Math.max(0, wwP) * wwHeave
+                    * waveTxBL(windWaveDir, wwP);
+  const s1_d = s1 * ess, sea_d = wwHeaveE * ess;
   // Tide multiplier — same headland/tide amplifier Entry uses (tideDir), applied to
   // the BL swell terms AND the crossfaded sea heave (sea_d). Tide modulates the
   // entrance-shelf depth, so it shoals ALL incoming long-period energy — sea and swell
   // alike (added 5 Jul 2026, matching Entry which already passes sea/ww). Short-period
   // chop stays off tide by design. Shared tideGain (MASTER); splittable to bl_tide_gain later.
-  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, s2_d, s2Dir: swell2Dir || 0, ww_d: sea_d, wwDir: windWaveDir || windDir }, 'bowerTideGate');
-  // Chop REMOVED from Surge (3 Jul 2026). Surge now reflects swell + tide only —
-  // the standalone CHOP metric carries chop, and mixing it in muddied the swell/
-  // wash signal this rail is meant to show. chop_d held at 0 so the parts object /
-  // breakdown popup stay structurally intact; the CHOP metric (chopQ7), the swell
-  // terms, chop_swim_weight and bl_chop_impact are all untouched.
+  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d: sea_d,
+    wwDir: Number.isFinite(windWaveDir) ? windWaveDir : swell1Dir }, 'bowerTideGate');  // sea partition; never windDir
+  // CHOP (the slap fraction) was removed from Surge on 3 Jul 2026 — the standalone CHOP
+  // metric carries it, and mixing it in muddied the swell/wash signal this rail shows.
+  // NOTE: Surge is NOT "swell + tide only". The wind-sea's HEAVE fraction (sea_d) is still
+  // summed into rawBL below — over a typical 133h forecast it is ~37% of rawBL vs ~49%
+  // swell, ~13% tide. Only the SLAP fraction went to CHOP; slap + heave = 1, lossless.
+  // chop_d is held at 0 so the parts object / breakdown popup stay structurally intact;
+  // the CHOP metric (chopQ7), the swell terms, chop_swim_weight and bl_chop_impact are
+  // all untouched.
   const chop_d = 0;
-  const rawBL = s1_d + s2_d + sea_d + tide_d;  // swell + crossfaded sea-heave (sea_d, tide-amplified) + tide; steepness slap/heave split, 5 Jul 2026
+  const rawBL = s1_d + sea_d + tide_d;  // swell + forecast sea-heave (tide-amplified) + tide
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
   // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
   // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
@@ -819,7 +783,7 @@ function blSwimWater(d, chop, wsBL) {
            : rawBL <= t.surgy  ? ['Surgy',   'yellow']
            :                     ['Washy',   'red'];
   return { label: z[0], cls: z[1], score: score, raw: rawBL,
-           parts: { swell1: s1_d, swell2: s2_d, windWave: sea_d, tide: tide_d, chop: chop_d, raw: rawBL } };
+           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
@@ -836,7 +800,7 @@ function calcScore(d, modelOverride) {
   // windSeaAt returns real Hs/Tp; scored as energy H²×P like the other wave terms.
   // Computed RAW here — the whole BL chop crossfade is scaled once by bl_chop_impact
   // (V3) below, NOT by windSeaSens (which now scales only the SS entry wind-sea).
-  const wsBL   = windSeaGeo(windKmh, windDir, windDurHrs);
+  const wsBL   = windSeaBL(windKmh, windDir);
   const wind_d_raw = (wsBL.hs * wsBL.hs) * Math.max(0, wsBL.tp) * chopSlapWeight(wsBL.hs, wsBL.tp) * (wsBL.survive != null ? wsBL.survive : 1); // BL wind-sea energy × slap fraction × corridor survival (long fetch sea dies before CTB), NO sensitivity
 
   // BL-table wind-wave for the CHOP crossfade (Option A). Computed RAW here (no
@@ -950,9 +914,26 @@ function calcScore(d, modelOverride) {
   // distinct waves, not two estimates of one, so nothing to double-count and no switch
   // needed - each just adds its slap. (The old max()/wwTxBL dedup assumed a directional
   // overlap the rose shows doesn't exist.)
-  const chopQ7 = (wind_d_raw + ww_d_BL_raw) * blChopImpact;
+  const chopQ7 = (wind_d_raw + ww_d_BL_raw) * blChopImpact;   // (ref) legacy energy — kept for the breakdown readout only; NO LONGER drives the swim band
   // wind_d exposed for the demerits breakdown (scaled fetch-sea half).
   const wind_d = wind_d_raw * blChopImpact;
+
+  // ── CHOP = STEEP-FACE HEIGHT (cm) ── ported from calc() (Marco 6 Jul 2026).
+  // Fetch wind-sea = OPEN reference-fetch sea (direction-INDEPENDENT) × BL directional
+  // EXPOSURE (chopExposure). Wind-wave stays dir-gated by the BL transmit table (reuse
+  // wwTxBL / _wwP_bl from above). The two sources combine energy-additive (quadrature).
+  // A short steep fetch sea has near-zero H²·P energy but a real steep face, which the
+  // old q7 energy path discarded — this is the fix. No gain knob: chopCm is physical
+  // height; tune the cm band edges (swimThresholds) or CHOP_EXPO, not a sensitivity.
+  const _chopU    = (windKmh || 0) / 3.6;
+  const _chopOS   = spmGrowth(_chopU, SITE.chopRefFetchM ?? 5000);  // reference fetch, dir-independent
+  const _chopExpo = chopExposure(windDir);
+  const _chopRes  = spmGrowth(_chopU, SITE.fetchBayM ?? 300);       // local bay residual
+  const _hWsOpen  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;         // open ocean survived into BL
+  const _hWsBay   = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                  // 300m bay floor
+  const _hWsFace  = chopSmax(_hWsOpen, _hWsBay, CHOP_SMAX_EPS);                              // fetch wind-sea steep face (m), corner-rounded
+  const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;    // wind-wave steep face (m)
+  const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);             // quadrature, cm
 
   return {
     score: Math.max(0, Math.round(60 - total)),
@@ -979,17 +960,16 @@ function calcScore(d, modelOverride) {
       if (total <= t.caution) return { label:'Caution',   cls:'yellow', score: s, raw: total };
       return                         { label:'Dangerous', cls:'red',     score: s, raw: total };
     })(),
-    // Metric 2: CHOP — graceful handover between the two wind-chop sources.
-    //   The wind-wave (ww_d) arrives from a RESTRICTED arc (its SS dispersion
-    //   transmit wwTxForChop); our fetch wind-sea (wind_d) covers everywhere else.
-    //   Symmetric crossfade at the switch angle so they never double-count:
-    //   q7 = wind_d × (1 − w) + ww_d × w, where w = wind-wave arc weight.
+    // Metric 2: CHOP — STEEP-FACE HEIGHT (cm). The band now classifies chopCm (fetch
+    //   wind-sea face × BL exposure, in quadrature with the dir-gated wind-wave face)
+    //   instead of the additive chopQ7 energy. Bands are cm edges (swimThresholds).
+    //   A short steep fetch sea that read ~0 on the old energy path now shows its face.
     swim: (() => {
-      const q7  = chopQ7;
+      const q7  = chopCm;
       const t  = SITE.swimThresholds;
       // Convert to 0–60 scale (inverted, matching Entry & Surge): 60=best, 0=worst.
-      // q7 is capped at the Messy edge for scale purposes (beyond that is fully Messy).
-      const cap = t.scaleMax > 0 ? t.scaleMax : 14;
+      // q7 (cm) is capped at the Messy edge for scale purposes (beyond that is fully Messy).
+      const cap = t.scaleMax > 0 ? t.scaleMax : 45;
       const s60 = Math.max(0, Math.round(60 - Math.min(q7, cap) * (60 / cap)));
       if (q7 <  t.glassy) return { label:'Smooth', cls:'green',  score: s60, raw: q7 };
       if (q7 <= t.ripply) return { label:'Ripply', cls:'amber',  score: s60, raw: q7 };
@@ -999,7 +979,7 @@ function calcScore(d, modelOverride) {
     // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
     //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
     //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
-    water: blSwimWater(d, chopQ7, wsBL),
+    water: blSwimWater(d, chopQ7),
   };
 }
 
@@ -1117,13 +1097,13 @@ const LOBE_R100 = 300;   // px at 100% transmit; radius IS the transmit (0% = th
 /* ===================== MODEL ADAPTER (workbench inputs -> app calcScore) ===================== */
 function gemTransmit(dirDeg,periodS){return nsDispLookup(dirDeg,periodS);}
 function inputObj(){return {s1H:ST.s1H,s1D:ST.s1D,s1P:ST.s1P, s2H:ST.s2on?ST.s2H:0,s2D:ST.s2D,s2P:ST.s2P, windKmh:ST.wK,windD:ST.wD,windDurHrs:ST.wFetch, wwH:ST.wwH,wwD:ST.wwD,wwP:ST.wwP, tideM:ST.tide};}
-/* CHOP steep-face height bands (cm) — Marco 6 Jul 2026: >10cm ripply, 20 choppy, 30 messy */
-const CHOP_FACE={ripply:10,choppy:20,messy:30,scaleMax:45};
+/* CHOP steep-face height bands (cm) now live in SITE.swimThresholds {glassy,ripply,choppy,scaleMax}
+   — the former CHOP_FACE constant was retired 12 Jul 2026 (bands unified with the live model). */
 /* BL directional chop exposure (0..1) — fraction of the open-sea steep-face chop that
    reaches the Bower Lane point from each wind bearing. Fit to Marco's 20km/h/4h anchors
    (dir:points): 320:53 330:44 340:40 350:35 0:30 25:30 30:35 60:40 90:53; calm (0)
    through the land-sheltered S/W arc (100°–310°). Smoothstep between knots. */
-const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[60,0.556],[90,0.194],[100,0],[310,0],[320,0.194],[330,0.444],[340,0.556],[350,0.694],[360,0.833]];
+const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[55,0.556],[70,0.194],[85,0],[300,0],[310,0.194],[320,0.444],[330,0.556],[345,0.694],[360,0.833]];
 function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i<P.length;i++){if(a<=P[i][0]){const x0=P[i-1][0],y0=P[i-1][1],x1=P[i][0],y1=P[i][1];let t=(a-x0)/(x1-x0);t=t*t*(3-2*t);return y0+(y1-y0)*t;}}return P[P.length-1][1];}
 function calc(I){
   const dur=(I.windDurHrs!=null?I.windDurHrs:6);
@@ -1137,15 +1117,15 @@ function calc(I){
   const q7=r.swim.raw, wind_d=dm.wind, chopWW=Math.max(0,q7-wind_d);
   const wp=r.water.parts;
   const surge={label:r.water.label,cls:r.water.cls,score:r.water.score,raw:r.water.raw,
-    parts:{s1_d:wp.swell1,s2_d:wp.swell2,sea_d:wp.windWave,tide_d:wp.tide}};
-  const ws=windSeaGeo(I.windKmh,I.windD,dur); // kept for surge / display
+    parts:{s1_d:wp.swell1,sea_d:wp.windWave,tide_d:wp.tide}};
+  const ws=windSeaBL(I.windKmh,I.windD); // kept for surge / display
   /* ── CHOP = STEEP-FACE HEIGHT (cm). Fetch wind-sea = OPEN duration-limited sea ×
      BL directional EXPOSURE (chopExposure, calibrated to Marco's 320°–90° anchors at
      20km/h/4h). Replaces the hard fetch sectors → smooth, sheltered through E/S/W.
      Wind-wave stays dir-gated by BL transmit. Two sources combine energy-additive. ── */
   const _wwP=I.wwP||5, _wwH=I.wwH||0;
   const _U=(I.windKmh||0)/3.6;
-  const _oS=spmGrowth(_U, durEquivFetch(_U, dur));   // open sea, direction-independent
+  const _oS=spmGrowth(_U, SITE.chopRefFetchM ?? 5000);   // open sea, reference fetch, direction-independent
   const _expo=chopExposure(I.windD);
   /* Sheltered-arc residual: even on blocked bearings the wind still whips a small local
      sea over the ~300m of bay water. Floor (not additive — same sea, two lower bounds):
@@ -1154,14 +1134,16 @@ function calc(I){
   const _res=spmGrowth(_U, SITE.fetchBayM ?? 300);   // local bay residual, dir-independent
   const _hWsOpen = _oS.hs  * chopSlapWeight(_oS.hs,  _oS.tp)  * _expo;
   const _hWsBay  = _res.hs * chopSlapWeight(_res.hs, _res.tp);
-  const hWs = Math.max(_hWsOpen, _hWsBay);
+  const hWs = chopSmax(_hWsOpen, _hWsBay, CHOP_SMAX_EPS);
   const _blTxWw = Math.max(0,Math.min(1, waveTxBL(I.wwD, _wwP)));   // BL = wave table; wind never indexes it
   const hWw = _wwH * chopSlapWeight(_wwH,_wwP) * _blTxWw;
   const chopCm = 100*Math.sqrt(hWs*hWs + hWw*hWw);
-  const CF=CHOP_FACE;
-  const chopLbl = chopCm<CF.ripply?'Smooth':chopCm<CF.choppy?'Ripply':chopCm<CF.messy?'Choppy':'Messy';
-  const chopCls = chopCm<CF.ripply?'green':chopCm<CF.choppy?'amber':chopCm<CF.messy?'yellow':'red';
-  const chopScore = Math.max(0,Math.round(60 - Math.min(chopCm,CF.scaleMax)*(60/CF.scaleMax)));
+  // Band classification unified onto SITE.swimThresholds (cm edges), matching calcScore's
+  // swim metric. CHOP_FACE retired. glassy=Smooth, ripply, choppy, else Messy.
+  const _st=SITE.swimThresholds, _cap=_st.scaleMax>0?_st.scaleMax:45;
+  const chopLbl = chopCm<_st.glassy?'Smooth':chopCm<=_st.ripply?'Ripply':chopCm<=_st.choppy?'Choppy':'Messy';
+  const chopCls = chopCm<_st.glassy?'green':chopCm<=_st.ripply?'amber':chopCm<=_st.choppy?'yellow':'red';
+  const chopScore = Math.max(0,Math.round(60 - Math.min(chopCm,_cap)*(60/_cap)));
   const swim = {label:chopLbl,cls:chopCls,score:chopScore,raw:chopCm};
   return {entry:r.entry,swim,surge,
     wind_d,ww_d:dm.windWave,windEntry:dm.windEntry,s1_d:dm.swell1,s2_d:dm.swell2,
@@ -1172,7 +1154,7 @@ function calc(I){
     s2Tx:Math.max(0,nsDispLookup(I.s2D||0,I.s2P||8)),
     wwArrival:Math.max(0,nsDispLookup((I.wwD!=null?I.wwD:I.windD),I.wwP||5)),
     blTx1:Math.max(0,blDispLookup(I.s1D,I.s1P)),
-    wsHs:ws.hs,wsTp:ws.tp,wsFetch:ws.fetch, demerits:dm};
+    wsHs:ws.hs,wsTp:ws.tp,wsFetch:(SITE.chopRefFetchM ?? 5000), demerits:dm};
 }
 
 /* ===================== VIEW / ZOOM =====================
@@ -1525,7 +1507,7 @@ function render(){
   if(typeof updateBlEditNote==='function') updateBlEditNote();
   const chipRail={
     entry:{kind:'lowGood',value:R.entry.raw,scaleMax:SITE.entryThresholds.scaleMax,bounds:[SITE.entryThresholds.easy,SITE.entryThresholds.doable,SITE.entryThresholds.caution]},
-    swim:{kind:'lowGood',value:R.chopCm,scaleMax:CHOP_FACE.scaleMax,bounds:[CHOP_FACE.ripply,CHOP_FACE.choppy,CHOP_FACE.messy]},
+    swim:{kind:'lowGood',value:R.chopCm,scaleMax:SITE.swimThresholds.scaleMax,bounds:[SITE.swimThresholds.glassy,SITE.swimThresholds.ripply,SITE.swimThresholds.choppy]},
     surge:{kind:'lowGood',value:R.surge.raw,scaleMax:SITE.surgeThresholds.scaleMax,bounds:[SITE.surgeThresholds.steady,SITE.surgeThresholds.drifty,SITE.surgeThresholds.surgy]},
   };
   const chip=(n,m,sub,rc)=>`<div class="chipcard">
@@ -1551,7 +1533,7 @@ function render(){
     {name:'Chop',sub:'steep-face height',m:R.swim,rail:chipRail.swim,
      rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['open '+F(R.chopOpenHs,2)+'m/'+F(R.chopOpenTp,1)+'s × expo '+Math.round(R.chopExpo*100)+'% = '+Math.round(R.hWsOpenCm)+' cm',''],['bay 300m residual '+F(R.chopResHs,2)+'m/'+F(R.chopResTp,1)+'s = '+Math.round(R.hWsBayCm)+' cm',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
     {name:'Swim',sub:'swell + heave + tide',m:R.surge,rail:chipRail.surge,
-     rows:[['Primary swell',R.surge.parts.s1_d],['Secondary swell',R.surge.parts.s2_d],['Sea heave',R.surge.parts.sea_d],['Tide effect',R.surge.parts.tide_d],['Total demerits',R.surge.raw,'mid'],['Score (60=best)',R.surge.score,'tot']]},
+     rows:[['Primary swell',R.surge.parts.s1_d],['Sea heave',R.surge.parts.sea_d],['Tide effect',R.surge.parts.tide_d],['Total demerits',R.surge.raw,'mid'],['Score (60=best)',R.surge.score,'tot']]},
   ];
   document.getElementById('metrics').innerHTML=cards.map(c=>`<div class="metric">
     <div class="metric-head"><div class="metric-name">${c.name}<span>${c.sub}</span></div>
@@ -1592,7 +1574,7 @@ function drawSweep(baseI){
   for(let i=0;i<=N;i++){const v=axis.min+(axis.max-axis.min)*i/N,I=Object.assign({},baseI);axis.set(I,v);const R=calc(I);xs.push(v);
     if(ymode==='score'){
       se.entry.push(sc(R.entry.raw, SITE.entryThresholds.scaleMax));
-      se.swim.push(sc(R.chopCm, CHOP_FACE.scaleMax));
+      se.swim.push(sc(R.chopCm, SITE.swimThresholds.scaleMax));
       se.surge.push(sc(R.surge.raw, SITE.surgeThresholds.scaleMax));
     } else {
       se.entry.push(R.entry.raw); se.swim.push(R.chopCm); se.surge.push(R.surge.raw);
