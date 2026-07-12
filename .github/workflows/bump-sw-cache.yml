@@ -1,5 +1,6 @@
 name: Bump SW cache version
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -22,7 +23,7 @@ jobs:
   bump:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Stamp build version into sw.js, index.html and vecchio.html
         run: |
           NEW_VERSION="$(TZ='Australia/Sydney' date +'%Y%m%d-%H%M%S')"
@@ -59,12 +60,21 @@ jobs:
           fi
       - name: Commit the bump
         run: |
-          if git diff --quiet -- sw.js index.html vecchio.html; then
+          # Only reference files that actually exist — vecchio.html was retired
+          # (deleted 12 Jul 2026) and a bare `git add vecchio.html` on a missing
+          # path fails with exit 128, which is what silently broke every stamp
+          # after the deletion. Rebuild the list from what's present so the job is
+          # robust whether or not vecchio.html is ever restored.
+          FILES=""
+          for f in sw.js index.html vecchio.html; do
+            [ -f "$f" ] && FILES="$FILES $f"
+          done
+          if [ -z "$FILES" ] || git diff --quiet -- $FILES; then
             echo "Nothing changed - nothing to commit."
             exit 0
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add sw.js index.html vecchio.html
+          git add -- $FILES
           git commit -m "chore: stamp build version [skip ci]"
           git push
