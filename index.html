@@ -1161,6 +1161,15 @@
     border-color: var(--ocean);
     color: #fff;
   }
+  /* Long-range outlook strip (Option C): days 7-10 sit below the 6-day picker */
+  .long-range { margin-top: 8px; }
+  .long-range .lr-label { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: rgba(200,189,160,0.6); margin: 0 2px 5px; }
+  .long-range .lr-row { display: flex; gap: 5px; }
+  .long-range .lr-day { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; background: rgba(22,50,66,0.5); border: 1px solid var(--border); border-radius: 10px; padding: 5px 3px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .long-range .lr-day .lr-bar { width: 100%; height: 5px; border-radius: 3px; }
+  .long-range .lr-day .lr-dl { font-size: 9.5px; color: rgba(200,189,160,0.82); white-space: nowrap; line-height: 1; }
+  .long-range .lr-day.lr-look { border-style: dashed; opacity: 0.7; }
+  .long-range .lr-day.lr-active { border-color: var(--ocean); box-shadow: 0 0 0 1px var(--ocean); }
 
   /* ── Snapshot slider ── */
   .slider-wrap {
@@ -2263,6 +2272,7 @@
     <!-- Time slider -->
     <div class="slider-wrap">
       <div class="day-picker" id="dayPicker"></div>
+      <div class="long-range" id="longRange"></div>
       <input type="range" id="timeSlider" min="0" max="0" value="0" oninput="onSlider(this.value)">
       <div class="slider-ticks" id="sliderTicks"></div>
     </div>
@@ -6218,14 +6228,16 @@ function renderDayPicker(matrix) {
   const _now = new Date();
   const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
 
-  // Show today + next 5 days only — filter out past days, cap at 6
+  // Picker shows today + next 5 (cap 6); the long-range strip shows the rest.
   const allDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
-  const days = allDays.filter(d => d >= todayStr).slice(0, 6);
+  const fwdDays = allDays.filter(d => d >= todayStr);   // all today-forward days
+  const days = fwdDays.slice(0, 6);
 
-  // Default selection: today, or nearest future day
-  if (!_selectedDay || !days.includes(_selectedDay)) {
+  // Keep _selectedDay if it's ANY valid forward day (incl. a long-range/outlook day
+  // chosen from the strip), not only one of the 6 chips — else it snaps back to today.
+  if (!_selectedDay || !fwdDays.includes(_selectedDay)) {
     const sliderDay = matrix[_sliderIdx]?.dateTime.substring(0,10);
-    _selectedDay = days.includes(sliderDay) ? sliderDay : (days[0] || todayStr);
+    _selectedDay = fwdDays.includes(sliderDay) ? sliderDay : (days[0] || todayStr);
   }
 
   picker.innerHTML = '';
@@ -6241,6 +6253,46 @@ function renderDayPicker(matrix) {
     btn.onclick = () => selectDay(date);
     picker.appendChild(btn);
   });
+}
+
+// Long-range outlook strip (Option C): the day-picker caps at 6 chips; days 7-10
+// render here as a thin row of colour bars. Days 8-10 are NS swell-only (_swellOnly)
+// -> dashed + dimmed. Tapping a bar jumps to that day via selectDay.
+function renderLongRange(matrix) {
+  const host = document.getElementById('longRange');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!matrix || !matrix.length) { host.style.display = 'none'; return; }
+  const _now = new Date();
+  const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+  const fwdDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))].filter(d => d >= todayStr);
+  const longDays = fwdDays.slice(6);
+  if (!longDays.length) { host.style.display = 'none'; return; }
+  host.style.display = '';
+  const label = document.createElement('div');
+  label.className = 'lr-label'; label.textContent = 'Long-range outlook';
+  host.appendChild(label);
+  const row = document.createElement('div'); row.className = 'lr-row';
+  longDays.forEach(date => {
+    const rows = matrix.filter(r => r.dateTime.substring(0,10) === date);
+    const swellOnly = rows.length > 0 && rows.every(r => r._swellOnly === true);
+    const win = rows.filter(r => { const hh = parseInt(r.dateTime.substring(11,13),10); return hh >= WA_LO && hh <= WA_HI; });
+    const use = win.length ? win : rows;
+    let sum = 0;
+    use.forEach(r => { const q = calcScore(r); sum += wgCombo(q.entry.score, q.swim.score, q.water.score); });
+    const col = _wgColor(use.length ? sum / use.length : 0);
+    const d = new Date(date + 'T00:00');
+    const btn = document.createElement('button');
+    btn.className = 'lr-day' + (swellOnly ? ' lr-look' : '') + (date === _selectedDay ? ' lr-active' : '');
+    if (swellOnly) btn.title = 'Swell-only outlook — no wind or tide forecast this far out';
+    const bar = document.createElement('span'); bar.className = 'lr-bar'; bar.style.background = col;
+    const dl = document.createElement('span'); dl.className = 'lr-dl';
+    dl.textContent = d.toLocaleDateString('en-AU', { weekday: 'short' }) + ' ' + d.getDate();
+    btn.appendChild(bar); btn.appendChild(dl);
+    btn.onclick = () => selectDay(date);
+    row.appendChild(btn);
+  });
+  host.appendChild(row);
 }
 
 function selectDay(date) {
@@ -6318,6 +6370,7 @@ function renderSlider(matrix) {
 
   // Update day picker active state
   renderDayPicker(matrix);
+  renderLongRange(matrix);
 
   // Header date + time
   const h  = matrix[_sliderIdx];
