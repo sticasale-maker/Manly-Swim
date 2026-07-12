@@ -1339,7 +1339,7 @@
 
   .slider-ticks {
     display:flex; justify-content:space-between;
-    margin-top:7px;
+    margin-top:7px; min-height:16px;   /* reserve room for the abs-positioned hour labels so they aren't clipped under the slider */
     font-size:11px; letter-spacing:0.4px; color:var(--dim);
   }
 
@@ -1957,7 +1957,7 @@
     <div style="display:flex; align-items:center; gap:10px;">
      
       <div>
-        <div class="logo">SWIM <span>MANLY</span></div>
+        <div class="logo" id="appLogo" role="button" tabindex="0" title="Replay intro" style="cursor:pointer;">SWIM <span>MANLY</span></div>
         <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span><span id="headerVersion" style="margin-left:8px;font-size:9px;opacity:0.5;letter-spacing:0.3px;" title="Running app version"></span></div>
       </div>
     </div>
@@ -8514,6 +8514,37 @@ async function nuovoPreflight() {
     }
   })();
 
+
+
+// Replay the intro splash on demand — tapping the SWIM MANLY logo. Resets the
+// overlay, restarts the video, and fades it back out on end / skip / 10s cap.
+function replaySplash() {
+  var wrap = document.getElementById('video-splash');
+  var vid  = document.getElementById('splash-video');
+  if (!wrap) return;
+  wrap.classList.remove('fade-out');
+  wrap.style.display = 'flex';
+  var done = false;
+  var end = function () {
+    if (done) return; done = true;
+    wrap.classList.add('fade-out');
+    setTimeout(function () { wrap.style.display = 'none'; }, 650);
+  };
+  if (vid) {
+    vid.onended = end; vid.onerror = end;
+    try { vid.currentTime = 0; } catch (e) {}
+    var pr = vid.play(); if (pr && pr.catch) pr.catch(function () {});
+    setTimeout(end, 10000);
+  } else { end(); }
+}
+(function () {
+  var logo = document.getElementById('appLogo');
+  if (!logo) return;
+  logo.addEventListener('click', replaySplash);
+  logo.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); replaySplash(); }
+  });
+})();
 
 
 function syncCalFromForecast() {
