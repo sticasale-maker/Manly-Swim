@@ -4080,6 +4080,14 @@ function parseNsDispCSV(text) {
   // amplifier is New-NS-sourced. Blank/NaN → code default (SITE_DEFAULTS.tideGain).
   let tideGain = null;
   if (rows[6] && rows[6][2] != null) tideGain = num(rows[6][2]);
+  // chop_ref_fetch_m (C4 = row 3, col 2) — effective wind fetch (m) over the bay; THE Chop
+  // gain feeding chopCm. Blank/NaN → code default (SITE_DEFAULTS.chopRefFetchM = 5000).
+  let chopRefFetchM = null;
+  if (rows[3] && rows[3][2] != null) chopRefFetchM = num(rows[3][2]);
+  // tide_ref (C5 = row 4, col 2) — tide neutral height (m, WW datum); feeds the ENTRY + SURGE
+  // tide amplifier. Blank/NaN → code default (SITE_DEFAULTS.tideRef = 0.7).
+  let tideRef = null;
+  if (rows[4] && rows[4][2] != null) tideRef = num(rows[4][2]);
 
   // Metric thresholds — New NS tab block AN2:AQ13 (SEPARATE from index.html's col AK).
   // 4 cols: AN(39)=metric, AO(40)=band label, AP(41)=colour, AQ(42)=value.
@@ -4135,6 +4143,7 @@ function parseNsDispCSV(text) {
     blDisp: blOk ? blTable : null,
     blDispFold: bl.westFilled === 0,
     ssWaveSens, windSeaSens, tideGain, blWaveSens, blChopImpact,
+    chopRefFetchM, tideRef,
     entryThresholds, swimThresholds, surgeThresholds,
   };
 }
@@ -4164,6 +4173,8 @@ async function loadNsDispConfig(force) {
       if (cached.blDisp) SITE.blDisp = cached.blDisp;
       if (cached.blWaveSens != null) SITE.blWaveSens = cached.blWaveSens;
       if (cached.blChopImpact != null) SITE.blChopImpact = cached.blChopImpact;
+      if (cached.chopRefFetchM != null) SITE.chopRefFetchM = cached.chopRefFetchM;
+      if (cached.tideRef != null) SITE.tideRef = cached.tideRef;
       applyThresh(cached);
       diag('NS disp: cache hit (' + cached.table.length + ' rows, SS ' + (SS_DISP_LOCK_FOLD?'FOLDED (locked)':(SITE.nsDispFold?'FOLDED':'36-row'))
         + ', BL ' + (SITE.blDisp ? (SITE.blDispFold?'FOLDED':'36-row') : 'n')
@@ -4188,11 +4199,14 @@ async function loadNsDispConfig(force) {
       if (parsed.blDisp) SITE.blDisp = parsed.blDisp;
       if (parsed.blWaveSens != null) SITE.blWaveSens = parsed.blWaveSens;
       if (parsed.blChopImpact != null) SITE.blChopImpact = parsed.blChopImpact;
+      if (parsed.chopRefFetchM != null) SITE.chopRefFetchM = parsed.chopRefFetchM;
+      if (parsed.tideRef != null) SITE.tideRef = parsed.tideRef;
       applyThresh(parsed);
       localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
         fetchedAt: Date.now(), table: parsed.table, nsDispFold: parsed.nsDispFold, blDispFold: parsed.blDispFold,
         ssWaveSens: parsed.ssWaveSens, windSeaSens: parsed.windSeaSens, tideGain: parsed.tideGain,
         blDisp: parsed.blDisp, blWaveSens: parsed.blWaveSens, blChopImpact: parsed.blChopImpact,
+        chopRefFetchM: parsed.chopRefFetchM, tideRef: parsed.tideRef,
         entryThresholds: parsed.entryThresholds, swimThresholds: parsed.swimThresholds, surgeThresholds: parsed.surgeThresholds,
       }));
       diag('NS disp: loaded from sheet (' + parsed.table.length + ' rows'
@@ -7037,7 +7051,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260711-170056';
+var APP_BUILD = '20260704-110547';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -7706,12 +7720,13 @@ if (!GEM_MODEL) {
 // overrides apply on top for live experimentation.
 // =============================================================================
 const TUNE_PARAMS = [
-  { key:'ssWaveSens', label:'SS wave sensitivity (ss_wave_sens)', min:0, max:3, step:0.05, hint:'New NS tab C2. Scales swell1 + wind-wave demerits (energy = H²·P × transmit × this).' },
-  { key:'windSeaSens', label:'Wind-sea sensitivity', min:0, max:3, step:0.05, hint:'Scales the fetch-derived wind-sea (CHOP = BL point, ENTRY = SS point blended vs NS). Higher = wind builds more score.' },
-  { key:'swimThresholds.glassy', label:'CHOP · Smooth edge (cm)', min:0, max:30, step:0.5, hint:'Steep-face height (cm) below this = Smooth. CHOP is now physical face height, not q7 energy.' },
-  { key:'swimThresholds.ripply', label:'CHOP · Ripply edge (cm)', min:0, max:45, step:0.5, hint:'Face height (cm) ≤ this = Ripply.' },
-  { key:'swimThresholds.choppy', label:'CHOP · Choppy edge (cm)', min:0, max:60, step:0.5, hint:'Face height (cm) ≤ this = Choppy, else Messy.' },
-  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:8, step:0.05, hint:'New NS tab V2. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
+  { key:'ssWaveSens', label:'SS wave sensitivity (ss_wave_sens)', min:0, max:3, step:0.05, hint:'New NS C2 — COPY tuned value here. Scales swell1 + wind-wave demerits (energy = H²·P × transmit × this).' },
+  { key:'windSeaSens', label:'Wind-sea sensitivity (wind_sens)', min:0, max:3, step:0.05, hint:'New NS C3 — COPY tuned value here. Scales the SS ENTRY wind-sea ONLY; does NOT affect CHOP (CHOP is set by Chop strength / chop_ref_fetch_m). Higher = wind builds more ENTRY score.' },
+  { key:'chopRefFetchM', label:'CHOP · Chop strength (chop_ref_fetch_m)', min:500, max:12000, step:100, hint:'New NS C4 — COPY tuned value here. Effective wind fetch (m) over the bay = THE Chop gain (feeds chopCm). Higher = bigger chop. (The old bl_chop_impact only scaled a readout, never a score.) Default 5000.' },
+  { key:'swimThresholds.glassy', label:'CHOP · Smooth edge (cm)', min:0, max:30, step:0.5, hint:'New NS AQ6 — COPY here (ALL of AQ6:AQ9 must be filled or CHOP reverts to default). Steep-face height (cm) below this = Smooth.' },
+  { key:'swimThresholds.ripply', label:'CHOP · Ripply edge (cm)', min:0, max:45, step:0.5, hint:'New NS AQ7 — COPY here. Face height (cm) ≤ this = Ripply.' },
+  { key:'swimThresholds.choppy', label:'CHOP · Choppy edge (cm)', min:0, max:60, step:0.5, hint:'New NS AQ8 — COPY here. Face height (cm) ≤ this = Choppy, else Messy.' },
+  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:8, step:0.05, hint:'New NS V2 — COPY tuned value here. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
   // REMOVED 11 Jul 2026 — both were advertised as scoring knobs and reached no band:
   //   bl_chop_impact (V3)   scales chopQ7 and wind_d, which are BREAKDOWN READOUTS only.
   //                         The live CHOP metric is chopCm (steep-face height, cm), which
@@ -7724,13 +7739,13 @@ const TUNE_PARAMS = [
   //                         entirely: defaults, parser, cache and panel.
   // Tune the CHOP cm band edges or CHOP_EXPO instead — chopCm is a physical height and has
   // no gain knob by design.
-  { key:'surgeThresholds.steady', label:'SURGE · Steady edge', min:0, max:60, step:1, hint:'rawBL demerits ≤ this = Steady. Lowest of the three (LOWER demerits = better, like Entry).' },
-  { key:'surgeThresholds.drifty', label:'SURGE · Drifty edge', min:0, max:60, step:1, hint:'rawBL ≤ this = Drifty.' },
-  { key:'surgeThresholds.surgy',  label:'SURGE · Surgy edge',  min:0, max:60, step:1, hint:'rawBL ≤ this = Surgy, else Washy. Highest of the three.' },
-  { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'total demerits ≤ this = Easy. Lowest of the three (LOWER demerits = better).' },
-  { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'total ≤ this = Doable.' },
-  { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'total ≤ this = Caution, else Dangerous. Highest of the three.' },
-  { key:'tideRef', label:'TIDE · neutral height (m)', min:0, max:2, step:0.05, hint:'Threshold on the WW datum. At or below it the tide adds nothing; above it high water amplifies s1_d + ww_d. Monotone — a rising tide never lowers demerits. Default 0.7 m.' },
+  { key:'surgeThresholds.steady', label:'SURGE · Steady edge', min:0, max:60, step:1, hint:'New NS AQ10 — COPY here (ALL of AQ10:AQ13 must be filled or SURGE reverts to default). rawBL ≤ this = Steady.' },
+  { key:'surgeThresholds.drifty', label:'SURGE · Drifty edge', min:0, max:60, step:1, hint:'New NS AQ11 — COPY here. rawBL ≤ this = Drifty.' },
+  { key:'surgeThresholds.surgy',  label:'SURGE · Surgy edge',  min:0, max:60, step:1, hint:'New NS AQ12 — COPY here. rawBL ≤ this = Surgy, else Washy.' },
+  { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'New NS AQ2 — COPY here (ALL of AQ2:AQ5 must be filled or ENTRY reverts to default). total ≤ this = Easy.' },
+  { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'New NS AQ3 — COPY here. total ≤ this = Doable.' },
+  { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'New NS AQ4 — COPY here. total ≤ this = Caution, else Dangerous.' },
+  { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
 function loadTuneOverrides() {
@@ -9218,7 +9233,7 @@ const HISTORY_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/forecast_history';
 
 async function loadForecastHistory() {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();  // 7-day history window (was 24h) so the day-picker/slider scrub back a week
     const res = await fetch(
       `${HISTORY_TABLE_URL}?select=*&forecast_dt=gte.${since}&order=forecast_dt.asc`,
       { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY } }
