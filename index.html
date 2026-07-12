@@ -4348,6 +4348,8 @@ async function loadNsDispConfig(force) {
 // =============================================================================
 const WINDSEA_BLOCKED_FETCH_M = 300;  // residual near-shore chop on blocked bearings
 const WINDSEA_G = 9.81;
+const CHOP_SMAX_EPS = 0.045; // corner-rounding on the open/bay fetch crossover (metres; 4.5 cm). eps=0 → exact max()
+const chopSmax = (a, b, eps) => 0.5 * (a + b + Math.sqrt((a - b) * (a - b) + eps * eps));
 
 // Smoothed openness (0..1) for a wind bearing against a 72-bin 0/1 mask.
 function openWeight(mask, deg) {
@@ -4403,8 +4405,8 @@ function windSeaBL(windKmh, deg) {
   const ref = spmGrowth(U, SITE.chopRefFetchM ?? 5000);
   const bay = spmGrowth(U, SITE.fetchBayM ?? 300);
   const e   = chopExposure(deg || 0);
-  return { hs: Math.max(ref.hs * e, bay.hs),
-           tp: Math.max(ref.tp * e, bay.tp),
+  return { hs: chopSmax(ref.hs * e, bay.hs, CHOP_SMAX_EPS),
+           tp: chopSmax(ref.tp * e, bay.tp, CHOP_SMAX_EPS),
            survive: 1 };
 }
 
@@ -4424,7 +4426,7 @@ function chopSlapWeight(H, T) {
 // S/W arc (100°–310°). Smoothstep between knots. Replaces the hard fetch-sector
 // model for the CHOP steep-face metric; windSeaGeo (three-zone) still drives the
 // legacy q7-energy reference and the SURGE heave.
-const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[60,0.556],[90,0.194],[100,0],[310,0],[320,0.194],[330,0.444],[340,0.556],[350,0.694],[360,0.833]];
+const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[55,0.556],[70,0.194],[85,0],[300,0],[310,0.194],[320,0.444],[330,0.556],[345,0.694],[360,0.833]];
 function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i<P.length;i++){if(a<=P[i][0]){const x0=P[i-1][0],y0=P[i-1][1],x1=P[i][0],y1=P[i][1];let t=(a-x0)/(x1-x0);t=t*t*(3-2*t);return y0+(y1-y0)*t;}}return P[P.length-1][1];}
 
 function chopTransmit(deg) {
@@ -4777,7 +4779,7 @@ function calcScore(d, modelOverride) {
   const _chopRes  = spmGrowth(_chopU, SITE.fetchBayM ?? 300);              // local bay residual
   const _hWsOpen  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;         // open ocean survived into BL
   const _hWsBay   = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                  // 300m bay floor
-  const _hWsFace  = Math.max(_hWsOpen, _hWsBay);                                             // fetch wind-sea steep face (m)
+  const _hWsFace  = chopSmax(_hWsOpen, _hWsBay, CHOP_SMAX_EPS);                                             // fetch wind-sea steep face (m), corner-rounded
   const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;    // wind-wave steep face (m)
   const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);             // quadrature, cm
 
