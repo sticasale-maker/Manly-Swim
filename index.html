@@ -669,7 +669,19 @@
     margin-bottom: 12px;
     box-shadow: 0 4px 24px rgba(74,143,173,0.10);
   }
-  .wa2-head { display: block; margin-bottom: 10px; }
+  .wa2-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%; box-sizing: border-box;
+    background: none; border: none; cursor: pointer;
+    padding: 0; font-family: inherit; text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wa2-head-txt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+  .wa2-chevron {
+    font-size: 26px; color: #6fc0dd; line-height: 1; flex: none;
+    transition: transform 0.3s ease;
+  }
+  .wa2-head[aria-expanded="true"] .wa2-chevron { transform: rotate(180deg); }
   .wa2-title {
     display: block; font-family: 'Bebas Neue', sans-serif;
     letter-spacing: 1.5px; font-size: clamp(16px,4.8vw,20px);
@@ -680,7 +692,12 @@
     font-size: clamp(9px,2.5vw,10px); color: rgba(200,189,160,0.65);
     letter-spacing: 0.3px; margin-top: 2px;
   }
-  .wa2-days { display: flex; flex-direction: column; gap: 12px; }
+  .wa2-days {
+    display: flex; flex-direction: column; gap: 12px;
+    overflow: hidden; opacity: 0; max-height: 0;
+    transition: max-height 0.35s ease, opacity 0.3s ease;
+  }
+  .wa2-days.wa2-open { opacity: 1; max-height: 4000px; margin-top: 12px; }
   .wa2-day {
     display: block; width: 100%; box-sizing: border-box; text-align: left;
     background: rgba(22,50,66,0.35); border: 1px solid rgba(180,210,230,0.10);
@@ -2410,10 +2427,13 @@
 
 <!-- THE WEEK AHEAD — one Best-Swim-Window ribbon per upcoming day (built by renderWeekAhead) -->
   <div class="wa2-card">
-    <div class="wa2-head">
-      <span class="wa2-title">The Week Ahead</span>
-      <span class="wa2-sub">Tap a day to load it above &middot; best window boxed</span>
-    </div>
+    <button class="wa2-head" id="wa2-toggle" type="button" onclick="toggleWeekAhead()" aria-expanded="false" aria-controls="weekAheadDays">
+      <span class="wa2-head-txt">
+        <span class="wa2-title">The Week Ahead</span>
+        <span class="wa2-sub">Best window boxed &middot; one row per upcoming day</span>
+      </span>
+      <span class="wa2-chevron">&#9662;</span>
+    </button>
     <div id="weekAheadDays" class="wa2-days"></div>
   </div>
 
@@ -6740,6 +6760,16 @@ function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
 // colour and a boxed window mean exactly what they mean above. Each tile is
 // tappable and loads that day into the main view. Rebuilt from renderTimeline,
 // i.e. only at the moments the 5-day matrix actually changes.
+// Collapse / expand the Week Ahead ribbon stack. Mirrors toggleForecastValues;
+// the body has no .wa2-open in the markup, so the card starts closed.
+function toggleWeekAhead(){
+  var body = document.getElementById('weekAheadDays');
+  var btn  = document.getElementById('wa2-toggle');
+  if (!body || !btn) return;
+  var open = body.classList.toggle('wa2-open');
+  btn.setAttribute('aria-expanded', String(open));
+}
+
 function renderWeekAhead(matrix){
   var host = document.getElementById('weekAheadDays');
   if (!host || !matrix || !matrix.length) return;
