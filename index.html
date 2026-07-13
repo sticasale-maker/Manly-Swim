@@ -2682,6 +2682,33 @@
     </div>
   </section>
 
+<!-- Feature requests (submit + upvote) -->
+    <style>
+      #featureCard .fr-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
+      #featureCard .fr-input{flex:1;min-width:0;background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:12px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;}
+      #featureCard .fr-count{flex:none;min-width:40px;text-align:right;font-family:'Inter',sans-serif;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;}
+      #featureCard .fr-submit{flex:none;padding:12px 14px;background:var(--ocean);color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-family:inherit;}
+      #featureCard .fr-submit:disabled{opacity:.45;cursor:not-allowed;}
+      #featureCard .fr-msg{display:none;margin:2px 0 8px;color:var(--red);font-size:13px;}
+      #featureCard .fr-list{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+      #featureCard .fr-empty{color:var(--dim);font-size:14px;padding:6px 0;}
+      #featureCard .fr-item{display:flex;align-items:center;gap:10px;}
+      #featureCard .fr-pill{flex:none;display:inline-flex;align-items:center;gap:4px;min-width:48px;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+      #featureCard .fr-pill .fr-arrow{font-size:11px;}
+      #featureCard .fr-pill--on{background:var(--ocean);color:#fff;}
+      #featureCard .fr-body{flex:1;min-width:0;color:var(--text);font-size:14px;line-height:1.4;word-break:break-word;}
+    </style>
+    <div class="about-panel" id="featureCard" style="padding:20px;margin-top:10px;">
+      <p style="color:var(--deep); font-size:15px; font-weight:700; margin-bottom:14px;">Feature requests &mdash; add an idea or upvote</p>
+      <div class="fr-row">
+        <input id="frInput" class="fr-input" type="text" maxlength="50" autocomplete="off" placeholder="Suggest a feature (max 50)">
+        <span id="frCount" class="fr-count">0/50</span>
+        <button id="frSubmit" class="fr-submit" type="button" disabled>Submit</button>
+      </div>
+      <div id="frMsg" class="fr-msg" role="alert"></div>
+      <div id="frList" class="fr-list"></div>
+    </div>
+
 <!-- Feedback -->
     <div class="about-panel" id="feedbackCard" style="padding:20px;margin-top:10px;">
       <p style="color:var(--deep); font-size:15px; font-weight:700; margin-bottom:14px;">Feedback is precious to improve!</p>
@@ -9482,6 +9509,138 @@ function submitFeedback(e) {
 }
 
 // ============================================================
+// FEATURE REQUESTS - community idea board (submit + upvote).
+// Backend: Supabase RPCs submit_feature_request / vote_feature_request /
+// list_feature_requests. Same anon-key REST /rpc pattern as the rest of the app;
+// device id reuses the analytics 'swim_device_id' in localStorage. Never throws
+// into the UI - failures surface as a small inline message, never an alert().
+// ============================================================
+(function () {
+  function sbURL(){ return (typeof BB_SUPABASE_URL !== 'undefined') ? BB_SUPABASE_URL : ''; }
+  function sbKEY(){ return (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : ''; }
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
+
+  // Reuse the analytics per-device id (create once if somehow absent).
+  function frDevice(){
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) { id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+                       : (Date.now() + '-' + Math.random().toString(36).slice(2));
+                 localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return '00000000-0000-4000-8000-000000000000'; }
+  }
+
+  async function rpc(fn, body){
+    var r = await fetch(sbURL() + '/rest/v1/rpc/' + fn, {
+      method: 'POST',
+      headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  // ---- the three helpers -------------------------------------------------
+  async function featureList(){ return rpc('list_feature_requests', { p_device: frDevice() }); }
+  async function featureSubmit(body){
+    var b = (body == null ? '' : String(body)).trim();      // btrim
+    if (b.length === 0 || b.length > 50) return Promise.reject(new Error('length'));
+    return rpc('submit_feature_request', { p_body: b, p_device: frDevice() });
+  }
+  async function featureVote(id){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice() }); }
+  window.featureList = featureList; window.featureSubmit = featureSubmit; window.featureVote = featureVote;
+
+  // ---- UI ----------------------------------------------------------------
+  function setMsg(t){ var m = $('frMsg'); if (m) { m.textContent = t || ''; m.style.display = t ? 'block' : 'none'; } }
+
+  function updateCounter(){
+    var inp = $('frInput'); if (!inp) return;
+    var len = inp.value.trim().length;
+    var c = $('frCount'); if (c) c.textContent = inp.value.length + '/50';
+    var btn = $('frSubmit'); if (btn) btn.disabled = (len === 0 || len > 50);
+  }
+
+  function renderList(rows){
+    var box = $('frList'); if (!box) return;
+    if (!Array.isArray(rows) || !rows.length){
+      box.innerHTML = '<div class="fr-empty">No ideas yet — add the first.</div>'; return;
+    }
+    box.innerHTML = rows.map(function (x) {
+      var on = x.voted ? ' fr-pill--on' : '';
+      return '<div class="fr-item">' +
+        '<button type="button" class="fr-pill' + on + '" data-id="' + esc(x.id) + '" ' +
+          'aria-pressed="' + (x.voted ? 'true' : 'false') + '" aria-label="Upvote this idea">' +
+          '<span class="fr-arrow" aria-hidden="true">▲</span>' +
+          '<span class="fr-votes">' + esc(x.votes) + '</span>' +
+        '</button>' +
+        '<span class="fr-body">' + esc(x.body) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  async function refresh(){
+    try { renderList(await featureList()); }
+    catch (e) { var box = $('frList'); if (box && !box.children.length) box.innerHTML = '<div class="fr-empty">Couldn’t load ideas.</div>'; }
+  }
+
+  async function doSubmit(){
+    var inp = $('frInput'); if (!inp) return;
+    var body = inp.value.trim();
+    if (body.length === 0 || body.length > 50) return;
+    var btn = $('frSubmit'); if (btn) btn.disabled = true;
+    setMsg('');
+    try {
+      await featureSubmit(body);
+      inp.value = ''; updateCounter();
+      try { if (window.track) window.track('feedback', {}); } catch (e) {}
+      await refresh();
+    } catch (e) {
+      setMsg('Couldn’t submit — you may be posting too fast. Try again shortly.');
+      updateCounter();
+    }
+  }
+
+  async function doVote(id){
+    try {
+      var res = await featureVote(id);
+      var d = Array.isArray(res) ? (res[0] || {}) : (res || {});
+      var list = $('frList');
+      var pill = list ? list.querySelector('.fr-pill[data-id="' + id + '"]') : null;
+      if (pill){
+        pill.classList.toggle('fr-pill--on', !!d.voted);
+        pill.setAttribute('aria-pressed', d.voted ? 'true' : 'false');
+        var v = pill.querySelector('.fr-votes'); if (v && d.votes != null) v.textContent = d.votes;
+      }
+    } catch (e) { setMsg('Couldn’t register your vote.'); }
+  }
+
+  function wire(){
+    var inp = $('frInput'); if (!inp || inp._frWired) return;
+    inp._frWired = true;
+    inp.addEventListener('input', updateCounter);
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); var b = $('frSubmit'); if (b && !b.disabled) doSubmit(); }
+    });
+    var btn = $('frSubmit'); if (btn) btn.addEventListener('click', doSubmit);
+    var list = $('frList');
+    if (list) list.addEventListener('click', function (e) {
+      var pill = e.target && e.target.closest ? e.target.closest('.fr-pill') : null;
+      if (!pill) return;
+      var id = parseInt(pill.getAttribute('data-id'), 10);
+      if (!isNaN(id)) doVote(id);
+    });
+    updateCounter();
+    refresh();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
+  else wire();
+})();
+
+// ============================================================
 // SHARE — "Send this app to a friend". Opens the native share sheet
 // (SMS / WhatsApp / email / …) via the Web Share API, with the app link +
 // home-screen install steps pre-filled. Falls back to mailto on desktop
@@ -10676,7 +10835,8 @@ if ('serviceWorker' in navigator) {
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', essential:0, complete:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', essential:0, complete:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', essential:0, complete:1 },
-    { key:'feedback', label:"Feedback", sel:'#feedbackCard', essential:0, complete:1 }
+    { key:'feedback', label:"Feedback", sel:'#feedbackCard', essential:0, complete:1 },
+    { key:'featurerequests', label:"Feature requests", sel:'#featureCard', essential:0, complete:1 }
   ];
   var MODE_KEY = 'swim_app_mode';            // 'essential' | 'complete' | 'custom'
   // MODE_KEY is re-stamped on every load to refresh its 400-day cookie clock, so
