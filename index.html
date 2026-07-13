@@ -8989,6 +8989,7 @@ function runCalibration() {
 // =============================================================================
 let _bannerGenerated = false;
 let _bannerWaterBase = '';
+let _bannerFacts = null;
 
 // Build a short clause from the community reports (visibility + sightings) so the
 // swimming-conditions summary reflects what swimmers are actually reporting.
@@ -9121,7 +9122,40 @@ function getBannerWxRows(targetDay) {
 // Random phrase picker
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
+// Module-scope emphasise (also fixes refreshCommunitySummary, which referenced
+// the copy nested inside the generator and could not see it).
+function emphasise(t) {
+  return String(t || '').replace(/\b(\d+[\u2013\-]\d+\u00b0[Cc]|\d+\u00b0[Cc]|\d+[\u2013\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
+}
+
+// LLM wrapper: render the local baseline first (instant + safe), then try the
+// Worker summariser and re-skin the two prose lines only if it comes back clean.
 async function generateBannerSummary() {
+  await generateBannerSummaryLocal();
+  if (!_bannerFacts) return;
+  try {
+    const n = new Date();
+    const pad = x => String(x).padStart(2, '0');
+    const bucket = n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + n.getHours() + ':' + _bannerFacts.timeCtx;
+    const res = await fetch('https://bold-rain-6ded.sticasale.workers.dev/swim-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucket: bucket, facts: _bannerFacts })
+    });
+    if (!res.ok) return;
+    const j = await res.json();
+    if (!j || !j.water_text) return;
+    const wxEl = document.getElementById('banner-wx-text');
+    const waterEl = document.getElementById('banner-water-text');
+    if (j.wx_text && wxEl) wxEl.innerHTML = emphasise(j.wx_text);
+    if (waterEl) {
+      _bannerWaterBase = j.water_text;
+      waterEl.innerHTML = emphasise(appendCommunity(j.water_text));
+    }
+  } catch (e) { /* keep the local baseline */ }
+}
+
+async function generateBannerSummaryLocal() {
   if (_bannerGenerated) return;
   if (!_matrix || _matrix.length === 0) return;
 
@@ -9411,6 +9445,22 @@ async function generateBannerSummary() {
     domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
     domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
+  _bannerFacts = {
+    timeCtx: timeCtx,
+    dayPhrase: dayPhrase,
+    verdict: { entry: domEntry, swim: domSwim, surge: domSurge },
+    safetyLevel: (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') ? 'dangerous'
+               : (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') ? 'caution' : 'good',
+    weather: {
+      sky: wxInfo.desc, tempRange: tempRange || '', feelsLike: avgFeel,
+      windChill: windChill, windKmh: avgWind, windDir: dominantWindDir,
+      rainProb: avgRain, cloud: avgCloud, haveWx: haveWx
+    },
+    water: {
+      swellH: Number(avgS1H.toFixed(1)), swellP: Math.round(avgS1P),
+      swellDir: dominantS1Dir, shelteredContrast: shelteredContrast
+    }
+  };
   _bannerWaterBase = waterText;
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(appendCommunity(waterText));
