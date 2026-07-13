@@ -6827,6 +6827,22 @@ function wgDayRibbon(day){
     };
   }).filter(function(p){ return p.t >= 5 && p.t <= 21; });
 
+  // Past the main 7-day horizon the days are swell-only outlook, delivered hourly
+  // while the near forecast has already coarsened to 3-hourly at its edge (18-19).
+  // Bucket these to the same 3-hour grid so the Week Ahead ribbons taper smoothly
+  // in resolution rather than snapping back to full hourly. Display-only: _matrix
+  // is untouched, so selecting the day still loads its full detail above.
+  var _swellDay = rows.length > 0 && rows.every(function(r){ return r._swellOnly === true; });
+  if (_swellDay && pts.length > 1){
+    var _bk = {};
+    pts.forEach(function(p){ var b = Math.round(p.t / 3) * 3; (_bk[b] = _bk[b] || []).push(p); });
+    pts = Object.keys(_bk).map(function(k){
+      var a = _bk[k], n = a.length, avg = function(f){ var s = 0; a.forEach(function(p){ s += p[f]; }); return s / n; };
+      return { t: +k, hhmm: (String(+k).padStart(2,'0') + ':00'),
+               entry: avg('entry'), chop: avg('chop'), surge: avg('surge') };
+    }).sort(function(a, b){ return a.t - b.t; });
+  }
+
   if (!pts.length){ out.empty = 'No 5am–9pm forecast'; return out; }
 
   function inWindow(t){ return t >= 5 && t <= 21; }
