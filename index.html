@@ -11543,7 +11543,7 @@ if ('serviceWorker' in navigator) {
   var SEEN_KEY = 'swim_ann_seen';
   var ADMIN_MODE = /[?&]announce=1(\b|&|$)/.test(location.search);
 
-  var _active = null;   // the live announcement (or null)
+  var _active = [];     // the live announcements (may be several at once)
   var _editId = null;   // admin: id being edited (null = new)
   var _imgUrl = '';     // admin: image url currently in the form
   var _rows   = [];     // admin: last loaded list (for edit)
@@ -11583,10 +11583,12 @@ if ('serviceWorker' in navigator) {
     return out.innerHTML;
   }
 
-  /* ---- seen tracking ------------------------------------------------------- */
-  function seenVal(a){ return a.id + '|' + (a.updated_at || ''); }
-  function isSeen(a){ try { return localStorage.getItem(SEEN_KEY) === seenVal(a); } catch (e) { return false; } }
-  function markSeen(a){ try { localStorage.setItem(SEEN_KEY, seenVal(a)); } catch (e) {} }
+  /* ---- seen tracking (signature spans ALL live announcements) -------------- */
+  function seenSig(list){
+    return (list || []).map(function (a) { return a.id + '|' + (a.updated_at || ''); }).sort().join(';');
+  }
+  function isSeen(list){ try { return localStorage.getItem(SEEN_KEY) === seenSig(list); } catch (e) { return false; } }
+  function markSeen(list){ try { localStorage.setItem(SEEN_KEY, seenSig(list)); } catch (e) {} }
 
   /* ---- popup + pill -------------------------------------------------------- */
   function buildPopup(){
@@ -11606,7 +11608,15 @@ if ('serviceWorker' in navigator) {
       "#annText a{color:var(--ocean,#4a8fad);}" +
       "#annText ul,#annText ol{margin:7px 0;padding-left:20px;}#annText li{margin-bottom:3px;}" +
       "#annText p{margin:0 0 7px;}" +
-      "#annHint{text-align:center;color:var(--dim,#4a5f6e);font-size:11px;padding:11px 0 14px;}" +
+      "#annHint{text-align:center;color:var(--dim,#4a5f6e);font-size:11px;padding:11px 0 14px;flex:0 0 auto;}" +
+      "#annScroll{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;padding:16px 18px 6px;}" +
+      ".ann-card + .ann-card{margin-top:16px;padding-top:16px;border-top:1px solid rgba(74,143,173,.22);}" +
+      ".ann-card .ann-c-img{width:100%;max-height:220px;object-fit:cover;display:block;border-radius:10px;margin-bottom:11px;}" +
+      ".ann-card .ann-c-title{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:26px;line-height:1.05;color:var(--deep,#113541);margin-bottom:9px;}" +
+      ".ann-card .ann-c-text{font-size:14px;line-height:1.55;color:var(--text,#113541);}" +
+      ".ann-card .ann-c-text a{color:var(--ocean,#4a8fad);}" +
+      ".ann-card .ann-c-text ul,.ann-card .ann-c-text ol{margin:7px 0;padding-left:20px;}.ann-card .ann-c-text li{margin-bottom:3px;}" +
+      ".ann-card .ann-c-text p{margin:0 0 7px;}" +
       "#annWhatsNew{position:fixed;left:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
       "#annWhatsNew.show{display:inline-flex;}" +
       "#annWhatsNew .ann-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red,#c0392b);}" +
@@ -11617,31 +11627,55 @@ if ('serviceWorker' in navigator) {
       '<div id="annPopup" role="dialog" aria-modal="true" aria-label="Announcement">' +
         '<img id="annImg" alt="">' +
         '<div id="annBody"><div id="annTitle"></div><div id="annText"></div></div>' +
+        '<div id="annScroll" style="display:none;"></div>' +
         '<div id="annHint">tap anywhere to dismiss</div>' +
       '</div>';
     ov.addEventListener('click', dismissPopup);   // tap anywhere closes
     document.body.appendChild(ov);
   }
-  function showPopup(a){
+  function showPopup(list){
+    if (!list || !list.length) return;
     buildPopup();
-    var img = $('annImg');
-    var hasImg = !!a.image_url;
-    if (hasImg) { img.src = a.image_url; img.style.display = 'block'; }
-    else { img.style.display = 'none'; img.removeAttribute('src'); }
-    var ttl = (a.title || '').trim();
-    $('annTitle').textContent = ttl;
-    $('annTitle').style.display = ttl ? '' : 'none';
-    $('annText').innerHTML = clean(a.body_html || '');
-    // Image-only posts (no title, no body text) render as a full-screen picture,
-    // sized to the viewport with aspect ratio preserved; posts with text keep the card.
-    var hasText = !!ttl || !!(($('annText').textContent || '').trim());
-    if ($('annBody')) $('annBody').style.display = hasText ? '' : 'none';
-    if ($('annPopup')) $('annPopup').classList.toggle('ann-imageonly', hasImg && !hasText);
+    var sc = $('annScroll');
+    // A single post keeps the original treatment (incl. full-screen image-only view).
+    if (list.length === 1) {
+      var a = list[0];
+      if (sc) sc.style.display = 'none';
+      var img = $('annImg');
+      var hasImg = !!a.image_url;
+      if (hasImg) { img.src = a.image_url; img.style.display = 'block'; }
+      else { img.style.display = 'none'; img.removeAttribute('src'); }
+      var ttl = (a.title || '').trim();
+      $('annTitle').textContent = ttl;
+      $('annTitle').style.display = ttl ? '' : 'none';
+      $('annText').innerHTML = clean(a.body_html || '');
+      // Image-only posts (no title, no body text) render as a full-screen picture,
+      // sized to the viewport with aspect ratio preserved; posts with text keep the card.
+      var hasText = !!ttl || !!(($('annText').textContent || '').trim());
+      if ($('annBody')) $('annBody').style.display = hasText ? '' : 'none';
+      if ($('annPopup')) $('annPopup').classList.toggle('ann-imageonly', hasImg && !hasText);
+      $('annOverlay').classList.add('show');
+      return;
+    }
+    // Multiple live posts stack in a scrollable list.
+    if ($('annPopup')) $('annPopup').classList.remove('ann-imageonly');
+    if ($('annImg')) { $('annImg').style.display = 'none'; $('annImg').removeAttribute('src'); }
+    if ($('annBody')) $('annBody').style.display = 'none';
+    sc.style.display = '';
+    sc.innerHTML = list.map(function (a) {
+      var ttl = (a.title || '').trim();
+      var bodyHtml = clean(a.body_html || '');
+      var img = a.image_url ? '<img class="ann-c-img" src="' + escText(a.image_url) + '" alt="">' : '';
+      var title = ttl ? '<div class="ann-c-title">' + escText(ttl) + '</div>' : '';
+      var text = bodyHtml ? '<div class="ann-c-text">' + bodyHtml + '</div>' : '';
+      return '<div class="ann-card">' + img + title + text + '</div>';
+    }).join('');
+    sc.scrollTop = 0;
     $('annOverlay').classList.add('show');
   }
   function dismissPopup(){
     var ov = $('annOverlay'); if (ov) ov.classList.remove('show');
-    if (_active) { markSeen(_active); var p = $('annWhatsNew'); if (p) p.classList.remove('unseen'); }
+    if (_active.length) { markSeen(_active); var p = $('annWhatsNew'); if (p) p.classList.remove('unseen'); }
   }
   function ensurePill(){
     if ($('annWhatsNew')) return $('annWhatsNew');
@@ -11649,13 +11683,13 @@ if ('serviceWorker' in navigator) {
     var b = document.createElement('button'); b.id = 'annWhatsNew'; b.type = 'button';
     b.setAttribute('aria-label', 'See the latest announcement');
     b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>What\u2019s new</span>';
-    b.addEventListener('click', function () { if (_active) showPopup(_active); });
+    b.addEventListener('click', function () { if (_active.length) showPopup(_active); });
     document.body.appendChild(b);
     return b;
   }
   function refreshPill(){
     var b = ensurePill();
-    if (!_active) { b.classList.remove('show', 'unseen'); return; }
+    if (!_active.length) { b.classList.remove('show', 'unseen'); return; }
     b.classList.add('show');
     b.classList.toggle('unseen', !isSeen(_active));
   }
@@ -11664,8 +11698,8 @@ if ('serviceWorker' in navigator) {
       var r = await fetch(RPC + 'get_active_announcement', { method: 'POST', headers: hdrs, body: '{}' });
       if (!r.ok) return;
       var rows = await r.json();
-      _active = (Array.isArray(rows) && rows.length) ? rows[0] : null;
-      if (_active && !isSeen(_active) && !ADMIN_MODE) showPopup(_active);
+      _active = Array.isArray(rows) ? rows : [];
+      if (_active.length && !isSeen(_active) && !ADMIN_MODE) showPopup(_active);
       refreshPill();
     } catch (e) {}
   }
@@ -11806,7 +11840,7 @@ if ('serviceWorker' in navigator) {
     $('annPubMsg').textContent = 'Publishing\u2026';
     try {
       var r = await fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({
-        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends
+        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: 'swim'
       }) });
       if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
       $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published.';
