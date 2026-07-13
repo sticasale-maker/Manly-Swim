@@ -7502,7 +7502,7 @@ function refreshVersionLabel() {
 // Build stamp baked into this file by the GitHub Action on every deploy.
 // If the Action hasn't run (placeholder still present), we fall back to asking
 // the service worker. The baked value is instant and needs no worker.
-var APP_BUILD = '20260714-090016';
+var APP_BUILD = '20260713-215458';
 function refreshHeaderVersion() {
   var el = document.getElementById('headerVersion');
   if (!el) return;
@@ -11653,12 +11653,15 @@ if ('serviceWorker' in navigator) {
   var KEY  = (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : '';
   var RPC  = SB + '/rest/v1/rpc/';
   var hdrs = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
-  var SEEN_KEY = 'swim_ann_seen';
+  var SEEN_KEY  = 'swim_ann_seen';
+  var DRAFT_KEY = 'swim_ann_draft';
   var ADMIN_MODE = /[?&]announce=1(\b|&|$)/.test(location.search);
+  var APP_LABEL = { swim: 'Swim app', viz: 'Forecast app' };
 
   var _active = [];     // the live announcements (may be several at once)
   var _editId = null;   // admin: id being edited (null = new)
   var _imgUrl = '';     // admin: image url currently in the form
+  var _app    = 'swim'; // admin: which app the form publishes to
   var _rows   = [];     // admin: last loaded list (for edit)
 
   function $(id){ return document.getElementById(id); }
@@ -11865,13 +11868,42 @@ if ('serviceWorker' in navigator) {
       ".aa-listrow{display:flex;align-items:center;gap:9px;padding:9px 10px;background:#c8bda0;border-radius:9px;margin-bottom:6px;font-size:13px;}" +
       ".aa-close{float:right;font-size:24px;color:var(--dim,#4a5f6e);background:none;border:none;cursor:pointer;line-height:1;}" +
       ".aa-imgwrap{margin-top:8px;position:relative;display:none;}.aa-imgwrap img{width:100%;border-radius:10px;max-height:160px;object-fit:cover;display:block;}" +
-      ".aa-imgrm{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:999px;width:26px;height:26px;cursor:pointer;}";
+      ".aa-imgrm{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:999px;width:26px;height:26px;cursor:pointer;}" +
+      ".aa-seg{display:flex;gap:6px;}" +
+      ".aa-segbtn{flex:1;border:1px solid rgba(74,143,173,.35);background:#fff;color:var(--deep,#113541);border-radius:9px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;}" +
+      ".aa-segbtn.on{background:var(--ocean,#4a8fad);color:#fff;border-color:var(--ocean,#4a8fad);}" +
+      ".aa-draftnote{font-size:11px;color:var(--dim,#4a5f6e);margin-top:6px;min-height:13px;}" +
+      ".aa-newbtn{float:right;font-size:12px;font-weight:600;color:var(--ocean,#4a8fad);background:none;border:none;cursor:pointer;padding:0;}" +
+      ".aa-grp{margin-top:16px;}" +
+      ".aa-grp-h{display:flex;align-items:center;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim,#4a5f6e);margin:0 0 8px;}" +
+      ".aa-grp-h .aa-count{background:rgba(74,143,173,.16);color:var(--deep,#113541);border-radius:999px;padding:1px 8px;font-size:10px;font-weight:700;}" +
+      ".aa-prow{display:flex;align-items:center;gap:9px;padding:8px;background:#efeadd;border:1px solid rgba(74,143,173,.15);border-radius:10px;margin-bottom:6px;}" +
+      ".aa-arrows{display:flex;flex-direction:column;gap:2px;flex-shrink:0;}" +
+      ".aa-abtn{width:24px;height:19px;border:none;background:rgba(74,143,173,.16);border-radius:5px;cursor:pointer;color:var(--deep,#113541);font-size:11px;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;}" +
+      ".aa-abtn:active{transform:scale(.9);}" +
+      ".aa-abtn:disabled{opacity:.28;cursor:default;}" +
+      ".aa-thumb{width:46px;height:46px;border-radius:8px;flex-shrink:0;object-fit:cover;background:#d8cfba;}" +
+      ".aa-thumb-ph{display:flex;align-items:center;justify-content:center;color:#8a7f66;font-size:18px;}" +
+      ".aa-pmeta{flex:1;min-width:0;}" +
+      ".aa-phead{display:flex;align-items:center;gap:6px;}" +
+      ".aa-ptitle{flex:1;min-width:0;font-size:13px;font-weight:600;color:var(--text,#113541);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}" +
+      ".aa-pbadge{font-size:9px;font-weight:700;letter-spacing:.4px;padding:1px 5px;border-radius:5px;flex-shrink:0;}" +
+      ".aa-pexc{font-size:11px;color:var(--dim,#4a5f6e);line-height:1.35;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}" +
+      ".aa-acts{display:flex;gap:2px;flex-shrink:0;}" +
+      ".aa-iconbtn{background:none;border:none;cursor:pointer;font-size:14px;padding:4px;line-height:1;}" +
+      ".aa-empty{color:var(--dim,#4a5f6e);font-size:12px;padding:2px 0 4px;}";
     document.head.appendChild(css);
     var ov = document.createElement('div'); ov.id = 'annAdminOverlay';
     ov.innerHTML =
       '<div id="annAdminCard">' +
         '<button class="aa-close" id="annAdminClose" aria-label="Close">\u00d7</button>' +
+        '<button type="button" class="aa-newbtn" id="annNewBtn">+ New post</button>' +
         '<div class="aa-h" id="annFormTitle">Publish announcement</div>' +
+        '<label class="aa-lbl">Publish to</label>' +
+        '<div class="aa-seg" id="annAppSeg">' +
+          '<button type="button" class="aa-segbtn on" data-app="swim">Swim app</button>' +
+          '<button type="button" class="aa-segbtn" data-app="viz">Forecast app</button>' +
+        '</div>' +
         '<label class="aa-lbl">Title (optional)</label>' +
         '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
         '<label class="aa-lbl">Message</label>' +
@@ -11892,8 +11924,8 @@ if ('serviceWorker' in navigator) {
         '</div>' +
         '<button type="button" class="aa-btn aa-pub" id="annPubBtn">Publish</button>' +
         '<div id="annPubMsg" style="font-size:12px;text-align:center;margin-top:8px;min-height:14px;color:var(--dim,#4a5f6e);"></div>' +
-        '<label class="aa-lbl" style="margin-top:16px;">Live &amp; scheduled</label>' +
-        '<div id="annAdminList"></div>' +
+        '<div class="aa-draftnote" id="annDraftNote"></div>' +
+        '<div id="annAdminList" style="margin-top:8px;"></div>' +
       '</div>';
     document.body.appendChild(ov);
 
@@ -11913,11 +11945,74 @@ if ('serviceWorker' in navigator) {
     $('annImgInput').addEventListener('change', async function () {
       var f = $('annImgInput').files && $('annImgInput').files[0]; if (!f) return;
       $('annPubMsg').textContent = 'Uploading picture\u2026';
-      try { _imgUrl = await uploadImage(f); $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; $('annPubMsg').textContent = ''; }
+      try { _imgUrl = await uploadImage(f); $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; $('annPubMsg').textContent = ''; saveDraft(); }
       catch (e) { $('annPubMsg').textContent = 'Picture upload failed.'; }
     });
-    $('annImgRm').addEventListener('click', function () { _imgUrl = ''; $('annImgWrap').style.display = 'none'; $('annImgPrev').removeAttribute('src'); });
+    $('annImgRm').addEventListener('click', function () { _imgUrl = ''; $('annImgWrap').style.display = 'none'; $('annImgPrev').removeAttribute('src'); saveDraft(); });
     $('annPubBtn').addEventListener('click', publish);
+
+    // app selector (which app this post publishes to)
+    Array.prototype.forEach.call(ov.querySelectorAll('#annAppSeg .aa-segbtn'), function (btn) {
+      btn.addEventListener('click', function () { setApp(btn.getAttribute('data-app')); saveDraft(); });
+    });
+    // start a fresh post (clears the draft)
+    $('annNewBtn').addEventListener('click', function () { resetForm(); clearDraft(); $('annPubMsg').textContent = ''; if ($('annInTitle')) $('annInTitle').focus(); });
+
+    // autosave the working draft so it survives reloads / switching apps
+    ['annInTitle', 'annInStart', 'annInEnd'].forEach(function (id) {
+      var el = $(id); if (el) el.addEventListener('input', saveDraft);
+    });
+    $('annEdBody').addEventListener('input', saveDraft);
+
+    restoreDraft();
+  }
+
+  function setApp(app){
+    _app = (app === 'viz') ? 'viz' : 'swim';
+    Array.prototype.forEach.call(document.querySelectorAll('#annAppSeg .aa-segbtn'), function (btn) {
+      btn.classList.toggle('on', btn.getAttribute('data-app') === _app);
+    });
+  }
+
+  /* ---- draft persistence (survives reload / session switch) --------------- */
+  function saveDraft(){
+    try {
+      var d = {
+        editId: _editId, app: _app, imgUrl: _imgUrl,
+        title: $('annInTitle') ? $('annInTitle').value : '',
+        body:  $('annEdBody')  ? $('annEdBody').innerHTML : '',
+        start: $('annInStart') ? $('annInStart').value : '',
+        end:   $('annInEnd')   ? $('annInEnd').value : ''
+      };
+      var empty = !d.title && !d.imgUrl && !d.start && !d.end &&
+                  !String(d.body).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+      if (empty && !d.editId) { clearDraft(); return; }
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+      showDraftNote();
+    } catch (e) {}
+  }
+  function restoreDraft(){
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) {}
+    if (!d) return;
+    _editId = d.editId || null;
+    _imgUrl = d.imgUrl || '';
+    setApp(d.app || 'swim');
+    if ($('annInTitle')) $('annInTitle').value = d.title || '';
+    if ($('annEdBody'))  $('annEdBody').innerHTML = clean(d.body || '');
+    if ($('annInStart')) $('annInStart').value = d.start || '';
+    if ($('annInEnd'))   $('annInEnd').value = d.end || '';
+    if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; }
+    else if ($('annImgWrap')) { $('annImgWrap').style.display = 'none'; }
+    if ($('annFormTitle')) $('annFormTitle').textContent = _editId ? 'Edit announcement' : 'Publish announcement';
+    if ($('annPubBtn')) $('annPubBtn').textContent = _editId ? 'Save changes' : 'Publish';
+    showDraftNote();
+  }
+  function clearDraft(){ try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} showDraftNote(); }
+  function showDraftNote(){
+    var n = $('annDraftNote'); if (!n) return;
+    var has = false; try { has = !!localStorage.getItem(DRAFT_KEY); } catch (e) {}
+    n.textContent = has ? (_editId ? 'Editing \u2014 unsaved changes kept on this device.' : 'Draft saved on this device.') : '';
   }
 
   function resetForm(){
@@ -11929,6 +12024,7 @@ if ('serviceWorker' in navigator) {
     if ($('annImgWrap')) $('annImgWrap').style.display = 'none';
     if ($('annFormTitle')) $('annFormTitle').textContent = 'Publish announcement';
     if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
+    setApp('swim');
   }
 
   async function publish(){
@@ -11944,14 +12040,65 @@ if ('serviceWorker' in navigator) {
     $('annPubMsg').textContent = 'Publishing\u2026';
     try {
       var r = await fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({
-        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: 'swim'
+        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: _app
       }) });
       if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
-      $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published.';
+      $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published to ' + (APP_LABEL[_app] || _app) + '.';
       resetForm();
+      clearDraft();
       loadAdminList();
       loadActive();
     } catch (e) { $('annPubMsg').textContent = 'Save failed: ' + ((e && e.message) ? e.message : 'unknown'); }
+  }
+
+  /* ---- admin list: grouped by app, with previews + reorder ---------------- */
+  function appOf(x){ return x.app === 'viz' ? 'viz' : 'swim'; }   // null/legacy -> swim
+  function excerpt(html){
+    var t = String(html || '').replace(/<[^>]*>/g, ' ')
+             .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+             .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\s+/g, ' ').trim();
+    return t.length > 100 ? t.slice(0, 100).replace(/\s\S*$/, '') + '\u2026' : t;
+  }
+  function statusStyle(s){
+    if (s === 'live')      return { c: '#2b6d47', bg: 'rgba(43,109,71,.15)',  lab: 'LIVE' };
+    if (s === 'scheduled') return { c: '#b57708', bg: 'rgba(212,144,10,.16)', lab: 'SCHEDULED' };
+    return { c: '#7a8a92', bg: 'rgba(122,138,146,.15)', lab: 'PAST' };
+  }
+  function rowHtml(x, idx, count){
+    var st = statusStyle(x.status);
+    var thumb = x.image_url
+      ? '<img class="aa-thumb" src="' + escText(x.image_url) + '" alt="">'
+      : '<div class="aa-thumb aa-thumb-ph">' + (x.title ? '\ud83d\udce2' : '\ud83d\udcdd') + '</div>';
+    var ttl = escText(x.title || '') || (x.image_url ? '(picture)' : '(untitled)');
+    var exc = excerpt(x.body_html);
+    var excHtml = exc ? '<div class="aa-pexc">' + escText(exc) + '</div>' : '';
+    return '<div class="aa-prow">' +
+        '<div class="aa-arrows">' +
+          '<button type="button" class="aa-abtn" data-up="' + escText(x.id) + '"' + (idx === 0 ? ' disabled' : '') + ' aria-label="Move up">\u25b2</button>' +
+          '<button type="button" class="aa-abtn" data-down="' + escText(x.id) + '"' + (idx === count - 1 ? ' disabled' : '') + ' aria-label="Move down">\u25bc</button>' +
+        '</div>' +
+        thumb +
+        '<div class="aa-pmeta">' +
+          '<div class="aa-phead">' +
+            '<span class="aa-ptitle">' + ttl + '</span>' +
+            '<span class="aa-pbadge" style="color:' + st.c + ';background:' + st.bg + ';">' + st.lab + '</span>' +
+          '</div>' + excHtml +
+        '</div>' +
+        '<div class="aa-acts">' +
+          '<button type="button" class="aa-iconbtn" data-edit="' + escText(x.id) + '" aria-label="Edit" style="color:var(--dim,#4a5f6e);">\u270e</button>' +
+          '<button type="button" class="aa-iconbtn" data-del="' + escText(x.id) + '" aria-label="Delete" style="color:var(--red,#c0392b);">\u2716</button>' +
+        '</div>' +
+      '</div>';
+  }
+  function groupHtml(appKey, rows){
+    var body = rows.length
+      ? rows.map(function (x, i) { return rowHtml(x, i, rows.length); }).join('')
+      : '<div class="aa-empty">No posts yet.</div>';
+    return '<div class="aa-grp">' +
+        '<div class="aa-grp-h">' + escText(APP_LABEL[appKey] || appKey) +
+          '<span class="aa-count">' + rows.length + '</span></div>' +
+        body +
+      '</div>';
   }
 
   async function loadAdminList(){
@@ -11963,22 +12110,33 @@ if ('serviceWorker' in navigator) {
       var r = await fetch(RPC + 'admin_list_announcements', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
       if (!r.ok) { var lt = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + lt.slice(0, 180)); }
       var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
-      _rows = rows;
-      if (!rows.length) { box.innerHTML = '<div style="color:var(--dim,#4a5f6e);font-size:13px;">No announcements yet.</div>'; return; }
-      box.innerHTML = rows.map(function (x) {
-        var color = x.status === 'live' ? '#2b4347' : (x.status === 'scheduled' ? '#d4900a' : '#4a5f6e');
-        var lab   = x.status === 'live' ? 'LIVE'    : (x.status === 'scheduled' ? 'SCHEDULED' : 'PAST');
-        return '<div class="aa-listrow">' +
-          '<span style="width:7px;height:7px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>' +
-          '<span style="flex:1;color:var(--text,#113541);">' + (escText(x.title || '') || (x.image_url ? '(picture)' : '(untitled)')) + '</span>' +
-          '<span style="font-size:10px;font-weight:700;letter-spacing:.4px;color:' + color + ';">' + lab + '</span>' +
-          '<button type="button" data-edit="' + escText(x.id) + '" aria-label="Edit" style="background:none;border:none;cursor:pointer;color:var(--dim,#4a5f6e);font-size:15px;">\u270e</button>' +
-          '<button type="button" data-del="' + escText(x.id) + '" aria-label="Delete" style="background:none;border:none;cursor:pointer;color:var(--red,#c0392b);font-size:15px;">\u2716</button>' +
-        '</div>';
-      }).join('');
+      _rows = rows;   // already ordered by app, then sort_order (see admin_list RPC)
+      var swim = rows.filter(function (x) { return appOf(x) === 'swim'; });
+      var viz  = rows.filter(function (x) { return appOf(x) === 'viz'; });
+      box.innerHTML = groupHtml('swim', swim) + groupHtml('viz', viz);
       Array.prototype.forEach.call(box.querySelectorAll('[data-edit]'), function (b) { b.addEventListener('click', function () { editRow(b.getAttribute('data-edit')); }); });
       Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),  function (b) { b.addEventListener('click', function () { delRow(b.getAttribute('data-del')); }); });
+      Array.prototype.forEach.call(box.querySelectorAll('[data-up]'),   function (b) { b.addEventListener('click', function () { moveRow(b.getAttribute('data-up'), -1); }); });
+      Array.prototype.forEach.call(box.querySelectorAll('[data-down]'), function (b) { b.addEventListener('click', function () { moveRow(b.getAttribute('data-down'), 1); }); });
     } catch (e) { box.innerHTML = '<div style="color:var(--dim,#4a5f6e);font-size:13px;">Couldn\u2019t load: ' + escText((e && e.message) ? e.message : 'unknown') + '</div>'; }
+  }
+
+  async function moveRow(id, dir){
+    var tk = token(); if (!tk) return;
+    var x = _rows.filter(function (r) { return r.id === id; })[0]; if (!x) return;
+    var appKey = appOf(x);
+    var group = _rows.filter(function (r) { return appOf(r) === appKey; });   // in display order
+    var i = -1; group.forEach(function (r, k) { if (r.id === id) i = k; });
+    var j = i + dir;
+    if (i < 0 || j < 0 || j >= group.length) return;
+    var tmp = group[i]; group[i] = group[j]; group[j] = tmp;                   // swap neighbours
+    var ids = group.map(function (r) { return r.id; });
+    try {
+      var r = await fetch(RPC + 'admin_reorder_announcements', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_app: appKey, p_ids: ids }) });
+      if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 140)); }
+      loadAdminList();
+      loadActive();
+    } catch (e) { if ($('annPubMsg')) $('annPubMsg').textContent = 'Reorder failed: ' + ((e && e.message) ? e.message : 'unknown'); }
   }
 
   function editRow(id){
@@ -11989,9 +12147,11 @@ if ('serviceWorker' in navigator) {
     $('annInStart').value = isoToDtLocal(x.starts_at);
     $('annInEnd').value   = isoToDtLocal(x.ends_at);
     if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; } else { $('annImgWrap').style.display = 'none'; }
+    setApp(appOf(x));
     $('annFormTitle').textContent = 'Edit announcement';
     $('annPubBtn').textContent = 'Save changes';
     $('annPubMsg').textContent = '';
+    saveDraft();
     var ov = $('annAdminOverlay'); if (ov) ov.scrollTop = 0;
   }
 
@@ -12000,7 +12160,7 @@ if ('serviceWorker' in navigator) {
     if (!window.confirm('Delete this announcement?')) return;
     try {
       var r = await fetch(RPC + 'admin_delete_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: id }) });
-      if (r.ok) { if (_editId === id) resetForm(); loadAdminList(); loadActive(); }
+      if (r.ok) { if (_editId === id) { resetForm(); clearDraft(); } loadAdminList(); loadActive(); }
     } catch (e) {}
   }
 
