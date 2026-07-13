@@ -1182,8 +1182,8 @@
     line-height: 1.2;
     white-space: nowrap;
   }
-  .day-btn .day-btn-label { display: block; font-size: 11px; letter-spacing: 1px; }
-  .day-btn .day-btn-num   { display: block; font-size: 19px; }
+  .day-btn .day-btn-label { display: block; font-size: 12px; letter-spacing: 1px; font-weight: 700; }
+  .day-btn .day-btn-num   { display: block; font-size: 22px; -webkit-text-stroke: 0.4px currentColor; }
   .day-btn.active {
     background: var(--ocean);
     border-color: var(--ocean);
@@ -6315,13 +6315,21 @@ function entryBand8am(matrix, date) {
             || rows[Math.floor(rows.length / 2)] || rows[0];
   let cls;
   try { const q = calcScore(row); cls = q && q.entry && q.entry.cls; } catch (e) { return null; }
-  switch (cls) {
-    case 'green':  return { bg: 'var(--rail-green)',  fg: '#0f2e1a' };
-    case 'amber':  return { bg: 'var(--rail-amber)',  fg: '#2f2c06' };
-    case 'yellow': return { bg: 'var(--rail-yellow)', fg: '#3d2003' };
-    case 'red':    return { bg: 'var(--rail-red)',    fg: '#ffffff' };
-    default: return null;
-  }
+  const HEX = { green: '#4caf50', amber: '#c9c246', yellow: '#e08a3c', red: '#b0392f' };
+  const hex = HEX[cls];
+  if (!hex) return null;
+  // Pick whichever text colour (white vs near-black) wins on WCAG contrast against
+  // the band: white lands on the dark bands (red), ink on the light ones. Add an
+  // opposite-luminance halo so the glyphs stay crisp on the mid-tone greens/ambers.
+  const n = parseInt(hex.slice(1), 16), R = (n >> 16) & 255, G = (n >> 8) & 255, B = n & 255;
+  const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const L = 0.2126 * lin(R) + 0.7152 * lin(G) + 0.0722 * lin(B);
+  const useWhite = (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05);
+  return {
+    bg: 'var(--rail-' + cls + ')',
+    fg: useWhite ? '#ffffff' : '#0a1a0e',
+    sh: useWhite ? '0 1px 2px rgba(0,0,0,0.6)' : '0 1px 1px rgba(255,255,255,0.5)'
+  };
 }
 
 function renderDayPicker(matrix) {
@@ -6356,7 +6364,7 @@ function renderDayPicker(matrix) {
         `<span class="day-btn-num">${d.getDate()}</span>`;
     btn.onclick = () => selectDay(date);
     const _eb = entryBand8am(matrix, date);
-    if (_eb) { btn.style.background = _eb.bg; btn.style.borderColor = _eb.bg; btn.style.color = _eb.fg; }
+    if (_eb) { btn.style.background = _eb.bg; btn.style.borderColor = _eb.bg; btn.style.color = _eb.fg; btn.style.textShadow = _eb.sh; }
     if (date === _selectedDay) btn.style.boxShadow = '0 0 0 2px var(--deep), 0 0 0 4px var(--ocean)';
     picker.appendChild(btn);
   });
