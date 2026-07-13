@@ -6315,20 +6315,14 @@ function entryBand8am(matrix, date) {
             || rows[Math.floor(rows.length / 2)] || rows[0];
   let cls;
   try { const q = calcScore(row); cls = q && q.entry && q.entry.cls; } catch (e) { return null; }
-  const HEX = { green: '#4caf50', amber: '#c9c246', yellow: '#e08a3c', red: '#b0392f' };
-  const hex = HEX[cls];
-  if (!hex) return null;
-  // Pick whichever text colour (white vs near-black) wins on WCAG contrast against
-  // the band: white lands on the dark bands (red), ink on the light ones. Add an
-  // opposite-luminance halo so the glyphs stay crisp on the mid-tone greens/ambers.
-  const n = parseInt(hex.slice(1), 16), R = (n >> 16) & 255, G = (n >> 8) & 255, B = n & 255;
-  const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-  const L = 0.2126 * lin(R) + 0.7152 * lin(G) + 0.0722 * lin(B);
-  const useWhite = (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05);
+  const BANDS = { green: 1, amber: 1, yellow: 1, red: 1 };
+  if (!BANDS[cls]) return null;
+  // Filled band with white text lifted off the fill by a dark halo (readable on
+  // every band, incl. the pale amber/green — the halo carries the contrast).
   return {
     bg: 'var(--rail-' + cls + ')',
-    fg: useWhite ? '#ffffff' : '#0a1a0e',
-    sh: useWhite ? '0 1px 2px rgba(0,0,0,0.6)' : '0 1px 1px rgba(255,255,255,0.5)'
+    fg: '#ffffff',
+    sh: '0 1px 2px rgba(0,0,0,0.55), 0 0 3px rgba(0,0,0,0.45)'
   };
 }
 
