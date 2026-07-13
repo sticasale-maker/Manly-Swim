@@ -6850,7 +6850,8 @@ function wgDayRibbon(day){
     return {
       t:     parseInt(r.dateTime.substring(11,13),10) + (parseInt(r.dateTime.substring(14,16),10)||0)/60,
       hhmm:  r.dateTime.substring(11,16),
-      entry: res.entry.score, chop: res.swim.score, surge: res.water.score
+      entry: res.entry.score, chop: res.swim.score, surge: res.water.score,
+      noWind: !!r._swellOnly                 // swell-only outlook row => no wind data
     };
   }).filter(function(p){ return p.t >= 5 && p.t <= 21; });
 
@@ -6888,7 +6889,7 @@ function wgDayRibbon(day){
         var a = _bk[k], n = a.length, avg = function(f){ var s = 0; a.forEach(function(p){ s += p[f]; }); return s / n; };
         var mk = +k, hh = Math.floor(mk), mm = Math.round((mk - hh) * 60);
         return { t: mk, hhmm: (String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0')),
-                 entry: avg('entry'), chop: avg('chop'), surge: avg('surge') };
+                 entry: avg('entry'), chop: avg('chop'), surge: avg('surge'), noWind: true };
       }).sort(function(a, b){ return a.t - b.t; });
     }
   }
@@ -6952,7 +6953,12 @@ function wgDayRibbon(day){
     var ry = top + r*(rowH + gap);
     labels += '<text x="6" y="'+(ry + rowH/2 + 4)+'" font-size="11" font-weight="600" fill="#c8bda0">'+row[0]+'</text>';
     pts.forEach(function(p, i){
-      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+_wgColor(p[row[1]])+'"/>';
+      // Chop is wind-driven; with no wind data (swell-only outlook) leave the
+      // middle row blank — a faint empty track — rather than colour a meaningless
+      // value. Entry and Surge still render normally.
+      var blank = (row[1] === 'chop') && p.noWind;
+      var fill  = blank ? 'rgba(180,210,230,0.10)' : _wgColor(p[row[1]]);
+      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+fill+'"/>';
     });
   });
 
