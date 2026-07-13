@@ -8557,7 +8557,8 @@ const FALLBACK_KEY = 'swim_fallback_v1';
 const NO_FALLBACK  = location.search.includes('nofallback=1');
 
 function failoverToVecchio(reason) {
-  try { sessionStorage.setItem(FALLBACK_KEY, String(reason)); } catch (e) {}
+  // Not sticky any more — a genuine failover navigates for THIS launch only; the
+  // next launch re-evaluates from scratch (and prefers cached NS over bouncing).
   // Beacon synchronously — window.track's 4s queued flush would not survive the
   // navigation, and this is the one event we cannot afford to lose.
   try {
@@ -8574,20 +8575,45 @@ function failoverToVecchio(reason) {
 }
 
 // Runs BEFORE first paint. Returns true if nuovo may proceed, false if we have
-// navigated away. Both sources are localStorage-cached (NS feed 2h, New NS tab
-// 1h), so a warm open decides with no network at all.
+// navigated away. Last-resort failover only: a transient NS error falls back to
+// the last cached feed/table instead of bouncing, and the decision is no longer
+// session-sticky, so a one-off blip can never strand the phone on vecchio.
 async function nuovoPreflight() {
   if (NO_FALLBACK) return true;                     // ?nofallback=1 — debug nuovo's failure state
 
-  let sticky = null;
-  try { sticky = sessionStorage.getItem(FALLBACK_KEY); } catch (e) {}
-  if (sticky) { location.replace(FALLBACK_URL + location.search); return false; }
+  // Drop any sticky flag from an older build or a prior failover so a phone that
+  // got stranded on vecchio returns to nuovo on this launch.
+  try { sessionStorage.removeItem(FALLBACK_KEY); } catch (e) {}
 
+  // NS dispersion table — normally filled by a live/cached load. If that leaves it
+  // empty (expired cache + a failed refetch), reuse the last cached table even if
+  // stale before failing over: it is config and changes rarely, so stale beats a bounce.
   try { await loadNsDispConfig(); } catch (e) { /* leaves SITE.nsDisp null */ }
+  if (!SITE.nsDisp) {
+    try {
+      const c = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
+      if (c && c.table && c.table.length === NS_DISP_ROWS) {
+        SITE.nsDisp = c.table;
+        SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : (c.nsDispFold !== false);
+        SITE.blDispFold = (c.blDispFold !== false);
+        if (c.blDisp) SITE.blDisp = c.blDisp;
+        diag('NS disp: preflight last-resort stale cache (' + c.table.length + ' rows)');
+      }
+    } catch (e) {}
+  }
   if (!SITE.nsDisp) { failoverToVecchio('ns_disp_table_missing'); return false; }
 
+  // NS feed — fetchNearshore() goes no-store every launch and throws on any blip.
+  // Tolerate that by reusing the last cached feed; loadAndRender re-fetches and
+  // merges the live data when it returns. Only a total absence of data fails over.
   let ns = null;
-  try { ns = await fetchNearshore(); } catch (e) { /* fetchNearshore throws, not null */ }
+  try { ns = await fetchNearshore(); } catch (e) { /* transient — fall through to cache */ }
+  if (!ns) {
+    try {
+      const c = loadCache(NS_CACHE_KEY);
+      if (c && c.data && parseNearshore(c.data)) { ns = c.data; diag('NS feed: preflight last-resort cached feed'); }
+    } catch (e) {}
+  }
   if (!ns) { failoverToVecchio('ns_feed_unavailable'); return false; }
 
   return true;                                       // memoized; loadAndRender reuses it
