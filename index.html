@@ -11390,9 +11390,7 @@ if ('serviceWorker' in navigator) {
         intro.innerHTML = '<div class="ntm-empty">No hellos yet &mdash; want to be the first?</div>';
       }
     }
-    if (foot) foot.textContent = queued > 0
-      ? ('one hello featured per day, others queue (' + queued + ' waiting), all disappear after 7 days')
-      : 'one hello featured per day, others queue, all disappear after 7 days';
+    if (foot) foot.textContent = 'recent hellos \u2014 each one disappears after 7 days';
   }
 
   /* Intro likes: count is public (everyone sees N); only the filled/empty heart is
@@ -11460,13 +11458,13 @@ if ('serviceWorker' in navigator) {
       var r = await fetch(RPC + 'submit_intro', { method: 'POST', headers: hdrs,
         body: JSON.stringify({ p_name: name, p_body: body, p_photo_url: photo_url, p_device: deviceId() }) });
       if (!r.ok) { var t = await r.text(); throw new Error(t || ('HTTP ' + r.status)); }
-      setMsg('Thanks! Your hello is in the queue \u2014 it will appear in the coming days.', true);
+      setMsg('Thanks! Your hello is up now.', true);
       try { if (window.track) window.track('submit_intro', {}); } catch (e) {}
-      notifyAdmin(name, body, photo_url);   // email the moderator via Worker (fire-and-forget)
+      loadToday();   // intros auto-publish now - refresh so the sender sees theirs immediately
       nameEl.value = ''; textEl.value = ''; fileEl.value = ''; var ic = $('ntmPhotoIcon'); if (ic) ic.innerHTML = '\uD83D\uDCF7<br>photo';
     } catch (e) {
       var msg = '' + ((e && e.message) || '');
-      if (msg.indexOf('already have an intro') >= 0) setMsg('You already have an intro waiting to be approved.');
+      if (msg.indexOf('already have a hello') >= 0) setMsg('You already have a hello posted \u2014 thanks!');
       else setMsg('Could not send — please try again.');
     } finally { btn.disabled = false; }
   }
