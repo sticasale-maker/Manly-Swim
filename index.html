@@ -9522,6 +9522,33 @@ function submitFeedback(e) {
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
 
+  // ---- basic foul-language filter -----------------------------------------
+  // Client-side guard (index.html has no server hook): blocks obvious profanity
+  // on submit — with light leetspeak/character normalisation so sh1t, f4g, a$$
+  // are caught too — and masks anything that reaches the board another way
+  // (e.g. a direct API call) on display. Word-boundary matched, so it does NOT
+  // trip on legit words like class, bass, assign, grape, cockpit. A determined
+  // user can still bypass a client filter; real enforcement needs a server check.
+  var FR_WORDS = ['anal','anus','arse','arsehole','ass','asshole','asshat','asswipe',
+    'bastard','bitch','blowjob','bollocks','boner','bullshit','clit','cock','cocksucker',
+    'cunt','dick','dickhead','dildo','douchebag','fag','faggot','fuck','fucker','fucking',
+    'goddamn','handjob','jizz','motherfucker','nigga','nigger','piss','porn','prick',
+    'pussy','rape','retard','shit','shithead','slut','tit','tits','twat','wank','wanker','whore'];
+  // Each char may repeat (f+u+c+k+) so elongation is caught (fuuuck) without
+  // collapsing the double letters that real wordlist entries need (ass, faggot).
+  var FR_SRC = '\\b(' + FR_WORDS.map(function (w) { return w.split('').join('+') + '+'; }).join('|') + ')\\b';
+  function frNorm(s){
+    return String(s == null ? '' : s).toLowerCase()
+      .replace(/[@4]/g,'a').replace(/[$5]/g,'s').replace(/[!1|]/g,'i')
+      .replace(/0/g,'o').replace(/3/g,'e').replace(/7/g,'t');
+  }
+  function frFoul(text){ return new RegExp(FR_SRC, 'i').test(frNorm(text)); }
+  function frMask(s){
+    return String(s == null ? '' : s).replace(new RegExp(FR_SRC, 'ig'), function (m) {
+      return m.charAt(0) + new Array(m.length).join('*');
+    });
+  }
+
   // Reuse the analytics per-device id (create once if somehow absent).
   function frDevice(){
     try {
@@ -9548,6 +9575,7 @@ function submitFeedback(e) {
   async function featureSubmit(body){
     var b = (body == null ? '' : String(body)).trim();      // btrim
     if (b.length === 0 || b.length > 50) return Promise.reject(new Error('length'));
+    if (frFoul(b)) return Promise.reject(new Error('foul'));
     return rpc('submit_feature_request', { p_body: b, p_device: frDevice() });
   }
   async function featureVote(id){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice() }); }
@@ -9576,7 +9604,7 @@ function submitFeedback(e) {
           '<span class="fr-arrow" aria-hidden="true">▲</span>' +
           '<span class="fr-votes">' + esc(x.votes) + '</span>' +
         '</button>' +
-        '<span class="fr-body">' + esc(x.body) + '</span>' +
+        '<span class="fr-body">' + esc(frMask(x.body)) + '</span>' +
       '</div>';
     }).join('');
   }
@@ -9590,6 +9618,7 @@ function submitFeedback(e) {
     var inp = $('frInput'); if (!inp) return;
     var body = inp.value.trim();
     if (body.length === 0 || body.length > 50) return;
+    if (frFoul(body)) { setMsg('Please keep it clean — remove the language and try again.'); return; }
     var btn = $('frSubmit'); if (btn) btn.disabled = true;
     setMsg('');
     try {
