@@ -11398,10 +11398,13 @@ if ('serviceWorker' in navigator) {
     if ($('annOverlay')) return;
     var css = document.createElement('style');
     css.textContent =
-      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
+      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:12px;background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
       "#annOverlay.show{display:flex;}" +
-      "#annPopup{background:#fff;border-radius:14px;max-width:340px;width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:86dvh;display:flex;flex-direction:column;}" +
-      "#annImg{width:100%;max-height:200px;object-fit:cover;display:none;}" +
+      "#annPopup{background:#fff;border-radius:14px;max-width:min(94vw,460px);width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:92dvh;display:flex;flex-direction:column;}" +
+      "#annImg{width:100%;max-height:64dvh;object-fit:contain;background:#eef2f4;display:none;}" +
+      "#annPopup.ann-imageonly{background:transparent;box-shadow:none;max-width:none;width:auto;max-height:none;overflow:visible;}" +
+      "#annPopup.ann-imageonly #annImg{width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px);object-fit:contain;background:transparent;border-radius:12px;}" +
+      "#annPopup.ann-imageonly #annHint{color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.7);}" +
       "#annBody{padding:16px 18px 6px;overflow-y:auto;}" +
       "#annTitle{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:26px;line-height:1.05;color:var(--deep,#113541);margin-bottom:9px;}" +
       "#annText{font-size:14px;line-height:1.55;color:var(--text,#113541);}" +
@@ -11427,10 +11430,18 @@ if ('serviceWorker' in navigator) {
   function showPopup(a){
     buildPopup();
     var img = $('annImg');
-    if (a.image_url) { img.src = a.image_url; img.style.display = 'block'; }
+    var hasImg = !!a.image_url;
+    if (hasImg) { img.src = a.image_url; img.style.display = 'block'; }
     else { img.style.display = 'none'; img.removeAttribute('src'); }
-    $('annTitle').textContent = a.title || '';
+    var ttl = (a.title || '').trim();
+    $('annTitle').textContent = ttl;
+    $('annTitle').style.display = ttl ? '' : 'none';
     $('annText').innerHTML = clean(a.body_html || '');
+    // Image-only posts (no title, no body text) render as a full-screen picture,
+    // sized to the viewport with aspect ratio preserved; posts with text keep the card.
+    var hasText = !!ttl || !!(($('annText').textContent || '').trim());
+    if ($('annBody')) $('annBody').style.display = hasText ? '' : 'none';
+    if ($('annPopup')) $('annPopup').classList.toggle('ann-imageonly', hasImg && !hasText);
     $('annOverlay').classList.add('show');
   }
   function dismissPopup(){
@@ -11528,7 +11539,7 @@ if ('serviceWorker' in navigator) {
       '<div id="annAdminCard">' +
         '<button class="aa-close" id="annAdminClose" aria-label="Close">\u00d7</button>' +
         '<div class="aa-h" id="annFormTitle">Publish announcement</div>' +
-        '<label class="aa-lbl">Title</label>' +
+        '<label class="aa-lbl">Title (optional)</label>' +
         '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
         '<label class="aa-lbl">Message</label>' +
         '<div class="aa-tb">' +
@@ -11593,7 +11604,8 @@ if ('serviceWorker' in navigator) {
     var bodyHtml = clean($('annEdBody').innerHTML || '');
     var starts = dtLocalToISO($('annInStart').value);
     var ends   = dtLocalToISO($('annInEnd').value);
-    if (!title) { $('annPubMsg').textContent = 'Add a title.'; return; }
+    var hasBodyText = !!bodyHtml && !!bodyHtml.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+    if (!title && !_imgUrl && !hasBodyText) { $('annPubMsg').textContent = 'Add a picture, title, or message.'; return; }
     if (!starts || !ends) { $('annPubMsg').textContent = 'Set start and end.'; return; }
     if (new Date(ends) <= new Date(starts)) { $('annPubMsg').textContent = 'End must be after start.'; return; }
     $('annPubMsg').textContent = 'Publishing\u2026';
@@ -11625,7 +11637,7 @@ if ('serviceWorker' in navigator) {
         var lab   = x.status === 'live' ? 'LIVE'    : (x.status === 'scheduled' ? 'SCHEDULED' : 'PAST');
         return '<div class="aa-listrow">' +
           '<span style="width:7px;height:7px;border-radius:50%;background:' + color + ';flex-shrink:0;"></span>' +
-          '<span style="flex:1;color:var(--text,#113541);">' + escText(x.title) + '</span>' +
+          '<span style="flex:1;color:var(--text,#113541);">' + (escText(x.title || '') || (x.image_url ? '(picture)' : '(untitled)')) + '</span>' +
           '<span style="font-size:10px;font-weight:700;letter-spacing:.4px;color:' + color + ';">' + lab + '</span>' +
           '<button type="button" data-edit="' + escText(x.id) + '" aria-label="Edit" style="background:none;border:none;cursor:pointer;color:var(--dim,#4a5f6e);font-size:15px;">\u270e</button>' +
           '<button type="button" data-del="' + escText(x.id) + '" aria-label="Delete" style="background:none;border:none;cursor:pointer;color:var(--red,#c0392b);font-size:15px;">\u2716</button>' +
