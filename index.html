@@ -11611,7 +11611,8 @@ if ('serviceWorker' in navigator) {
       "#annHint{text-align:center;color:var(--dim,#4a5f6e);font-size:11px;padding:11px 0 14px;flex:0 0 auto;}" +
       "#annScroll{overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;padding:16px 18px 6px;}" +
       ".ann-card + .ann-card{margin-top:16px;padding-top:16px;border-top:1px solid rgba(74,143,173,.22);}" +
-      ".ann-card .ann-c-img{width:100%;max-height:220px;object-fit:cover;display:block;border-radius:10px;margin-bottom:11px;}" +
+      ".ann-card .ann-c-img{width:100%;height:auto;display:block;border-radius:10px;margin-bottom:11px;}" +
+      ".ann-card .ann-c-time{font-size:11px;color:var(--dim,#4a5f6e);margin:-2px 0 9px;letter-spacing:.3px;}" +
       ".ann-card .ann-c-title{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:26px;line-height:1.05;color:var(--deep,#113541);margin-bottom:9px;}" +
       ".ann-card .ann-c-text{font-size:14px;line-height:1.55;color:var(--text,#113541);}" +
       ".ann-card .ann-c-text a{color:var(--ocean,#4a8fad);}" +
@@ -11633,42 +11634,32 @@ if ('serviceWorker' in navigator) {
     ov.addEventListener('click', dismissPopup);   // tap anywhere closes
     document.body.appendChild(ov);
   }
+  function fmtStamp(a){
+    var iso = a.created_at || a.starts_at || a.updated_at;
+    if (!iso) return '';
+    var d = new Date(iso); if (isNaN(d)) return '';
+    var mons = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var h = d.getHours(), m = d.getMinutes(), ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12;
+    return d.getDate() + ' ' + mons[d.getMonth()] + ' ' + d.getFullYear() + ' \u00b7 ' + h12 + ':' + (m < 10 ? '0' : '') + m + ap;
+  }
   function showPopup(list){
     if (!list || !list.length) return;
     buildPopup();
-    var sc = $('annScroll');
-    // A single post keeps the original treatment (incl. full-screen image-only view).
-    if (list.length === 1) {
-      var a = list[0];
-      if (sc) sc.style.display = 'none';
-      var img = $('annImg');
-      var hasImg = !!a.image_url;
-      if (hasImg) { img.src = a.image_url; img.style.display = 'block'; }
-      else { img.style.display = 'none'; img.removeAttribute('src'); }
-      var ttl = (a.title || '').trim();
-      $('annTitle').textContent = ttl;
-      $('annTitle').style.display = ttl ? '' : 'none';
-      $('annText').innerHTML = clean(a.body_html || '');
-      // Image-only posts (no title, no body text) render as a full-screen picture,
-      // sized to the viewport with aspect ratio preserved; posts with text keep the card.
-      var hasText = !!ttl || !!(($('annText').textContent || '').trim());
-      if ($('annBody')) $('annBody').style.display = hasText ? '' : 'none';
-      if ($('annPopup')) $('annPopup').classList.toggle('ann-imageonly', hasImg && !hasText);
-      $('annOverlay').classList.add('show');
-      return;
-    }
-    // Multiple live posts stack in a scrollable list.
+    // Every post renders full-size in one scrollable list: nothing is cropped or
+    // shrunk to fit the screen; the user scrolls to see them all, tap to dismiss.
     if ($('annPopup')) $('annPopup').classList.remove('ann-imageonly');
     if ($('annImg')) { $('annImg').style.display = 'none'; $('annImg').removeAttribute('src'); }
     if ($('annBody')) $('annBody').style.display = 'none';
-    sc.style.display = '';
+    var sc = $('annScroll'); sc.style.display = '';
     sc.innerHTML = list.map(function (a) {
       var ttl = (a.title || '').trim();
       var bodyHtml = clean(a.body_html || '');
       var img = a.image_url ? '<img class="ann-c-img" src="' + escText(a.image_url) + '" alt="">' : '';
       var title = ttl ? '<div class="ann-c-title">' + escText(ttl) + '</div>' : '';
+      var stamp = fmtStamp(a);
+      var time = stamp ? '<div class="ann-c-time">' + escText(stamp) + '</div>' : '';
       var text = bodyHtml ? '<div class="ann-c-text">' + bodyHtml + '</div>' : '';
-      return '<div class="ann-card">' + img + title + text + '</div>';
+      return '<div class="ann-card">' + img + title + time + text + '</div>';
     }).join('');
     sc.scrollTop = 0;
     $('annOverlay').classList.add('show');
