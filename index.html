@@ -656,48 +656,59 @@
     font-size: clamp(20px, 5.5vw, 26px); letter-spacing: 1px; margin: 0;
   }
   .quality-card .pollution-sub { font-size: 10px; color: var(--dim); margin-top: 2px; }
-  /* ── Week Ahead button — matches Expand for… collapsible style ── */
-  .week-ahead-card {
-    background: var(--card);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--border);
+  /* ── The Week Ahead — one Best-Swim-Window heat ribbon per upcoming day ──
+     Dark treatment, identical to the Best Swim Window card, so a colour and a
+     boxed window read the same here as in the main day chart. Built by
+     renderWeekAhead(); each day tile is tappable and loads that day above. */
+  .wa2-card {
+    background: rgba(22,50,66,0.60);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(180,210,230,0.10);
     border-radius: var(--radius);
+    padding: clamp(12px,4vw,16px);
     margin-bottom: 12px;
-    overflow: hidden;
     box-shadow: 0 4px 24px rgba(74,143,173,0.10);
   }
-  .week-ahead-btn {
-    display: flex; flex-direction: column; align-items: stretch; gap: 9px;
-    width: 100%; box-sizing: border-box;
-    background: none; border: none; cursor: pointer;
-    padding: 13px 16px; font-family: inherit; text-align: left;
-    -webkit-tap-highlight-color: transparent;
+  .wa2-head { display: block; margin-bottom: 10px; }
+  .wa2-title {
+    display: block; font-family: 'Bebas Neue', sans-serif;
+    letter-spacing: 1.5px; font-size: clamp(16px,4.8vw,20px);
+    color: #c8bda0; text-transform: uppercase; line-height: 1.05;
   }
-  .week-ahead-btn:hover { background: rgba(74,143,173,0.04); }
-  .wa-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .week-ahead-label {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 20px; letter-spacing: 2px; text-transform: uppercase;
-    color: var(--deep); font-weight: 700;
+  .wa2-sub {
+    display: block; font-family: 'Inter', sans-serif;
+    font-size: clamp(9px,2.5vw,10px); color: rgba(200,189,160,0.65);
+    letter-spacing: 0.3px; margin-top: 2px;
   }
-  .wa-when {
-    font-family: 'Inter', sans-serif; font-weight: 500;
-    font-size: 12px; letter-spacing: 0.3px; text-transform: none;
-    color: var(--dim); margin-left: 3px;
+  .wa2-days { display: flex; flex-direction: column; gap: 12px; }
+  .wa2-day {
+    display: block; width: 100%; box-sizing: border-box; text-align: left;
+    background: rgba(22,50,66,0.35); border: 1px solid rgba(180,210,230,0.10);
+    border-radius: 12px; padding: 9px 11px 7px; cursor: pointer;
+    font-family: inherit; -webkit-tap-highlight-color: transparent;
+    transition: background 0.12s ease, border-color 0.12s ease;
   }
-  .week-ahead-btn .wa-arrow { font-size: 26px; color: var(--ocean); flex: none; }
-  /* Five-day preview of the 7-10am window. Bars are the same 10-step ramp as the
-     Best Swim Window ribbon, so a colour means the same thing in both places. */
-  .wa-strip { display: flex; gap: 5px; }
-  .wa-day { flex: 1 1 0; min-width: 0; display: block; }
-  .wa-bar { display: block; height: 7px; border-radius: 4px; }
-  .wa-bar-none { background: rgba(17,53,65,0.16); }
-  .wa-lbl {
-    display: block; text-align: center; margin-top: 4px;
-    font-size: 11px; letter-spacing: 0.3px; color: var(--dim);
+  .wa2-day:hover { background: rgba(22,50,66,0.55); border-color: rgba(180,210,230,0.18); }
+  .wa2-day:active { filter: brightness(1.08); }
+  .wa2-day-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; margin-bottom: 5px;
   }
-  .wa-lbl-none { opacity: 0.45; }
+  .wa2-day-name {
+    font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; font-size: 16px;
+    color: #c8bda0; text-transform: uppercase; white-space: nowrap;
+  }
+  .wa2-day-name b { font-weight: 700; }
+  .wa2-day-best {
+    font-family: 'Inter', sans-serif; font-size: clamp(9px,2.6vw,11px);
+    font-weight: 600; color: #6fc0dd; letter-spacing: 0.2px;
+    text-align: right; line-height: 1.25;
+  }
+  .wa2-svg { width: 100%; height: auto; display: block; }
+  .wa2-empty {
+    display: block; font-family: 'Inter', sans-serif;
+    font-size: clamp(10px,2.8vw,12px); color: rgba(200,189,160,0.65); padding: 8px 0;
+  }
 
   /* ── Timeline back button ── */
   .timeline-back-btn {
@@ -2397,15 +2408,13 @@
       </div>
     </div>
 
-<!-- THE WEEK AHEAD button → opens the 5-day heatmap panel -->
-  <div class="week-ahead-card">
-  <button class="week-ahead-btn" onclick="switchTab('timeline')" aria-label="View the 5-day heatmap">
-    <span class="wa-head">
-      <span class="week-ahead-label">THE WEEK AHEAD<span class="wa-when">(7&#8211;10am)</span></span>
-      <span class="wa-arrow">&#9660;</span>
-    </span>
-    <span class="wa-strip" id="waStrip"></span>
-  </button>
+<!-- THE WEEK AHEAD — one Best-Swim-Window ribbon per upcoming day (built by renderWeekAhead) -->
+  <div class="wa2-card">
+    <div class="wa2-head">
+      <span class="wa2-title">The Week Ahead</span>
+      <span class="wa2-sub">Tap a day to load it above &middot; best window boxed</span>
+    </div>
+    <div id="weekAheadDays" class="wa2-days"></div>
   </div>
 
 <!-- FORECASTED VALUES — everything here updates with the slider -->
@@ -6724,40 +6733,154 @@ var WA_LO = 7, WA_HI = 10;
 // both call it, so a change to the weighting can never apply to only one of them.
 function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
 
-// Five-day preview under the Week Ahead label. Each bar is the MEAN combo across
-// 7-10am for that day — not the best hour, which would flatter a day with one
-// good slot and three bad ones. Days whose window has already passed (today,
-// after 10am) render as a muted bar rather than disappearing, so the five
-// columns always line up with the five days in the heatmap behind the button.
-function renderWeekStrip(matrix){
-  var host = document.getElementById('waStrip');
+// THE WEEK AHEAD — one Best-Swim-Window heat ribbon per upcoming day.
+// Replaces the old detailed 5-day table. Every day after today (Sydney local)
+// that exists in the matrix gets a compact copy of the main day chart: the same
+// wgCombo weighting, the same _wgColor ramp, the same best-window boxing — so a
+// colour and a boxed window mean exactly what they mean above. Each tile is
+// tappable and loads that day into the main view. Rebuilt from renderTimeline,
+// i.e. only at the moments the 5-day matrix actually changes.
+function renderWeekAhead(matrix){
+  var host = document.getElementById('weekAheadDays');
   if (!host || !matrix || !matrix.length) return;
+
+  // Local "today" (not UTC) — avoids a Sydney-timezone off-by-one.
   var _n = new Date();
   var todayStr = _n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0');
+
   var days = [];
   matrix.forEach(function(r){
     var d = r.dateTime.substring(0, 10);
-    if (d >= todayStr && days.indexOf(d) === -1) days.push(d);
+    if (d > todayStr && days.indexOf(d) === -1) days.push(d);
   });
+
+  if (!days.length){ host.innerHTML = '<div class="wa2-empty">No forecast beyond today yet.</div>'; return; }
+
   var html = '';
-  days.slice(0, 7).forEach(function(d){
-    var lbl = new Date(d + 'T00:00').toLocaleDateString('en-AU', { weekday: 'short' });
-    var rows = matrix.filter(function(r){
-      if (r.dateTime.substring(0, 10) !== d) return false;
-      var hh = parseInt(r.dateTime.substring(11, 13), 10);
-      return hh >= WA_LO && hh <= WA_HI;
-    });
-    if (!rows.length){
-      html += '<span class="wa-day"><span class="wa-bar wa-bar-none"></span>'
-            + '<span class="wa-lbl wa-lbl-none">' + lbl + '</span></span>';
-      return;
-    }
-    var sum = 0;
-    rows.forEach(function(r){ var q = calcScore(r); sum += wgCombo(q.entry.score, q.swim.score, q.water.score); });
-    html += '<span class="wa-day"><span class="wa-bar" style="background:' + _wgColor(sum / rows.length) + '"></span>'
-          + '<span class="wa-lbl">' + lbl + '</span></span>';
+  days.forEach(function(day){
+    var built = wgDayRibbon(day);
+    var dObj  = new Date(day + 'T00:00');
+    var name  = dObj.toLocaleDateString('en-AU', { weekday: 'short' });
+    var num   = dObj.getDate();
+    var mon   = dObj.toLocaleDateString('en-AU', { month: 'short' });
+    html += '<button class="wa2-day" type="button" onclick="selectDay(\'' + day + '\'); window.scrollTo({top:0,behavior:\'smooth\'});" aria-label="Load ' + name + ' ' + num + ' ' + mon + '">'
+          +   '<span class="wa2-day-head">'
+          +     '<span class="wa2-day-name">' + name + ' <b>' + num + '</b> ' + mon + '</span>'
+          +     '<span class="wa2-day-best">' + built.bandTxt + '</span>'
+          +   '</span>'
+          +   (built.empty
+                ? '<span class="wa2-empty">' + built.empty + '</span>'
+                : '<svg class="wa2-svg" viewBox="' + built.viewBox + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' + built.inner + '</svg>')
+          + '</button>';
   });
   host.innerHTML = html;
+}
+
+// Compact ribbon for one day — the drawing core of renderDayWindow, returned as
+// strings so renderWeekAhead can embed it. Deliberately a sibling of (not a
+// refactor of) renderDayWindow, to leave the live main chart untouched. No
+// current-hour caret: these are future days. Rows are slightly shorter than the
+// main chart; everything else — window search, boxing, colour — is identical.
+function wgDayRibbon(day){
+  var out = { viewBox: '0 0 360 70', inner: '', bandTxt: '—', empty: '' };
+  if (!day || !_matrix || !_matrix.length){ out.empty = 'No forecast'; return out; }
+
+  var rows = _matrix.filter(function(r){ return r.dateTime && r.dateTime.indexOf(day) === 0; });
+  if (rows.length < 2){ out.empty = 'No forecast for this day'; return out; }
+
+  var pts = rows.map(function(r){
+    var res = calcScore(r);
+    return {
+      t:     parseInt(r.dateTime.substring(11,13),10) + (parseInt(r.dateTime.substring(14,16),10)||0)/60,
+      hhmm:  r.dateTime.substring(11,16),
+      entry: res.entry.score, chop: res.swim.score, surge: res.water.score
+    };
+  }).filter(function(p){ return p.t >= 5 && p.t <= 21; });
+
+  if (!pts.length){ out.empty = 'No 5am–9pm forecast'; return out; }
+
+  function inWindow(t){ return t >= 5 && t <= 21; }
+  function combo(p){ return wgCombo(p.entry, p.chop, p.surge); }
+  var combos = pts.map(combo);
+  var bestVal = -1;
+  pts.forEach(function(p,i){ if (inWindow(p.t) && combos[i] > bestVal) bestVal = combos[i]; });
+  if (bestVal < 0) bestVal = Math.max.apply(null, combos);
+
+  var tol = 6, floor = bestVal - tol, peaks = [];
+  pts.forEach(function(p,i){
+    if (!inWindow(p.t)) return;
+    if (combos[i] < floor) return;
+    var prevOk = (i === 0) || combos[i-1] <= combos[i];
+    var nextOk = (i === pts.length-1) || combos[i+1] <= combos[i];
+    if (prevOk && nextOk) peaks.push(i);
+  });
+  if (!peaks.length){ var fi=-1, fv=-1; pts.forEach(function(p,i){ if (combos[i] > fv){ fv=combos[i]; fi=i; } }); peaks=[fi]; }
+
+  var windows = peaks.map(function(pk){
+    var lo=pk, hi=pk;
+    while (lo-1>=0 && combos[lo-1]>=floor && inWindow(pts[lo-1].t)) lo--;
+    while (hi+1<pts.length && combos[hi+1]>=floor && inWindow(pts[hi+1].t)) hi++;
+    return { lo:lo, hi:hi };
+  }).sort(function(a,b){ return a.lo-b.lo; });
+
+  var merged = [];
+  windows.forEach(function(w){
+    var last = merged[merged.length-1];
+    if (last && w.lo <= last.hi+1) last.hi = Math.max(last.hi, w.hi);
+    else merged.push({ lo:w.lo, hi:w.hi });
+  });
+  merged.forEach(function(w){ var pk=-1; for (var i=w.lo;i<=w.hi;i++) pk=Math.max(pk,combos[i]); w.peak=pk; });
+  if (merged.length > 3){
+    merged = merged.sort(function(a,b){ return b.peak-a.peak; }).slice(0,3).sort(function(a,b){ return a.lo-b.lo; });
+  }
+
+  var plural = merged.length > 1;
+  if (merged.length){
+    out.bandTxt = (plural ? 'Best: ' : 'Best ≈ ') + merged.map(function(w){
+      return (w.lo === w.hi) ? _wgFmt(pts[w.lo].hhmm)
+                             : (_wgFmt(pts[w.lo].hhmm) + '–' + _wgFmt(pts[w.hi].hhmm));
+    }).join('  ·  ');
+  }
+
+  // Geometry mirrors renderDayWindow (top=22 keeps window-index badges in-bounds),
+  // with slightly shorter rows so a 4-5 day stack stays compact.
+  var W=360, L=46, R=8, top=22, rowH=22, gap=4, cols=pts.length;
+  var cellW = (W - L - R) / cols;
+  var ribH  = top + 3*rowH + 2*gap;
+  var fullH = ribH + 22;
+  out.viewBox = '0 0 ' + W + ' ' + fullH;
+
+  var ROWS = [['Entry','entry'], ['Chop','chop'], ['Surge','surge']];
+  var cells='', labels='';
+  ROWS.forEach(function(row, r){
+    var ry = top + r*(rowH + gap);
+    labels += '<text x="6" y="'+(ry + rowH/2 + 4)+'" font-size="11" font-weight="600" fill="#c8bda0">'+row[0]+'</text>';
+    pts.forEach(function(p, i){
+      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+_wgColor(p[row[1]])+'"/>';
+    });
+  });
+
+  var ticks='';
+  pts.forEach(function(p, i){
+    var hh = Math.round(p.t);
+    if (Math.abs(p.t - hh) > 0.01 || hh % 3 !== 0) return;
+    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 15)+'" font-size="10" font-weight="600" fill="'+WG_INK+'" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
+  });
+
+  var box='';
+  merged.forEach(function(w, wi){
+    var bx=L + w.lo*cellW, bw=(w.hi - w.lo + 1)*cellW, by=top-4, bh=3*rowH + 2*gap + 8;
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="'+WG_BOX+'" fill-opacity="0.07"/>';
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="'+WG_BOX+'" stroke-width="2.5" stroke-dasharray="5 3"/>';
+    if (plural){
+      var bcx = bx + (bw+1)/2;
+      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-8)+'" r="7" fill="'+WG_BOX+'"/>';
+      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-4.5)+'" font-size="9" font-weight="700" fill="#113541" text-anchor="middle">'+(wi+1)+'</text>';
+    }
+  });
+
+  out.inner = cells + box + labels + ticks;
+  return out;
 }
 
 // One-line summary under "Forecast details", so the collapsed row carries a
@@ -6816,8 +6939,9 @@ function renderTimeline(matrix, wxMatrix) {
   container.innerHTML = html;
 
   // Piggyback on every place the timeline is rebuilt — that is exactly the set of
-  // moments the 5-day matrix has changed. Costs ~20 calcScore calls.
-  renderWeekStrip(matrix);
+  // moments the 5-day matrix has changed. Wrapped so a chart error can never take
+  // down the rest of the refresh.
+  try { renderWeekAhead(matrix); } catch (e) {}
 }
 
 function jumpToSlider(idx) {
@@ -10481,7 +10605,7 @@ if ('serviceWorker' in navigator) {
     { key:'swellmap', label:"Swell map", sel:'#swellGraphWrap', essential:0, complete:1 },
     { key:'chopmap', label:"Wind-chop map", sel:'#chopGraphWrap', essential:0, complete:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', essential:0, complete:1 },
-    { key:'weekahead', label:"The week ahead", sel:'.week-ahead-card', essential:0, complete:1 },
+    { key:'weekahead', label:"The week ahead", sel:'.wa2-card', essential:0, complete:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', essential:0, complete:1 },
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', essential:0, complete:1 }
   ];
