@@ -6308,6 +6308,22 @@ function renderSnapshot(h, wx) {
 // Track which day is selected in the day-picker
 let _selectedDay = null; // date string "YYYY-MM-DD"
 
+function entryBand8am(matrix, date) {
+  const rows = matrix.filter(r => r.dateTime.substring(0, 10) === date);
+  if (!rows.length) return null;
+  const row = rows.find(r => r.dateTime.substring(11, 13) === '08')
+            || rows[Math.floor(rows.length / 2)] || rows[0];
+  let cls;
+  try { const q = calcScore(row); cls = q && q.entry && q.entry.cls; } catch (e) { return null; }
+  switch (cls) {
+    case 'green':  return { bg: 'var(--rail-green)',  fg: '#0f2e1a' };
+    case 'amber':  return { bg: 'var(--rail-amber)',  fg: '#2f2c06' };
+    case 'yellow': return { bg: 'var(--rail-yellow)', fg: '#3d2003' };
+    case 'red':    return { bg: 'var(--rail-red)',    fg: '#ffffff' };
+    default: return null;
+  }
+}
+
 function renderDayPicker(matrix) {
   const picker = document.getElementById('dayPicker');
   if (!picker) return;
@@ -6319,7 +6335,7 @@ function renderDayPicker(matrix) {
   // Picker shows today + next 5 (cap 6); the long-range strip shows the rest.
   const allDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
   const fwdDays = allDays.filter(d => d >= todayStr);   // all today-forward days
-  const days = fwdDays.slice(0, 6);
+  const days = fwdDays.slice(0, 5);
 
   // Keep _selectedDay if it's ANY valid forward day (incl. a long-range/outlook day
   // chosen from the strip), not only one of the 6 chips — else it snaps back to today.
@@ -6339,6 +6355,9 @@ function renderDayPicker(matrix) {
       : `<span class="day-btn-label">${d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
         `<span class="day-btn-num">${d.getDate()}</span>`;
     btn.onclick = () => selectDay(date);
+    const _eb = entryBand8am(matrix, date);
+    if (_eb) { btn.style.background = _eb.bg; btn.style.borderColor = _eb.bg; btn.style.color = _eb.fg; }
+    if (date === _selectedDay) btn.style.boxShadow = '0 0 0 2px var(--deep), 0 0 0 4px var(--ocean)';
     picker.appendChild(btn);
   });
 }
@@ -6354,7 +6373,7 @@ function renderLongRange(matrix) {
   const _now = new Date();
   const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
   const fwdDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))].filter(d => d >= todayStr);
-  const longDays = fwdDays.slice(6);
+  const longDays = fwdDays.slice(5);
   if (!longDays.length) { host.style.display = 'none'; return; }
   host.style.display = '';
   const label = document.createElement('div');
@@ -6364,14 +6383,8 @@ function renderLongRange(matrix) {
   longDays.forEach(date => {
     const rows = matrix.filter(r => r.dateTime.substring(0,10) === date);
     const swellOnly = rows.length > 0 && rows.every(r => r._swellOnly === true);
-    const win = rows.filter(r => { const hh = parseInt(r.dateTime.substring(11,13),10); return hh >= WA_LO && hh <= WA_HI; });
-    const use = win.length ? win : rows;
-    let col;
-    try {
-      let sum = 0;
-      use.forEach(r => { const q = calcScore(r); sum += wgCombo(q.entry.score, q.swim.score, q.water.score); });
-      col = _wgColor(use.length ? sum / use.length : 0);
-    } catch (e) { col = 'rgba(200,189,160,0.35)'; }   // scoring not ready yet -> neutral bar, never break the strip
+    const _eb = entryBand8am(matrix, date);
+    const col = _eb ? _eb.bg : 'rgba(200,189,160,0.35)';   // ENTRY @ 8am colour; neutral if not scorable yet
     const d = new Date(date + 'T00:00');
     const btn = document.createElement('button');
     btn.className = 'lr-day' + (swellOnly ? ' lr-look' : '') + (date === _selectedDay ? ' lr-active' : '');
