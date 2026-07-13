@@ -8993,6 +8993,20 @@ let _bannerFacts = null;
 
 // Build a short clause from the community reports (visibility + sightings) so the
 // swimming-conditions summary reflects what swimmers are actually reporting.
+function visDatedSentence(peak, latest) {
+  const wd = VIS_BANDS[peak].w.toLowerCase(), m = VIS_BANDS[peak].m;
+  if (!latest) return `Visibility was last reported ${wd} (${m}).`;
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const dl = new Date(latest); dl.setHours(0, 0, 0, 0);
+  const days = Math.round((d0.getTime() - dl.getTime()) / 86400000);
+  const hrs = (Date.now() - latest) / 3600000;
+  if (days <= 0) return hrs < 6
+    ? `Visibility's ${wd} (${m}) as of ${visAgo(latest)}.`
+    : `Earlier today the water was ${wd} (${m}).`;
+  if (days === 1) return `Yesterday the water was ${wd} (${m}).`;
+  return `Last checked ${days} days ago, the water was ${wd} (${m}).`;
+}
+
 function communitySummaryLine() {
   const parts = [];
   try {
@@ -9002,7 +9016,9 @@ function communitySummaryLine() {
       const maxW = Math.max.apply(null, w);
       if (maxW > 0) {
         const peak = w.indexOf(maxW);
-        parts.push(`Visibility's ${VIS_BANDS[peak].w.toLowerCase()} (${VIS_BANDS[peak].m}).`);
+        let vLatest = 0;
+        _visCache.forEach(r => { const t = r.last_at ? new Date(r.last_at).getTime() : 0; if (t > vLatest) vLatest = t; });
+        parts.push(visDatedSentence(peak, vLatest));
       }
     }
   } catch (e) {}
@@ -9445,6 +9461,11 @@ async function generateBannerSummaryLocal() {
     domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
     domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
+  const _oMid = rows.length ? (rows[Math.floor(rows.length/2)]._ww || rows[Math.floor(rows.length/2)]) : {};
+  const oceanSwellDir = rows.length ? bearingName(_oMid.swell1Dir) : '\u2014';
+  const oceanSwellH   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1H) || 0)) : 0;
+  const oceanSwellP   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1P) || 8)) : 8;
+  const baySwellH     = rows.length ? avg(rows.map(r => ((r.swell1H || 0) + (r.windWaveH || 0)))) : 0;
   _bannerFacts = {
     timeCtx: timeCtx,
     dayPhrase: dayPhrase,
@@ -9457,8 +9478,11 @@ async function generateBannerSummaryLocal() {
       rainProb: avgRain, cloud: avgCloud, haveWx: haveWx
     },
     water: {
-      swellH: Number(avgS1H.toFixed(1)), swellP: Math.round(avgS1P),
-      swellDir: dominantS1Dir, shelteredContrast: shelteredContrast
+      oceanSwellH: Number(oceanSwellH.toFixed(1)),
+      oceanSwellDir: oceanSwellDir,
+      oceanSwellP: Math.round(oceanSwellP),
+      baySwellH: Number(baySwellH.toFixed(1)),
+      shelteredContrast: shelteredContrast
     }
   };
   _bannerWaterBase = waterText;
