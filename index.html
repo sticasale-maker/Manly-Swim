@@ -6192,20 +6192,18 @@ function renderSnapshot(h, wx) {
   setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true);
   setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water);
 
-  // Overall verdict — driven by the worst of the three metric bands.
+  // Overall verdict — driven by the ENTRY band ONLY. Entry is the go/no-go;
+  // chop and surge are comfort factors shown separately, so they no longer drag
+  // the headline verdict down (a choppy-but-enterable day still reads as good).
   (function renderVerdict(){
-    const order = { green:0, amber:1, yellow:2, red:3 };
-    let worst = 'green';
-    [result.entry.cls, result.swim.cls, result.water.cls].forEach(c => {
-      if ((order[c] ?? 0) > (order[worst] ?? 0)) worst = c;
-    });
+    const cls = result.entry.cls || 'green';
     const map = {
       green:  { t:'Good to swim', c:'var(--green)'  },
       amber:  { t:'Mostly good',  c:'var(--amber)'  },
       yellow: { t:'Take care',    c:'var(--yellow)' },
       red:    { t:'Rough today',  c:'var(--red)'    },
     };
-    const v = map[worst] || map.green;
+    const v = map[cls] || map.green;
     const tEl  = document.getElementById('verdictText');
     const aL   = document.getElementById('verdictArrowL');
     const aR   = document.getElementById('verdictArrowR');
