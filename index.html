@@ -10140,23 +10140,47 @@ async function loadForecastHistory() {
     if (!Array.isArray(rows) || !rows.length) return 0;
 
     // Map DB rows → the same shape calcScore/_matrix expects.
-    const histRows = rows.map(x => ({
-      dateTime:  (x.forecast_dt || '').replace('T', ' ').substring(0, 19),
-      windKmh:   x.wind_kmh    ?? 0,
-      windDir:   x.wind_dir    ?? 0,
-      swell1H:   x.swell1_h    ?? 0,
-      swell1Dir: x.swell1_dir  ?? 0,
-      swell1P:   x.swell1_p    ?? 8,
-      swell2H:   x.swell2_h    ?? 0,
-      swell2Dir: x.swell2_dir  ?? 0,
-      swell2P:   x.swell2_p    ?? 8,
-      windWaveH: x.windwave_h  ?? 0,
-      windWaveDir: x.windwave_dir ?? 0,
-      windWaveP: x.windwave_p  ?? 0,
-      tideM:     x.tide_m      ?? 0,
-      seaTemp:   x.sea_temp    ?? null,
-      _history:  true,
-    }));
+    const histRows = rows.map(x => {
+      const base = {
+        dateTime:  (x.forecast_dt || '').replace('T', ' ').substring(0, 19),
+        windKmh:   x.wind_kmh    ?? 0,
+        windDir:   x.wind_dir    ?? 0,
+        swell1H:   x.swell1_h    ?? 0,
+        swell1Dir: x.swell1_dir  ?? 0,
+        swell1P:   x.swell1_p    ?? 8,
+        swell2H:   x.swell2_h    ?? 0,
+        swell2Dir: x.swell2_dir  ?? 0,
+        swell2P:   x.swell2_p    ?? 8,
+        windWaveH: x.windwave_h  ?? 0,
+        windWaveDir: x.windwave_dir ?? 0,
+        windWaveP: x.windwave_p  ?? 0,
+        tideM:     x.tide_m      ?? 0,
+        seaTemp:   x.sea_temp    ?? null,
+        _history:  true,
+      };
+      // If this hour was logged with the NSW Nearshore partitions, map them
+      // exactly as the live feed does (mergeNearshoreMatrix): swell1 <- swell
+      // partition, windWave <- sea partition, swell2 = 0, and flag the row
+      // NS-fed so it scores on the NS model and does NOT raise the estimated
+      // banner. Hours logged before the Worker started storing NS have these
+      // null and stay WW-only (estimated) — unchanged.
+      if (x.ns_sea_h != null && x.ns_swell_h != null) {
+        base._ww = {
+          swell1H: base.swell1H, swell1P: base.swell1P, swell1Dir: base.swell1Dir,
+          swell2H: base.swell2H, swell2Dir: base.swell2Dir, swell2P: base.swell2P,
+          windWaveH: base.windWaveH, windWaveP: base.windWaveP, windWaveDir: base.windWaveDir,
+        };
+        base.swell1H   = x.ns_swell_h;
+        base.swell1P   = x.ns_swell_p   ?? 8;
+        base.swell1Dir = x.ns_swell_dir ?? 0;
+        base.windWaveH   = x.ns_sea_h;
+        base.windWaveP   = x.ns_sea_p   ?? 0;
+        base.windWaveDir = x.ns_sea_dir ?? 0;
+        base.swell2H = 0; base.swell2Dir = 0; base.swell2P = 8;
+        base._nsFeed = true;
+      }
+      return base;
+    });
 
     // Keep only rows strictly before the earliest dt already in _matrix
     // (avoid duplicating the live forecast's first hours).
