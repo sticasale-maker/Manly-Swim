@@ -4501,6 +4501,26 @@ function chopSlapWeight(H, T) {
 const CHOP_EXPO=[[0,0.833],[25,0.833],[30,0.694],[55,0.556],[70,0.194],[85,0],[300,0],[310,0.194],[320,0.444],[330,0.556],[345,0.694],[360,0.833]];
 function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i<P.length;i++){if(a<=P[i][0]){const x0=P[i-1][0],y0=P[i-1][1],x1=P[i][0],y1=P[i][1];let t=(a-x0)/(x1-x0);t=t*t*(3-2*t);return y0+(y1-y0)*t;}}return P[P.length-1][1];}
 
+// Directional over-water fetch at the BL chop point, cast from the swim line against the
+// bay coast ring (14 Jul 2026). SOLE direction source for the CHOP metric: chop is a sea
+// grown over the fetch the wind actually has on its bearing, so shelter falls out of the
+// geometry instead of a separate exposure curve. Open bearings through the bay mouth run
+// to 5–6 km (the ray escapes to the Tasman); the sheltered S/W arc bottoms out at ~46 m of
+// bay water. CHOP_EXPO is no longer part of the chop face — it still shapes windSeaBL()
+// for the Entry score and the graph.
+const CHOP_FETCH_M = [
+  1766, 2766, 5936, 5890, 5456, 4445, 3599, 2572, 1622,  800,  257,  232,
+   171,  127,  109,   94,   72,   57,   50,   46,   46,   47,   52,   60,
+    70,   82,  105,  144,  192,  238,  412,  624,  789, 1022, 1273, 1530
+]; // metres over-water fetch, index = bearing/10 (wind FROM), 0 = N
+
+function chopFetchFor(windFromDeg){
+  const d = ((windFromDeg % 360) + 360) % 360;
+  const i = Math.floor(d / 10), f = (d - i*10) / 10;
+  const a = CHOP_FETCH_M[i], b = CHOP_FETCH_M[(i+1) % 36];
+  return a + (b - a) * f;
+}
+
 function chopTransmit(deg) {
   return openWeight(SITE.fetchMaskBL, deg);
 }
@@ -4834,26 +4854,22 @@ function calcScore(d, modelOverride) {
   const wind_d = wind_d_raw * blChopImpact;
 
   // ── CHOP = STEEP-FACE HEIGHT (cm) ── ported from workbench calc() (Marco 6 Jul 2026).
-  // Fetch wind-sea = OPEN duration-limited sea (direction-INDEPENDENT) × BL directional
-  // EXPOSURE (chopExposure) — NOT windSeaGeo's three-zone fetch. Wind-wave stays dir-gated
-  // by the BL transmit table (reuse wwTxBL / _wwP_bl from above). The two sources combine
+  // DIRECTIONAL FETCH (14 Jul 2026): the fetch wind-sea is now ONE term — a sea grown over
+  // the over-water fetch the wind actually has on its bearing (CHOP_FETCH_M, cast from the
+  // swim line against the bay coast ring). Direction enters ONCE, through the fetch itself:
+  // shelter through the S/W arc is the ~46 m of bay water there, and exposure through the
+  // bay mouth is the 5–6 km run out to the Tasman. Retires the old open-ocean reference sea
+  // × chopExposure() × max(300 m bay floor) construction — that carried direction twice and
+  // needed the floor to patch its own knife-edges. Wind-wave stays dir-gated by the BL
+  // transmit table (reuse wwTxBL / _wwP_bl from above). The two sources combine
   // energy-additive (quadrature). A short steep fetch sea has near-zero H²·P energy but a
   // real steep face, which the old q7 energy path discarded — this is the fix. No gain knob:
-  // chopCm is physical height; tune the cm band edges (swimThresholds) or CHOP_EXPO, not a sens.
+  // chopCm is a physical height; tune the cm band edges (swimThresholds), not a sens.
   const _chopU    = (windKmh || 0) / 3.6;
-  const _chopOS   = spmGrowth(_chopU, SITE.chopRefFetchM ?? 5000);  // reference fetch, dir-independent
-  const _chopExpo = chopExposure(windDir);
-  // Sheltered-arc residual floor (prototyped in workbench, ported 8 Jul 2026): on blocked
-  // bearings (100–310°, expo→0) the wind still whips a small local sea over the ~300m of
-  // bay water. max() (not additive — same sea, two lower bounds): the open-ocean term
-  // dominates the exposed arc; the 300m bay chop takes over through the sheltered arc.
-  // Reuses fetchBayM; also softens the old knife-edge at the 100°/310° exposure knots.
-  const _chopRes  = spmGrowth(_chopU, SITE.fetchBayM ?? 300);              // local bay residual
-  const _hWsOpen  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;         // open ocean survived into BL
-  const _hWsBay   = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                  // 300m bay floor
-  const _hWsFace  = chopSmax(_hWsOpen, _hWsBay, CHOP_SMAX_EPS);                                             // fetch wind-sea steep face (m), corner-rounded
-  const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;    // wind-wave steep face (m)
-  const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);             // quadrature, cm
+  const _chopRes  = spmGrowth(_chopU, chopFetchFor(windDir));                              // sea over the directional fetch
+  const _hWsFace  = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                // fetch wind-sea steep face (m)
+  const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;   // wind-wave steep face (m)
+  const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);            // quadrature, cm
 
   return {
     score: Math.max(0, Math.round(60 - total)),
