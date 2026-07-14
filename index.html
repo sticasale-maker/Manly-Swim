@@ -6349,15 +6349,26 @@ function renderDayPicker(matrix) {
   const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
 
   // Picker shows today + next 5 (cap 6); the long-range strip shows the rest.
-  const allDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))];
+  // TUNE ONLY (14 Jul 2026): loadForecastHistory already holds a 7-day PAST window in
+  // _matrix, but the public picker hides it — right for swimmers, useless for tuning.
+  // Under TUNE_PANEL the picker lists every day in _matrix oldest→future so the tuner
+  // can scrub back over recorded history. Public stays forward-anchored, and so do
+  // renderWeekStrip / renderTimeline / renderLongRange (they keep their own filters).
+  const allDays = [...new Set(matrix.map(r => r.dateTime.substring(0,10)))].sort();
   const fwdDays = allDays.filter(d => d >= todayStr);   // all today-forward days
-  const days = fwdDays.slice(0, 5);
+  const pickDays = TUNE_PANEL ? allDays : fwdDays;      // eligible set for THIS picker
+  const days = TUNE_PANEL ? pickDays.slice(0, 14) : pickDays.slice(0, 5);  // 7 past + today + ~6 fwd
 
-  // Keep _selectedDay if it's ANY valid forward day (incl. a long-range/outlook day
-  // chosen from the strip), not only one of the 6 chips — else it snaps back to today.
-  if (!_selectedDay || !fwdDays.includes(_selectedDay)) {
+  // Keep _selectedDay if it's ANY valid day for this mode (incl. a long-range/outlook day
+  // chosen from the strip), not only one of the chips — else it snaps back to today.
+  if (!_selectedDay || !pickDays.includes(_selectedDay)) {
     const sliderDay = matrix[_sliderIdx]?.dateTime.substring(0,10);
-    _selectedDay = fwdDays.includes(sliderDay) ? sliderDay : (days[0] || todayStr);
+    // Tune still LANDS on today (scrub back from there); it must not default to the
+    // oldest past chip just because that is now days[0].
+    const fallback = TUNE_PANEL
+      ? (days.includes(todayStr) ? todayStr : (days[0] || todayStr))
+      : (days[0] || todayStr);
+    _selectedDay = pickDays.includes(sliderDay) ? sliderDay : fallback;
   }
 
   picker.innerHTML = '';
