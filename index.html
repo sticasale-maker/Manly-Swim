@@ -1942,35 +1942,36 @@
   .verdict-bar:active { filter:brightness(0.97); }
   /* News pill. --ocean (#4a8fad) on --card (#c8bda0) is a 1.9:1 contrast ratio —
      the old cue was unreadable because of luminance, not size. --sky (#1b4754)
-     under white text clears AA at 5.5:1 and reads as a button, not a caption. */
+     under white text clears AA at 5.5:1 and reads as a button, not a caption.
+     The pill itself is now STATIC: the attention cue is the live dot below, so the
+     hue-cycling background (which fought the colour-coded verdict beside it) is gone. */
   .verdict-news {
     margin-left:auto; flex:0 0 auto;
+    display:inline-flex; align-items:center; gap:8px;
     background:var(--sky); color:#fff;
     font-size:clamp(11px,3.1vw,13px); font-weight:700;
     letter-spacing:0.8px; white-space:nowrap;
     padding:7px 12px; border-radius:999px;
-    /* Attention cue: cycle the pill through the hue wheel and breathe it gently.
-       Every stop is held at L=28% so WHITE TEXT STAYS >=4.5:1 (AA) on every frame —
-       the worst hue (yellow/green) lands at ~5.3:1. Do not raise the lightness. */
-    animation: newsRainbow 7s linear infinite, newsPulse 1.9s ease-in-out infinite;
-    will-change: background-color, transform;
   }
-  @keyframes newsRainbow {
-    0%   { background-color:hsl(  0,60%,28%); }
-    17%  { background-color:hsl( 42,60%,28%); }
-    33%  { background-color:hsl( 90,60%,28%); }
-    50%  { background-color:hsl(165,60%,28%); }
-    67%  { background-color:hsl(215,60%,28%); }
-    83%  { background-color:hsl(285,60%,28%); }
-    100% { background-color:hsl(360,60%,28%); }
+  /* Live dot. The expanding ring is a box-shadow, so the pill must never clip it —
+     do NOT add overflow:hidden to .verdict-news or the pulse disappears. */
+  .verdict-news .live-dot {
+    width:11px; height:11px; flex:0 0 auto;
+    background:#ff3b3b; border-radius:50%;
+    animation: pulse-dot 1.5s ease-out infinite;
+    will-change: transform, box-shadow;
   }
-  @keyframes newsPulse {
-    0%, 100% { transform:scale(1);    box-shadow:0 0 0 0 rgba(255,255,255,0); }
-    50%      { transform:scale(1.06); box-shadow:0 0 0 3px rgba(255,255,255,0.28); }
+  /* Two stacked shadows: a constant soft halo so the dot reads even between beats,
+     plus the expanding ring that carries the pulse. Ring is capped at 9px so it
+     stays inside the pill's height and never crowds the verdict text beside it. */
+  @keyframes pulse-dot {
+    0%   { transform:scale(0.9); box-shadow:0 0 7px 1px rgba(255,59,59,0.95), 0 0 0 0 rgba(255,59,59,0.85); }
+    70%  { transform:scale(1.15); box-shadow:0 0 7px 1px rgba(255,59,59,0.55), 0 0 0 9px rgba(255,59,59,0); }
+    100% { transform:scale(0.9); box-shadow:0 0 7px 1px rgba(255,59,59,0.95), 0 0 0 0 rgba(255,59,59,0); }
   }
-  /* Motion is decorative — honour the OS setting and fall back to the static pill. */
+  /* Motion is decorative — honour the OS setting and fall back to the static dot. */
   @media (prefers-reduced-motion: reduce) {
-    .verdict-news { animation:none; background:var(--sky); }
+    .verdict-news .live-dot { animation:none; }
   }
   .verdict-bar:active .verdict-news { filter:brightness(1.25); }
 </style>
@@ -2217,7 +2218,7 @@
         <span class="verdict-text" id="verdictText">Loading&#8230;</span>
         <span class="verdict-arrow vb-right" id="verdictArrowR" aria-hidden="true"></span>
       </span>
-      <span class="verdict-news">what to expect</span>
+      <span class="verdict-news"><span class="live-dot" aria-hidden="true"></span>What to expect</span>
     </div>
 
     <!-- Metrics + time slider share one light-blue board -->
