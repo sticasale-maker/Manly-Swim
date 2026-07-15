@@ -339,6 +339,7 @@
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
+  .metric-sub { font-family:'Inter',sans-serif; font-size:12px; font-weight:600; letter-spacing:0; margin-left:6px; color:var(--dim); }
   .metric-score {
     font-family:'Inter',sans-serif;
     font-size:10px; color:var(--dim);
@@ -6159,10 +6160,11 @@ function renderSnapshot(h, wx) {
   // Three metric blocks. useRaw=true shows the raw band-scale value (e.g. Swim's
   // q7) so the displayed number matches the scale the colour-band thresholds are
   // set against; otherwise shows the 0–60 score (60 = best).
-  function setMetric(id, valId, scoreId, metric, useRaw) {
+  function setMetric(id, valId, scoreId, metric, useRaw, suffix) {
     const block = document.getElementById(id);
     block.className = 'metric-block ' + metric.cls;
-    document.getElementById(valId).textContent   = metric.label;
+    document.getElementById(valId).innerHTML     = metric.label +
+      (suffix ? '<span class="metric-sub">' + suffix + '</span>' : '');
     const shown = useRaw && (metric.raw != null) ? metric.raw : metric.score;
     document.getElementById(scoreId).textContent = Math.round(shown * 10) / 10;
     renderMetricIcon(id, metric.cls);
@@ -6284,9 +6286,20 @@ function renderSnapshot(h, wx) {
   })();
 
 
-  setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry);
-  setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true);
-  setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water);
+  // Append a physical readout to each classification: ramp swell height (Entry),
+  // chop steep-face height in cm (Chop), bay swell height (Surge). Ramp/bay use the
+  // SS/BL shelter-dispersion residual (H_mouth*sqrt(transmit)) — same as the swell card.
+  (function () {
+    const S = (typeof SITE !== 'undefined') ? SITE : null;
+    const Hm = h.swell1H || 0;
+    const cx = (v) => Math.max(0, Math.min(1, v));
+    const rampH = (Hm > 0 && S && S.nsDisp) ? Hm * Math.sqrt(cx(nsDispLookup(h.swell1Dir, h.swell1P))) : Hm;
+    const bayH  = (Hm > 0 && S && S.blDisp) ? Hm * Math.sqrt(cx(blDispLookup(h.swell1Dir, h.swell1P))) : Hm;
+    const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, rampH.toFixed(1) + ' m');
+    setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
+    setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m');
+  })();
 
   // Overall verdict — driven by the ENTRY band ONLY. Entry is the go/no-go;
   // chop and surge are comfort factors shown separately, so they no longer drag
