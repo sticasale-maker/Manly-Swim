@@ -8757,7 +8757,15 @@ async function nuovoPreflight() {
   // NS dispersion table — normally filled by a live/cached load. If that leaves it
   // empty (expired cache + a failed refetch), reuse the last cached table even if
   // stale before failing over: it is config and changes rarely, so stale beats a bounce.
-  try { await loadNsDispConfig(); } catch (e) { /* leaves SITE.nsDisp null */ }
+  // Retry before giving up. A single transient miss on a COLD launch (iOS evicts
+  // PWA storage after ~a week idle, so a returning user has no cache) hitting one
+  // flaky request or a cold Worker must NOT strand them on vecchio — an old,
+  // unmaintained build. Backoff 0 / 0.5s / 1s; only the failing path pays it.
+  const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  for (let _i = 0; _i < 3 && !SITE.nsDisp; _i++) {
+    if (_i) await _sleep(500 * _i);
+    try { await loadNsDispConfig(_i > 0); } catch (e) { /* leaves SITE.nsDisp null */ }
+  }
   if (!SITE.nsDisp) {
     try {
       const c = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
@@ -8776,7 +8784,10 @@ async function nuovoPreflight() {
   // Tolerate that by reusing the last cached feed; loadAndRender re-fetches and
   // merges the live data when it returns. Only a total absence of data fails over.
   let ns = null;
-  try { ns = await fetchNearshore(); } catch (e) { /* transient — fall through to cache */ }
+  for (let _i = 0; _i < 3 && !ns; _i++) {
+    if (_i) await _sleep(500 * _i);
+    try { ns = await fetchNearshore(); } catch (e) { /* transient — retry, then cache */ }
+  }
   if (!ns) {
     try {
       const c = loadCache(NS_CACHE_KEY);
