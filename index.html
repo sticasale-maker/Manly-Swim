@@ -2469,7 +2469,7 @@
     <div class="forecast-values">
       <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
         <span class="fv-head-txt">
-          <span class="fv-toggle-label">Forecast inside the bay</span>
+          <span class="fv-toggle-label">Forecast</span>
           <span class="fv-sub" id="fvSub">&mdash;</span>
         </span>
         <span class="fv-toggle-chevron">▾</span>
@@ -2514,6 +2514,7 @@
         <div class="cond-card">
           <div class="cond-label">Swell</div>
           <div class="cond-swell-rows">
+            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Ocean">—</span><span class="cond-swell-loc">oceanside</span></div>
             <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Ramp">—</span><span class="cond-swell-loc">at the ramp</span></div>
             <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Bay">—</span><span class="cond-swell-loc">in the bay</span></div>
           </div>
@@ -6370,6 +6371,8 @@ function renderSnapshot(h, wx) {
     const bayEl  = document.getElementById('sSwell1Bay');
     if (rampEl) rampEl.textContent = resid(s && s.nsDisp, nsDispLookup);
     if (bayEl)  bayEl.textContent  = resid(s && s.blDisp, blDispLookup);
+    const oceanEl = document.getElementById('sSwell1Ocean');
+    if (oceanEl) oceanEl.textContent = Hm.toFixed(1) + ' m';
     const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
     if (card) card.title = Hm.toFixed(1) + ' m swell at the bay mouth, knocked down by the headland to the height reaching the ramp and the bay';
   })();
@@ -7127,24 +7130,16 @@ function updateFvSub(h){
   var el = document.getElementById('fvSub');
   if (!el) return;
   if (!h || h.swell1H == null) { el.textContent = '\u2014'; return; }
-  // Swell one-liner: incoming height/period/direction at the bay mouth, then the
-  // residual height reaching the ramp (SS table) and the bay (BL table) — the same
-  // shelter/dispersion the swell card uses. Height = H_mouth * sqrt(transmit).
+  // Swell one-liner: residual height reaching the ramp (SS table) and the bay (BL
+  // table) — same shelter/dispersion as the swell card. Height = H_mouth * sqrt(transmit).
   var Hm = Number(h.swell1H);
   var st = (typeof SITE !== 'undefined') ? SITE : null;
   var clampTx = function (v) { return Math.max(0, Math.min(1, v)); };
   var resid = function (tbl, lookup) {
     return (Hm > 0 && tbl) ? Hm * Math.sqrt(clampTx(lookup(h.swell1Dir, h.swell1P))) : Hm;
   };
-  var swell = Hm.toFixed(1) + ' m'
-    + (h.swell1P   != null ? ', ' + Math.round(h.swell1P) + ' s' : '')
-    + (h.swell1Dir != null ? ' from ' + bearingName(h.swell1Dir) : '')
-    + ' outside the bay, and ' + resid(st && st.nsDisp, nsDispLookup).toFixed(1) + ' m at the ramp, '
+  el.textContent = resid(st && st.nsDisp, nsDispLookup).toFixed(1) + ' m at the ramp, '
     + resid(st && st.blDisp, blDispLookup).toFixed(1) + ' m in the bay';
-  var wind = (h.windKmh != null)
-    ? '  \u00B7  ' + Math.round(h.windKmh) + ' km/h' + (h.windDir != null ? ' ' + bearingName(h.windDir) : '')
-    : '';
-  el.textContent = swell + wind;
 }
 
 function renderTimeline(matrix, wxMatrix) {
