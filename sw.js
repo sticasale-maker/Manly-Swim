@@ -79,6 +79,16 @@ self.addEventListener('activate', event => {
           })
       )
     ).then(() => self.clients.claim())
+     // Force any window still open on the stale fallback over to the current build.
+     // index.html re-runs the NS preflight (bounce-guarded), so a genuine outage just
+     // fails over again — this fires once per SW activation and can't loop.
+     .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+       .then(cls => Promise.all(cls.map(c =>
+         (c.url && c.url.indexOf('vecchio.html') !== -1 && typeof c.navigate === 'function')
+           ? c.navigate('index.html').catch(() => {})
+           : null
+       )))
+       .catch(() => {}))
   );
 });
 
