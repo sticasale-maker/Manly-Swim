@@ -8740,6 +8740,16 @@ function failoverToVecchio(reason) {
       }] })], { type: 'text/plain' })
     );
   } catch (e) {}
+  // Record the bounce so vecchio's auto-return can ping-pong-guard: reset the
+  // 10-min window if it lapsed, else increment. Cleared on a healthy preflight.
+  try {
+    var _now = Date.now();
+    var _b = null;
+    try { _b = JSON.parse(localStorage.getItem('swim_vecchio_bounce') || 'null'); } catch (e) {}
+    if (!_b || (_now - (_b.first || 0)) > 600000) _b = { n: 0, first: _now };
+    _b.n = (_b.n || 0) + 1; _b.last = _now;
+    localStorage.setItem('swim_vecchio_bounce', JSON.stringify(_b));
+  } catch (e) {}
   location.replace(FALLBACK_URL + location.search);
 }
 
@@ -8796,6 +8806,9 @@ async function nuovoPreflight() {
   }
   if (!ns) { failoverToVecchio('ns_feed_unavailable'); return false; }
 
+  // Healthy nuovo — clear the vecchio ping-pong history so a future isolated blip
+  // starts fresh and doesn't count against the auto-return guard.
+  try { localStorage.removeItem('swim_vecchio_bounce'); } catch (e) {}
   return true;                                       // memoized; loadAndRender reuses it
 }
 

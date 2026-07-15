@@ -2,6 +2,47 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script>
+// ── AUTO-RETURN TO NUOVO ─────────────────────────────────────────────────────
+// vecchio.html is the failover build. It used to be a one-way door: once nuovo
+// failed over here, a refresh reloaded vecchio (not index.html), stranding the
+// user on an old release. Probe the NS sources on load and hand control back to
+// the current build once they are healthy. Non-blocking (vecchio still renders);
+// only redirects on recovery. Ping-pong guarded via the swim_vecchio_bounce
+// counter that index.html writes on failover. ?novecchioreturn=1 stays here.
+(function () {
+  try {
+    if (location.search.indexOf('novecchioreturn=1') !== -1) return;
+    var now = Date.now();
+    var b = null;
+    try { b = JSON.parse(localStorage.getItem('swim_vecchio_bounce') || 'null'); } catch (e) {}
+    if (b && b.n >= 3 && (now - (b.last || 0)) < 600000) return;   // flaky NS: stop bouncing
+    if (b && b.last && (now - b.last) < 15000) return;             // cooldown: let a transient settle
+    function probe(url, check) {
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 8000);
+      return fetch(url, { cache: 'no-store', signal: ctrl.signal })
+        .then(function (r) { if (!r.ok) throw 0; return check(r); })
+        .then(function () { return true; })
+        .catch(function () { return false; })
+        .then(function (ok) { clearTimeout(timer); return ok; });
+    }
+    var FEED = 'https://bold-rain-6ded.sticasale.workers.dev/nearshore?t=' + now;
+    var DISP = 'https://middleman-to-sheet.sticasale.workers.dev/newindex/nsdisp?t=' + now;
+    Promise.all([
+      probe(FEED, function (r) { return r.json().then(function (j) {
+        var ws = j && j.payload && j.payload.data && j.payload.data.wave_summary;
+        if (!(j && (j.hours || (ws && ws.dims && ws.series)))) throw 0;
+      }); }),
+      probe(DISP, function (r) { return r.text().then(function (txt) {
+        if (!txt || txt.length < 500 || txt.split('\n').length < 10) throw 0;
+      }); })
+    ]).then(function (res) {
+      if (res[0] && res[1]) location.replace('index.html' + location.search);
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
