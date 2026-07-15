@@ -9701,16 +9701,31 @@ async function generateBannerSummaryLocal() {
   const oceanSwellDir = rows.length ? bearingName(_oMid.swell1Dir) : '\u2014';
   const oceanSwellH   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1H) || 0)) : 0;
   const oceanSwellP   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1P) || 8)) : 8;
-  // "In the water" swell for the summary = bay-mouth swell attenuated to the
-  // height reaching the swim (SS shelter/dispersion, same tables as the swell card
-  // and subtitle), NOT the raw mouth swell+chop sum which overstates it. The Worker
-  // reports this number verbatim as "swell in the water". Falls back to the raw
-  // mouth height if the SS table has not loaded yet.
-  const baySwellH     = rows.length ? avg(rows.map(function (r) {
+  // Two figures for the summary, matching the metric readouts: the tide-corrected
+  // shore-break height reaching the ramp (Entry) and the residual swell in the bay
+  // (Surge), each averaged over the window. rampBreakH folds the tide term into the
+  // transmit then breaks (Komar-Gaughan); bayResidualH is the BL residual. baySwellH
+  // is kept = bayResidualH so a not-yet-updated Worker still reports a correct figure.
+  const rampBreakH = rows.length ? avg(rows.map(function (r) {
     var Hm = r.swell1H || 0;
     if (Hm <= 0 || !(typeof SITE !== 'undefined' && SITE && SITE.nsDisp)) return Hm;
-    return Hm * Math.sqrt(Math.max(0, Math.min(1, nsDispLookup(r.swell1Dir, r.swell1P))));
+    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
+    var ref = (SITE.tideRef != null ? SITE.tideRef : 0.7);
+    var dT = Math.max(0, (r.tideM != null ? r.tideM : ref) - ref);
+    var gain = SITE.tideGain || 0;
+    var tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
+    var wwDir = (r.windWaveDir != null ? r.windWaveDir : r.windDir);
+    var Es = Hm * Hm * (r.swell1P || 8) * cl(nsDispLookup(r.swell1Dir, r.swell1P)) * (1 + gain * dT * tg(r.swell1Dir));
+    var Ew = (r.windWaveH || 0) * (r.windWaveH || 0) * (r.windWaveP || 8) * cl(nsDispLookup(wwDir, r.windWaveP || r.swell1P)) * (1 + gain * dT * tg(wwDir));
+    var E = Es + Ew;
+    return E > 0 ? 0.39 * Math.pow(9.81, 0.2) * Math.pow(E, 0.4) : 0;
   })) : 0;
+  const bayResidualH = rows.length ? avg(rows.map(function (r) {
+    var Hm = r.swell1H || 0;
+    if (Hm <= 0 || !(typeof SITE !== 'undefined' && SITE && SITE.blDisp)) return Hm;
+    return Hm * Math.sqrt(Math.max(0, Math.min(1, blDispLookup(r.swell1Dir, r.swell1P))));
+  })) : 0;
+  const baySwellH = bayResidualH;
   _bannerFacts = {
     timeCtx: timeCtx,
     dayPhrase: dayPhrase,
@@ -9726,6 +9741,8 @@ async function generateBannerSummaryLocal() {
       oceanSwellH: Number(oceanSwellH.toFixed(1)),
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
+      rampBreakH: Number(rampBreakH.toFixed(1)),
+      bayResidualH: Number(bayResidualH.toFixed(1)),
       baySwellH: Number(baySwellH.toFixed(1)),
       shelteredContrast: shelteredContrast
     }
