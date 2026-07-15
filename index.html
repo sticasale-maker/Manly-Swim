@@ -9637,7 +9637,16 @@ async function generateBannerSummaryLocal() {
   const oceanSwellDir = rows.length ? bearingName(_oMid.swell1Dir) : '\u2014';
   const oceanSwellH   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1H) || 0)) : 0;
   const oceanSwellP   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1P) || 8)) : 8;
-  const baySwellH     = rows.length ? avg(rows.map(r => ((r.swell1H || 0) + (r.windWaveH || 0)))) : 0;
+  // "In the water" swell for the summary = bay-mouth swell attenuated to the
+  // height reaching the swim (SS shelter/dispersion, same tables as the swell card
+  // and subtitle), NOT the raw mouth swell+chop sum which overstates it. The Worker
+  // reports this number verbatim as "swell in the water". Falls back to the raw
+  // mouth height if the SS table has not loaded yet.
+  const baySwellH     = rows.length ? avg(rows.map(function (r) {
+    var Hm = r.swell1H || 0;
+    if (Hm <= 0 || !(typeof SITE !== 'undefined' && SITE && SITE.nsDisp)) return Hm;
+    return Hm * Math.sqrt(Math.max(0, Math.min(1, nsDispLookup(r.swell1Dir, r.swell1P))));
+  })) : 0;
   _bannerFacts = {
     timeCtx: timeCtx,
     dayPhrase: dayPhrase,
