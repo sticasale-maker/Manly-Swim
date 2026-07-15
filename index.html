@@ -6296,7 +6296,13 @@ function renderSnapshot(h, wx) {
     const rampH = (Hm > 0 && S && S.nsDisp) ? Hm * Math.sqrt(cx(nsDispLookup(h.swell1Dir, h.swell1P))) : Hm;
     const bayH  = (Hm > 0 && S && S.blDisp) ? Hm * Math.sqrt(cx(blDispLookup(h.swell1Dir, h.swell1P))) : Hm;
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
-    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, rampH.toFixed(1) + ' m');
+    // Breaking-wave (shore-break) height at the ramp: the ramp swell shoals and
+    // breaks in the shallows, so the break is bigger than the arriving swell — that
+    // break is what a swimmer faces at entry, and why the plain ramp height reads low.
+    // Komar & Gaughan (1972): Hb = 0.39 * g^0.2 * (T * H^2)^0.4 (H = ramp residual, T = period).
+    const Tp = h.swell1P || 8;
+    const breakH = rampH > 0 ? 0.39 * Math.pow(9.81, 0.2) * Math.pow(Tp * rampH * rampH, 0.4) : 0;
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, breakH.toFixed(1) + ' m break');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m');
   })();
