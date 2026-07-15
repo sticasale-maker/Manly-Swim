@@ -7126,15 +7126,25 @@ function wgDayRibbon(day){
 function updateFvSub(h){
   var el = document.getElementById('fvSub');
   if (!el) return;
-  if (!h) { el.textContent = '\u2014'; return; }
-  var p = [];
-  if (h.swell1H   != null) p.push(Number(h.swell1H).toFixed(1) + ' m');
-  if (h.swell1P   != null) p.push(Math.round(h.swell1P) + ' s');
-  if (h.swell1Dir != null) p.push(bearingName(h.swell1Dir));
-  if (h.windKmh   != null) {
-    p.push(Math.round(h.windKmh) + ' km/h' + (h.windDir != null ? ' ' + bearingName(h.windDir) : ''));
-  }
-  el.textContent = p.length ? p.join('  \u00B7  ') : '\u2014';
+  if (!h || h.swell1H == null) { el.textContent = '\u2014'; return; }
+  // Swell one-liner: incoming height/period/direction at the bay mouth, then the
+  // residual height reaching the ramp (SS table) and the bay (BL table) — the same
+  // shelter/dispersion the swell card uses. Height = H_mouth * sqrt(transmit).
+  var Hm = Number(h.swell1H);
+  var st = (typeof SITE !== 'undefined') ? SITE : null;
+  var clampTx = function (v) { return Math.max(0, Math.min(1, v)); };
+  var resid = function (tbl, lookup) {
+    return (Hm > 0 && tbl) ? Hm * Math.sqrt(clampTx(lookup(h.swell1Dir, h.swell1P))) : Hm;
+  };
+  var swell = Hm.toFixed(1) + ' m'
+    + (h.swell1P   != null ? ', ' + Math.round(h.swell1P) + ' s' : '')
+    + (h.swell1Dir != null ? ' from ' + bearingName(h.swell1Dir) : '')
+    + ' outside the bay, and ' + resid(st && st.nsDisp, nsDispLookup).toFixed(1) + ' m at the ramp, '
+    + resid(st && st.blDisp, blDispLookup).toFixed(1) + ' m in the bay';
+  var wind = (h.windKmh != null)
+    ? '  \u00B7  ' + Math.round(h.windKmh) + ' km/h' + (h.windDir != null ? ' ' + bearingName(h.windDir) : '')
+    : '';
+  el.textContent = swell + wind;
 }
 
 function renderTimeline(matrix, wxMatrix) {
