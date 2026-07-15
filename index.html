@@ -2474,7 +2474,6 @@
       <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
         <span class="fv-head-txt">
           <span class="fv-toggle-label">Forecast</span>
-          <span class="fv-sub" id="fvSub">&mdash;</span>
         </span>
         <span class="fv-toggle-chevron">▾</span>
       </button>
@@ -6321,11 +6320,14 @@ function renderSnapshot(h, wx) {
     const cx = (v) => Math.max(0, Math.min(1, v));
     const bayH  = (Hm > 0 && S && S.blDisp) ? Hm * Math.sqrt(cx(blDispLookup(h.swell1Dir, h.swell1P))) : Hm;
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
-    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, '');
-    var _enS = document.getElementById('metricEntryScore');
-    if (_enS) _enS.textContent = _entryBreakH.toFixed(1) + ' m';
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _entryBreakH.toFixed(1) + ' m at the ramp');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
-    setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m');
+    setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m in the bay');
+    // Drop the cryptic right-aligned score number on all three — the readout is now
+    // the physical value beside the classification word.
+    ['metricEntryScore', 'metricSwimScore', 'metricSurgeScore'].forEach(function (id) {
+      var e = document.getElementById(id); if (e) e.textContent = '';
+    });
   })();
 
   // Overall verdict — driven by the ENTRY band ONLY. Entry is the go/no-go;
