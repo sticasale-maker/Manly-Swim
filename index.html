@@ -1152,6 +1152,11 @@
   .cond-value { font-family:'Bebas Neue',sans-serif; font-size:clamp(24px, 7vw, 30px); color:var(--deep); line-height:1; }
   .cond-unit  { font-size:11px; color:var(--dim); margin-top:3px; }
   .cond-sub   { font-size:11px; color:var(--ocean); margin-top:2px; }
+  /* Swell card shows two sheltered heights: at the ramp (SS) and in the bay (BL) */
+  .cond-swell-rows { display:flex; flex-direction:column; gap:4px; }
+  .cond-swell-row  { display:flex; align-items:baseline; gap:5px; flex-wrap:nowrap; }
+  .cond-swell-h    { font-family:'Bebas Neue',sans-serif; font-size:clamp(18px,4.6vw,22px); color:var(--deep); line-height:1; white-space:nowrap; }
+  .cond-swell-loc  { font-size:10px; color:var(--dim); white-space:nowrap; line-height:1; }
 
   /* ── Tabs ── */
   /* ── View panels ── */
@@ -2507,8 +2512,11 @@
           <div class="cond-unit" id="sWindDir">—</div>
         </div>
         <div class="cond-card">
-          <div class="cond-label">Primary Swell</div>
-          <div class="cond-value" id="sSwell1H">—</div>
+          <div class="cond-label">Swell</div>
+          <div class="cond-swell-rows">
+            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Ramp">—</span><span class="cond-swell-loc">at the ramp</span></div>
+            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Bay">—</span><span class="cond-swell-loc">in the bay</span></div>
+          </div>
           <div class="cond-unit" id="sSwell1D">—</div>
           <div class="cond-sub" id="sSwell1P">—</div>
         </div>
@@ -6344,8 +6352,28 @@ function renderSnapshot(h, wx) {
   // Conditions bar
   document.getElementById('sWind').textContent    = Math.round(h.windKmh);
   document.getElementById('sWindDir').textContent = `km/h · ${bearingName(h.windDir)} (${Math.round(h.windDir)}°)`;
-  document.getElementById('sSwell1H').textContent = h.swell1H.toFixed(1);
-  document.getElementById('sSwell1D').textContent = `m · ${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`;
+  // Swell height at two sheltered points, attenuating the bay-mouth feed by the
+  // shelter/dispersion transmit (energy fraction) the scoring + swell map use:
+  //   at the ramp = SS table (nsDispLookup, South Steyne entry corner)
+  //   in the bay  = BL table (blDispLookup, Cabbage Tree Bay)
+  // Energy survives at `transmit`, height ~ sqrt(energy) -> H = H_mouth*sqrt(tx).
+  // Display only: h.swell1H is untouched, so scores are unaffected. Each value
+  // falls back to the raw mouth height if its table has not loaded yet.
+  (function () {
+    const Hm = h.swell1H;
+    const s  = (typeof SITE !== 'undefined') ? SITE : null;
+    const clampTx = (v) => Math.max(0, Math.min(1, v));
+    const resid = (tbl, lookup) => (Hm > 0 && tbl)
+      ? (Hm * Math.sqrt(clampTx(lookup(h.swell1Dir, h.swell1P)))).toFixed(1) + ' m'
+      : Hm.toFixed(1) + ' m';
+    const rampEl = document.getElementById('sSwell1Ramp');
+    const bayEl  = document.getElementById('sSwell1Bay');
+    if (rampEl) rampEl.textContent = resid(s && s.nsDisp, nsDispLookup);
+    if (bayEl)  bayEl.textContent  = resid(s && s.blDisp, blDispLookup);
+    const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
+    if (card) card.title = Hm.toFixed(1) + ' m swell at the bay mouth, knocked down by the headland to the height reaching the ramp and the bay';
+  })();
+  document.getElementById('sSwell1D').textContent = `${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`;
   document.getElementById('sSwell1P').textContent = `${Math.round(h.swell1P)}s period`;
   document.getElementById('sTide').textContent    = h.tideM.toFixed(2);
 
