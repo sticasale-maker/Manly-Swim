@@ -2460,30 +2460,74 @@
     <div id="weekAheadDays" class="wa2-days"></div>
   </div>
 
-<!-- Feature requests (submit + upvote) -->
+<!-- THE BOARD — public Q&A (submit + upvote); Marco's replies threaded underneath -->
     <style>
-      #featureCard .fr-row{display:flex;gap:8px;align-items:center;margin-bottom:6px;}
-      #featureCard .fr-input{flex:1;min-width:0;background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:12px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;}
-      #featureCard .fr-count{flex:none;min-width:40px;text-align:right;font-family:'Inter',sans-serif;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;}
-      #featureCard .fr-submit{flex:none;padding:12px 14px;background:var(--ocean);color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-family:inherit;}
+      /* ── THE BOARD ─────────────────────────────────────────────────────── */
+      #featureCard .bd-head{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;color:var(--deep);line-height:1;margin:0 0 5px;}
+      #featureCard .bd-lede{color:var(--dim);font-size:14px;line-height:1.45;margin:0 0 14px;}
+      #featureCard .bd-compose{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}
+      #featureCard .fr-name,#featureCard .fr-input{background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:12px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;}
+      #featureCard textarea.fr-input{min-height:80px;resize:vertical;line-height:1.4;}
+      #featureCard .bd-composerow{display:flex;gap:8px;align-items:center;}
+      #featureCard .fr-count{flex:1;text-align:left;font-family:'Inter',sans-serif;font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;}
+      #featureCard .fr-submit{flex:none;padding:11px 18px;background:var(--ocean);color:#fff;border:none;border-radius:10px;font-size:15px;cursor:pointer;font-family:inherit;}
       #featureCard .fr-submit:disabled{opacity:.45;cursor:not-allowed;}
       #featureCard .fr-msg{display:none;margin:2px 0 8px;color:var(--red);font-size:13px;}
-      #featureCard .fr-list{margin-top:12px;display:flex;flex-direction:column;gap:8px;}
+      #featureCard .bd-sort{display:flex;gap:6px;margin:14px 0 10px;}
+      #featureCard .bd-sortbtn{flex:none;padding:6px 12px;border-radius:999px;border:1px solid rgba(17,53,65,0.18);background:#fff;color:var(--dim);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;letter-spacing:.5px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+      #featureCard .bd-sortbtn--on{background:var(--deep);color:#fff;border-color:var(--deep);}
+      #featureCard .fr-list{margin-top:4px;display:flex;flex-direction:column;gap:12px;}
       #featureCard .fr-empty{color:var(--dim);font-size:14px;padding:6px 0;}
-      #featureCard .fr-item{display:flex;align-items:center;gap:10px;}
+      #featureCard .bd-card{background:#fff;border:1px solid rgba(17,53,65,0.12);border-radius:var(--radius);padding:14px 14px 12px;box-shadow:0 1px 3px rgba(17,53,65,0.06);}
+      #featureCard .bd-card--pinned{border-color:var(--ocean);}
+      #featureCard .bd-meta{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+      #featureCard .bd-pin{font-size:12px;}
+      #featureCard .bd-name{font-weight:700;color:var(--deep);font-size:14px;}
+      #featureCard .bd-time{color:var(--dim);font-size:12px;}
+      #featureCard .bd-body{color:var(--text);font-size:14.5px;line-height:1.5;word-break:break-word;white-space:pre-wrap;}
+      #featureCard .bd-replies{margin:10px 0 2px;display:flex;flex-direction:column;gap:8px;}
+      #featureCard .bd-reply{border-left:3px solid var(--ocean);padding:6px 0 6px 12px;}
+      #featureCard .bd-reply-head{display:flex;align-items:center;gap:8px;margin-bottom:3px;}
+      #featureCard .bd-avatar{flex:none;width:26px;height:26px;border-radius:50%;object-fit:cover;background:var(--card);}
+      #featureCard .bd-marco{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:.5px;color:var(--deep);line-height:1;}
+      #featureCard .bd-viz{flex:none;font-family:'Inter',sans-serif;font-size:10px;font-weight:700;letter-spacing:1px;color:#fff;background:var(--ocean);border-radius:4px;padding:2px 6px;line-height:1;}
+      #featureCard .bd-reply-time{color:var(--dim);font-size:11px;margin-left:auto;}
+      #featureCard .bd-reply-trash{flex:none;margin-left:6px;background:none;border:none;color:var(--red);font-size:13px;cursor:pointer;padding:2px 4px;line-height:1;}
+      #featureCard .bd-reply-body{color:var(--text);font-size:13.5px;line-height:1.45;word-break:break-word;white-space:pre-wrap;}
+      #featureCard .bd-foot{display:flex;align-items:center;gap:10px;margin-top:10px;}
       #featureCard .fr-pill{flex:none;display:inline-flex;align-items:center;gap:4px;min-width:48px;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .fr-pill .fr-arrow{font-size:11px;}
       #featureCard .fr-pill--on{background:var(--ocean);color:#fff;}
-      #featureCard .fr-body{flex:1;min-width:0;color:var(--text);font-size:14px;line-height:1.4;word-break:break-word;}
+      #featureCard .bd-status{margin-left:auto;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1px;padding:4px 9px;border-radius:6px;text-transform:uppercase;}
+      #featureCard .bd-status--open{color:var(--dim);background:rgba(17,53,65,0.07);}
+      #featureCard .bd-status--answered{color:#fff;background:var(--ocean);}
+      #featureCard .bd-status--shipped{color:#fff;background:var(--deep);}
+      #featureCard .bd-admin{margin-top:12px;padding-top:12px;border-top:1px dashed rgba(17,53,65,0.18);display:flex;flex-direction:column;gap:8px;}
+      #featureCard .bd-admin textarea{background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:10px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;min-height:56px;resize:vertical;}
+      #featureCard .bd-admin-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+      #featureCard .bd-abtn{flex:none;padding:6px 11px;border-radius:8px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+      #featureCard .bd-abtn--send{background:var(--ocean);color:#fff;}
+      #featureCard .bd-abtn--on{background:var(--deep);color:#fff;border-color:var(--deep);}
+      #featureCard .bd-abtn--danger{border-color:var(--red);color:var(--red);}
+      #featureCard .bd-alabel{font-family:'Inter',sans-serif;font-size:11px;color:var(--dim);letter-spacing:.5px;margin-right:2px;}
     </style>
     <div class="about-panel" id="featureCard" style="padding:20px;margin:10px 0;">
-      <p style="color:var(--deep); font-size:15px; font-weight:700; margin-bottom:14px;">Feature requests &mdash; add an idea or upvote</p>
-      <div class="fr-row">
-        <input id="frInput" class="fr-input" type="text" maxlength="50" autocomplete="off" placeholder="Suggest a feature (max 50)">
-        <span id="frCount" class="fr-count">0/50</span>
-        <button id="frSubmit" class="fr-submit" type="button" disabled>Submit</button>
+      <p class="bd-head">THE BOARD</p>
+      <p class="bd-lede">Ask a question, request a feature, or flag what&rsquo;s not working. Marco reads every post and replies right here.</p>
+      <div class="bd-compose">
+        <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional)">
+        <textarea id="frInput" class="fr-input" maxlength="500" rows="3" placeholder="Ask a question or request a feature&hellip;"></textarea>
+        <div class="bd-composerow">
+          <span id="frCount" class="fr-count">0/500</span>
+          <button id="frSubmit" class="fr-submit" type="button" disabled>Post</button>
+        </div>
       </div>
       <div id="frMsg" class="fr-msg" role="alert"></div>
+      <div class="bd-sort" id="bdSort">
+        <button type="button" class="bd-sortbtn bd-sortbtn--on" data-sort="top">TOP</button>
+        <button type="button" class="bd-sortbtn" data-sort="new">NEW</button>
+        <button type="button" class="bd-sortbtn" data-sort="answered">ANSWERED</button>
+      </div>
       <div id="frList" class="fr-list"></div>
     </div>
 
@@ -9678,33 +9722,26 @@ function submitFeedback(e) {
 }
 
 // ============================================================
-// FEATURE REQUESTS - community idea board (submit + upvote).
-// Backend: Supabase RPCs submit_feature_request / vote_feature_request /
-// list_feature_requests. Same anon-key REST /rpc pattern as the rest of the app;
-// device id reuses the analytics 'swim_device_id' in localStorage. Never throws
-// into the UI - failures surface as a small inline message, never an alert().
+// THE BOARD - public Q&A. Submit + upvote (unchanged Supabase RPCs) plus a
+// PostgREST embed that carries the new columns (name/status/pinned) and Marco's
+// threaded replies. Admin mode (?board=1) posts replies / sets status / pins /
+// hides / trashes replies through the Worker, gated by a session-only passphrase.
+// Never throws into the UI - failures surface as a small inline message.
 // ============================================================
 (function () {
   function sbURL(){ return (typeof BB_SUPABASE_URL !== 'undefined') ? BB_SUPABASE_URL : ''; }
   function sbKEY(){ return (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : ''; }
+  var BOARD_WORKER = 'https://bold-rain-6ded.sticasale.workers.dev';
   function $(id){ return document.getElementById(id); }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
 
-  // ---- basic foul-language filter -----------------------------------------
-  // Client-side guard (index.html has no server hook): blocks obvious profanity
-  // on submit — with light leetspeak/character normalisation so sh1t, f4g, a$$
-  // are caught too — and masks anything that reaches the board another way
-  // (e.g. a direct API call) on display. Word-boundary matched, so it does NOT
-  // trip on legit words like class, bass, assign, grape, cockpit. A determined
-  // user can still bypass a client filter; real enforcement needs a server check.
+  // ---- basic foul-language filter (unchanged) -----------------------------
   var FR_WORDS = ['anal','anus','arse','arsehole','ass','asshole','asshat','asswipe',
     'bastard','bitch','blowjob','bollocks','boner','bullshit','clit','cock','cocksucker',
     'cunt','dick','dickhead','dildo','douchebag','fag','faggot','fuck','fucker','fucking',
     'goddamn','handjob','jizz','motherfucker','nigga','nigger','piss','porn','prick',
     'pussy','rape','retard','shit','shithead','slut','tit','tits','twat','wank','wanker','whore'];
-  // Each char may repeat (f+u+c+k+) so elongation is caught (fuuuck) without
-  // collapsing the double letters that real wordlist entries need (ass, faggot).
   var FR_SRC = '\\b(' + FR_WORDS.map(function (w) { return w.split('').join('+') + '+'; }).join('|') + ')\\b';
   function frNorm(s){
     return String(s == null ? '' : s).toLowerCase()
@@ -9735,68 +9772,234 @@ function submitFeedback(e) {
       headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {})
     });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    if (!r.ok) { var e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
     return r.json();
   }
 
-  // ---- the three helpers -------------------------------------------------
-  async function featureList(){ return rpc('list_feature_requests', { p_device: frDevice() }); }
-  async function featureSubmit(body){
-    var b = (body == null ? '' : String(body)).trim();      // btrim
-    if (b.length === 0 || b.length > 50) return Promise.reject(new Error('length'));
+  // Relative time, self-contained (mirrors visAgo but takes an ISO string).
+  function relTime(iso){
+    var t = Date.parse(iso); if (isNaN(t)) return '';
+    var m = Math.max(0, Math.floor((Date.now() - t) / 60000));
+    if (m < 1) return 'just now';
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    var d = Math.floor(h / 24);
+    if (d < 7) return d + 'd ago';
+    return Math.floor(d / 7) + 'w ago';
+  }
+
+  // ---- READ ---------------------------------------------------------------
+  // list_feature_requests keeps the existing vote-count + per-device 'voted'
+  // logic (the only source that clears RLS on feature_votes); the PostgREST
+  // embed adds the new columns and the threaded replies in one call. Merge by id.
+  async function boardFetch(){
+    var votesP = rpc('list_feature_requests', { p_device: frDevice() }).catch(function(){ return []; });
+    var embedURL = sbURL() + '/rest/v1/feature_requests' +
+      '?select=*,feature_replies(id,body,created_at)' +
+      '&hidden=eq.false&order=pinned.desc,created_at.desc';
+    var embedP = fetch(embedURL, {
+      headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY() }
+    }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+
+    var res = await Promise.all([embedP, votesP]);
+    var posts = Array.isArray(res[0]) ? res[0] : [];
+    var vmap = {};
+    (Array.isArray(res[1]) ? res[1] : []).forEach(function(v){ vmap[v.id] = v; });
+    return posts.map(function(p){
+      var vm = vmap[p.id] || {};
+      var replies = Array.isArray(p.feature_replies) ? p.feature_replies.slice() : [];
+      replies.sort(function(a,b){ return Date.parse(a.created_at) - Date.parse(b.created_at); });
+      return {
+        id: p.id, name: p.name, body: p.body,
+        status: (p.status || 'open'), pinned: !!p.pinned,
+        created_at: p.created_at,
+        votes: (vm.votes != null ? vm.votes : 0), voted: !!vm.voted,
+        replies: replies
+      };
+    });
+  }
+
+  // ---- WRITE: submit (existing 2-arg RPC keeps rate-limit + auto-upvote) ---
+  async function featureSubmit(body, name){
+    var b = (body == null ? '' : String(body)).trim();
+    if (b.length === 0 || b.length > 500) return Promise.reject(new Error('length'));
     if (frFoul(b)) return Promise.reject(new Error('foul'));
-    return rpc('submit_feature_request', { p_body: b, p_device: frDevice() });
+    var nm = (name == null ? '' : String(name)).trim().slice(0, 24);
+    // Forward-compatible: try the 3-arg RPC so the name persists the moment the
+    // backend gains an optional p_name. If it is still 2-arg, that call 404s
+    // (PGRST202) and we fall back so posting always works. The name also always
+    // reaches Marco via /notify-board (below), regardless of this outcome.
+    try {
+      return await rpc('submit_feature_request', { p_body: b, p_device: frDevice(), p_name: (nm || null) });
+    } catch (e) {
+      if (e && e.status === 404) return rpc('submit_feature_request', { p_body: b, p_device: frDevice() });
+      throw e;
+    }
   }
   async function featureVote(id){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice() }); }
-  window.featureList = featureList; window.featureSubmit = featureSubmit; window.featureVote = featureVote;
+
+  // Fire-and-forget notify; a failure here must never surface (post is saved).
+  function notifyBoard(name, body){
+    try {
+      fetch(BOARD_WORKER + '/notify-board', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: (name || null), body: body })
+      }).catch(function(){});
+    } catch (e) {}
+  }
+
+  // ---- ADMIN (?board=1) — passphrase held in session memory only ----------
+  var BOARD_ADMIN = location.search.indexOf('board=1') !== -1;
+  var _boardPass = null;                       // NEVER localStorage
+  function ensurePass(force){
+    if (force) _boardPass = null;
+    if (!_boardPass) {
+      var p = ''; try { p = window.prompt('Board admin passphrase:'); } catch (e) { p = ''; }
+      _boardPass = (p == null ? '' : p);
+    }
+    return _boardPass;
+  }
+  async function boardAdmin(path, payload){
+    var pass = ensurePass(false);
+    if (!pass) throw new Error('no-pass');
+    var r = await fetch(BOARD_WORKER + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': pass },
+      body: JSON.stringify(payload)
+    });
+    if (r.status === 401) { _boardPass = null; throw new Error('unauthorised'); }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json().catch(function(){ return {}; });
+  }
+  async function adminAction(path, payload){
+    try { return await boardAdmin(path, payload); }
+    catch (e) {
+      if (e && e.message === 'unauthorised') { ensurePass(true); return boardAdmin(path, payload); }
+      throw e;
+    }
+  }
 
   // ---- UI ----------------------------------------------------------------
+  var _sort = 'top';
+  var _cache = [];
+  function findPost(id){ for (var i=0;i<_cache.length;i++){ if (_cache[i].id === id) return _cache[i]; } return null; }
   function setMsg(t){ var m = $('frMsg'); if (m) { m.textContent = t || ''; m.style.display = t ? 'block' : 'none'; } }
 
   function updateCounter(){
     var inp = $('frInput'); if (!inp) return;
     var len = inp.value.trim().length;
-    var c = $('frCount'); if (c) c.textContent = inp.value.length + '/50';
-    var btn = $('frSubmit'); if (btn) btn.disabled = (len === 0 || len > 50);
+    var c = $('frCount'); if (c) c.textContent = inp.value.length + '/500';
+    var btn = $('frSubmit'); if (btn) btn.disabled = (len === 0 || len > 500);
   }
 
-  function renderList(rows){
-    var box = $('frList'); if (!box) return;
-    if (!Array.isArray(rows) || !rows.length){
-      box.innerHTML = '<div class="fr-empty">No ideas yet — add the first.</div>'; return;
-    }
-    box.innerHTML = rows.map(function (x) {
-      var on = x.voted ? ' fr-pill--on' : '';
-      return '<div class="fr-item">' +
-        '<button type="button" class="fr-pill' + on + '" data-id="' + esc(x.id) + '" ' +
-          'aria-pressed="' + (x.voted ? 'true' : 'false') + '" aria-label="Upvote this idea">' +
-          '<span class="fr-arrow" aria-hidden="true">▲</span>' +
-          '<span class="fr-votes">' + esc(x.votes) + '</span>' +
-        '</button>' +
-        '<span class="fr-body">' + esc(frMask(x.body)) + '</span>' +
-      '</div>';
+  function sortPosts(posts){
+    var arr = posts.slice();
+    if (_sort === 'answered') arr = arr.filter(function(p){ return p.status && p.status !== 'open'; });
+    arr.sort(function(a, b){
+      if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);   // pinned first
+      if (_sort === 'top') {
+        if (b.votes !== a.votes) return b.votes - a.votes;
+        return Date.parse(b.created_at) - Date.parse(a.created_at);
+      }
+      return Date.parse(b.created_at) - Date.parse(a.created_at);                       // new / answered
+    });
+    return arr;
+  }
+
+  function statusTag(st){
+    var s = (st === 'answered' || st === 'shipped') ? st : 'open';
+    return '<span class="bd-status bd-status--' + s + '">' + s.toUpperCase() + '</span>';
+  }
+
+  function replyHTML(r, postId, adminOn){
+    var trash = adminOn
+      ? '<button type="button" class="bd-reply-trash" data-post="' + esc(postId) + '" data-del="' + esc(r.id) + '" aria-label="Delete reply">\u{1F5D1}</button>'
+      : '';
+    return '<div class="bd-reply">' +
+      '<div class="bd-reply-head">' +
+        '<img class="bd-avatar" src="images/marco2.png" alt="Marco" width="26" height="26">' +
+        '<span class="bd-marco">MARCO</span>' +
+        '<span class="bd-viz">VIZ</span>' +
+        '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
+      '</div>' +
+      '<div class="bd-reply-body">' + esc(r.body) + '</div>' +
+    '</div>';
+  }
+
+  function adminHTML(p){
+    var statusBtns = ['open','answered','shipped'].map(function(s){
+      var on = (p.status || 'open') === s ? ' bd-abtn--on' : '';
+      return '<button type="button" class="bd-abtn' + on + '" data-status="' + s + '" data-id="' + esc(p.id) + '">' + s.toUpperCase() + '</button>';
     }).join('');
+    return '<div class="bd-admin">' +
+      '<textarea data-reply="' + esc(p.id) + '" placeholder="Reply as Marco…"></textarea>' +
+      '<div class="bd-admin-row">' +
+        '<button type="button" class="bd-abtn bd-abtn--send" data-send="' + esc(p.id) + '">SEND REPLY</button>' +
+        '<button type="button" class="bd-abtn" data-pin="' + esc(p.id) + '">' + (p.pinned ? 'UNPIN' : 'PIN') + '</button>' +
+        '<button type="button" class="bd-abtn bd-abtn--danger" data-hide="' + esc(p.id) + '">HIDE</button>' +
+      '</div>' +
+      '<div class="bd-admin-row"><span class="bd-alabel">STATUS</span>' + statusBtns + '</div>' +
+    '</div>';
+  }
+
+  function cardHTML(p, adminOn){
+    var nm = (p.name && String(p.name).trim()) ? esc(frMask(String(p.name).trim())) : 'Anonymous';
+    var pin = p.pinned ? '<span class="bd-pin" aria-label="Pinned">\u{1F4CC}</span>' : '';
+    var replies = (p.replies && p.replies.length)
+      ? '<div class="bd-replies">' + p.replies.map(function(r){ return replyHTML(r, p.id, adminOn); }).join('') + '</div>'
+      : '';
+    var onv = p.voted ? ' fr-pill--on' : '';
+    var vote = '<button type="button" class="fr-pill' + onv + '" data-id="' + esc(p.id) + '" ' +
+        'aria-pressed="' + (p.voted ? 'true' : 'false') + '" aria-label="Upvote this post">' +
+        '<span class="fr-arrow" aria-hidden="true">▲</span>' +
+        '<span class="fr-votes">' + esc(p.votes) + '</span>' +
+      '</button>';
+    return '<div class="bd-card' + (p.pinned ? ' bd-card--pinned' : '') + '">' +
+      '<div class="bd-meta">' + pin +
+        '<span class="bd-name">' + nm + '</span>' +
+        '<span class="bd-time">' + esc(relTime(p.created_at)) + '</span>' +
+      '</div>' +
+      '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + replies +
+      '<div class="bd-foot">' + vote + statusTag(p.status) + '</div>' +
+      (adminOn ? adminHTML(p) : '') +
+    '</div>';
+  }
+
+  function renderList(){
+    var box = $('frList'); if (!box) return;
+    var posts = sortPosts(_cache);
+    if (!posts.length){
+      box.innerHTML = '<div class="fr-empty">' +
+        (_sort === 'answered' ? 'No answered posts yet.' : 'Nothing on the board yet — post the first.') +
+        '</div>';
+      return;
+    }
+    box.innerHTML = posts.map(function(p){ return cardHTML(p, BOARD_ADMIN); }).join('');
   }
 
   async function refresh(){
-    try { renderList(await featureList()); }
-    catch (e) { var box = $('frList'); if (box && !box.children.length) box.innerHTML = '<div class="fr-empty">Couldn’t load ideas.</div>'; }
+    try { _cache = await boardFetch(); renderList(); }
+    catch (e) { var box = $('frList'); if (box && !box.children.length) box.innerHTML = '<div class="fr-empty">Couldn’t load the board.</div>'; }
   }
 
   async function doSubmit(){
     var inp = $('frInput'); if (!inp) return;
     var body = inp.value.trim();
-    if (body.length === 0 || body.length > 50) return;
+    var nameEl = $('frName');
+    var name = nameEl ? nameEl.value.trim() : '';
+    if (body.length === 0 || body.length > 500) return;
     if (frFoul(body)) { setMsg('Please keep it clean — remove the language and try again.'); return; }
     var btn = $('frSubmit'); if (btn) btn.disabled = true;
     setMsg('');
     try {
-      await featureSubmit(body);
-      inp.value = ''; updateCounter();
+      await featureSubmit(body, name);
+      notifyBoard(name, body);
+      inp.value = ''; if (nameEl) nameEl.value = ''; updateCounter();
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
       await refresh();
     } catch (e) {
-      setMsg('Couldn’t submit — you may be posting too fast. Try again shortly.');
+      setMsg('Couldn’t post — you may be posting too fast. Try again shortly.');
       updateCounter();
     }
   }
@@ -9805,6 +10008,8 @@ function submitFeedback(e) {
     try {
       var res = await featureVote(id);
       var d = Array.isArray(res) ? (res[0] || {}) : (res || {});
+      var post = findPost(id);
+      if (post){ if (d.voted != null) post.voted = !!d.voted; if (d.votes != null) post.votes = d.votes; }
       var list = $('frList');
       var pill = list ? list.querySelector('.fr-pill[data-id="' + id + '"]') : null;
       if (pill){
@@ -9815,23 +10020,71 @@ function submitFeedback(e) {
     } catch (e) { setMsg('Couldn’t register your vote.'); }
   }
 
+  function adminErr(e){
+    if (e && e.message === 'unauthorised') setMsg('Passphrase rejected — try again.');
+    else if (e && e.message === 'no-pass') { /* cancelled — stay quiet */ }
+    else setMsg('Action failed — try again.');
+  }
+  async function doReply(id){
+    if (isNaN(id)) return;
+    var ta = document.querySelector('#frList textarea[data-reply="' + id + '"]');
+    var body = ta ? ta.value.trim() : '';
+    if (!body){ setMsg('Write a reply first.'); return; }
+    try { await adminAction('/board-reply', { post_id: id, body: body }); setMsg(''); await refresh(); }
+    catch (e){ adminErr(e); }
+  }
+  async function doStatus(id, patch){
+    if (isNaN(id)) return;
+    try { await adminAction('/board-status', Object.assign({ post_id: id }, patch)); setMsg(''); await refresh(); }
+    catch (e){ adminErr(e); }
+  }
+  async function doTrash(postId, delId){
+    if (isNaN(postId) || isNaN(delId)) return;
+    try { await adminAction('/board-reply', { post_id: postId, delete_id: delId }); setMsg(''); await refresh(); }
+    catch (e){ adminErr(e); }
+  }
+
+  function onListClick(e){
+    var t = e.target; if (!t || !t.closest) return;
+    var pill = t.closest('.fr-pill');
+    if (pill){ var vid = parseInt(pill.getAttribute('data-id'), 10); if (!isNaN(vid)) doVote(vid); return; }
+    if (!BOARD_ADMIN) return;
+    var send = t.closest('[data-send]');
+    if (send){ doReply(parseInt(send.getAttribute('data-send'), 10)); return; }
+    var pinb = t.closest('[data-pin]');
+    if (pinb){ var pid = parseInt(pinb.getAttribute('data-pin'), 10); var pp = findPost(pid); doStatus(pid, { pinned: pp ? !pp.pinned : true }); return; }
+    var hideb = t.closest('[data-hide]');
+    if (hideb){ doStatus(parseInt(hideb.getAttribute('data-hide'), 10), { hidden: true }); return; }
+    var stat = t.closest('[data-status]');
+    if (stat){ doStatus(parseInt(stat.getAttribute('data-id'), 10), { status: stat.getAttribute('data-status') }); return; }
+    var del = t.closest('[data-del]');
+    if (del){ doTrash(parseInt(del.getAttribute('data-post'), 10), parseInt(del.getAttribute('data-del'), 10)); return; }
+  }
+
   function wire(){
     var inp = $('frInput'); if (!inp || inp._frWired) return;
     inp._frWired = true;
     inp.addEventListener('input', updateCounter);
     inp.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { e.preventDefault(); var b = $('frSubmit'); if (b && !b.disabled) doSubmit(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var b = $('frSubmit'); if (b && !b.disabled) doSubmit(); }
     });
+    var nm = $('frName');
+    if (nm) nm.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); inp.focus(); } });
     var btn = $('frSubmit'); if (btn) btn.addEventListener('click', doSubmit);
-    var list = $('frList');
-    if (list) list.addEventListener('click', function (e) {
-      var pill = e.target && e.target.closest ? e.target.closest('.fr-pill') : null;
-      if (!pill) return;
-      var id = parseInt(pill.getAttribute('data-id'), 10);
-      if (!isNaN(id)) doVote(id);
+    var list = $('frList'); if (list) list.addEventListener('click', onListClick);
+    var sort = $('bdSort');
+    if (sort) sort.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('.bd-sortbtn') : null;
+      if (!b) return;
+      _sort = b.getAttribute('data-sort') || 'top';
+      Array.prototype.forEach.call(sort.querySelectorAll('.bd-sortbtn'), function (x) {
+        x.classList.toggle('bd-sortbtn--on', x === b);
+      });
+      renderList();
     });
     updateCounter();
-    refresh();
+    refresh();                                 // render the board first…
+    if (BOARD_ADMIN) ensurePass(false);        // …then prompt once on entry
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
@@ -11058,7 +11311,7 @@ if ('serviceWorker' in navigator) {
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', essential:0, complete:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', essential:0, complete:1 },
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', essential:0, complete:1 },
-    { key:'featurerequests', label:"Feature requests", sel:'#featureCard', essential:0, complete:1 }
+    { key:'featurerequests', label:"The Board", sel:'#featureCard', essential:0, complete:1 }
   ];
   var MODE_KEY = 'swim_app_mode';            // 'essential' | 'complete' | 'custom'
   // MODE_KEY is re-stamped on every load to refresh its 400-day cookie clock, so
