@@ -6121,6 +6121,25 @@ function renderSnapshot(h, wx) {
     return false;
   }
   const result = calcScore(h);
+  // Tide-corrected shore-break height at the ramp — drives the Entry readout and
+  // dot. Fold the model's own tide term (high water lets more swell past the
+  // headland — the static NS node can't see it) into the transmit, combine swell +
+  // wind-sea in energy, then Komar & Gaughan (1972) to a breaking height. Display
+  // only: classification/bands stay on the demerit, unchanged.
+  const _entryBreakH = (function () {
+    var g = 9.81, cl = function (v) { return Math.max(0, Math.min(1, v)); };
+    var ref = (SITE.tideRef != null ? SITE.tideRef : 0.7);
+    var dT = Math.max(0, (h.tideM != null ? h.tideM : ref) - ref);
+    var gain = SITE.tideGain || 0;
+    var tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
+    var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
+    var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
+    var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
+    var Es = (h.swell1H || 0) * (h.swell1H || 0) * (h.swell1P || 8) * nsTx * (1 + gain * dT * tg(h.swell1Dir));
+    var Ew = (h.windWaveH || 0) * (h.windWaveH || 0) * (h.windWaveP || 8) * wwTx * (1 + gain * dT * tg(wwDir));
+    var E = Es + Ew;
+    return E > 0 ? 0.39 * Math.pow(g, 0.2) * Math.pow(E, 0.4) : 0;
+  })();
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   setNsFallbackBanner(!h._nsFeed);   // show backup banner when this hour isn't NS-fed
@@ -6209,9 +6228,16 @@ function renderSnapshot(h, wx) {
   const enT = SITE.entryThresholds;
   const enEnd = enT.scaleMax > 0 ? enT.scaleMax : 60;
   const entryRaw = result.entry.raw ?? Math.max(0, 60 - result.entry.score);
-  setTrackDot('metricEntryDot',
-    bandedPct(entryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]),
-    clsColor(result.entry.cls));
+  // Dot driven by the tide-corrected shore-break height on its own scale (big days
+  // spread instead of pinning at 100%); colour/band still from the demerit
+  // (result.entry.cls), so the classification is unchanged. Height edges [1.3/1.7/2.0]
+  // reproduce the current demerit bands; 3.0 m scaleMax spreads the red zone.
+  (function () {
+    var bi = result.entry.cls === 'red' ? 3 : result.entry.cls === 'yellow' ? 2 : result.entry.cls === 'amber' ? 1 : 0;
+    var p = bandedPct(_entryBreakH, [0, 1.3, 1.7, 2.0, 3.0]);
+    p = Math.min(bi * 25 + 24.5, Math.max(bi * 25 + 0.5, p));   // keep the dot inside its band's slice
+    setTrackDot('metricEntryDot', p, clsColor(result.entry.cls));
+  })();
 
   // Swim — DEMERIT scale (q7, lower=better). Bands ascend 0 → scaleMax.
   const swT = SITE.swimThresholds;
@@ -6286,23 +6312,18 @@ function renderSnapshot(h, wx) {
   })();
 
 
-  // Append a physical readout to each classification: ramp swell height (Entry),
-  // chop steep-face height in cm (Chop), bay swell height (Surge). Ramp/bay use the
-  // SS/BL shelter-dispersion residual (H_mouth*sqrt(transmit)) — same as the swell card.
+  // Physical readout on each classification: Entry shows the tide-corrected shore-
+  // break height as the number (so big days stop pinning at "0"); Chop shows the
+  // steep-face height in cm; Surge shows the bay swell height.
   (function () {
     const S = (typeof SITE !== 'undefined') ? SITE : null;
     const Hm = h.swell1H || 0;
     const cx = (v) => Math.max(0, Math.min(1, v));
-    const rampH = (Hm > 0 && S && S.nsDisp) ? Hm * Math.sqrt(cx(nsDispLookup(h.swell1Dir, h.swell1P))) : Hm;
     const bayH  = (Hm > 0 && S && S.blDisp) ? Hm * Math.sqrt(cx(blDispLookup(h.swell1Dir, h.swell1P))) : Hm;
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
-    // Breaking-wave (shore-break) height at the ramp: the ramp swell shoals and
-    // breaks in the shallows, so the break is bigger than the arriving swell — that
-    // break is what a swimmer faces at entry, and why the plain ramp height reads low.
-    // Komar & Gaughan (1972): Hb = 0.39 * g^0.2 * (T * H^2)^0.4 (H = ramp residual, T = period).
-    const Tp = h.swell1P || 8;
-    const breakH = rampH > 0 ? 0.39 * Math.pow(9.81, 0.2) * Math.pow(Tp * rampH * rampH, 0.4) : 0;
-    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, breakH.toFixed(1) + ' m break');
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, '');
+    var _enS = document.getElementById('metricEntryScore');
+    if (_enS) _enS.textContent = _entryBreakH.toFixed(1) + ' m';
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m');
   })();
