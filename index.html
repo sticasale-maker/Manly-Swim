@@ -1351,8 +1351,11 @@
     font-family:'Inter',sans-serif; font-size:clamp(9px,2.6vw,11px);
     letter-spacing:0.5px; color:var(--dim);
   }
-  /* Line-2 wind readout in the merged card: slightly smaller than the swell line, amber. */
-  .chop-graph-now .h.sw-wind-h { font-size:clamp(14px,4.1vw,17px); color:#c98a2e; margin-top:3px; }
+  /* Merged card readout: direction + score on ONE line each (swell line, then wind line). */
+  .chop-graph-now .sw-line { display:flex; align-items:baseline; justify-content:flex-end; gap:6px; }
+  .chop-graph-now .sw-line + .sw-line { margin-top:3px; }
+  /* Line-2 wind readout: slightly smaller than the swell line, amber. */
+  .chop-graph-now .h.sw-wind-h { font-size:clamp(14px,4.1vw,17px); color:#c98a2e; }
   .chop-graph-now .t.sw-wind-t { font-size:clamp(8px,2.4vw,10px); }
   .chop-graph-legend .sw-wind-cap { color:#c98a2e; font-weight:600; }
   .chop-graph-canvas { width:100%; height:auto; display:block; border-radius:8px; }
@@ -2651,10 +2654,8 @@
       <div class="chop-graph-head">
         <span class="chop-graph-title">Swell + Wind · Cabbage Tree Bay</span>
         <div class="chop-graph-now">
-          <div class="h" id="swellNowDir">—</div>
-          <div class="t" id="swellNowZone">—</div>
-          <div class="h sw-wind-h" id="chopNowWind">—</div>
-          <div class="t sw-wind-t" id="chopNowZone">—</div>
+          <div class="sw-line"><span class="h" id="swellNowDir">—</span><span class="t" id="swellNowZone">—</span></div>
+          <div class="sw-line"><span class="h sw-wind-h" id="chopNowWind">—</span><span class="t sw-wind-t" id="chopNowZone">—</span></div>
         </div>
       </div>
       <canvas class="chop-graph-canvas" id="swellCanvas" aria-label="Swell refracting around the headland into Cabbage Tree Bay, with the forecast wind direction, for the selected hour"></canvas>
@@ -10990,7 +10991,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   var ORIGIN = { x: 0.690, y: 0.400 };   // diffraction turning point, just off the Bower headland tip
 
   // ---- baked-in arrow-diffraction config (tuned in the standalone simulator) ----
-  var GAIN = 1.70, PINF = 0.50, CUT = 3, DENS = 9, SIZEN = 0.05, THICK = 3.0, HEADBAND = 12, SPEED = 1.0;
+  var GAIN = 1.70, PINF = 0.50, CUT = 3, DENS = 9, SIZEN = 0.08, THICK = 3.5, HEADBAND = 12, SPEED = 1.0;
   var SWELL_FULL = 60;   // forecast swellPower (~2 m / 12 s) at which open-water arrows hit full strength; lower = small swells render bigger
   function swPower(h, p) { return h * h * Math.pow(Math.max(p, 1), 1.1); }
 
@@ -11149,9 +11150,12 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = 'italic 400 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
     ctx.fillText('Cabbage Tree Bay', 0.38 * W, 0.32 * H);
     ctx.textAlign = 'left';
-    // Wind arrow (amber) + N compass on top of the swell basemap. Wind blows TOWARD (windDir+180).
+    // Direction vectors on top of the basemap. Swell = blue (global offshore dir,
+    // BEFORE refraction = raw _sw); wind = amber. Both point where the wave/wind travels TO.
+    var _st = (_sw + 180) * Math.PI / 180, _sdx = Math.sin(_st), _sdy = -Math.cos(_st);
+    drawSwellArrow(_sdx, _sdy);
     var _wt = (_windDir + 180) * Math.PI / 180, _wdx = Math.sin(_wt), _wdy = -Math.cos(_wt);
-    drawWindArrow(_wdx, _wdy); drawCompass();
+    drawWindArrow(_wdx, _wdy);
   }
 
   var W = 0, H = 0, dpr = 1, PHASE = 0, _lastTs = 0;
@@ -11174,15 +11178,21 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.stroke();
     ctx.restore();
   }
-  function drawCompass() {
-    var cx = 0.95 * W, cy = 0.15 * H, r = 0.028 * W;
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.beginPath(); ctx.moveTo(cx, cy - r * 0.9); ctx.lineTo(cx - r * 0.35, cy); ctx.lineTo(cx + r * 0.35, cy); ctx.closePath(); ctx.fill();
-    var fp = Math.max(11, 0.024 * W);
-    ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('N', cx, cy - r - fp * 0.7); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  // Global swell-direction vector (blue) — same geometry as the wind arrow, offset so
+  // they don't overlap. Uses the raw offshore swell dir (_sw), i.e. BEFORE refraction.
+  function drawSwellArrow(dx, dy) {
+    var ax = 0.66 * W, ay = 0.15 * H, L = 0.12 * W;
+    ctx.save();
+    ctx.fillStyle = 'rgba(6,40,55,0.32)'; ctx.beginPath(); ctx.arc(ax, ay, L * 0.62, 0, Math.PI * 2); ctx.fill();
+    var ex = ax + dx * L * 0.5, ey = ay + dy * L * 0.5, sx = ax - dx * L * 0.5, sy = ay - dy * L * 0.5;
+    ctx.strokeStyle = '#4d9dff'; ctx.lineWidth = Math.max(2, 0.009 * W); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    var ang = Math.atan2(dy, dx), hl = 0.038 * W;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang - 0.4) * hl, ey - Math.sin(ang - 0.4) * hl);
+    ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang + 0.4) * hl, ey - Math.sin(ang + 0.4) * hl);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // ── Wind-chop overlay (restored) — the animated Calmer→Choppier surface field from
