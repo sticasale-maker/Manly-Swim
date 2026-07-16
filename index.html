@@ -2713,10 +2713,21 @@
       #featureCard .bd-abtn--on{background:var(--deep);color:#fff;border-color:var(--deep);}
       #featureCard .bd-abtn--danger{border-color:var(--red);color:var(--red);}
       #featureCard .bd-alabel{font-family:'Inter',sans-serif;font-size:11px;color:var(--dim);letter-spacing:.5px;margin-right:2px;}
+      /* User replies: softer left border + plain name, so Marco's ocean-blue reply stays visually distinct */
+      #featureCard .bd-reply--user{border-left-color:rgba(17,53,65,0.18);}
+      #featureCard .bd-uname{font-weight:700;color:var(--deep);font-size:13px;}
+      /* Everyone-can-reply composer, revealed by the per-card "Reply" toggle */
+      #featureCard .bd-replybtn{align-self:flex-start;margin-top:8px;background:none;border:none;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;padding:2px 0;-webkit-tap-highlight-color:transparent;}
+      #featureCard .bd-replybox{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+      #featureCard .bd-replybox .bd-rname,#featureCard .bd-replybox .bd-rinput{background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:9px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;}
+      #featureCard .bd-replybox textarea.bd-rinput{min-height:52px;resize:vertical;line-height:1.4;}
+      #featureCard .bd-rrow{display:flex;justify-content:flex-end;}
+      #featureCard .bd-rsend{flex:none;padding:8px 16px;background:var(--ocean);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
+      #featureCard .bd-rsend:disabled{opacity:.45;cursor:not-allowed;}
     </style>
     <div class="about-panel" id="featureCard" style="padding:20px;margin:10px 0;">
       <p class="bd-head">THE BOARD</p>
-      <p class="bd-lede">Ask a question, request a feature, or flag what&rsquo;s not working. Your post is visible to everyone; we read every one and reply right here.</p>
+      <p class="bd-lede">Ask a question, request a feature, or flag what&rsquo;s not working. Every post is public &mdash; anyone can reply, and we read every one and answer right here.</p>
       <div class="bd-compose">
         <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional)">
         <textarea id="frInput" class="fr-input" maxlength="500" rows="3" placeholder="Ask a question or request a feature&hellip;"></textarea>
@@ -9891,6 +9902,11 @@ function submitFeedback(e) {
     } catch (e) { return '00000000-0000-4000-8000-000000000000'; }
   }
 
+  // Remember the display name across posts/replies so a returning user doesn't
+  // retype it (purely a convenience; the name is never a verified identity).
+  function savedName(){ try { return localStorage.getItem('swim_board_name') || ''; } catch (e) { return ''; } }
+  function rememberName(n){ try { var v = (n == null ? '' : String(n)).trim().slice(0, 24); if (v) localStorage.setItem('swim_board_name', v); } catch (e) {} }
+
   async function rpc(fn, body){
     var r = await fetch(sbURL() + '/rest/v1/rpc/' + fn, {
       method: 'POST',
@@ -9921,7 +9937,7 @@ function submitFeedback(e) {
   async function boardFetch(){
     var votesP = rpc('list_feature_requests', { p_device: frDevice() }).catch(function(){ return []; });
     var embedURL = sbURL() + '/rest/v1/feature_requests' +
-      '?select=*,feature_replies(id,body,created_at)' +
+      '?select=*,feature_replies(id,body,created_at,author_role,name)' +
       '&hidden=eq.false&order=pinned.desc,created_at.desc';
     var embedP = fetch(embedURL, {
       headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY() }
@@ -9963,6 +9979,15 @@ function submitFeedback(e) {
     }
   }
   async function featureVote(id){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice() }); }
+
+  // ---- WRITE: user reply (anon RPC; author_role stamped 'user' server-side) --
+  async function featureReply(postId, body, name){
+    var b = (body == null ? '' : String(body)).trim();
+    if (b.length === 0 || b.length > 500) return Promise.reject(new Error('length'));
+    if (frFoul(b)) return Promise.reject(new Error('foul'));
+    var nm = (name == null ? '' : String(name)).trim().slice(0, 24);
+    return rpc('submit_feature_reply', { p_post_id: postId, p_body: b, p_device: frDevice(), p_name: (nm || null) });
+  }
 
   // Fire-and-forget notify; a failure here must never surface (post is saved).
   function notifyBoard(name, body){
@@ -10041,6 +10066,19 @@ function submitFeedback(e) {
     var trash = adminOn
       ? '<button type="button" class="bd-reply-trash" data-post="' + esc(postId) + '" data-del="' + esc(r.id) + '" aria-label="Delete reply">\u{1F5D1}</button>'
       : '';
+    // User replies: plain name (masked) + softened border. Body is masked too,
+    // since a visitor wrote it. Marco's replies (author_role 'admin', the column
+    // default) keep the avatar/VIZ badge and an unmasked, trusted body.
+    if (r.author_role === 'user'){
+      var un = (r.name && String(r.name).trim()) ? esc(frMask(String(r.name).trim())) : 'Anonymous';
+      return '<div class="bd-reply bd-reply--user">' +
+        '<div class="bd-reply-head">' +
+          '<span class="bd-uname">' + un + '</span>' +
+          '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
+        '</div>' +
+        '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' +
+      '</div>';
+    }
     return '<div class="bd-reply">' +
       '<div class="bd-reply-head">' +
         '<img class="bd-avatar" src="images/marco2.png" alt="Marco" width="26" height="26">' +
@@ -10080,12 +10118,21 @@ function submitFeedback(e) {
         '<span class="fr-arrow" aria-hidden="true">▲</span>' +
         '<span class="fr-votes">' + esc(p.votes) + '</span>' +
       '</button>';
+    // Everyone-can-reply composer (collapsed). Admins reply as Marco via the
+    // admin panel below instead, so it's hidden for them to avoid two composers.
+    var replyUI = adminOn ? '' :
+      '<button type="button" class="bd-replybtn" data-replytoggle="' + esc(p.id) + '">Reply</button>' +
+      '<div class="bd-replybox" data-replybox="' + esc(p.id) + '" hidden>' +
+        '<input type="text" class="bd-rname" maxlength="24" autocomplete="off" placeholder="Your name (optional)" value="' + esc(savedName()) + '">' +
+        '<textarea class="bd-rinput" maxlength="500" rows="2" placeholder="Write a reply&hellip;"></textarea>' +
+        '<div class="bd-rrow"><button type="button" class="bd-rsend" data-rsend="' + esc(p.id) + '">Reply</button></div>' +
+      '</div>';
     return '<div class="bd-card' + (p.pinned ? ' bd-card--pinned' : '') + '">' +
       '<div class="bd-meta">' + pin +
         '<span class="bd-name">' + nm + '</span>' +
         '<span class="bd-time">' + esc(relTime(p.created_at)) + '</span>' +
       '</div>' +
-      '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + replies +
+      '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + replies + replyUI +
       '<div class="bd-foot">' + vote + statusTag(p.status) + '</div>' +
       (adminOn ? adminHTML(p) : '') +
     '</div>';
@@ -10119,6 +10166,7 @@ function submitFeedback(e) {
     setMsg('');
     try {
       await featureSubmit(body, name);
+      rememberName(name);
       notifyBoard(name, body);
       inp.value = ''; if (nameEl) nameEl.value = ''; updateCounter();
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
@@ -10143,6 +10191,31 @@ function submitFeedback(e) {
         var v = pill.querySelector('.fr-votes'); if (v && d.votes != null) v.textContent = d.votes;
       }
     } catch (e) { setMsg('Couldn’t register your vote.'); }
+  }
+
+  // Public reply (any visitor). Body/name read from the card's own composer.
+  async function doUserReply(id){
+    if (isNaN(id)) return;
+    var list = $('frList'); if (!list) return;
+    var box = list.querySelector('.bd-replybox[data-replybox="' + id + '"]');
+    if (!box) return;
+    var ta = box.querySelector('.bd-rinput');
+    var nameEl = box.querySelector('.bd-rname');
+    var body = ta ? ta.value.trim() : '';
+    var name = nameEl ? nameEl.value.trim() : '';
+    if (!body){ setMsg('Write a reply first.'); return; }
+    if (frFoul(body)){ setMsg('Please keep it clean — remove the language and try again.'); return; }
+    var sendBtn = box.querySelector('.bd-rsend'); if (sendBtn) sendBtn.disabled = true;
+    setMsg('');
+    try {
+      await featureReply(id, body, name);
+      rememberName(name);
+      try { if (window.track) window.track('feedback', {}); } catch (e) {}
+      await refresh();                         // rebuilds the card → composer collapses, reply shows
+    } catch (e) {
+      setMsg('Couldn’t post your reply — you may be replying too fast. Try again shortly.');
+      if (sendBtn) sendBtn.disabled = false;
+    }
   }
 
   function adminErr(e){
@@ -10173,6 +10246,16 @@ function submitFeedback(e) {
     var t = e.target; if (!t || !t.closest) return;
     var pill = t.closest('.fr-pill');
     if (pill){ var vid = parseInt(pill.getAttribute('data-id'), 10); if (!isNaN(vid)) doVote(vid); return; }
+    // --- public reply controls (available to every visitor) ---
+    var rtog = t.closest('[data-replytoggle]');
+    if (rtog){
+      var rid = rtog.getAttribute('data-replytoggle');
+      var rbox = $('frList') && $('frList').querySelector('.bd-replybox[data-replybox="' + rid + '"]');
+      if (rbox){ rbox.hidden = !rbox.hidden; if (!rbox.hidden){ var rta = rbox.querySelector('.bd-rinput'); if (rta) rta.focus(); } }
+      return;
+    }
+    var rsend = t.closest('[data-rsend]');
+    if (rsend){ doUserReply(parseInt(rsend.getAttribute('data-rsend'), 10)); return; }
     if (!BOARD_ADMIN) return;
     var send = t.closest('[data-send]');
     if (send){ doReply(parseInt(send.getAttribute('data-send'), 10)); return; }
@@ -10194,7 +10277,10 @@ function submitFeedback(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); var b = $('frSubmit'); if (b && !b.disabled) doSubmit(); }
     });
     var nm = $('frName');
-    if (nm) nm.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); inp.focus(); } });
+    if (nm){
+      if (!nm.value) nm.value = savedName();   // prefill from a prior post/reply
+      nm.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); inp.focus(); } });
+    }
     var btn = $('frSubmit'); if (btn) btn.addEventListener('click', doSubmit);
     var list = $('frList'); if (list) list.addEventListener('click', onListClick);
     var sort = $('bdSort');
