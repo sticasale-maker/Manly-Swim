@@ -2729,7 +2729,7 @@
       <p class="bd-head">THE BOARD</p>
       <p class="bd-lede">Ask a question, request a feature, or flag what&rsquo;s not working. Every post is public &mdash; anyone can reply, and we read every one and answer right here.</p>
       <div class="bd-compose">
-        <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional)">
+        <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)">
         <textarea id="frInput" class="fr-input" maxlength="500" rows="3" placeholder="Ask a question or request a feature&hellip;"></textarea>
         <div class="bd-composerow">
           <span id="frCount" class="fr-count">0/500</span>
@@ -9907,6 +9907,21 @@ function submitFeedback(e) {
   function savedName(){ try { return localStorage.getItem('swim_board_name') || ''; } catch (e) { return ''; } }
   function rememberName(n){ try { var v = (n == null ? '' : String(n)).trim().slice(0, 24); if (v) localStorage.setItem('swim_board_name', v); } catch (e) {} }
 
+  // Stable ocean-themed pseudonym derived from the anonymous device id, so a
+  // blank-name post/reply gets a consistent handle instead of "Anonymous".
+  // Deterministic (same device → same handle every time) and baked in as the
+  // row's `name` at submit — the poster's device id isn't exposed to other
+  // viewers, so it can't be derived on read. ~400 combos; occasional collisions
+  // are fine (same footing as two people both typing "Sarah").
+  var PSEUDO_ADJ = ['Salty','Calm','Sandy','Sunny','Breezy','Chilly','Splashy','Drifty','Misty','Tidal','Coral','Rolling','Frothy','Glassy','Bold','Early','Deep','Bright','Swift','Mellow'];
+  var PSEUDO_NOUN = ['Dolphin','Seal','Turtle','Gull','Ray','Wrasse','Groper','Octopus','Cuttlefish','Bream','Whiting','Kingfish','Snapper','Blenny','Cormorant','Crab','Urchin','Starfish','Penguin','Stingray'];
+  function pseudoHash(s){ var h = 2166136261 >>> 0; s = String(s == null ? '' : s); for (var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+  function pseudoName(device){
+    var h = pseudoHash(device || frDevice());
+    return PSEUDO_ADJ[h % PSEUDO_ADJ.length] + ' ' +
+           PSEUDO_NOUN[Math.floor(h / PSEUDO_ADJ.length) % PSEUDO_NOUN.length];
+  }
+
   async function rpc(fn, body){
     var r = await fetch(sbURL() + '/rest/v1/rpc/' + fn, {
       method: 'POST',
@@ -9966,7 +9981,7 @@ function submitFeedback(e) {
     var b = (body == null ? '' : String(body)).trim();
     if (b.length === 0 || b.length > 500) return Promise.reject(new Error('length'));
     if (frFoul(b)) return Promise.reject(new Error('foul'));
-    var nm = (name == null ? '' : String(name)).trim().slice(0, 24);
+    var nm = (name == null ? '' : String(name)).trim().slice(0, 24) || pseudoName(frDevice());
     // Forward-compatible: try the 3-arg RPC so the name persists the moment the
     // backend gains an optional p_name. If it is still 2-arg, that call 404s
     // (PGRST202) and we fall back so posting always works. The name also always
@@ -9985,8 +10000,8 @@ function submitFeedback(e) {
     var b = (body == null ? '' : String(body)).trim();
     if (b.length === 0 || b.length > 500) return Promise.reject(new Error('length'));
     if (frFoul(b)) return Promise.reject(new Error('foul'));
-    var nm = (name == null ? '' : String(name)).trim().slice(0, 24);
-    return rpc('submit_feature_reply', { p_post_id: postId, p_body: b, p_device: frDevice(), p_name: (nm || null) });
+    var nm = (name == null ? '' : String(name)).trim().slice(0, 24) || pseudoName(frDevice());
+    return rpc('submit_feature_reply', { p_post_id: postId, p_body: b, p_device: frDevice(), p_name: nm });
   }
 
   // Fire-and-forget notify; a failure here must never surface (post is saved).
@@ -10123,7 +10138,7 @@ function submitFeedback(e) {
     var replyUI = adminOn ? '' :
       '<button type="button" class="bd-replybtn" data-replytoggle="' + esc(p.id) + '">Reply</button>' +
       '<div class="bd-replybox" data-replybox="' + esc(p.id) + '" hidden>' +
-        '<input type="text" class="bd-rname" maxlength="24" autocomplete="off" placeholder="Your name (optional)" value="' + esc(savedName()) + '">' +
+        '<input type="text" class="bd-rname" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)" value="' + esc(savedName()) + '">' +
         '<textarea class="bd-rinput" maxlength="500" rows="2" placeholder="Write a reply&hellip;"></textarea>' +
         '<div class="bd-rrow"><button type="button" class="bd-rsend" data-rsend="' + esc(p.id) + '">Reply</button></div>' +
       '</div>';
