@@ -6227,16 +6227,12 @@ function renderSnapshot(h, wx) {
   const enT = SITE.entryThresholds;
   const enEnd = enT.scaleMax > 0 ? enT.scaleMax : 60;
   const entryRaw = result.entry.raw ?? Math.max(0, 60 - result.entry.score);
-  // Dot driven by the tide-corrected shore-break height on its own scale (big days
-  // spread instead of pinning at 100%); colour/band still from the demerit
-  // (result.entry.cls), so the classification is unchanged. Height edges [1.3/1.7/2.0]
-  // reproduce the current demerit bands; 3.0 m scaleMax spreads the red zone.
-  (function () {
-    var bi = result.entry.cls === 'red' ? 3 : result.entry.cls === 'yellow' ? 2 : result.entry.cls === 'amber' ? 1 : 0;
-    var p = bandedPct(_entryBreakH, [0, 1.3, 1.7, 2.0, 3.0]);
-    p = Math.min(bi * 25 + 24.5, Math.max(bi * 25 + 0.5, p));   // keep the dot inside its band's slice
-    setTrackDot('metricEntryDot', p, clsColor(result.entry.cls));
-  })();
+  // Dot driven directly by the demerit total on the 0 -> scaleMax rail, same as
+  // Chop/Surge and the same scale the WW comparison tick uses. Break height is
+  // display-only (subtitle) and no longer moves the dot.
+  setTrackDot('metricEntryDot',
+    bandedPct(entryRaw, [0, enT.easy, enT.doable, enT.caution, enEnd]),
+    clsColor(result.entry.cls));
 
   // Swim — DEMERIT scale (q7, lower=better). Bands ascend 0 → scaleMax.
   const swT = SITE.swimThresholds;
