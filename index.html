@@ -6208,7 +6208,8 @@ function renderSnapshot(h, wx) {
   if (window.swellSet) {
     swellSet(h.swell1Dir, h.swell1H, h.swell1P, nsDispLookup(h.swell1Dir, h.swell1P),
              result.entry.label, result.entry.cls,
-             h.windDir, result.swim.label, result.swim.cls);
+             h.windDir, result.swim.raw, (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14,
+             result.swim.label, result.swim.cls);
   }
 
   // Time
@@ -11131,6 +11132,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     // soft inner shoreline glow + arrows, clipped to water
     ctx.save(); ctx.clip(waterClip, 'evenodd');
     ctx.strokeStyle = 'rgba(110,180,210,0.4)'; ctx.lineWidth = 0.04 * W; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke(coastStroke);
+    drawChopLayer();          // wind-chop surface (Calmer→Choppier) under the swell arrows
     rollFlow(W, H);
     ctx.restore();
     // land + crisp coastline border
@@ -11183,6 +11185,70 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.fillText('N', cx, cy - r - fp * 0.7); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   }
 
+  // ── Wind-chop overlay (restored) — the animated Calmer→Choppier surface field from
+  // the old wind-chop map, drawn on this SAME basemap under the swell arrows. The fetch
+  // shadow is ray-cast against the swell coastline (landBit) so it matches the map.
+  var _windLevel = 0, _windFieldKey = -999;
+  var CGW = 72, CGH = 35, _cfield = null;
+  function _lerp(a, b, t) { return a + (b - a) * t; }
+  var C_STOPS = [[0,[76,175,80]],[0.4,[201,194,70]],[0.7,[224,138,60]],[1,[176,57,47]]];
+  function chopColor(r){ r = clamp(r,0,1); for (var i=0;i<C_STOPS.length-1;i++){ if (r<=C_STOPS[i+1][0]){ var t=(r-C_STOPS[i][0])/(C_STOPS[i+1][0]-C_STOPS[i][0]),a=C_STOPS[i][1],b=C_STOPS[i+1][1]; return 'rgb('+Math.round(a[0]+(b[0]-a[0])*t)+','+Math.round(a[1]+(b[1]-a[1])*t)+','+Math.round(a[2]+(b[2]-a[2])*t)+')'; } } return 'rgb(176,57,47)'; }
+  function computeChopField(deg){
+    _cfield = new Float32Array(CGW*CGH);
+    var th=deg*Math.PI/180, ux=Math.sin(th), uy=-Math.cos(th);
+    var stepPx=W/CGW, maxSteps=Math.ceil((W+H)/stepPx)+4, fetchFull=0.5*W;
+    for (var gy=0;gy<CGH;gy++) for (var gx=0;gx<CGW;gx++){
+      var idx=gy*CGW+gx;
+      if (landBit((gx+0.5)/CGW,(gy+0.5)/CGH)) { _cfield[idx]=0; continue; }
+      var x=(gx+0.5)*W/CGW, y=(gy+0.5)*H/CGH, dist=0, hf=1, hit=0;
+      for (var s=1;s<=maxSteps;s++){
+        x+=ux*stepPx; y+=uy*stepPx; dist+=stepPx;
+        if (x<0||x>W||y<0||y>H){ var open=(y<0)||(x>W&&y<0.55*H); hf=open?1:clamp(dist/fetchFull,0,1); hit=1; break; }
+        if (landBit(x/W,y/H)){ hf=clamp((dist-stepPx)/fetchFull,0,1); hit=1; break; }
+      }
+      if (!hit) hf=1;
+      _cfield[idx]=hf;
+    }
+    var tf=new Float32Array(_cfield.length);
+    for (var gy2=0;gy2<CGH;gy2++) for (var gx2=0;gx2<CGW;gx2++){
+      var sum=0,nn=0;
+      for (var oy=-1;oy<=1;oy++) for (var ox=-1;ox<=1;ox++){ var xx=gx2+ox,yy=gy2+oy; if (xx<0||xx>=CGW||yy<0||yy>=CGH) continue; sum+=_cfield[yy*CGW+xx]; nn++; }
+      tf[gy2*CGW+gx2]=sum/nn;
+    }
+    _cfield=tf;
+  }
+  function sampleChop(nx,ny){
+    var fx=nx*CGW-0.5, fy=ny*CGH-0.5, x0=Math.floor(fx), y0=Math.floor(fy), tx=fx-x0, ty=fy-y0;
+    function gg(gx,gy){ gx=clamp(gx,0,CGW-1); gy=clamp(gy,0,CGH-1); return _cfield[gy*CGW+gx]; }
+    return _lerp(_lerp(gg(x0,y0),gg(x0+1,y0),tx), _lerp(gg(x0,y0+1),gg(x0+1,y0+1),tx), ty);
+  }
+  var _CPOOL=200, _cparts=[];
+  for (var _ci=0;_ci<_CPOOL;_ci++) _cparts.push({x:Math.random(),y:Math.random(),s1:Math.random(),s2:Math.random()});
+  function drawChopWave(x,y,crest,len,amp,col,alpha,foam){
+    ctx.save(); ctx.translate(x,y); ctx.rotate(crest);
+    ctx.globalAlpha=alpha; ctx.strokeStyle=col; ctx.lineWidth=Math.max(1,amp*0.5); ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(-len/2,0); ctx.quadraticCurveTo(0,-amp,len/2,0); ctx.stroke();
+    if (foam){ ctx.globalAlpha=alpha*0.8; ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=Math.max(1,amp*0.35);
+      ctx.beginPath(); ctx.moveTo(-len*0.22,-amp*0.55); ctx.quadraticCurveTo(0,-amp*1.05,len*0.22,-amp*0.55); ctx.stroke(); }
+    ctx.restore(); ctx.globalAlpha=1;
+  }
+  function drawChopLayer(){
+    if (!_cfield) return;
+    var travel=(_windDir+180)*Math.PI/180, dx=Math.sin(travel), dy=-Math.cos(travel);
+    var level=_windLevel, speed=_lerp(0.0013,0.0050,level), count=Math.round(_lerp(90,200,level));
+    var base=_lerp(0.10,1.0,level), gmax=0.030*W, crest=Math.atan2(dy,dx)+Math.PI/2;
+    for (var i=0;i<count;i++){
+      var p=_cparts[i];
+      p.x+=dx*speed; p.y+=dy*speed;
+      if (p.x<-0.08){ p.x=1.08; p.y=Math.random(); } else if (p.x>1.08){ p.x=-0.08; p.y=Math.random(); }
+      if (p.y<-0.08){ p.y=1.08; p.x=Math.random(); } else if (p.y>1.08){ p.y=-0.08; p.x=Math.random(); }
+      var hf=sampleChop(p.x,p.y), hgt=clamp(base*hf*(0.55+0.5*p.s1),0,1);
+      if (hgt<0.045) continue;
+      var amp=hgt*gmax, len=(0.025+hgt*0.035)*W;
+      drawChopWave(p.x*W,p.y*H,crest,len,amp,chopColor(hgt),clamp(hgt*1.4,0,1)*0.9, hgt>0.72&&p.s2>0.45);
+    }
+  }
+
   function fit() {
     var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
     if (!cssW) return false;
@@ -11191,7 +11257,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     buildPaths();
-    rebuildField(); _lastKey = _key; render();
+    rebuildField(); _lastKey = _key; computeChopField(_windDir); _windFieldKey = _windDir; render();
     return true;
   }
 
@@ -11199,12 +11265,13 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     requestAnimationFrame(frame);
     if (!W || document.hidden) return;
     if (_key !== _lastKey) { rebuildField(); _lastKey = _key; }
+    if (_windDir !== _windFieldKey) { computeChopField(_windDir); _windFieldKey = _windDir; }
     if (!_lastTs) _lastTs = ts;
     PHASE = (PHASE + (ts - _lastTs) * 0.0006 * SPEED) % 1; _lastTs = ts;
     render();
   }
 
-  function swellSet(swellDir, height, period, transmit, zoneLabel, zoneCls, windDir, windLabel, windCls) {
+  function swellSet(swellDir, height, period, transmit, zoneLabel, zoneCls, windDir, windQ7, windScaleMax, windLabel, windCls) {
     if (typeof swellDir === 'number' && isFinite(swellDir)) _sw = ((swellDir % 360) + 360) % 360;
     if (typeof height === 'number' && isFinite(height) && height >= 0) _hgt = height;
     if (typeof period === 'number' && isFinite(period) && period > 0) _sp = period;
@@ -11217,8 +11284,10 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
       nowZ.style.color = zoneCls === 'green' ? 'var(--green)' : zoneCls === 'amber' ? 'var(--amber)'
         : zoneCls === 'yellow' ? 'var(--yellow)' : zoneCls === 'red' ? 'var(--red)' : 'var(--dim)';
     }
-    // Merged card: wind arrow direction + line-2 wind readout (was the wind-chop card).
+    // Merged card: wind arrow direction, chop-field intensity + line-2 wind readout.
     if (typeof windDir === 'number' && isFinite(windDir)) _windDir = ((windDir % 360) + 360) % 360;
+    var _sm = windScaleMax > 0 ? windScaleMax : 14;
+    _windLevel = clamp((windQ7 || 0) / _sm, 0, 1);
     var nowW = document.getElementById('chopNowWind'), nowWZ = document.getElementById('chopNowZone');
     if (nowW) nowW.textContent = dir16(_windDir) + ' wind';
     if (nowWZ) {
