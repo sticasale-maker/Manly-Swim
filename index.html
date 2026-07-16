@@ -215,7 +215,7 @@
 
   header {
     padding:calc(env(safe-area-inset-top) + 10px) 0 10px;
-    display:flex; align-items:flex-end; justify-content:space-between;
+    display:flex; align-items:flex-start; justify-content:space-between;
   }
   .logo {
     font-family:'Bebas Neue',sans-serif;
@@ -686,9 +686,9 @@
      boxed window read the same here as in the main day chart. Built by
      renderWeekAhead(); each day tile is tappable and loads that day above. */
   .wa2-card {
-    background: rgba(22,50,66,0.60);
-    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(180,210,230,0.10);
+    background: var(--card);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: clamp(12px,4vw,16px);
     margin-bottom: 12px;
@@ -703,18 +703,18 @@
   }
   .wa2-head-txt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
   .wa2-chevron {
-    font-size: 26px; color: #6fc0dd; line-height: 1; flex: none;
+    font-size: 26px; color: var(--ocean); line-height: 1; flex: none;
     transition: transform 0.3s ease;
   }
   .wa2-head[aria-expanded="true"] .wa2-chevron { transform: rotate(180deg); }
   .wa2-title {
     display: block; font-family: 'Bebas Neue', sans-serif;
     letter-spacing: 1.5px; font-size: clamp(16px,4.8vw,20px);
-    color: #c8bda0; text-transform: uppercase; line-height: 1.05;
+    color: var(--deep); text-transform: uppercase; line-height: 1.05;
   }
   .wa2-sub {
     display: block; font-family: 'Inter', sans-serif;
-    font-size: clamp(9px,2.5vw,10px); color: rgba(200,189,160,0.65);
+    font-size: clamp(9px,2.5vw,10px); color: var(--dim);
     letter-spacing: 0.3px; margin-top: 2px;
   }
   .wa2-days {
@@ -725,12 +725,12 @@
   .wa2-days.wa2-open { opacity: 1; max-height: 4000px; margin-top: 12px; }
   .wa2-day {
     display: block; width: 100%; box-sizing: border-box; text-align: left;
-    background: rgba(22,50,66,0.35); border: 1px solid rgba(180,210,230,0.10);
+    background: rgba(255,255,255,0.45); border: 1px solid var(--border);
     border-radius: 12px; padding: 9px 11px 7px; cursor: pointer;
     font-family: inherit; -webkit-tap-highlight-color: transparent;
     transition: background 0.12s ease, border-color 0.12s ease;
   }
-  .wa2-day:hover { background: rgba(22,50,66,0.55); border-color: rgba(180,210,230,0.18); }
+  .wa2-day:hover { background: rgba(255,255,255,0.7); border-color: var(--border); }
   .wa2-day:active { filter: brightness(1.08); }
   .wa2-day-head {
     display: flex; align-items: baseline; justify-content: space-between;
@@ -738,18 +738,18 @@
   }
   .wa2-day-name {
     font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; font-size: 16px;
-    color: #c8bda0; text-transform: uppercase; white-space: nowrap;
+    color: var(--deep); text-transform: uppercase; white-space: nowrap;
   }
   .wa2-day-name b { font-weight: 700; }
   .wa2-day-best {
     font-family: 'Inter', sans-serif; font-size: clamp(9px,2.6vw,11px);
-    font-weight: 600; color: #6fc0dd; letter-spacing: 0.2px;
+    font-weight: 600; color: var(--ocean); letter-spacing: 0.2px;
     text-align: right; line-height: 1.25;
   }
   .wa2-svg { width: 100%; height: auto; display: block; }
   .wa2-empty {
     display: block; font-family: 'Inter', sans-serif;
-    font-size: clamp(10px,2.8vw,12px); color: rgba(200,189,160,0.65); padding: 8px 0;
+    font-size: clamp(10px,2.8vw,12px); color: var(--dim); padding: 8px 0;
   }
 
   /* ── Timeline back button ── */
@@ -1355,7 +1355,7 @@
   .chop-graph-now .sw-line { display:flex; align-items:baseline; justify-content:flex-end; gap:6px; }
   .chop-graph-now .sw-line + .sw-line { margin-top:3px; }
   /* Line-2 wind readout: slightly smaller than the swell line, amber. */
-  .chop-graph-now .h.sw-wind-h { font-size:clamp(14px,4.1vw,17px); color:#c98a2e; }
+  .chop-graph-now .h.sw-wind-h { color:#c98a2e; }
   .chop-graph-now .t.sw-wind-t { font-size:clamp(8px,2.4vw,10px); }
   .chop-graph-legend .sw-wind-cap { color:#c98a2e; font-weight:600; }
   .chop-graph-canvas { width:100%; height:auto; display:block; border-radius:8px; }
@@ -2471,6 +2471,21 @@
 
     </div><!-- /community-group -->
 
+    <!-- Merged Swell + Wind map (moved before the Best-swim-window) -->
+    <div class="chop-graph-wrap" id="swellGraphWrap">
+      <div class="chop-graph-head">
+        <span class="chop-graph-title">Swell + Wind</span>
+        <div class="chop-graph-now">
+          <div class="sw-line"><span class="h" id="swellNowDir">—</span></div>
+          <div class="sw-line"><span class="h sw-wind-h" id="chopNowWind">—</span></div>
+        </div>
+      </div>
+      <canvas class="chop-graph-canvas" id="swellCanvas" aria-label="Swell refracting around the headland into Cabbage Tree Bay, with the forecast wind direction, for the selected hour"></canvas>
+      <div class="chop-graph-legend">
+        <span>White curved arrows = swell energy &middot; <span class="sw-wind-cap">amber arrow = wind</span>. Wind builds chop from its speed and its runway over open water &mdash; the fetch</span>
+      </div>
+    </div>
+
     <!-- Best swim window — 3-line day chart (Entry / Chop / Surge), updates with the selected day -->
     <div class="window-graph-wrap" id="dayWindowWrap">
       <div class="window-graph-head">
@@ -2504,7 +2519,7 @@
     <div class="forecast-values">
       <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
         <span class="fv-head-txt">
-          <span class="fv-toggle-label">Forecast</span>
+          <span class="fv-toggle-label">Forecast data</span>
         </span>
         <span class="fv-toggle-chevron">▾</span>
       </button>
@@ -2649,23 +2664,7 @@
       .ntm-msg { text-align:center; font-size:11px; line-height:1.5; color:var(--dim); margin-top:9px; min-height:14px; }
       .ntm-msg.ok { color:var(--green); }
     </style>
-    <!-- Merged Swell + Wind map for the selected hour (swell arrows + amber wind arrow on ONE basemap) -->
-    <div class="chop-graph-wrap" id="swellGraphWrap">
-      <div class="chop-graph-head">
-        <span class="chop-graph-title">Swell + Wind · Cabbage Tree Bay</span>
-        <div class="chop-graph-now">
-          <div class="sw-line"><span class="h" id="swellNowDir">—</span><span class="t" id="swellNowZone">—</span></div>
-          <div class="sw-line"><span class="h sw-wind-h" id="chopNowWind">—</span><span class="t sw-wind-t" id="chopNowZone">—</span></div>
-        </div>
-      </div>
-      <canvas class="chop-graph-canvas" id="swellCanvas" aria-label="Swell refracting around the headland into Cabbage Tree Bay, with the forecast wind direction, for the selected hour"></canvas>
-      <div class="chop-graph-legend">
-        <span>Calmer</span><span class="chop-grad"></span><span>Choppier</span>
-      </div>
-      <div class="chop-graph-legend">
-        <span>White curved arrows = swell energy &middot; <span class="sw-wind-cap">amber arrow = wind</span>. Wind builds chop from its speed and its runway over open water &mdash; the fetch</span>
-      </div>
-    </div>
+    <!-- (Swell + Wind map moved up — now before the Best-swim-window; see above.) -->
 
     <!-- Tide graph for the selected day -->
     <div class="tide-graph-wrap" id="tideGraphWrap">
@@ -2802,7 +2801,7 @@
 <!-- Feedback -->
     <div class="about-panel" id="feedbackCard" style="padding:20px;margin-top:10px;">
       <p style="color:var(--deep); font-size:15px; font-weight:700; margin-bottom:4px;">Feedback is precious to improve!</p>
-      <p style="color:var(--dim); font-size:13px; margin:0 0 14px;">Send a private message to the admins &mdash; it won&rsquo;t appear on Bay Talk.</p>
+      <p style="color:var(--dim); font-size:13px; margin:0 0 14px;">Send a private message to the admins.</p>
       <form id="feedbackForm" onsubmit="submitFeedback(event)">
         <input id="feedbackContact" type="text" required placeholder="Name or email (required)"
           style="width:100%; box-sizing:border-box; background:#fff; color:var(--text); border:1px solid rgba(17,53,65,0.18); border-radius:10px; padding:12px; font-size:14px; font-family:inherit; outline:none; margin-bottom:10px;">
@@ -11318,7 +11317,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 <style>
   /* New-version update toast */
   #sw-update-toast {
-    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(140%);
+    position: fixed; right: 14px; left: auto; bottom: 22px; transform: translateY(140%);
     z-index: 9999; max-width: 92vw;
     display: flex; align-items: center; gap: 12px;
     padding: 11px 14px;
@@ -11329,7 +11328,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     opacity: 0; pointer-events: none;
     transition: transform .32s ease, opacity .32s ease;
   }
-  #sw-update-toast.show { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+  #sw-update-toast.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
   #sw-update-toast button {
     flex: none; cursor: pointer;
     border: none; border-radius: 9px;
