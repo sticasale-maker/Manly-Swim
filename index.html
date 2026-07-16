@@ -284,6 +284,27 @@
     min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
 
+  /* Compact conditions strip — verdict + weather + feels-like + "what to expect"
+     on ONE line, sitting under the day/time header inside the snapshot board.
+     Keeps #verdictBar/#verdictText (JS colours them) and the wxBar-* classes/ids
+     (JS populates them; their light/dark colours are reused). The weather cluster
+     is the flexible one — its description ellipsises first so the row never wraps. */
+  .cond-strip {
+    display:flex; align-items:center; gap:8px; flex-wrap:nowrap;
+    background:var(--card); border:1.5px solid var(--green); border-radius:var(--radius);
+    padding:7px 11px; margin:0 0 10px;
+    cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  .cond-strip:active { filter:brightness(0.97); }
+  .cond-strip .verdict-text { flex:0 0 auto; font-size:clamp(15px, 4.3vw, 19px); letter-spacing:1px; }
+  .cond-wx { display:flex; align-items:center; gap:7px; min-width:0; flex:1 1 auto; overflow:hidden; }
+  .cond-strip .wx-bar-icon { font-size:clamp(16px, 4.6vw, 20px); }
+  .cond-strip .wx-bar-desc { font-size:clamp(12px, 3.3vw, 14px); }
+  .cond-strip .wx-bar-feels-label,
+  .cond-strip .wx-bar-feels-val { font-size:clamp(12px, 3.3vw, 14px); }
+  .cond-strip .verdict-news { font-size:clamp(10px, 2.9vw, 12px); padding:5px 9px; gap:6px; letter-spacing:0.5px; }
+  .cond-strip .verdict-news .live-dot { width:9px; height:9px; }
+
   /* ── Metrics panel (replaces score hero) ── */
   .metrics-panel {
     position: relative;
@@ -2213,20 +2234,8 @@
     </div>
 
 
-    <!-- (Weather + feels-like bar moved down, under the day header and above the Entry metric) -->
-
-    <!-- Overall verdict — synthesised from the three metrics, updates with the slider -->
-    <div class="verdict-bar" id="verdictBar" role="button" tabindex="0"
-         onclick="openNews()"
-         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNews();}"
-         aria-label="What to expect">
-      <span class="verdict-group">
-        <span class="verdict-arrow vb-left" id="verdictArrowL" aria-hidden="true"></span>
-        <span class="verdict-text" id="verdictText">Loading&#8230;</span>
-        <span class="verdict-arrow vb-right" id="verdictArrowR" aria-hidden="true"></span>
-      </span>
-      <span class="verdict-news"><span class="live-dot" aria-hidden="true"></span>What to expect</span>
-    </div>
+    <!-- (Verdict + weather + feels + "what to expect" merged into one compact .cond-strip
+         under the day/time header, inside the snapshot board — see below.) -->
 
     <!-- Metrics + time slider share one light-blue board -->
     <div class="snapshot-board">
@@ -2237,16 +2246,19 @@
         <div class="slider-date" id="sliderDate">—</div>
         <div class="slider-time" id="sliderTime">—</div>
       </div>
-      <!-- Thin weather bar (sky + feels-like) — sits under the day header, just above the Entry metric -->
-      <div class="wx-bar" id="wxBar">
-        <div class="wx-bar-left">
+      <!-- Compact conditions line under the day header: verdict + weather + feels + "what to expect".
+           The whole row taps through to the news (openNews). Keeps every id the JS drives. -->
+      <div class="cond-strip" id="verdictBar" role="button" tabindex="0"
+           onclick="openNews()"
+           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNews();}"
+           aria-label="What to expect">
+        <span class="verdict-text" id="verdictText">Loading&#8230;</span>
+        <span class="cond-wx">
           <span class="wx-bar-icon" id="wxBarIcon">☀️</span>
           <span class="wx-bar-desc" id="wxBarDesc">—</span>
-        </div>
-        <div class="wx-bar-feels">
-          <span class="wx-bar-feels-label">Feels like</span>
-          <span class="wx-bar-feels-val" id="wxBarFeels">—</span>
-        </div>
+          <span class="wx-bar-feels"><span class="wx-bar-feels-label">feels</span> <span class="wx-bar-feels-val" id="wxBarFeels">—</span></span>
+        </span>
+        <span class="verdict-news"><span class="live-dot" aria-hidden="true"></span>What to expect</span>
       </div>
       <!-- WW-compare button removed from the swimmer-facing UI (9 Jul 2026).
            The feature itself is intact: ?compare=1 still adds body.cmp-feeds,
