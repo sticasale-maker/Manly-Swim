@@ -336,7 +336,7 @@
   .metric-block.red    { background:rgba(192,57,43,0.15);   border:1.5px solid var(--red); }
   /* Name + value on one line */
   .metric-header {
-    display:flex; align-items:baseline; gap:8px;
+    display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 8px;
   }
   .metric-name {
     font-family:'Bebas Neue',sans-serif;
@@ -365,9 +365,9 @@
   .metric-block.red    .metric-value { color:var(--red); }
   .metric-sub { display:block; font-family:'Inter',sans-serif; font-size:12px; font-weight:600; letter-spacing:0; margin-left:0; margin-top:1px; color:var(--dim); }
   .metric-score {
+    flex-basis:100%; text-align:left; margin:0;
     font-family:'Inter',sans-serif;
-    font-size:10px; color:var(--dim);
-    letter-spacing:0.5px; margin-left:auto;
+    font-size:12px; font-weight:600; color:var(--dim); letter-spacing:0;
   }
   /* Condition illustration above each rail — only visible with ?icons=1.
      JS injects the <img> and sets display:flex; stays hidden (empty) otherwise. */
@@ -392,9 +392,9 @@
   .metric-track-rail {
     position: absolute;
     top: 50%; left: 0; right: 0;
-    height: 20px;
+    height: 14px;
     transform: translateY(-50%);
-    border-radius: 10px;
+    border-radius: 7px;
     overflow: hidden;
     display: flex;
     border: 2px solid #fff;
@@ -1253,7 +1253,7 @@
     display:flex; justify-content:space-between; align-items:center;
     margin-bottom:10px;
   }
-  .slider-date { font-family:'Bebas Neue',sans-serif; font-size:clamp(20px, 5.5vw, 26px); letter-spacing:1px; color:var(--deep); text-transform:uppercase; white-space:nowrap; font-weight:700; }
+  .slider-date { font-family:'Bebas Neue',sans-serif; font-size:clamp(25px, 6.8vw, 34px); letter-spacing:1px; color:var(--deep); text-transform:uppercase; white-space:nowrap; font-weight:700; }
   .slider-time { font-family:'Bebas Neue',sans-serif; font-size:clamp(44px, 13vw, 56px); color:var(--deep); line-height:1; }
   input[type=range] {
     -webkit-appearance:none; width:100%; height:6px;
@@ -1882,7 +1882,7 @@
 
     /* Slider time — 56px is too tall on SE */
     .slider-time { font-size: 42px; }
-    .slider-date { font-size: 20px; }
+    .slider-date { font-size: 26px; }
 
     /* Weather strip: squeeze icons/values */
     .wx-val  { font-size: 20px; }
@@ -2057,7 +2057,7 @@
      
       <div>
         <div class="logo" id="appLogo" role="button" tabindex="0" title="Replay intro" style="cursor:pointer;">SWIM <span>MANLY</span></div>
-        <div class="header-sub">South Steyne Ocean Swim<span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span><span id="headerVersion" style="margin-left:8px;font-size:9px;opacity:0.5;letter-spacing:0.3px;" title="Running app version"></span></div>
+        <div class="header-sub"><span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span><span id="headerVersion" style="margin-left:8px;font-size:9px;opacity:0.5;letter-spacing:0.3px;" title="Running app version"></span></div>
       </div>
     </div>
     <a class="about-link" href="guide.html" aria-label="How to read it"
@@ -6227,10 +6227,10 @@ function renderSnapshot(h, wx) {
   function setMetric(id, valId, scoreId, metric, useRaw, suffix) {
     const block = document.getElementById(id);
     block.className = 'metric-block ' + metric.cls;
-    document.getElementById(valId).innerHTML     = metric.label +
-      (suffix ? '<span class="metric-sub">' + suffix + '</span>' : '');
-    const shown = useRaw && (metric.raw != null) ? metric.raw : metric.score;
-    document.getElementById(scoreId).textContent = Math.round(shown * 10) / 10;
+    document.getElementById(valId).textContent = metric.label;
+    // Physical readout (e.g. "0.8 m at the ramp") on its own left-aligned line under the name.
+    const scoreEl = document.getElementById(scoreId);
+    if (scoreEl) scoreEl.textContent = suffix || '';
     renderMetricIcon(id, metric.cls);
   }
 
@@ -6365,11 +6365,6 @@ function renderSnapshot(h, wx) {
     setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _entryBreakH.toFixed(1) + ' m at the ramp');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m in the bay');
-    // Drop the cryptic right-aligned score number on all three — the readout is now
-    // the physical value beside the classification word.
-    ['metricEntryScore', 'metricSwimScore', 'metricSurgeScore'].forEach(function (id) {
-      var e = document.getElementById(id); if (e) e.textContent = '';
-    });
   })();
 
   // Overall verdict — driven by the ENTRY band ONLY. Entry is the go/no-go;
