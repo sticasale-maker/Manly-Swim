@@ -12173,43 +12173,13 @@ if ('serviceWorker' in navigator) {
       if (r.ok) { loadAdminList(); loadToday(); }
     } catch (e) {}
   }
-  /* standalone admin entry pill — separate from the section-presets admin.
-     Visible only when an admin token is cached; turns red with a count when
-     intros are waiting for approval. */
-  function ensureFab(){
-    if ($('introAdminFab')) return $('introAdminFab');
-    var css = document.createElement('style');
-    css.textContent =
-      "#introAdminFab{position:fixed;right:14px;bottom:74px;z-index:99990;display:none;align-items:center;gap:7px;padding:9px 14px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;letter-spacing:.3px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
-      "#introAdminFab.show{display:inline-flex;}" +
-      "#introAdminFab .fab-dot{display:none;}" +
-      "#introAdminFab.has-pending{background:var(--red,#c0392b);border-color:var(--red,#c0392b);color:#fff;}" +
-      "#introAdminFab.has-pending .fab-dot{display:inline-block;min-width:18px;height:18px;border-radius:999px;background:#fff;color:var(--red,#c0392b);font-size:11px;line-height:18px;text-align:center;padding:0 5px;font-weight:700;}" +
-      "@media (prefers-reduced-motion: no-preference){#introAdminFab.has-pending{animation:ntmPulse 1.6s ease-in-out infinite;}}";
-    document.head.appendChild(css);
-    var b = document.createElement('button'); b.id = 'introAdminFab'; b.type = 'button';
-    b.setAttribute('aria-label', 'Review intros');
-    b.innerHTML = '<span class="fab-dot" id="fabDot">0</span><span id="fabLabel">Review intros</span>';
-    b.addEventListener('click', openIntroAdmin);
-    document.body.appendChild(b);
-    return b;
-  }
-  function updateFab(count){
-    var b = ensureFab();
-    if (count == null || count < 0) { b.classList.remove('show', 'has-pending'); return; }
-    b.classList.add('show');
-    var dot = $('fabDot'), lab = $('fabLabel');
-    if (count > 0) { b.classList.add('has-pending'); if (dot) dot.textContent = count; if (lab) lab.textContent = (count === 1 ? '1 to review' : count + ' to review'); }
-    else { b.classList.remove('has-pending'); if (lab) lab.textContent = 'Review intros'; }
-  }
-  async function refreshAdminFab(){
-    var tk = token(); if (!tk) { updateFab(-1); return; }
-    try {
-      var r = await fetch(RPC + 'admin_list_intros', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
-      if (!r.ok) { updateFab(-1); return; }
-      var rows = await r.json(); updateFab((rows && rows.length) || 0);
-    } catch (e) { updateFab(-1); }
-  }
+  /* The "Review intros" admin FAB (floating pill) was removed — intros auto-publish
+     now, so there is nothing to approve. updateFab/refreshAdminFab are kept as
+     no-ops so their existing call sites stay harmless, and refreshAdminFab no longer
+     fires the admin_list_intros fetch on every load. The ?intros=1 moderation overlay
+     is unchanged, so bad hellos can still be deleted. */
+  function updateFab(){}
+  function refreshAdminFab(){}
 
   function openIntroAdmin(){ if (!token()) return; buildAdminOverlay(); var ov = $('introAdminOverlay'); if (ov) ov.classList.add('show'); loadAdminList(); }
   window.openIntroAdmin = openIntroAdmin;
