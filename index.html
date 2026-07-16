@@ -2683,6 +2683,8 @@
       #featureCard .fr-empty{color:var(--dim);font-size:14px;padding:6px 0;}
       #featureCard .bd-card{background:#fff;border:1px solid rgba(17,53,65,0.12);border-radius:var(--radius);padding:14px 14px 12px;box-shadow:0 1px 3px rgba(17,53,65,0.06);}
       #featureCard .bd-card--pinned{border-color:var(--ocean);}
+      #featureCard .bd-card--hidden{opacity:.6;border-style:dashed;}
+      #featureCard .bd-hidden-tag{font-family:'DM Mono',monospace;font-size:10px;font-weight:600;letter-spacing:1px;color:#fff;background:var(--red);border-radius:5px;padding:2px 6px;text-transform:uppercase;}
       #featureCard .bd-meta{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
       #featureCard .bd-pin{font-size:12px;}
       #featureCard .bd-name{font-weight:700;color:var(--deep);font-size:14px;}
@@ -9953,7 +9955,8 @@ function submitFeedback(e) {
     var votesP = rpc('list_feature_requests', { p_device: frDevice() }).catch(function(){ return []; });
     var embedURL = sbURL() + '/rest/v1/feature_requests' +
       '?select=*,feature_replies(id,body,created_at,author_role,name)' +
-      '&hidden=eq.false&order=pinned.desc,created_at.desc';
+      (BOARD_ADMIN ? '' : '&hidden=eq.false') +      // admins see hidden posts so they can restore them
+      '&order=pinned.desc,created_at.desc';
     var embedP = fetch(embedURL, {
       headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY() }
     }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
@@ -9968,7 +9971,7 @@ function submitFeedback(e) {
       replies.sort(function(a,b){ return Date.parse(a.created_at) - Date.parse(b.created_at); });
       return {
         id: p.id, name: p.name, body: p.body,
-        status: (p.status || 'open'), pinned: !!p.pinned,
+        status: (p.status || 'open'), pinned: !!p.pinned, hidden: !!p.hidden,
         created_at: p.created_at,
         votes: (vm.votes != null ? vm.votes : 0), voted: !!vm.voted,
         replies: replies
@@ -10062,6 +10065,7 @@ function submitFeedback(e) {
     var arr = posts.slice();
     if (_sort === 'answered') arr = arr.filter(function(p){ return p.status && p.status !== 'open'; });
     arr.sort(function(a, b){
+      if (!!a.hidden !== !!b.hidden) return a.hidden ? 1 : -1;                          // hidden (admin-only) sink last
       if (!!b.pinned !== !!a.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);   // pinned first
       if (_sort === 'top') {
         if (b.votes !== a.votes) return b.votes - a.votes;
@@ -10110,12 +10114,15 @@ function submitFeedback(e) {
       var on = (p.status || 'open') === s ? ' bd-abtn--on' : '';
       return '<button type="button" class="bd-abtn' + on + '" data-status="' + s + '" data-id="' + esc(p.id) + '">' + s.toUpperCase() + '</button>';
     }).join('');
+    var hideBtn = p.hidden
+      ? '<button type="button" class="bd-abtn" data-unhide="' + esc(p.id) + '">RESTORE</button>'
+      : '<button type="button" class="bd-abtn bd-abtn--danger" data-hide="' + esc(p.id) + '">HIDE</button>';
     return '<div class="bd-admin">' +
       '<textarea data-reply="' + esc(p.id) + '" placeholder="Reply as Marco…"></textarea>' +
       '<div class="bd-admin-row">' +
         '<button type="button" class="bd-abtn bd-abtn--send" data-send="' + esc(p.id) + '">SEND REPLY</button>' +
         '<button type="button" class="bd-abtn" data-pin="' + esc(p.id) + '">' + (p.pinned ? 'UNPIN' : 'PIN') + '</button>' +
-        '<button type="button" class="bd-abtn bd-abtn--danger" data-hide="' + esc(p.id) + '">HIDE</button>' +
+        hideBtn +
       '</div>' +
       '<div class="bd-admin-row"><span class="bd-alabel">STATUS</span>' + statusBtns + '</div>' +
     '</div>';
@@ -10142,8 +10149,9 @@ function submitFeedback(e) {
         '<textarea class="bd-rinput" maxlength="500" rows="2" placeholder="Write a reply&hellip;"></textarea>' +
         '<div class="bd-rrow"><button type="button" class="bd-rsend" data-rsend="' + esc(p.id) + '">Reply</button></div>' +
       '</div>';
-    return '<div class="bd-card' + (p.pinned ? ' bd-card--pinned' : '') + '">' +
+    return '<div class="bd-card' + (p.pinned ? ' bd-card--pinned' : '') + (p.hidden ? ' bd-card--hidden' : '') + '">' +
       '<div class="bd-meta">' + pin +
+        (p.hidden ? '<span class="bd-hidden-tag">Hidden</span>' : '') +
         '<span class="bd-name">' + nm + '</span>' +
         '<span class="bd-time">' + esc(relTime(p.created_at)) + '</span>' +
       '</div>' +
@@ -10278,6 +10286,8 @@ function submitFeedback(e) {
     if (pinb){ var pid = parseInt(pinb.getAttribute('data-pin'), 10); var pp = findPost(pid); doStatus(pid, { pinned: pp ? !pp.pinned : true }); return; }
     var hideb = t.closest('[data-hide]');
     if (hideb){ doStatus(parseInt(hideb.getAttribute('data-hide'), 10), { hidden: true }); return; }
+    var unhideb = t.closest('[data-unhide]');
+    if (unhideb){ doStatus(parseInt(unhideb.getAttribute('data-unhide'), 10), { hidden: false }); return; }
     var stat = t.closest('[data-status]');
     if (stat){ doStatus(parseInt(stat.getAttribute('data-id'), 10), { status: stat.getAttribute('data-status') }); return; }
     var del = t.closest('[data-del]');
