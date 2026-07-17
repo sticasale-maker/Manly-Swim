@@ -3618,7 +3618,7 @@ const SITE_DEFAULTS = {
   periodExp:      1.2,    // pinned to MASTER R24 (was 1.15); tab-1 severed. sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × max(0, tideM − tideRef) × (s1_d + ww_d)
+  tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d + ww_d), signed (adds above ref, credits below)
   // Dispersion-table shape. TRUE = legacy 19-row mirror (fold 181–359° onto 1–179°).
   // blDispFold follows the sheet: the parser flips it to false once rows 190°–350° carry
   // values. nsDispFold is PINNED true by SS_DISP_LOCK_FOLD — Entry does not move.
@@ -3778,23 +3778,29 @@ let SITE = {
     // component's demerit is scaled by gate(itsDir) before summing. Entry passes
     // 'tideGate' (swell1 + sea/ww); BL surge passes 'bowerTideGate'.
     //
-    // MONOTONE IN TIDE (11 Jul 2026). Rising water can only ever ADD demerits:
-    // tide_d = tideGain × max(0, tideM − tideRef) × w, so ∂tide_d/∂tideM = gain·w ≥ 0
-    // and tide_d ≥ 0 always. The old bidirectional pivot handed out a NEGATIVE demerit
-    // (a "credit") below tideRef, which meant a falling tide could improve the score —
-    // the opposite of the intended physics — and the tideCreditClamp knob existed only
-    // to bound that credit. Both are gone. Below tideRef the tide simply contributes 0.
+    // BIDIRECTIONAL IN TIDE (17 Jul 2026). Tide scales arriving energy relative to the
+    // tideRef water level: ABOVE ref it ADDS demerits, BELOW ref it SUBTRACTS them — a
+    // falling tide genuinely calms the ramp (less water over the rock shelf, less energy
+    // through), so the score should drop, not just stop rising. tide_d = tideGain ×
+    // (tideM − tideRef) × w, so ∂tide_d/∂tideM = gain·w ≥ 0 (still monotone: a higher
+    // tide is never better than a lower one) but tide_d is now signed.
     //
-    // Note w is the wave-energy sum, so tide_d still shrinks when the SWELL shrinks.
-    // That is correct and is not a tide inversion: tide amplifies arriving energy, so
-    // with less energy there is less to amplify. Only ∂/∂tideM is guaranteed ≥ 0.
+    // NO clamp and NO credit cap. The earlier max(0,…) existed only because the credit
+    // was thought unbounded — it isn't: w is a direction-gated FRACTION of the wave
+    // demerit and the tide range is small (~0.2–1.8 m), so the low-tide credit is a
+    // modest, self-bounded share of the very swell it scales. It lightens a big day a
+    // little; it cannot erase it or drive the total negative. If it needed a cap the
+    // formula would be wrong — this one doesn't.
+    //
+    // w is the direction-gated wave-energy sum, so tide_d shrinks with the SWELL: tide
+    // moves arriving energy, so with less energy there is less to move either way.
     // No gate name → weight 1 (ungated).
     const gate = gateName ? (d => this[gateName](d)) : (() => 1);
     const ref  = this.tideRef ?? 0.7;
     const w = (parts.s1_d || 0) * gate(parts.s1Dir || 0)
             + (parts.ww_d || 0) * gate(parts.wwDir || 0);
-    if (tideM == null || isNaN(tideM)) return 0;   // no tide forecast this far out → no tide demerit
-    return (this.tideGain ?? 0.35) * Math.max(0, tideM - ref) * w;
+    if (tideM == null || isNaN(tideM)) return 0;   // no tide forecast this far out → no tide effect
+    return (this.tideGain ?? 0.35) * (tideM - ref) * w;
   },
   get spm() { return 81 / this.periodPower; },
   ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
@@ -4766,15 +4772,16 @@ async function loadChopShelterConfig(force) {
 //   windEntry= ws_d × (1 − w) + ww_d × w         (w = wind-wave arc weight)
 //   rif_d    = 0 (refraction absorbed into the dispersion table)
 //   o        = windEntry + s1_d
-//   tide_d   = tideGain × max(0, tideM − tideRef) × Σ(term × tideGate(termDir))
+//   tide_d   = tideGain × (tideM − tideRef) × Σ(term × tideGate(termDir))   [signed]
 //   total    = o + tide_d
 // VECCHIO — Gem-Cla50-50 2-D energy table (fallback when NS feed/table unavailable):
 //   ww_d     = swellPower(wwH, wwP_real) × gemLookup(wwDir, wwP_real) × wwSens
 //   s1_d     = swellPower(h,p) × gemLookup(dir,p) × swellSens  (no period cap)
 //   rif_d    = 0 (combined into gemLookup); tide_d as above
-// TIDE IS MONOTONE: tide_d ≥ 0 and ∂tide_d/∂tideM ≥ 0. A rising tide can only add
-// demerits, never remove them. (The bidirectional low-tide credit was retired
-// 11 Jul 2026 along with tideCreditClamp.)
+// TIDE IS BIDIRECTIONAL (17 Jul 2026): tide_d is signed — above tideRef it ADDS
+// demerits, below it SUBTRACTS (a falling tide calms the ramp). Still monotone in
+// tide (∂tide_d/∂tideM ≥ 0). No clamp/credit cap: w is a gated fraction of the wave
+// demerit, so the low-tide credit is self-bounded and can't drive total negative.
 // =============================================================================
 // =============================================================================
 // [RETIRED — HISTORICAL ONLY. Describes the config-tab bowerLookup path, removed.
@@ -4989,7 +4996,7 @@ function calcScore(d, modelOverride) {
   // This only matters for waves from directions where the headland is in play:
   // starts at >90°, smoothstep ramp to full at 135°, flat beyond. Wind chop is
   // never tide-amplified — only swell + wind-wave, each gated by its own direction.
-  // tideDir is monotone: tide_d = tideGain × max(0, tideM − tideRef) × w, never negative.
+  // tideDir is signed: tide_d = tideGain × (tideM − tideRef) × w — adds above tideRef, credits below.
   const tide_d = SITE.tideDir(tideM, {
     s1_d, s1Dir: swell1Dir,
     ww_d, wwDir: windWaveDir || windDir,
@@ -6208,9 +6215,10 @@ function renderSnapshot(h, wx) {
   // transmit (height ~ sqrt(energy)) to the incident SIGNIFICANT height. This is the
   // number the eye reports (observers anchor near Hs, on the sets they notice) and it
   // matches the swell card's own "at the ramp" value (H·√tx), just with the sea term
-  // folded in. Tide is applied the SAME way the Entry score does it (tide_d): higher
-  // water over tideRef lets more energy past the headland — the static NS node at the
-  // bay mouth can't see it — so each energy term is scaled by (1 + tideGain·ΔT·gate),
+  // folded in. Tide is applied the SAME way the Entry score does it (tide_d), and is
+  // bidirectional: higher water over tideRef lets more energy past the headland, lower
+  // water lets less (the static NS node at the bay mouth can't see it) — so each energy
+  // term is scaled by (1 + tideGain·ΔT·gate) with ΔT signed (>0 above ref, <0 below),
   // per component direction. We deliberately do NOT use the Komar & Gaughan (1972)
   // breaking-height curve here: it shoaled the wave UP to its breaking crest and read
   // far taller than the eye — right for a safety SCORE, wrong as the number we display.
@@ -6221,11 +6229,11 @@ function renderSnapshot(h, wx) {
     var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
     var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
     var ref  = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-    var dT   = Math.max(0, (h.tideM != null ? h.tideM : ref) - ref);   // metres over reference
+    var dT   = (h.tideM != null ? h.tideM : ref) - ref;   // signed metres from reference (<0 below)
     var gain = SITE.tideGain || 0;
     var tg   = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
-    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))  // swell energy at the ramp, tide-lifted
-            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));   // + sea energy at the ramp, tide-lifted
+    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))  // swell energy at the ramp, tide-scaled
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));   // + sea energy at the ramp, tide-scaled
     return Math.sqrt(Hs2);   // incident significant height at the ramp
   })();
   const dm     = result.demerits;
@@ -13079,8 +13087,8 @@ if ('serviceWorker' in navigator) {
   // ── tide fetch: Open-Meteo historical marine sea_level_height_msl ─────────
   // sea_level_height_msl is an anomaly about mean sea level (roughly ±0.7m for
   // Sydney's ~1.5m tidal range), not a chart-datum height. calcScore's tide
-  // formula (tideGain * max(0, tideM-0.2)) expects WillyWeather-style chart-datum
-  // heights (~0.2-1.8m, low water near 0.2). We shift the fetched series so its
+  // formula (tideGain * (tideM - tideRef), tideRef≈0.7) expects WillyWeather-style
+  // chart-datum heights (~0.2-1.8m, low water near 0.2). We shift the fetched series so its
   // minimum lands at 0.2m, matching that convention. The shift is shown in the
   // status line so it's never a hidden assumption.
   function fetchTide() {
