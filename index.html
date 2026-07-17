@@ -3006,7 +3006,7 @@ const MAX_RETRIES     = 5;
 const BW_API_DIRECT   = 'https://api.beachwatch.nsw.gov.au/public/sites/geojson?site_name=South%20Steyne%20Beach';
 const BW_API_PROXY    = 'https://bold-rain-6ded.sticasale.workers.dev/beachwatch';
 const BW_CACHE_KEY    = 'swim_bw_cache_v1';
-const BW_CACHE_TTL    = 3 * 60 * 60 * 1000; // 3 hours (updated twice daily by Beachwatch)
+const BW_CACHE_TTL    = 15 * 60 * 1000; // 15 min skip-network window; staler cache is served but revalidated in the background (Beachwatch updates 6am & 1:30pm — a safety read must not lag hours behind)
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -7367,7 +7367,6 @@ function jumpToSlider(idx) {
 // =============================================================================
 async function fetchBeachwatch() {
   const cache = loadCache(BW_CACHE_KEY);
-  if (cacheIsFresh(cache, BW_CACHE_TTL)) return cache.data;
 
   async function tryFetch(url) {
     const res = await fetch(url, { cache: 'no-store' });
@@ -7395,19 +7394,41 @@ async function fetchBeachwatch() {
 
   // Proxy (Cloudflare Worker) FIRST — the direct NSW endpoint is cross-origin and
   // gets CORS-blocked in the browser, so the worker is the real data path.
-  for (const url of [BW_API_PROXY, BW_API_DIRECT]) {
-    try {
-      const data = await tryFetch(url);
-      saveCache(BW_CACHE_KEY, data);
-      diag('BW ok via ' + (url === BW_API_PROXY ? 'proxy' : 'direct') +
-           ' (' + (data.forecast ? 'forecast present' : 'no forecast field') + ')');
-      return data;
-    } catch(e) {
-      diag('BW fail ' + (url === BW_API_PROXY ? 'proxy' : 'direct') + ': ' + e.message);
-      console.warn('Beachwatch attempt failed:', url, e.message);
+  async function fetchFresh() {
+    for (const url of [BW_API_PROXY, BW_API_DIRECT]) {
+      try {
+        const data = await tryFetch(url);
+        saveCache(BW_CACHE_KEY, data);
+        diag('BW ok via ' + (url === BW_API_PROXY ? 'proxy' : 'direct') +
+             ' (' + (data.forecast ? 'forecast present' : 'no forecast field') + ')');
+        return data;
+      } catch(e) {
+        diag('BW fail ' + (url === BW_API_PROXY ? 'proxy' : 'direct') + ': ' + e.message);
+        console.warn('Beachwatch attempt failed:', url, e.message);
+      }
     }
+    return null;
   }
-  return null;
+
+  // Fresh enough → serve cache, skip the network entirely.
+  if (cacheIsFresh(cache, BW_CACHE_TTL)) return cache.data;
+
+  // Stale-while-revalidate: if we hold ANY prior value, paint it instantly (so a
+  // failed refresh never regresses the card to "Unknown"), then refresh in the
+  // background and repaint the pollution card if the forecast has actually
+  // changed. This is what stops a cached "Likely" lingering after Beachwatch has
+  // already flipped to "Unlikely".
+  if (cache && cache.data) {
+    fetchFresh().then(function(fresh) {
+      if (fresh && fresh.forecast !== cache.data.forecast) {
+        try { renderPollution(fresh); } catch(e) {}
+      }
+    }).catch(function(){});
+    return cache.data;
+  }
+
+  // No cache at all → must wait for a live value.
+  return await fetchFresh();
 }
 
 function renderPollution(bw) {
