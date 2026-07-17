@@ -6180,12 +6180,13 @@ function renderSnapshot(h, wx) {
   const result = calcScore(h);
   // Sheltered wave height AT the ramp — the height a swimmer actually SEES arriving,
   // not the breaker crest. Combine swell + wind-sea in energy behind the SS shelter
-  // transmit (height ~ sqrt(energy)), then scale 0.64 (significant -> typical wave)
-  // so the shown number matches visual inspection. We deliberately do NOT use the
-  // Komar & Gaughan (1972) breaking-height curve here anymore: it shoaled the wave
-  // UP to its breaking crest and, on top of significant height, read ~60-90% taller
-  // than the eye — right for a safety SCORE, wrong as the number we display. The
-  // Entry classification/bands stay on the demerit path (ws_d/ww_d/s1_d), untouched.
+  // transmit (height ~ sqrt(energy)) to the incident SIGNIFICANT height. This is the
+  // number the eye reports (observers anchor near Hs, on the sets they notice) and it
+  // matches the swell card's own "at the ramp" value (H·√tx), just with the sea term
+  // folded in. We deliberately do NOT use the Komar & Gaughan (1972) breaking-height
+  // curve here: it shoaled the wave UP to its breaking crest and read far taller than
+  // the eye — right for a safety SCORE, wrong as the number we display. The Entry
+  // classification/bands stay on the demerit path (ws_d/ww_d/s1_d), untouched.
   const _entryBreakH = (function () {
     var cl = function (v) { return Math.max(0, Math.min(1, v)); };
     var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
@@ -6193,7 +6194,7 @@ function renderSnapshot(h, wx) {
     var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
     var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx      // swell energy at the ramp
             + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx; // + sea energy at the ramp
-    return 0.64 * Math.sqrt(Hs2);   // incident significant -> typical wave height
+    return Math.sqrt(Hs2);   // incident significant height at the ramp
   })();
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
