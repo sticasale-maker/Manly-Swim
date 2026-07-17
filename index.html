@@ -386,6 +386,16 @@
     border-radius: 10px;
     display: block;
   }
+  .metric-icon-fig { position: relative; display: inline-block; line-height: 0; }
+  .metric-icon-cap {
+    position: absolute; left: 6px; bottom: 6px;
+    padding: 1px 8px; border-radius: 999px;
+    background: rgba(9,26,33,0.62);
+    color: #fff; font-family: 'Bebas Neue', sans-serif;
+    font-size: 15px; letter-spacing: .4px; line-height: 1.4;
+    white-space: nowrap; pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+  }
   .metric-track-wrap {
     margin: 4px 0 2px;
     position: relative;
@@ -3500,7 +3510,7 @@ const _ICON_WORD = {
 // Image filename prefix per metric. Internal key stays 'swim' (DOM ids, modal,
 // thresholds all keyed on it) but the on-disk pictograms are named chop-*.png.
 const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'surge' };
-function renderMetricIcon(blockId, cls) {
+function renderMetricIcon(blockId, cls, cap) {
   const host = document.getElementById(blockId + 'Icon');
   if (!host) return;
   const i = _ICON_ZONE[cls] != null ? _ICON_ZONE[cls] : 0;
@@ -3508,8 +3518,23 @@ function renderMetricIcon(blockId, cls) {
   const words = _ICON_WORD[key];
   if (!words) return;
   const prefix = _ICON_PREFIX[key] || key;
-  host.innerHTML = '<img class="metric-icon-img" src="images/' + prefix + '-' + words[i] +
-    '.png" alt="" loading="lazy">';
+  // Figure wrapper hugs the image so the caption pill anchors to the picture
+  // (not the flex host, which can be wider). Caption text set via textContent.
+  const fig = document.createElement('span');
+  fig.className = 'metric-icon-fig';
+  const img = document.createElement('img');
+  img.className = 'metric-icon-img';
+  img.src = 'images/' + prefix + '-' + words[i] + '.png';
+  img.alt = ''; img.loading = 'lazy';
+  fig.appendChild(img);
+  if (cap) {
+    const c = document.createElement('span');
+    c.className = 'metric-icon-cap';
+    c.textContent = cap;
+    fig.appendChild(c);
+  }
+  host.innerHTML = '';
+  host.appendChild(fig);
   host.style.display = 'flex';
 }
 
@@ -6239,7 +6264,10 @@ function renderSnapshot(h, wx) {
     block.dataset.readout = suffix || '';
     document.getElementById(valId).textContent = metric.label;
     var scoreEl = document.getElementById(scoreId); if (scoreEl) scoreEl.textContent = '';
-    renderMetricIcon(id, metric.cls);
+    // Short caption overlaid on the pictogram: the value+unit only (drop the
+    // "at the ramp"/"in the bay" descriptor). e.g. "0.8 m at the ramp" -> "0.8 m".
+    var cap = (suffix || '').replace(/\s*(at the ramp|in the bay).*$/i, '').trim();
+    renderMetricIcon(id, metric.cls, cap);
   }
 
   function setTrackDot(dotId, pct, colorVar) {
