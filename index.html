@@ -149,6 +149,8 @@
   #tune-panel .tw-in .lbl{ font-size:9px; text-transform:uppercase; letter-spacing:.4px; color:#6d7d70; }
   #tune-panel .tw-in .val{ font-family:'Bebas Neue',sans-serif; font-size:16px; line-height:1.1; color:var(--deep); }
   #tune-panel .tw-in .val small{ font-family:'Inter'; font-size:10px; font-weight:500; color:#5a6b5a; }
+  #tune-panel .tw-in.tw-out{ background:rgba(45,90,70,0.07); border-radius:5px; padding:2px 5px; margin:-2px -5px; }
+  #tune-panel .tw-in.tw-out .lbl{ color:#3f7a5a; }
 
   /* grouped knobs */
   #tune-panel .tw-group{ border:1.5px solid; border-radius:12px; padding:10px 11px 12px; margin-bottom:11px; background:rgba(255,255,255,0.14); }
@@ -6372,6 +6374,13 @@ function renderSnapshot(h, wx) {
     setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _entryBreakH.toFixed(1) + ' m at the ramp');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m in the bay');
+    // ?tune=1 — mirror the three derived heights into the inputs box (guarded no-op otherwise)
+    const gt = id => document.getElementById(id);
+    if (gt('tw-out-ramp')) {
+      gt('tw-out-ramp').innerHTML = _entryBreakH.toFixed(1) + ' <small>m</small>';
+      gt('tw-out-chop').innerHTML = (chopCm || '—').replace(' cm', ' <small>cm</small>');
+      gt('tw-out-bay').innerHTML  = bayH.toFixed(1) + ' <small>m</small>';
+    }
   })();
 
   // Overall verdict — driven by the ENTRY band ONLY. Entry is the go/no-go;
@@ -8604,6 +8613,9 @@ function buildTunePanel() {
                   <div class="tw-in"><div class="lbl">Primary swell</div><div class="val" id="tw-in-swell">—</div></div>
                   <div class="tw-in"><div class="lbl">Wind-wave</div><div class="val" id="tw-in-ww">—</div></div>
                   <div class="tw-in"><div class="lbl">Sea temp</div><div class="val" id="tw-in-sst">—</div></div>
+                  <div class="tw-in tw-out"><div class="lbl">Ramp wave</div><div class="val" id="tw-out-ramp">—</div></div>
+                  <div class="tw-in tw-out"><div class="lbl">Chop</div><div class="val" id="tw-out-chop">—</div></div>
+                  <div class="tw-in tw-out"><div class="lbl">In the bay</div><div class="val" id="tw-out-bay">—</div></div>
                   <div class="tw-in"><div class="lbl">Source</div><div class="val" id="tw-in-src" style="font-size:12px;">—</div></div>
                 </div>
               </div>
