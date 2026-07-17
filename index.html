@@ -6208,17 +6208,24 @@ function renderSnapshot(h, wx) {
   // transmit (height ~ sqrt(energy)) to the incident SIGNIFICANT height. This is the
   // number the eye reports (observers anchor near Hs, on the sets they notice) and it
   // matches the swell card's own "at the ramp" value (H·√tx), just with the sea term
-  // folded in. We deliberately do NOT use the Komar & Gaughan (1972) breaking-height
-  // curve here: it shoaled the wave UP to its breaking crest and read far taller than
-  // the eye — right for a safety SCORE, wrong as the number we display. The Entry
-  // classification/bands stay on the demerit path (ws_d/ww_d/s1_d), untouched.
+  // folded in. Tide is applied the SAME way the Entry score does it (tide_d): higher
+  // water over tideRef lets more energy past the headland — the static NS node at the
+  // bay mouth can't see it — so each energy term is scaled by (1 + tideGain·ΔT·gate),
+  // per component direction. We deliberately do NOT use the Komar & Gaughan (1972)
+  // breaking-height curve here: it shoaled the wave UP to its breaking crest and read
+  // far taller than the eye — right for a safety SCORE, wrong as the number we display.
+  // The Entry classification/bands stay on the demerit path (ws_d/ww_d/s1_d), untouched.
   const _entryBreakH = (function () {
     var cl = function (v) { return Math.max(0, Math.min(1, v)); };
     var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
     var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
     var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
-    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx      // swell energy at the ramp
-            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx; // + sea energy at the ramp
+    var ref  = (SITE.tideRef != null ? SITE.tideRef : 0.7);
+    var dT   = Math.max(0, (h.tideM != null ? h.tideM : ref) - ref);   // metres over reference
+    var gain = SITE.tideGain || 0;
+    var tg   = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
+    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))  // swell energy at the ramp, tide-lifted
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));   // + sea energy at the ramp, tide-lifted
     return Math.sqrt(Hs2);   // incident significant height at the ramp
   })();
   const dm     = result.demerits;
