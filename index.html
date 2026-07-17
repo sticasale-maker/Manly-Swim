@@ -2767,7 +2767,7 @@
       #featureCard .bd-replybox{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
       #featureCard .bd-replybox .bd-rname,#featureCard .bd-replybox .bd-rinput{background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:9px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;}
       #featureCard .bd-replybox textarea.bd-rinput{min-height:52px;resize:vertical;line-height:1.4;}
-      #featureCard .bd-rrow{display:flex;justify-content:flex-end;}
+      #featureCard .bd-rrow{display:flex;justify-content:space-between;align-items:center;gap:8px;}
       #featureCard .bd-rsend{flex:none;padding:8px 16px;background:var(--ocean);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
       #featureCard .bd-rsend:disabled{opacity:.45;cursor:not-allowed;}
     </style>
@@ -10078,13 +10078,19 @@ function submitFeedback(e) {
   // embed adds the new columns and the threaded replies in one call. Merge by id.
   async function boardFetch(){
     var votesP = rpc('list_feature_requests', { p_device: frDevice() }).catch(function(){ return []; });
-    var embedURL = sbURL() + '/rest/v1/feature_requests' +
-      '?select=*,feature_replies(id,body,created_at,author_role,name)' +
-      (BOARD_ADMIN ? '' : '&hidden=eq.false') +      // admins see hidden posts so they can restore them
-      '&order=pinned.desc,created_at.desc';
-    var embedP = fetch(embedURL, {
-      headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY() }
-    }).then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+    function embedFetch(replyCols){
+      var url = sbURL() + '/rest/v1/feature_requests' +
+        '?select=*,feature_replies(' + replyCols + ')' +
+        (BOARD_ADMIN ? '' : '&hidden=eq.false') +    // admins see hidden posts so they can restore them
+        '&order=pinned.desc,created_at.desc';
+      return fetch(url, { headers: { 'apikey': sbKEY(), 'Authorization': 'Bearer ' + sbKEY() } })
+        .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+    }
+    // Reply image_url is a newer, column-scoped grant on feature_replies; if it
+    // isn't present/granted yet the embed 400s, so fall back to the base columns
+    // so the board still loads (just without reply photos).
+    var embedP = embedFetch('id,body,created_at,author_role,name,image_url')
+      .catch(function(){ return embedFetch('id,body,created_at,author_role,name'); });
 
     var res = await Promise.all([embedP, votesP]);
     var posts = Array.isArray(res[0]) ? res[0] : [];
@@ -10172,6 +10178,37 @@ function submitFeedback(e) {
     return photoPublicPrefix() + name;
   }
 
+  // ---- Reply photos: one pending photo per open reply composer (keyed by post id) --
+  var _replyPhotos = {};                     // { <postId>: { blob, url } }
+
+  function replyBox(id){ var l = $('frList'); return l ? l.querySelector('.bd-replybox[data-replybox="' + id + '"]') : null; }
+
+  function replyPhotoReset(id){
+    var p = _replyPhotos[id];
+    if (p && p.url) { try { URL.revokeObjectURL(p.url); } catch (e) {} }
+    delete _replyPhotos[id];
+    var box = replyBox(id); if (!box) return;
+    var wrap = box.querySelector('[data-rphotowrap]'); if (wrap) { wrap.hidden = true; var im = wrap.querySelector('.fr-photo-thumb'); if (im) im.removeAttribute('src'); }
+    var f = box.querySelector('.bd-rphoto'); if (f) f.value = '';
+  }
+
+  async function onReplyPhotoPick(input){
+    var id = parseInt(input.getAttribute('data-rphoto'), 10); if (isNaN(id)) return;
+    var file = input.files && input.files[0]; if (!file) return;
+    if (!/^image\//.test(file.type || '')) { setMsg('That file isn’t an image.'); input.value = ''; return; }
+    if (file.size > 15 * 1024 * 1024) { setMsg('That photo is too large (max 15MB).'); input.value = ''; return; }
+    setMsg('');
+    try {
+      var blob = await compressImage(file);
+      replyPhotoReset(id);
+      var url = URL.createObjectURL(blob);
+      _replyPhotos[id] = { blob: blob, url: url };
+      var box = replyBox(id); if (!box) return;
+      var wrap = box.querySelector('[data-rphotowrap]');
+      if (wrap) { var im = wrap.querySelector('.fr-photo-thumb'); if (im) im.src = url; wrap.hidden = false; }
+    } catch (e) { setMsg('Couldn’t process that photo — try another.'); }
+  }
+
   // ---- WRITE: submit (existing 2-arg RPC keeps rate-limit + auto-upvote) ---
   async function featureSubmit(body, name, imageUrl){
     var b = (body == null ? '' : String(body)).trim();
@@ -10200,12 +10237,20 @@ function submitFeedback(e) {
   async function featureVote(id){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice() }); }
 
   // ---- WRITE: user reply (anon RPC; author_role stamped 'user' server-side) --
-  async function featureReply(postId, body, name){
+  async function featureReply(postId, body, name, imageUrl){
     var b = (body == null ? '' : String(body)).trim();
     if (b.length === 0 || b.length > 500) return Promise.reject(new Error('length'));
     if (frFoul(b)) return Promise.reject(new Error('foul'));
     var nm = (name == null ? '' : String(name)).trim().slice(0, 24) || pseudoName(frDevice());
-    return rpc('submit_feature_reply', { p_post_id: postId, p_body: b, p_device: frDevice(), p_name: nm });
+    var noImg = { p_post_id: postId, p_body: b, p_device: frDevice(), p_name: nm };
+    // Forward-compatible: prefer the photo-aware RPC; if the backend lacks
+    // p_image_url it 404s (PGRST202) and we fall back so replying still works.
+    try {
+      return await rpc('submit_feature_reply', imageUrl ? Object.assign({ p_image_url: imageUrl }, noImg) : noImg);
+    } catch (e) {
+      if (e && e.status === 404) return rpc('submit_feature_reply', noImg);
+      throw e;
+    }
   }
 
   // Fire-and-forget notify; a failure here must never surface (post is saved).
@@ -10283,6 +10328,8 @@ function submitFeedback(e) {
     // User replies: plain name (masked) + softened border. Body is masked too,
     // since a visitor wrote it. Marco's replies (author_role 'admin', the column
     // default) keep the avatar/VIZ badge and an unmasked, trusted body.
+    var rph = safePhoto(r.image_url);
+    var rphoto = rph ? '<img class="bd-photo" src="' + esc(rph) + '" alt="Photo attached to this reply" loading="lazy" onclick="window.open(this.src,\'_blank\',\'noopener\')">' : '';
     if (r.author_role === 'user'){
       var un = (r.name && String(r.name).trim()) ? esc(frMask(String(r.name).trim())) : 'Anonymous';
       return '<div class="bd-reply bd-reply--user">' +
@@ -10290,7 +10337,7 @@ function submitFeedback(e) {
           '<span class="bd-uname">' + un + '</span>' +
           '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
         '</div>' +
-        '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' +
+        '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' + rphoto +
       '</div>';
     }
     return '<div class="bd-reply">' +
@@ -10300,7 +10347,7 @@ function submitFeedback(e) {
         '<span class="bd-viz">VIZ</span>' +
         '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
       '</div>' +
-      '<div class="bd-reply-body">' + esc(r.body) + '</div>' +
+      '<div class="bd-reply-body">' + esc(r.body) + '</div>' + rphoto +
     '</div>';
   }
 
@@ -10344,7 +10391,16 @@ function submitFeedback(e) {
       '<div class="bd-replybox" data-replybox="' + esc(p.id) + '" hidden>' +
         '<input type="text" class="bd-rname" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)" value="' + esc(savedName()) + '">' +
         '<textarea class="bd-rinput" maxlength="500" rows="2" placeholder="Write a reply&hellip;"></textarea>' +
-        '<div class="bd-rrow"><button type="button" class="bd-rsend" data-rsend="' + esc(p.id) + '">Reply</button></div>' +
+        '<div class="fr-photo-wrap" data-rphotowrap="' + esc(p.id) + '" hidden>' +
+          '<img class="fr-photo-thumb" alt="Photo to attach">' +
+          '<button type="button" class="fr-photo-remove" data-rphotoremove="' + esc(p.id) + '" aria-label="Remove photo">&times;</button>' +
+        '</div>' +
+        '<div class="bd-rrow">' +
+          '<label class="fr-photo-btn" title="Add a photo"><span aria-hidden="true">&#128247;</span><span class="fr-photo-label">Photo</span>' +
+            '<input type="file" class="bd-rphoto" data-rphoto="' + esc(p.id) + '" accept="image/*" hidden>' +
+          '</label>' +
+          '<button type="button" class="bd-rsend" data-rsend="' + esc(p.id) + '">Reply</button>' +
+        '</div>' +
       '</div>';
     return '<div class="bd-card' + (p.pinned ? ' bd-card--pinned' : '') + (p.hidden ? ' bd-card--hidden' : '') + '">' +
       '<div class="bd-meta">' + pin +
@@ -10434,12 +10490,20 @@ function submitFeedback(e) {
     var sendBtn = box.querySelector('.bd-rsend'); if (sendBtn) sendBtn.disabled = true;
     setMsg('');
     try {
-      await featureReply(id, body, name);
+      var imageUrl = null;
+      var pend = _replyPhotos[id];
+      if (pend && pend.blob) {
+        setMsg('Uploading photo…');
+        imageUrl = await uploadPhoto(pend.blob);
+        setMsg('');
+      }
+      await featureReply(id, body, name, imageUrl);
+      replyPhotoReset(id);
       rememberName(name);
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
       await refresh();                         // rebuilds the card → composer collapses, reply shows
     } catch (e) {
-      setMsg('Couldn’t post your reply — you may be replying too fast. Try again shortly.');
+      setMsg((e && /upload/.test(String(e.message))) ? 'Couldn’t upload the photo — try again.' : 'Couldn’t post your reply — you may be replying too fast. Try again shortly.');
       if (sendBtn) sendBtn.disabled = false;
     }
   }
@@ -10480,6 +10544,8 @@ function submitFeedback(e) {
       if (rbox){ rbox.hidden = !rbox.hidden; if (!rbox.hidden){ var rta = rbox.querySelector('.bd-rinput'); if (rta) rta.focus(); } }
       return;
     }
+    var rphotorm = t.closest('[data-rphotoremove]');
+    if (rphotorm){ replyPhotoReset(parseInt(rphotorm.getAttribute('data-rphotoremove'), 10)); return; }
     var rsend = t.closest('[data-rsend]');
     if (rsend){ doUserReply(parseInt(rsend.getAttribute('data-rsend'), 10)); return; }
     if (!BOARD_ADMIN) return;
@@ -10512,7 +10578,14 @@ function submitFeedback(e) {
     var btn = $('frSubmit'); if (btn) btn.addEventListener('click', doSubmit);
     var photo = $('frPhoto'); if (photo) photo.addEventListener('change', onPhotoPick);
     var prm = $('frPhotoRemove'); if (prm) prm.addEventListener('click', photoReset);
-    var list = $('frList'); if (list) list.addEventListener('click', onListClick);
+    var list = $('frList');
+    if (list) {
+      list.addEventListener('click', onListClick);
+      list.addEventListener('change', function (e) {   // delegated: per-card reply photo pickers
+        var f = e.target && e.target.closest ? e.target.closest('.bd-rphoto') : null;
+        if (f) onReplyPhotoPick(f);
+      });
+    }
     updateCounter();
     refresh();                                 // render the board first…
     if (BOARD_ADMIN) ensurePass(false);        // …then prompt once on entry
