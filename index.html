@@ -6178,24 +6178,22 @@ function renderSnapshot(h, wx) {
     return false;
   }
   const result = calcScore(h);
-  // Tide-corrected shore-break height at the ramp — drives the Entry readout and
-  // dot. Fold the model's own tide term (high water lets more swell past the
-  // headland — the static NS node can't see it) into the transmit, combine swell +
-  // wind-sea in energy, then Komar & Gaughan (1972) to a breaking height. Display
-  // only: classification/bands stay on the demerit, unchanged.
+  // Sheltered wave height AT the ramp — the height a swimmer actually SEES arriving,
+  // not the breaker crest. Combine swell + wind-sea in energy behind the SS shelter
+  // transmit (height ~ sqrt(energy)), then scale 0.64 (significant -> typical wave)
+  // so the shown number matches visual inspection. We deliberately do NOT use the
+  // Komar & Gaughan (1972) breaking-height curve here anymore: it shoaled the wave
+  // UP to its breaking crest and, on top of significant height, read ~60-90% taller
+  // than the eye — right for a safety SCORE, wrong as the number we display. The
+  // Entry classification/bands stay on the demerit path (ws_d/ww_d/s1_d), untouched.
   const _entryBreakH = (function () {
-    var g = 9.81, cl = function (v) { return Math.max(0, Math.min(1, v)); };
-    var ref = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-    var dT = Math.max(0, (h.tideM != null ? h.tideM : ref) - ref);
-    var gain = SITE.tideGain || 0;
-    var tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
+    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
     var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
     var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
     var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
-    var Es = (h.swell1H || 0) * (h.swell1H || 0) * (h.swell1P || 8) * nsTx * (1 + gain * dT * tg(h.swell1Dir));
-    var Ew = (h.windWaveH || 0) * (h.windWaveH || 0) * (h.windWaveP || 8) * wwTx * (1 + gain * dT * tg(wwDir));
-    var E = Es + Ew;
-    return E > 0 ? 0.39 * Math.pow(g, 0.2) * Math.pow(E, 0.4) : 0;
+    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx      // swell energy at the ramp
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx; // + sea energy at the ramp
+    return 0.64 * Math.sqrt(Hs2);   // incident significant -> typical wave height
   })();
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
@@ -6362,9 +6360,9 @@ function renderSnapshot(h, wx) {
   })();
 
 
-  // Physical readout on each classification: Entry shows the tide-corrected shore-
-  // break height as the number (so big days stop pinning at "0"); Chop shows the
-  // steep-face height in cm; Surge shows the bay swell height.
+  // Physical readout on each classification: Entry shows the sheltered wave height
+  // arriving at the ramp (swell+sea, typical wave — see _entryBreakH); Chop shows
+  // the steep-face height in cm; Surge shows the bay swell height.
   (function () {
     const S = (typeof SITE !== 'undefined') ? SITE : null;
     const Hm = h.swell1H || 0;
