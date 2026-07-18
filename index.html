@@ -4380,6 +4380,33 @@ function blDispLookup(dirDeg, periodS) {
   return dispBilinear(tbl, dirDeg, periodS, SITE.blDispFold);
 }
 
+// ── THE TWO SHELTERED HEIGHTS THE APP IS ALLOWED TO QUOTE ────────────────────
+// Entry (at the ramp, off South Steyne) and Surge (inside the bay). The metric
+// readouts and the Oracle's prose must both come from HERE, or the popup
+// contradicts itself: on 18 Jul 2026 the card read ~1.7 m at the ramp while the
+// text beside it said 2.4 m, because the summary carried its own Komar-Gaughan
+// BREAKING-height copy of this maths (0.39*g^0.2*E^0.4, which includes period
+// and shoals above the offshore height). Two definitions of one number will
+// always drift apart. One definition, two callers — do not re-implement either.
+function shelteredRampH(h) {
+  const cl = function (v) { return Math.max(0, Math.min(1, v)); };
+  const wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
+  const nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
+  const wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
+  const ref  = (SITE.tideRef != null ? SITE.tideRef : 0.7);
+  const dT   = (h.tideM != null ? h.tideM : ref) - ref;
+  const gain = SITE.tideGain || 0;
+  const tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
+  const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));
+  return Math.sqrt(Math.max(0, Hs2));
+}
+function shelteredBayH(h) {
+  const Hm = h.swell1H || 0;
+  if (!(Hm > 0) || !SITE.blDisp) return Hm;
+  return Hm * Math.sqrt(Math.max(0, Math.min(1, blDispLookup(h.swell1Dir, h.swell1P))));
+}
+
 // ── THE BL TABLE IS A WAVE TABLE ─────────────────────────────────────────────
 // It may be indexed ONLY by a wave ARRIVAL direction: the swell partition (dp_swl)
 // or the sea partition (dp_sea, carried as windWaveDir). A WIND bearing is a
@@ -9982,34 +10009,22 @@ async function generateBannerSummaryLocal() {
     domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
     domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
-  const _oMid = rows.length ? (rows[Math.floor(rows.length/2)]._ww || rows[Math.floor(rows.length/2)]) : {};
+  // NOT _ww. `_ww` is the pre-merge WillyWeather snapshot, kept ONLY so the
+  // WW-vs-NS compare tick can score the old feed; `r.swell1H` is the NS value the
+  // whole app scores and displays on. Reading the offshore figure from _ww while
+  // the sheltered figures below came from NS mixed two feeds inside one sentence
+  // \u2014 that is how the prose reported 1.9 m out the back yet 2.4 m at the ramp,
+  // which reads as impossible (18 Jul 2026).
+  const _oMid = rows.length ? rows[Math.floor(rows.length/2)] : {};
   const oceanSwellDir = rows.length ? bearingName(_oMid.swell1Dir) : '\u2014';
-  const oceanSwellH   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1H) || 0)) : 0;
-  const oceanSwellP   = rows.length ? avg(rows.map(r => ((r._ww || r).swell1P) || 8)) : 8;
-  // Two figures for the summary, matching the metric readouts: the tide-corrected
-  // shore-break height reaching the ramp (Entry) and the residual swell in the bay
-  // (Surge), each averaged over the window. rampBreakH folds the tide term into the
-  // transmit then breaks (Komar-Gaughan); bayResidualH is the BL residual. baySwellH
-  // is kept = bayResidualH so a not-yet-updated Worker still reports a correct figure.
-  const rampBreakH = rows.length ? avg(rows.map(function (r) {
-    var Hm = r.swell1H || 0;
-    if (Hm <= 0 || !(typeof SITE !== 'undefined' && SITE && SITE.nsDisp)) return Hm;
-    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
-    var ref = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-    var dT = Math.max(0, (r.tideM != null ? r.tideM : ref) - ref);
-    var gain = SITE.tideGain || 0;
-    var tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
-    var wwDir = (r.windWaveDir != null ? r.windWaveDir : r.windDir);
-    var Es = Hm * Hm * (r.swell1P || 8) * cl(nsDispLookup(r.swell1Dir, r.swell1P)) * (1 + gain * dT * tg(r.swell1Dir));
-    var Ew = (r.windWaveH || 0) * (r.windWaveH || 0) * (r.windWaveP || 8) * cl(nsDispLookup(wwDir, r.windWaveP || r.swell1P)) * (1 + gain * dT * tg(wwDir));
-    var E = Es + Ew;
-    return E > 0 ? 0.39 * Math.pow(9.81, 0.2) * Math.pow(E, 0.4) : 0;
-  })) : 0;
-  const bayResidualH = rows.length ? avg(rows.map(function (r) {
-    var Hm = r.swell1H || 0;
-    if (Hm <= 0 || !(typeof SITE !== 'undefined' && SITE && SITE.blDisp)) return Hm;
-    return Hm * Math.sqrt(Math.max(0, Math.min(1, blDispLookup(r.swell1Dir, r.swell1P))));
-  })) : 0;
+  const oceanSwellH   = rows.length ? avg(rows.map(r => r.swell1H || 0)) : 0;
+  const oceanSwellP   = rows.length ? avg(rows.map(r => r.swell1P || 8)) : 8;
+  // The two sheltered figures, averaged over the window, from the SAME helpers the
+  // metric readouts use \u2014 so the prose can never disagree with the pictogram next
+  // to it. baySwellH is kept = bayResidualH so a not-yet-updated Worker still
+  // reports a correct figure.
+  const rampBreakH   = rows.length ? avg(rows.map(shelteredRampH)) : 0;
+  const bayResidualH = rows.length ? avg(rows.map(shelteredBayH))  : 0;
   const baySwellH = bayResidualH;
   _bannerFacts = {
     timeCtx: timeCtx,
@@ -12560,24 +12575,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var ICON_WORD = { entry: ['easy','doable','caution','dangerous'],
                     surge: ['steady','drifty','surgy','washy'] };
   var RAIL_COL = { green: '#2f9e63', amber: '#d9a11e', yellow: '#e07b39', red: '#c0392b' };
-  function rampHeight(h) {
-    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
-    var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
-    var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
-    var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
-    var ref = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-    var dT = (h.tideM != null ? h.tideM : ref) - ref;
-    var gain = SITE.tideGain || 0;
-    var tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
-    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))
-            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));
-    return Math.sqrt(Hs2);
-  }
-  function bayHeight(h) {
-    var Hm = h.swell1H || 0;
-    if (!(Hm > 0) || !SITE.blDisp) return Hm;
-    return Hm * Math.sqrt(Math.max(0, Math.min(1, blDispLookup(h.swell1Dir, h.swell1P))));
-  }
+  // Both defer to the single definitions near nsDispLookup/blDispLookup. These
+  // used to hold their own copy of the maths, which is how the Oracle's prose
+  // drifted away from the readouts it sits beside.
+  function rampHeight(h) { return shelteredRampH(h); }
+  function bayHeight(h)  { return shelteredBayH(h); }
   function metricCell(kind, met, readout) {
     if (!met) return '';
     var i = ZONE_IDX[met.cls] != null ? ZONE_IDX[met.cls] : 0;
