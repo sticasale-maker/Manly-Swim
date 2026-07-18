@@ -242,8 +242,11 @@
       <div id="pastBox" style="display:none">
         <div class="ctl" style="grid-template-columns:74px 1fr"><label>Date</label><input type="date" id="pastDate" class="datein"></div>
         <div class="ctl"><label>Hour</label><input type="range" id="pastHour" min="0" max="23" step="1"><div class="val"><span id="pastHour_n"></span><span class="unit">:00</span></div></div>
-        <div class="btns"><button id="pastLoad">Load swell + wind</button></div>
-        <div class="note" id="pastStatus">Pulls primary &amp; secondary swell, wind wave, wind <b>and tide</b> for the chosen hour, then fills the bench (and the map). Tide is Open-Meteo's modelled sea level shifted to the local datum — approximate, so sanity-check it.</div>
+        <div class="btns">
+          <button id="pastLoad">Load Open-Meteo</button>
+          <button id="pastLoadNS">Load recorded NS</button>
+        </div>
+        <div class="note" id="pastStatus"><b>Open-Meteo</b> — modelled, any date, but a different model from the one the app scores on; tide is modelled sea level shifted to the local datum, so sanity-check it. <b>Recorded NS</b> — the exact NSW Nearshore partitions the Worker logged that hour (swell &rarr; primary, sea &rarr; wind wave), with the tide as recorded. That is the same input the live score used, so the bench reproduces it rather than approximating it. Only covers hours since logging began.</div>
       </div>
     </div>
 
@@ -1190,12 +1193,28 @@ function calc(I){
    underneath gets the identical rect as a CSS transform, so the two stay registered.
    Zoom is centred on the NS node, which is what the roses and the lobe hang off. */
 const ZOOM = 2;
+/* Centre on the CONTENT, not on the node. Centring on the node alone put ENTRY
+   (352,658) outside the left edge at 2x — the viewport is only 760 wide and the
+   node sits at x=762, so everything interesting fell off one side.
+   The box covers the node, ENTRY and CHOP, plus the lobe's 300 px reach when a
+   lobe is on. A 600 px-tall lobe cannot fit a 476 px-tall viewport at 2x, so it
+   still crops — but centred, it crops evenly top and bottom instead of hiding a
+   whole point of interest. */
+function contentBox(){
+  const pts = [FCST_NODE, PT_ENTRY, PT_CHOP];
+  let x0 = Math.min(...pts.map(p=>p.x)), x1 = Math.max(...pts.map(p=>p.x));
+  let y0 = Math.min(...pts.map(p=>p.y)), y1 = Math.max(...pts.map(p=>p.y));
+  if(ST.blRing || ST.ssRing || ST.blAll){
+    x0 = Math.min(x0, FCST_NODE.x-LOBE_R100); x1 = Math.max(x1, FCST_NODE.x+LOBE_R100);
+    y0 = Math.min(y0, FCST_NODE.y-LOBE_R100); y1 = Math.max(y1, FCST_NODE.y+LOBE_R100);
+  }
+  return { cx:(x0+x1)/2, cy:(y0+y1)/2 };
+}
 function viewRect(){
   if(!ST.zoomIn) return { x:0, y:0, w:MW, h:MH, z:1 };   // 1x = the whole chart, untouched
   const z = ZOOM, w = MW/z, h = MH/z;
-  // Centred on the node. At 2x the rect (382,332,760,476) still sits wholly inside
-  // the 1520x952 chart, so the clamp never fires and the node lands dead centre.
-  let x = FCST_NODE.x - w/2, y = FCST_NODE.y - h/2;
+  const c = contentBox();
+  let x = c.cx - w/2, y = c.cy - h/2;
   x = Math.max(0, Math.min(MW-w, x));
   y = Math.max(0, Math.min(MH-h, y));
   return { x, y, w, h, z };
@@ -2099,6 +2118,69 @@ async function loadPast(){
   }
 }
 document.getElementById('pastLoad').onclick=loadPast;
+
+/* ============ LOAD FROM THE PAST — RECORDED NS ==============================
+   forecast_history is written hourly by the Worker cron and carries the NSW
+   Nearshore partitions the LIVE score actually used. Loading those reproduces a
+   past hour exactly, where Open-Meteo only approximates it with a different model.
+   Mapped the same way mergeNearshoreMatrix does in index.html: ns_swell_* -> the
+   primary swell, ns_sea_* -> the wind wave, and no secondary (the NS feed reports
+   one swell partition, so leaving s2 on would double-count). */
+const NS_HIST_URL = 'https://gkspukabnfbzrvjoewpc.supabase.co/rest/v1/forecast_history';
+const NS_HIST_KEY = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
+// Sydney-local "YYYY-MM-DD HH" for an instant. The rows are stored UTC and the
+// picker is local, so matching on the raw ISO string would be an hour or ten out.
+function sydKey(iso){
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year:'numeric', month:'2-digit',
+    day:'2-digit', hour:'2-digit', hour12:false }).formatToParts(new Date(iso));
+  const g = t => (p.find(o=>o.type===t)||{}).value;
+  return `${g('year')}-${g('month')}-${g('day')} ${g('hour')}`;
+}
+async function loadPastNS(){
+  const date = pastDate.value, hour = +pastHour.value;
+  if(!date) return setStatus('Pick a date first.','warn');
+  setStatus('Loading recorded NS…','');
+  // Query a +/-2 day window and match on Sydney local time — cheaper and more
+  // robust than trying to build the exact UTC instant for a local hour.
+  const lo = new Date(new Date(date+'T00:00:00Z').getTime()-2*86400000).toISOString();
+  const hi = new Date(new Date(date+'T00:00:00Z').getTime()+2*86400000).toISOString();
+  try{
+    const res = await fetch(`${NS_HIST_URL}?select=*&forecast_dt=gte.${lo}&forecast_dt=lte.${hi}&order=forecast_dt.asc`,
+      { headers:{ apikey:NS_HIST_KEY, Authorization:'Bearer '+NS_HIST_KEY } });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const rows = await res.json();
+    if(!rows.length) throw new Error('nothing logged near that date');
+    const want = `${date} ${pad(hour)}`;
+    const row = rows.find(r => sydKey(r.forecast_dt) === want);
+    if(!row) throw new Error(`no row for ${want}:00 — logging runs from ${sydKey(rows[0].forecast_dt)}:00`);
+    if(row.ns_swell_h == null || row.ns_sea_h == null)
+      throw new Error('that hour was logged before NS partitions were stored (WillyWeather only)');
+
+    clampSet('s1H', row.ns_swell_h, 1);
+    clampSet('s1D', Math.round(row.ns_swell_dir ?? 0), 0);
+    clampSet('s1P', row.ns_swell_p ?? 8, 1);
+    clampSet('wwH', row.ns_sea_h, 2);
+    clampSet('wwD', Math.round(row.ns_sea_dir ?? 0), 0);
+    clampSet('wwP', row.ns_sea_p ?? 4, 1);
+    // NS reports ONE swell partition — force secondary off so it cannot linger
+    // from a previous Open-Meteo load and quietly add energy that was never there.
+    ST.s2on = false;
+    document.getElementById('s2on').checked = false;
+    document.getElementById('s2box').style.display = 'none';
+    document.getElementById('s2hint').style.display = 'none';
+    clampSet('s2H', 0, 1);
+    if(row.wind_kmh != null) clampSet('wK', Math.round(row.wind_kmh), 0);
+    if(row.wind_dir  != null) clampSet('wD', Math.round(row.wind_dir), 0);
+    if(row.tide_m    != null) clampSet('tide', row.tide_m, 2);
+    render();
+    setStatus(`Loaded <b>recorded NS</b> for ${date} ${pad(hour)}:00 · swell ${F(ST.s1H)}m@${Math.round(ST.s1D)}° ${F(ST.s1P)}s`
+      + ` · sea ${F(ST.wwH,2)}m@${Math.round(ST.wwD)}° ${F(ST.wwP)}s · wind ${Math.round(ST.wK)}km/h@${Math.round(ST.wD)}° · tide ${F(ST.tide,2)}m.`
+      + ` <span class="note2">These are the exact values the live score used that hour — secondary swell forced off, as the NS feed has only one swell partition.</span>`,'ok');
+  }catch(err){
+    setStatus('Recorded-NS load failed: '+err.message+'. The log only goes back to when the Worker cron started.','err');
+  }
+}
+document.getElementById('pastLoadNS').onclick=loadPastNS;
 document.getElementById('reloadSheet').onclick=loadFromSheet;
 loadFromSheet();
 
