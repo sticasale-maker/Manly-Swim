@@ -12464,6 +12464,37 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '</div>';
   }
 
+  /* ---- Swell + Wind map, borrowed from the app's own canvas ---------------
+     The renderer is an IIFE bound to #swellCanvas and animated on rAF, so it
+     can't be instantiated a second time. Snapshot the live canvas instead —
+     that IS the app's rendering, refraction arrows, wind arrow and all. Taken
+     on every fill(), so it refreshes as the async data lands. Returns '' when
+     the card is hidden by the detail-level setting (canvas then has no bitmap)
+     or if the export ever throws. */
+  function swellWindTile(cur, liveRes) {
+    var src = document.getElementById('swellCanvas');
+    if (!src || !src.width || !src.height) return '';
+    var url;
+    try {
+      var w = Math.min(560, src.width), k = w / src.width;
+      var c = document.createElement('canvas');
+      c.width = w; c.height = Math.round(src.height * k);
+      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+      /* the bay render is fully opaque (checked: no transparent pixels), so
+         JPEG is safe here and costs 27 KB against 161 KB for the same PNG */
+      url = c.toDataURL('image/jpeg', 0.9);
+    } catch (e) { return ''; }
+    if (!url || url.length < 200) return '';
+    var swLine = compassOf(cur.swell1Dir || 0) + ' swell · ' + Math.round(cur.swell1P || 0) + 's';
+    var wdLine = compassOf(cur.windDir || 0) + ' wind · ' + Math.round(cur.windKmh || 0) + ' km/h';
+    var chop = liveRes && liveRes.swim ? liveRes.swim : null;
+    return '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🗺️ Swell + wind in the bay</div>' +
+      '<img class="ssd-swell" src="' + url + '" alt="Swell refracting around the headland into the bay, with the wind arrow">' +
+      '<div class="ssd-swline"><span>' + swLine + '</span><span>' + wdLine +
+        (chop ? ' · <b style="color:' + (RAIL_COL[chop.cls] || '#113541') + '">' + chop.label + '</b>' : '') + '</span></div>' +
+    '</div>';
+  }
+
   function fmtSlot(dt) {
     var d = new Date(dt.replace(' ', 'T'));
     if (isNaN(d)) return dt;
@@ -12777,7 +12808,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     }
 
     var h = '<div class="ssd-grid">';
-    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap">⏳ Bay reopens</div>' +
+    /* Deliberately not "bay closed/reopens": the bay is never officially shut
+       by the lifesavers, and implying that would be wrong. This is a condition
+       readout — when it is calm enough to swim again. */
+    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap">⏳ Swimmable again in</div>' +
          (cdHrs != null
             ? (cdHrs < 1
                 ? '<div class="ssd-huge">now</div><div class="ssd-sub">entry is still swimmable this hour — get in before it turns!</div>'
@@ -12799,6 +12833,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
              metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
            '</div></div>';
     }
+    if (cur) h += swellWindTile(cur, liveRes);
     if (pct != null) {
       h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌊 How rare is this?</div>' +
            '<div class="ssd-pct">' + (pct >= 50
@@ -12820,7 +12855,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
            '<div class="ssd-note">' + noteBits.join(' · ') + '</div></div>';
     }
     h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">📘 The 2025 scorecard</div><div class="ssd-txt">' +
-         'Last year the bay was unswimmable on <b>' + totNo + ' days</b> — the longest run was <b>' + streak[0] + ' days</b> (ended 27 May, that huge East Coast Low). ' +
+         'Last year it was too rough to swim on <b>' + totNo + ' days</b> — the longest run was <b>' + streak[0] + ' days</b> (ended 27 May, that huge East Coast Low). ' +
          'Biggest swell of 2025: <b>' + top[1].toFixed(1) + ' m</b> at the bay mouth on ' + topStr + '. Blows always pass.</div></div>';
     h += '</div>';
     return h;
@@ -12869,6 +12904,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-map{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:8px;}' +
     '.ssd-chip{display:inline-block;color:#fff;font-family:"Inter",sans-serif;font-size:10px;font-weight:700;letter-spacing:.5px;border-radius:5px;padding:2px 7px;margin-bottom:5px;}' +
     '.ssd-nowline{font-size:12.5px;color:#113541;line-height:1.5;}' +
+    '.ssd-swell{width:100%;display:block;border-radius:8px;}' +
+    '.ssd-swline{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:#4a5f6e;margin-top:5px;}' +
     '.ssd-metrow{display:flex;gap:10px;}' +
     '.ssd-met{flex:1;min-width:0;text-align:center;}' +
     '.ssd-met-cap{font-family:"Inter",sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#4a5f6e;margin-bottom:4px;}' +
