@@ -13765,15 +13765,16 @@ if ('serviceWorker' in navigator) {
     }, 3500);
   }
 
-  // ---- B) iOS Safari: one-time hint (iOS has no beforeinstallprompt API). Shown
-  // at most ONCE, ever — the seen flag is set on display, not on dismiss, because
-  // from a Safari tab there is no way to detect the app is already installed.
+  // ---- B) iOS: one-time hint (iOS has no beforeinstallprompt API in ANY browser).
+  // Shown for every iOS browser — Safari, Chrome (CriOS), Edge, Firefox — since all
+  // install via a Share → "Add to Home Screen" flow. Shown at most ONCE, ever: the
+  // seen flag is set on display, not on dismiss, because from a browser tab there is
+  // no way to detect the app is already installed.
   var isIOS = /iPhone|iPad|iPod/.test(ua) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // iPadOS 13+ reports as Mac
-  var isSafari = isIOS && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);   // only Safari has the Share→A2HS flow
   var iosSeen = false;
   try { iosSeen = !!localStorage.getItem('a2hs_ios_seen_v1'); } catch (err) {}
-  if (isSafari && !window.navigator.standalone && !iosSeen) {
+  if (isIOS && !window.navigator.standalone && !iosSeen) {
     var ban = byId('a2hsIos');
     if (ban) {
       ban.hidden = false;
