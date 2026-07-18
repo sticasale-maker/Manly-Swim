@@ -5115,6 +5115,12 @@ function calcScore(d, modelOverride) {
     chopParts: {
       ws: Math.round(_hWsFace * 1000) / 10,
       ww: Math.round(_hWwFace * 1000) / 10,
+      // The grown sea behind the wind-sea face. Its PERIOD is the whole argument
+      // for this metric — ~2 s is water slapping your face on every other breath,
+      // which is what Chop is measuring; the 8 s forecast wind-wave is a 100 m
+      // swell you simply rise over. Shown so the panel makes that case itself.
+      wsH: Math.round(_chopRes.hs * 100) / 100,
+      wsP: Math.round(_chopRes.tp * 10) / 10,
     },
     demerits: {
       tide:     Math.round(tide_d  * 10) / 10,
@@ -11390,7 +11396,10 @@ function metricBreakdownHTML(key) {
       (Math.abs(dm.refrac) > 0.05 ? row('Refraction', f(dm.refrac)) : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Subtotal (before tide)', f(o)) +
-      row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — only swell from &gt;90°)`) +
+      // tideGate is start 70 -> full 90, and tideDir() gates swell1 AND the
+      // wind-wave. The old note said "only swell from >90°", which named the
+      // wrong angle and the wrong set of terms.
+      row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 70°, full at 90°)`) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Total demerits', f(r.entry.raw)) +
       row('Entry score (60 = best)', r.entry.score + ' · ' + r.entry.label)
@@ -11401,13 +11410,18 @@ function metricBreakdownHTML(key) {
     // demerits.wind / demerits.windWave here showed the ENTRY path's numbers:
     // they blamed the wind wave for chop the fetch sea had made, and did not
     // sum to the total below them. These two are what q7 is built from.
-    const cp = r.chopParts || { ws: 0, ww: 0 };
+    const cp = r.chopParts || { ws: 0, ww: 0, wsH: 0, wsP: 0 };
+    const wwP = h.windWaveP || 0;
     return wrap(
-      row('Wind-sea face (wind × fetch)', f(cp.ws) + ' cm') +
-      row('Wind-wave face', f(cp.ww) + ' cm', '(0 unless the sea is steep — 2&pi;H/gT&sup2; over 1/60)') +
+      row('Wind-sea grown by the wind', (cp.wsH != null ? cp.wsH.toFixed(2) : '0.00') + ' m @ ' + f(cp.wsP) + ' s',
+          '(over its fetch on this bearing)') +
+      row('&nbsp;&nbsp;→ its steep face', f(cp.ws) + ' cm') +
+      row('Wind-wave (forecast sea)', (h.windWaveH || 0).toFixed(2) + ' m @ ' + f(wwP) + ' s') +
+      row('&nbsp;&nbsp;→ its steep face', f(cp.ww) + ' cm',
+          '(0 unless steep: 2&pi;H/gT&sup2; over 1/60)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
-      row('q7 = the two in quadrature', f(r.swim.raw) + ' cm') +
-      row('Swim score (60 = best)', r.swim.score + ' · ' + r.swim.label)
+      row('q7 = the two faces in quadrature', f(r.swim.raw) + ' cm') +
+      row('Chop score (60 = best)', r.swim.score + ' · ' + r.swim.label)
     );
   }
   if (key === 'surge') {
@@ -11421,10 +11435,15 @@ function metricBreakdownHTML(key) {
       row('Wind-wave heave (BL)', f(w.windWave), '(heave fraction only — the slap goes to Chop)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Wave subtotal', f(waveSub)) +
-      row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; swell &lt;20&deg; exempt, full &gt;90&deg;)`) +
+      // bowerTideGate knots are (0,0) (10,10%) (40,20%) (80,100%) — nothing is
+      // "exempt below 20°", and it is full at 80°, not 90°. Both figures in the
+      // old note were wrong.
+      row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; 10% at 10°, 20% at 40°, full at 80°)`) +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw)) +
-      row('Surge score v6 (60 = best)', r.water.score + ' · ' + r.water.label)
+      // Not "v6" since 3 Jul 2026: the rail classifies on rawBL demerits ascending,
+      // exactly like Entry. Only the displayed score is still 60 − rawBL.
+      row('Surge score (60 = best)', r.water.score + ' · ' + r.water.label)
     );
   }
   return '';
