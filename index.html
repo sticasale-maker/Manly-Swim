@@ -12425,6 +12425,45 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return t <= E.easy ? 'easy' : t <= E.doable ? 'doable' : t <= E.caution ? 'caution' : 'dangerous';
   }
 
+  /* ---- ENTRY + SURGE exactly as the app's metric rails show them ----------
+     Same LIVE calcScore, same pictograms (_ICON_ZONE/_ICON_WORD naming), and
+     the same physical readouts: Entry = incident significant height at the
+     ramp (swell+sea energy through the SS transmit table, tide-scaled — the
+     _entryBreakH construction), Surge = the bay residual H*sqrt(BL transmit). */
+  var ZONE_IDX = { green: 0, amber: 1, yellow: 2, red: 3 };
+  var ICON_WORD = { entry: ['easy','doable','caution','dangerous'],
+                    surge: ['steady','drifty','surgy','washy'] };
+  var RAIL_COL = { green: '#2f9e63', amber: '#d9a11e', yellow: '#e07b39', red: '#c0392b' };
+  function rampHeight(h) {
+    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
+    var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
+    var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
+    var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
+    var ref = (SITE.tideRef != null ? SITE.tideRef : 0.7);
+    var dT = (h.tideM != null ? h.tideM : ref) - ref;
+    var gain = SITE.tideGain || 0;
+    var tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
+    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));
+    return Math.sqrt(Hs2);
+  }
+  function bayHeight(h) {
+    var Hm = h.swell1H || 0;
+    if (!(Hm > 0) || !SITE.blDisp) return Hm;
+    return Hm * Math.sqrt(Math.max(0, Math.min(1, blDispLookup(h.swell1Dir, h.swell1P))));
+  }
+  function metricCell(kind, met, readout) {
+    if (!met) return '';
+    var i = ZONE_IDX[met.cls] != null ? ZONE_IDX[met.cls] : 0;
+    var prefix = (kind === 'entry') ? 'entry' : 'surge';
+    return '<div class="ssd-met">' +
+      '<div class="ssd-met-cap">' + (kind === 'entry' ? 'Entry' : 'Surge') + '</div>' +
+      '<div class="ssd-met-fig"><img src="images/' + prefix + '-' + ICON_WORD[kind][i] + '.png" alt="" loading="lazy">' +
+        (readout ? '<span class="ssd-met-read">' + readout + '</span>' : '') + '</div>' +
+      '<div class="ssd-met-lab" style="color:' + (RAIL_COL[met.cls] || '#113541') + '">' + met.label + '</div>' +
+    '</div>';
+  }
+
   function fmtSlot(dt) {
     var d = new Date(dt.replace(' ', 'T'));
     if (isNaN(d)) return dt;
@@ -12668,13 +12707,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var dd = Math.abs(t - now);
       if (dd < bd) { bd = dd; cur = r; }
     });
-    var nowTotal = null, pct = null, zone = '';
+    var nowTotal = null, pct = null, zone = '', liveRes = null;
     if (cur && bd <= 2 * 36e5) {
       try {
         nowTotal = pinnedTotal(cur);
         pct = pctOf(STORM_CLIMO.hourlyQ, nowTotal);
         zone = zoneOf(nowTotal);
       } catch (e) {}
+      /* the LIVE score — same call the metric rails make, so the pictures and
+         labels here always agree with what the app is showing */
+      try { liveRes = calcScore(cur); } catch (e) {}
     }
 
     /* ---- anomalies */
@@ -12743,12 +12785,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
             : '<div class="ssd-huge">5+<span class="ssd-hunit">days</span></div><div class="ssd-sub">no swimmable window in the current forecast — check back tomorrow</div>') +
          '</div>';
     if (cur) {
-      h += '<div class="ssd-tile"><div class="ssd-cap">📍 Right now</div>' +
+      h += '<div class="ssd-tile"><div class="ssd-cap">📍 Right now at South Steyne</div>' +
            (zone ? '<div class="ssd-chip" style="background:' + ZCOL[zone] + '">' + zone.toUpperCase() + '</div>' : '') +
            '<div class="ssd-nowline"><b>' + (cur.swell1H != null ? cur.swell1H.toFixed(1) : '–') + ' m</b> swell · ' +
            Math.round(cur.swell1P || 0) + 's ' + compassOf(cur.swell1Dir || 0) + '</div>' +
            '<div class="ssd-nowline"><b>' + Math.round(cur.windKmh || 0) + ' km/h</b> wind · ' + compassOf(cur.windDir || 0) + '</div>' +
            '</div>';
+    }
+    if (liveRes && cur) {
+      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Entry &amp; Surge right now</div>' +
+           '<div class="ssd-metrow">' +
+             metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
+             metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
+           '</div></div>';
     }
     if (pct != null) {
       h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌊 How rare is this?</div>' +
@@ -12820,6 +12869,13 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-map{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:8px;}' +
     '.ssd-chip{display:inline-block;color:#fff;font-family:"Inter",sans-serif;font-size:10px;font-weight:700;letter-spacing:.5px;border-radius:5px;padding:2px 7px;margin-bottom:5px;}' +
     '.ssd-nowline{font-size:12.5px;color:#113541;line-height:1.5;}' +
+    '.ssd-metrow{display:flex;gap:10px;}' +
+    '.ssd-met{flex:1;min-width:0;text-align:center;}' +
+    '.ssd-met-cap{font-family:"Inter",sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#4a5f6e;margin-bottom:4px;}' +
+    '.ssd-met-fig{position:relative;display:inline-block;max-width:100%;}' +
+    '.ssd-met-fig img{width:100%;max-width:132px;height:auto;display:block;border-radius:8px;}' +
+    '.ssd-met-read{position:absolute;right:4px;bottom:4px;background:rgba(17,53,65,0.82);color:#fff;font-family:"Inter",sans-serif;font-size:10px;font-weight:700;border-radius:5px;padding:1px 5px;}' +
+    '.ssd-met-lab{font-family:"Bebas Neue",sans-serif;font-size:22px;letter-spacing:.5px;line-height:1.1;margin-top:3px;}' +
     '.ssd-arow{display:flex;align-items:center;gap:8px;margin:7px 0;}' +
     '.ssd-alab{flex:none;width:58px;font-size:12px;color:#4a5f6e;}' +
     '.ssd-atrack{flex:1;height:16px;position:relative;background:#e7edef;border-radius:4px;overflow:hidden;}' +
