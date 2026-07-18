@@ -12346,9 +12346,9 @@ if ('serviceWorker' in navigator) {
    STORM WATCH STATS — dynamic dashboard for announcement popups.
    An announcement whose body contains the literal token [[STORM_STATS]] gets
    that token replaced, at render time, with a live-computed stats dashboard:
-   countdown to the next swimmable window, how rare today's conditions are vs
-   the 2025 NS-hindcast climatology, air/water temperature vs seasonal normals,
-   where the swell was born, and the 2025 archive scorecard.
+   countdown to the next swimmable window, how rare RIGHT NOW is vs the 2025
+   NS-hindcast hourly climatology, today's air/water/rain vs seasonal normals,
+   a mini Tasman map of where the swell was born, and the 2025 scorecard.
 
    STORM_CLIMO is baked offline by scratchpad stormstats/bake_climo.py from the
    node-103218 2025 hindcast (Drive folder "NS 2025 series") scored through THIS
@@ -12357,10 +12357,11 @@ if ('serviceWorker' in navigator) {
    caution edge 45). The pinned scorer below re-implements the same math so the
    percentile comparison stays apples-to-apples even if live tuning moves later.
    Countdown deliberately uses the LIVE calcScore instead, so it always agrees
-   with the Entry rail the user sees. Temperature normals: ERA5 2016-25 (air),
-   Open-Meteo marine 2022-25 (SST).
+   with the Entry rail the user sees. Normals: ERA5 2016-25 (air temp + weekly
+   rain), Open-Meteo marine 2022-25 (SST). Past-7-day rain is fetched live from
+   Open-Meteo (CORS-open) once per popup session.
    ========================================================================== */
-var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 103218 (2025 series) + New NS sheet snapshot","hours":8184,"days":341,"tideNeutral":true,"span":["2023-12-04T11:00:00","2025-12-04T10:00:00"]},"scoring":{"table":[[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[96.0,96.0,96.0,97.0,99.0,99.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[90.0,90.0,90.0,91.0,93.0,93.0,94.0,95.0,97.0,98.0,100.0,100.0,100.0,100.0,100.0,100.0],[81.0,81.0,81.0,83.0,85.0,85.0,87.0,88.0,90.0,91.0,93.0,93.0,94.0,96.0,97.0,97.0],[72.0,72.0,72.0,73.0,76.0,78.0,79.0,81.0,82.0,83.0,84.0,87.0,89.0,90.0,92.0,92.0],[64.0,64.0,64.0,66.0,67.0,67.0,69.0,71.0,74.0,76.0,77.0,79.0,80.0,81.0,82.0,84.0],[51.0,51.0,51.0,52.0,54.0,56.0,58.0,59.0,60.0,62.0,64.0,67.0,69.0,71.0,72.0,74.0],[40.0,40.0,40.0,40.0,41.0,42.0,43.0,45.0,47.0,48.0,51.0,52.0,53.0,54.0,56.0,56.0],[28.0,28.0,28.0,32.0,32.0,32.0,32.0,32.0,35.0,36.0,38.0,38.0,38.0,40.0,40.0,40.0],[21.0,21.0,21.0,23.0,23.0,23.0,23.0,24.0,25.0,25.0,25.0,25.0,25.0,25.0,25.0,25.0],[11.5,11.5,11.5,11.5,11.5,11.5,11.5,15.3,15.3,15.3,15.3,15.3,15.3,15.3,15.3,15.3],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"ssWaveSens":4.0,"windSeaSens":1.3,"chopRefFetchM":3000.0,"entry":{"easy":15.0,"doable":30.0,"caution":45.0,"scaleMax":60.0}},"hourlyQ":[0.0,0.04,0.11,0.16,0.2,0.22,0.24,0.28,0.31,0.36,0.4,0.45,0.5,0.57,0.66,0.72,0.8,0.87,0.97,1.1,1.24,1.35,1.48,1.58,1.67,1.76,1.92,2.05,2.21,2.35,2.47,2.65,2.82,3.06,3.26,3.48,3.78,4.08,4.43,4.81,5.1,5.39,5.75,6.17,6.54,7.03,7.52,7.92,8.48,8.92,9.22,9.72,10.16,10.6,11.21,11.81,12.33,12.85,13.43,14.05,14.89,15.75,16.64,17.46,18.23,19.0,19.67,20.42,21.31,22.42,23.34,24.48,25.46,26.44,27.55,28.79,30.12,31.31,32.39,33.49,34.58,36.3,37.98,39.76,41.64,44.03,46.6,50.43,54.14,58.64,64.3,73.2,80.64,88.16,98.1,113.63,135.14,153.54,207.88,297.4,506.56],"dayBestQ":[0.0,0.01,0.03,0.06,0.11,0.13,0.17,0.18,0.21,0.21,0.22,0.23,0.27,0.29,0.32,0.36,0.4,0.45,0.54,0.6,0.68,0.75,0.85,0.94,1.01,1.07,1.12,1.23,1.26,1.43,1.49,1.61,1.64,1.68,1.81,1.85,2.08,2.23,2.32,2.45,2.62,2.99,3.2,3.39,3.75,3.96,4.42,4.79,4.98,5.23,5.97,6.38,6.79,7.36,7.83,8.44,8.72,8.88,9.0,9.38,10.14,10.4,11.35,11.88,12.92,13.12,13.87,14.5,15.4,15.79,16.32,16.84,17.93,18.73,19.55,21.08,23.16,23.88,24.75,25.61,26.34,26.93,27.85,29.71,30.74,31.82,33.33,37.94,40.35,42.63,44.53,48.62,51.31,58.18,73.15,82.98,98.91,115.53,160.19,207.37,343.02],"monthlyQ":{"1":[0.18,0.39,0.5,0.71,0.93,1.37,2.14,2.64,3.95,5.84,8.35,10.46,13.66,17.17,20.2,23.51,28.01,31.28,35.19,53.33,103.61],"2":[0.21,0.73,2.71,4.33,6.33,7.63,8.72,11.03,14.35,17.47,19.56,23.25,27.58,32.78,36.15,39.68,42.21,48.84,78.62,98.18,147.71],"3":[0.28,0.71,2.21,3.67,4.47,5.08,6.19,9.08,10.07,12.17,14.08,17.49,21.69,25.58,29.53,35.67,44.72,69.34,102.29,213.22,506.56],"4":[0.07,0.21,0.29,0.48,1.54,2.48,3.95,7.93,9.72,11.98,15.89,21.92,24.69,27.94,31.89,34.71,39.72,48.88,54.39,110.84,279.91],"5":[0.18,1.4,2.22,3.07,5.02,5.8,8.3,9.74,10.71,12.42,18.2,33.21,40.78,51.99,62.76,85.32,100.77,142.33,208.4,226.02,352.25],"6":[0.01,0.15,0.25,0.41,0.76,1.1,1.24,1.51,1.6,1.89,2.18,2.5,2.75,3.19,3.42,4.16,4.95,6.48,12.46,26.98,53.23],"7":[0.0,0.03,0.05,0.12,0.24,0.58,0.96,1.6,2.31,2.73,5.84,9.21,11.84,16.41,20.66,23.4,32.01,55.61,74.08,83.86,196.65],"8":[0.01,1.6,1.75,2.49,4.3,5.44,6.17,7.04,7.79,11.19,16.16,19.8,29.55,53.75,70.4,96.68,122.86,139.62,160.48,286.7,456.41],"9":[0.1,0.17,0.21,0.24,0.28,0.37,0.47,0.52,0.59,0.67,0.75,1.32,1.87,2.39,3.4,5.43,9.46,12.1,18.72,26.99,46.49],"10":[0.02,0.21,0.5,0.88,1.06,1.38,1.71,2.25,3.17,4.05,6.42,8.61,11.73,14.21,17.33,21.52,25.58,28.32,34.3,53.31,100.32],"11":[0.11,0.35,0.74,0.93,2.1,4.48,7.48,9.21,12.17,14.02,16.93,20.24,24.48,26.6,30.23,32.62,35.93,40.87,47.19,58.0,114.08],"12":[0.14,0.23,0.29,0.39,0.62,1.0,1.48,2.24,2.9,4.93,7.48,9.14,11.45,12.81,15.58,17.76,19.71,23.66,29.02,37.17,58.97]},"noSwim":{"1":[1,30],"2":[8,27],"3":[4,23],"4":[7,29],"5":[14,30],"6":[0,29],"7":[4,30],"8":[11,30],"9":[0,22],"10":[1,30],"11":[6,30],"12":[1,31]},"longestNoSwim":[8,"2025-05-27"],"topSwellDays":[["2025-03-05",3.39,12.4,80],["2025-08-04",3.34,12.2,85],["2025-03-06",3.27,12.3,79],["2025-08-03",3.01,11.1,86],["2025-05-23",2.88,10.6,78],["2025-08-05",2.85,11.9,88],["2025-04-18",2.83,12.9,99],["2025-05-22",2.81,10.4,76],["2025-07-02",2.59,11.7,101],["2025-05-20",2.44,10.4,84]],"maxSwellByMonth":{"1":1.98,"2":1.51,"3":3.39,"4":2.83,"5":2.88,"6":1.17,"7":2.59,"8":3.34,"9":0.64,"10":1.47,"11":1.58,"12":0.88},"airNormC":{"1":23.1,"2":22.7,"3":21.6,"4":18.9,"5":15.7,"6":13.1,"7":13.0,"8":13.8,"9":16.2,"10":18.2,"11":19.7,"12":21.8},"airMaxNormC":{"1":26.6,"2":26.0,"3":24.9,"4":22.8,"5":19.7,"6":16.9,"7":17.1,"8":18.1,"9":20.9,"10":22.6,"11":23.7,"12":25.8},"sstNormC":{"1":22.7,"2":23.6,"3":23.2,"4":22.1,"5":21.0,"6":19.4,"7":18.0,"8":18.0,"9":18.7,"10":19.5,"11":20.4,"12":21.3}};
+var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 103218 (2025 series) + New NS sheet snapshot","hours":8184,"days":341,"tideNeutral":true,"span":["2023-12-04T11:00:00","2025-12-04T10:00:00"]},"scoring":{"table":[[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[96.0,96.0,96.0,97.0,99.0,99.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0],[90.0,90.0,90.0,91.0,93.0,93.0,94.0,95.0,97.0,98.0,100.0,100.0,100.0,100.0,100.0,100.0],[81.0,81.0,81.0,83.0,85.0,85.0,87.0,88.0,90.0,91.0,93.0,93.0,94.0,96.0,97.0,97.0],[72.0,72.0,72.0,73.0,76.0,78.0,79.0,81.0,82.0,83.0,84.0,87.0,89.0,90.0,92.0,92.0],[64.0,64.0,64.0,66.0,67.0,67.0,69.0,71.0,74.0,76.0,77.0,79.0,80.0,81.0,82.0,84.0],[51.0,51.0,51.0,52.0,54.0,56.0,58.0,59.0,60.0,62.0,64.0,67.0,69.0,71.0,72.0,74.0],[40.0,40.0,40.0,40.0,41.0,42.0,43.0,45.0,47.0,48.0,51.0,52.0,53.0,54.0,56.0,56.0],[28.0,28.0,28.0,32.0,32.0,32.0,32.0,32.0,35.0,36.0,38.0,38.0,38.0,40.0,40.0,40.0],[21.0,21.0,21.0,23.0,23.0,23.0,23.0,24.0,25.0,25.0,25.0,25.0,25.0,25.0,25.0,25.0],[11.5,11.5,11.5,11.5,11.5,11.5,11.5,15.3,15.3,15.3,15.3,15.3,15.3,15.3,15.3,15.3],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"ssWaveSens":4.0,"windSeaSens":1.3,"chopRefFetchM":3000.0,"entry":{"easy":15.0,"doable":30.0,"caution":45.0,"scaleMax":60.0}},"hourlyQ":[0.0,0.04,0.11,0.16,0.2,0.22,0.24,0.28,0.31,0.36,0.4,0.45,0.5,0.57,0.66,0.72,0.8,0.87,0.97,1.1,1.24,1.35,1.48,1.58,1.67,1.76,1.92,2.05,2.21,2.35,2.47,2.65,2.82,3.06,3.26,3.48,3.78,4.08,4.43,4.81,5.1,5.39,5.75,6.17,6.54,7.03,7.52,7.92,8.48,8.92,9.22,9.72,10.16,10.6,11.21,11.81,12.33,12.85,13.43,14.05,14.89,15.75,16.64,17.46,18.23,19.0,19.67,20.42,21.31,22.42,23.34,24.48,25.46,26.44,27.55,28.79,30.12,31.31,32.39,33.49,34.58,36.3,37.98,39.76,41.64,44.03,46.6,50.43,54.14,58.64,64.3,73.2,80.64,88.16,98.1,113.63,135.14,153.54,207.88,297.4,506.56],"dayBestQ":[0.0,0.01,0.03,0.06,0.11,0.13,0.17,0.18,0.21,0.21,0.22,0.23,0.27,0.29,0.32,0.36,0.4,0.45,0.54,0.6,0.68,0.75,0.85,0.94,1.01,1.07,1.12,1.23,1.26,1.43,1.49,1.61,1.64,1.68,1.81,1.85,2.08,2.23,2.32,2.45,2.62,2.99,3.2,3.39,3.75,3.96,4.42,4.79,4.98,5.23,5.97,6.38,6.79,7.36,7.83,8.44,8.72,8.88,9.0,9.38,10.14,10.4,11.35,11.88,12.92,13.12,13.87,14.5,15.4,15.79,16.32,16.84,17.93,18.73,19.55,21.08,23.16,23.88,24.75,25.61,26.34,26.93,27.85,29.71,30.74,31.82,33.33,37.94,40.35,42.63,44.53,48.62,51.31,58.18,73.15,82.98,98.91,115.53,160.19,207.37,343.02],"monthlyQ":{"1":[0.18,0.39,0.5,0.71,0.93,1.37,2.14,2.64,3.95,5.84,8.35,10.46,13.66,17.17,20.2,23.51,28.01,31.28,35.19,53.33,103.61],"2":[0.21,0.73,2.71,4.33,6.33,7.63,8.72,11.03,14.35,17.47,19.56,23.25,27.58,32.78,36.15,39.68,42.21,48.84,78.62,98.18,147.71],"3":[0.28,0.71,2.21,3.67,4.47,5.08,6.19,9.08,10.07,12.17,14.08,17.49,21.69,25.58,29.53,35.67,44.72,69.34,102.29,213.22,506.56],"4":[0.07,0.21,0.29,0.48,1.54,2.48,3.95,7.93,9.72,11.98,15.89,21.92,24.69,27.94,31.89,34.71,39.72,48.88,54.39,110.84,279.91],"5":[0.18,1.4,2.22,3.07,5.02,5.8,8.3,9.74,10.71,12.42,18.2,33.21,40.78,51.99,62.76,85.32,100.77,142.33,208.4,226.02,352.25],"6":[0.01,0.15,0.25,0.41,0.76,1.1,1.24,1.51,1.6,1.89,2.18,2.5,2.75,3.19,3.42,4.16,4.95,6.48,12.46,26.98,53.23],"7":[0.0,0.03,0.05,0.12,0.24,0.58,0.96,1.6,2.31,2.73,5.84,9.21,11.84,16.41,20.66,23.4,32.01,55.61,74.08,83.86,196.65],"8":[0.01,1.6,1.75,2.49,4.3,5.44,6.17,7.04,7.79,11.19,16.16,19.8,29.55,53.75,70.4,96.68,122.86,139.62,160.48,286.7,456.41],"9":[0.1,0.17,0.21,0.24,0.28,0.37,0.47,0.52,0.59,0.67,0.75,1.32,1.87,2.39,3.4,5.43,9.46,12.1,18.72,26.99,46.49],"10":[0.02,0.21,0.5,0.88,1.06,1.38,1.71,2.25,3.17,4.05,6.42,8.61,11.73,14.21,17.33,21.52,25.58,28.32,34.3,53.31,100.32],"11":[0.11,0.35,0.74,0.93,2.1,4.48,7.48,9.21,12.17,14.02,16.93,20.24,24.48,26.6,30.23,32.62,35.93,40.87,47.19,58.0,114.08],"12":[0.14,0.23,0.29,0.39,0.62,1.0,1.48,2.24,2.9,4.93,7.48,9.14,11.45,12.81,15.58,17.76,19.71,23.66,29.02,37.17,58.97]},"noSwim":{"1":[1,30],"2":[8,27],"3":[4,23],"4":[7,29],"5":[14,30],"6":[0,29],"7":[4,30],"8":[11,30],"9":[0,22],"10":[1,30],"11":[6,30],"12":[1,31]},"longestNoSwim":[8,"2025-05-27"],"topSwellDays":[["2025-03-05",3.39,12.4,80],["2025-08-04",3.34,12.2,85],["2025-03-06",3.27,12.3,79],["2025-08-03",3.01,11.1,86],["2025-05-23",2.88,10.6,78],["2025-08-05",2.85,11.9,88],["2025-04-18",2.83,12.9,99],["2025-05-22",2.81,10.4,76],["2025-07-02",2.59,11.7,101],["2025-05-20",2.44,10.4,84]],"maxSwellByMonth":{"1":1.98,"2":1.51,"3":3.39,"4":2.83,"5":2.88,"6":1.17,"7":2.59,"8":3.34,"9":0.64,"10":1.47,"11":1.58,"12":0.88},"airNormC":{"1":23.1,"2":22.7,"3":21.6,"4":18.9,"5":15.7,"6":13.1,"7":13.0,"8":13.8,"9":16.2,"10":18.2,"11":19.7,"12":21.8},"airMaxNormC":{"1":26.6,"2":26.0,"3":24.9,"4":22.8,"5":19.7,"6":16.9,"7":17.1,"8":18.1,"9":20.9,"10":22.6,"11":23.7,"12":25.8},"sstNormC":{"1":22.7,"2":23.6,"3":23.2,"4":22.1,"5":21.0,"6":19.4,"7":18.0,"8":18.0,"9":18.7,"10":19.5,"11":20.4,"12":21.3},"rainWkNormMm":{"1":26.3,"2":29.6,"3":42.3,"4":18.7,"5":18.7,"6":19.2,"7":18.5,"8":17.5,"9":13.7,"10":19.8,"11":19.9,"12":16.8}};
 
 (function () {
   var S = STORM_CLIMO.scoring;
@@ -12376,6 +12377,14 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     return Math.max(0, (t[r0][c0]*(1-rf)*(1-cf) + t[r0][c1]*(1-rf)*cf +
                         t[r1][c0]*rf*(1-cf)     + t[r1][c1]*rf*cf) / 100);
   }
+  function windSeaLocal(windKmh, deg) {
+    /* openWeight + spmGrowth are app globals (pure); fetch pinned to snapshot */
+    var U = windKmh / 3.6;
+    var w = openWeight(SITE.fetchMaskSS, deg);
+    var o = spmGrowth(U, S.chopRefFetchM || 3000);
+    var b = spmGrowth(U, 300);
+    return { hs: w * o.hs + (1 - w) * b.hs, tp: w * o.tp + (1 - w) * b.tp };
+  }
   function pinnedTotal(d) {
     var ess = S.ssWaveSens, wss = S.windSeaSens;
     var nrg = function (h, p) { return h * h * Math.max(0, p || 0); };
@@ -12389,14 +12398,6 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     var w = Math.max(0, Math.min(1, wwTx));
     return ws_d * (1 - w) + ww_d * w + s1_d;
   }
-  function windSeaLocal(windKmh, deg) {
-    /* openWeight + spmGrowth are app globals (pure); fetch pinned to snapshot */
-    var U = windKmh / 3.6;
-    var w = openWeight(SITE.fetchMaskSS, deg);
-    var o = spmGrowth(U, S.chopRefFetchM || 3000);
-    var b = spmGrowth(U, 300);
-    return { hs: w * o.hs + (1 - w) * b.hs, tp: w * o.tp + (1 - w) * b.tp };
-  }
   /* percentile of v against a p0..p100 quantile curve */
   function pctOf(q, v) {
     if (v <= q[0]) return 0;
@@ -12407,13 +12408,6 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     return 100;
   }
 
-  function daySlots(dayStr) {
-    return (_matrix || []).filter(function (r) {
-      if (!r || !r.dateTime || r.dateTime.substring(0, 10) !== dayStr) return false;
-      var h = +r.dateTime.substring(11, 13);
-      return h >= 6 && h <= 18;
-    });
-  }
   function fmtSlot(dt) {
     var d = new Date(dt.replace(' ', 'T'));
     if (isNaN(d)) return dt;
@@ -12423,14 +12417,58 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
   }
   var MONTHS = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
 
+  /* live past-7-day rainfall (mm) — one fetch per session, re-fills on arrival */
+  var _rainWk = null, _rainTried = false;
+  function fetchRainWk(cb) {
+    if (_rainTried) { return; }
+    _rainTried = true;
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=-33.8&longitude=151.29&daily=precipitation_sum&past_days=7&forecast_days=1&timezone=Australia%2FSydney')
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var v = (j.daily && j.daily.precipitation_sum) || [];
+        var s = 0, n = 0;
+        for (var i = 0; i < Math.min(7, v.length); i++) { if (v[i] != null) { s += v[i]; n++; } }
+        if (n >= 5) _rainWk = s;
+        if (cb) cb();
+      }).catch(function () {});
+  }
+
+  /* mini Tasman map: stylised coastlines + arrow from the swell's birthplace */
+  function originMap(dir, region) {
+    var SX = 56, SY = 89.4;                       // Sydney in map px
+    var b = ((dir % 360) + 360) % 360, rad = b * Math.PI / 180;
+    var R = b < 60 ? 78 : b < 100 ? 95 : b < 150 ? 85 : 62;
+    var ox = SX + R * Math.sin(rad), oy = SY - R * Math.cos(rad);
+    ox = Math.max(14, Math.min(186, ox)); oy = Math.max(14, Math.min(138, oy));
+    var mx = (ox + SX) / 2, my = (oy + SY) / 2;
+    var dx = SX - ox, dy = SY - oy, len = Math.sqrt(dx*dx + dy*dy) || 1;
+    var cx = mx - dy / len * 16, cy = my + dx / len * 16;   // gentle curve
+    /* trim the arrow so the head lands just short of the Sydney dot */
+    var tx = SX - dx / len * 7, ty = SY - dy / len * 7;
+    var lblY = oy < 30 ? oy + 16 : oy - 9;
+    return '<svg viewBox="0 0 200 150" class="ssd-map" role="img" aria-label="Map: swell travelling from ' + region + ' to Sydney">' +
+      '<defs><marker id="ssdArr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#113541"/></marker></defs>' +
+      '<rect x="0" y="0" width="200" height="150" rx="8" fill="#dceaf2"/>' +
+      '<path d="M10.0 1.9 L19.0 16.9 L27.5 25.9 L31.5 33.8 L44.0 38.6 L52.5 46.1 L65.0 57.4 L68.0 68.2 L66.0 76.1 L62.5 84.0 L56.0 89.4 L50.5 97.1 L50.0 101.6 L39.5 104.6 L32.0 107.6 L24.5 106.9 L17.5 108.0 L0.0 108.0 L0.0 1.9 Z" fill="#cfc6a8" stroke="#a89f83" stroke-width="1"/>' +
+      '<path d="M23.0 115.1 L32.0 116.6 L41.5 115.9 L40.0 124.5 L34.5 126.0 L26.0 120.8 Z" fill="#cfc6a8" stroke="#a89f83" stroke-width="1"/>' +
+      '<path d="M163.5 91.5 L171.5 96.0 L177.5 101.2 L191.5 103.9 L185.0 109.5 L173.0 110.6 L166.0 104.2 Z" fill="#cfc6a8" stroke="#a89f83" stroke-width="1"/>' +
+      '<path d="M163.5 114.4 L171.5 118.9 L165.0 123.0 L155.0 128.6 L140.0 136.9 L132.5 134.2 L142.5 127.5 L152.5 121.9 Z" fill="#cfc6a8" stroke="#a89f83" stroke-width="1"/>' +
+      '<path d="M' + ox.toFixed(1) + ' ' + oy.toFixed(1) + ' Q' + cx.toFixed(1) + ' ' + cy.toFixed(1) + ' ' + tx.toFixed(1) + ' ' + ty.toFixed(1) + '" fill="none" stroke="#113541" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#ssdArr)"/>' +
+      '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="7" fill="none" stroke="#c0392b" stroke-width="2.2"/>' +
+      '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="2.6" fill="#c0392b"/>' +
+      '<text x="' + Math.max(6, Math.min(150, ox - 22)).toFixed(0) + '" y="' + lblY.toFixed(0) + '" font-size="9.5" font-weight="700" fill="#7c2d1e">' + region + '</text>' +
+      '<circle cx="56" cy="89.4" r="3.4" fill="#113541"/>' +
+      '<text x="10" y="87" font-size="9.5" font-weight="700" fill="#113541">Sydney</text>' +
+    '</svg>';
+  }
+
   function buildHTML() {
     var today = _sydTodayStr();
     var m = +today.substring(5, 7);
     var now = Date.now();
-    var slots = daySlots(today);
 
     /* ---- countdown: first future daylight slot at Doable or better (LIVE score) */
-    var cdHrs = null, cdLabel = '', scanned = 0;
+    var cdHrs = null, cdLabel = '';
     try {
       var doable = SITE.entryThresholds.doable;
       for (var i = 0; i < (_matrix || []).length; i++) {
@@ -12439,22 +12477,27 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
         if (!(t > now)) continue;
         var hh = +r.dateTime.substring(11, 13);
         if (hh < 6 || hh > 18) continue;
-        scanned++;
         var res = calcScore(r);
         if (res && res.entry && res.entry.raw <= doable) { cdHrs = Math.round((t - now) / 36e5); cdLabel = fmtSlot(r.dateTime); break; }
       }
     } catch (e) {}
 
-    /* ---- rarity: today's calmest daylight hour, pinned tide-neutral score */
+    /* ---- rarity: the CURRENT hour vs every 2025 hour, pinned tide-neutral score */
     var pct = null, zoneTxt = '';
-    if (slots.length) {
-      var best = Infinity;
-      slots.forEach(function (r) { try { var v = pinnedTotal(r); if (v < best) best = v; } catch (e) {} });
-      if (isFinite(best)) {
-        pct = pctOf(STORM_CLIMO.dayBestQ, best);
+    var cur = null, bd = Infinity;
+    (_matrix || []).forEach(function (r) {
+      if (!r || !r.dateTime) return;
+      var t = new Date(r.dateTime.replace(' ', 'T')).getTime();
+      var d = Math.abs(t - now);
+      if (d < bd) { bd = d; cur = r; }
+    });
+    if (cur && bd <= 2 * 36e5) {
+      try {
+        var v = pinnedTotal(cur);
+        pct = pctOf(STORM_CLIMO.hourlyQ, v);
         var E = S.entry;
-        zoneTxt = best <= E.easy ? 'easy' : best <= E.doable ? 'doable' : best <= E.caution ? 'caution' : 'dangerous';
-      }
+        zoneTxt = v <= E.easy ? 'easy' : v <= E.doable ? 'doable' : v <= E.caution ? 'caution' : 'dangerous';
+      } catch (e) {}
     }
 
     /* ---- anomalies */
@@ -12468,17 +12511,20 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     var airAnom = (airNow != null && STORM_CLIMO.airNormC[m] != null) ? airNow - STORM_CLIMO.airNormC[m] : null;
     var sea = (window._communitySeaTemp != null) ? window._communitySeaTemp : null;
     var seaAnom = (sea != null && STORM_CLIMO.sstNormC[m] != null) ? sea - STORM_CLIMO.sstNormC[m] : null;
+    var rainNorm = STORM_CLIMO.rainWkNormMm ? STORM_CLIMO.rainWkNormMm[m] : null;
+    var rainRatio = (_rainWk != null && rainNorm > 0) ? _rainWk / rainNorm : null;
 
-    /* ---- swell origin (period physics: group speed ≈ 0.78·T m/s) */
-    var org = '';
-    var ref = slots.length ? slots[slots.length - 1] : (_matrix && _matrix[0]);
+    /* ---- swell origin */
+    var org = '', mapSvg = '';
+    var ref = cur || (_matrix && _matrix[0]);
     if (ref && ref.swell1P) {
       var P = ref.swell1P, dir = ref.swell1Dir || 0;
       var kmh = Math.round(0.78 * P * 3.6);
-      var reg = dir < 60 ? 'the Coral Sea' : dir < 100 ? 'the open Tasman' : dir < 150 ? 'a Tasman low' : 'the Southern Ocean';
+      var reg = dir < 60 ? 'Coral Sea' : dir < 100 ? 'open Tasman' : dir < 150 ? 'Tasman low' : 'Southern Ocean';
       var compass = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(((dir % 360) / 22.5)) % 16];
-      org = 'This ' + Math.round(P) + 's ' + compass + ' swell rolled in from ' + reg +
+      org = 'This ' + Math.round(P) + 's ' + compass + ' swell rolled in from the ' + reg +
             ', travelling at roughly ' + kmh + ' km/h across open water.';
+      mapSvg = originMap(dir, reg);
     }
 
     /* ---- archive scorecard */
@@ -12490,21 +12536,21 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     var topStr = topD.getDate() + ' ' + MONTHS[topD.getMonth() + 1].substring(0, 3) + ' ' + topD.getFullYear();
 
     /* ---- assemble */
-    function anomRow(label, val, anom) {
+    function anomRow(label, anom, valTxt, isRatio) {
       if (anom == null) return '';
-      var up = anom >= 0;
-      var wPct = Math.min(46, Math.abs(anom) * 15);
+      var up = isRatio ? anom >= 1 : anom >= 0;
+      var mag = isRatio ? Math.abs(Math.log2(Math.max(0.05, anom))) * 18 : Math.abs(anom) * 15;
+      var wPct = Math.min(46, mag);
       var col = up ? '#c0392b' : '#2471a3';
       return '<div class="ssd-arow"><span class="ssd-alab">' + label + '</span>' +
         '<span class="ssd-atrack"><span class="ssd-amid"></span>' +
         '<span class="ssd-abar" style="' + (up ? 'left:50%' : 'right:50%') + ';width:' + wPct.toFixed(1) + '%;background:' + col + '"></span></span>' +
-        '<span class="ssd-aval" style="color:' + col + '">' + (up ? '+' : '−') + Math.abs(anom).toFixed(1) + '°C</span></div>';
+        '<span class="ssd-aval" style="color:' + col + '">' + valTxt + '</span></div>';
     }
     var gauge = '';
     if (pct != null) {
       var ang = Math.PI * (1 - pct / 100);
       var nx = 70 + 52 * Math.cos(ang), ny = 64 - 52 * Math.sin(ang);
-      var sweep = pct >= 50 ? 1 : 1;
       var ex = 70 + 58 * Math.cos(ang), ey = 64 - 58 * Math.sin(ang);
       gauge =
         '<svg viewBox="0 0 140 78" class="ssd-gauge" aria-hidden="true">' +
@@ -12515,27 +12561,33 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
         '</svg>';
     }
     var h = '<div class="ssd-grid">';
-    h += '<div class="ssd-tile"><div class="ssd-cap">⏳ Bay reopens</div>' +
+    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap">⏳ Bay reopens</div>' +
          (cdHrs != null
-            ? '<div class="ssd-big">' + cdHrs + ' h</div><div class="ssd-sub">' + cdLabel + ' · first entry back at Doable or better</div>'
-            : '<div class="ssd-big">5+ days</div><div class="ssd-sub">no swimmable window in the current forecast — check back tomorrow</div>') +
+            ? (cdHrs < 1
+                ? '<div class="ssd-huge">now</div><div class="ssd-sub">entry is still swimmable this hour — get in before it turns!</div>'
+                : '<div class="ssd-huge">' + cdHrs + '<span class="ssd-hunit">h</span></div><div class="ssd-sub">' + cdLabel + ' · first entry back at Doable or better</div>')
+            : '<div class="ssd-huge">5+<span class="ssd-hunit">days</span></div><div class="ssd-sub">no swimmable window in the current forecast — check back tomorrow</div>') +
          '</div>';
     h += '<div class="ssd-tile">' + (pct != null
             ? '<div class="ssd-cap">🌊 How rare is this?</div>' + gauge +
               '<div class="ssd-pct">' + (pct >= 50
-                 ? 'Rougher than <b>' + pct + '%</b> of 2025 days'
-                 : 'Calmer than <b>' + (100 - pct) + '%</b> of 2025 days') + '</div>' +
-              '<div class="ssd-sub">even at today’s calmest daylight hour (entry reads ' + zoneTxt + ')</div>'
+                 ? 'Right now it’s rougher than <b>' + pct + '%</b> of all 2025 hours'
+                 : 'Right now it’s calmer than <b>' + (100 - pct) + '%</b> of all 2025 hours') + '</div>' +
+              '<div class="ssd-sub">entry currently reads ' + zoneTxt + '</div>'
             : '<div class="ssd-cap">🌊 How rare is this?</div><div class="ssd-sub">forecast still loading…</div>') +
          '</div>';
-    var anoms = anomRow('Air', airNow, airAnom) + anomRow('Water', sea, seaAnom);
+    var anoms = anomRow('Air', airAnom, airAnom == null ? '' : ((airAnom >= 0 ? '+' : '−') + Math.abs(airAnom).toFixed(1) + '°C'), false) +
+                anomRow('Water', seaAnom, seaAnom == null ? '' : ((seaAnom >= 0 ? '+' : '−') + Math.abs(seaAnom).toFixed(1) + '°C'), false) +
+                anomRow('Rain (wk)', rainRatio, rainRatio == null ? '' : (rainRatio.toFixed(1) + '×'), true);
     if (anoms) {
-      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌡️ Versus a normal ' + MONTHS[m] + '</div>' + anoms +
-           '<div class="ssd-note">' + (airNow != null ? 'air today ≈ ' + airNow.toFixed(1) + '°C · ' : '') +
-           (sea != null ? 'water ' + sea.toFixed(1) + '°C · ' : '') +
-           'averages: ' + STORM_CLIMO.airNormC[m].toFixed(1) + '°C air / ' + STORM_CLIMO.sstNormC[m].toFixed(1) + '°C water</div></div>';
+      var noteBits = [];
+      if (airNow != null) noteBits.push('air today ≈ ' + airNow.toFixed(1) + '°C (avg ' + STORM_CLIMO.airNormC[m].toFixed(1) + ')');
+      if (sea != null) noteBits.push('water ' + sea.toFixed(1) + '°C (avg ' + STORM_CLIMO.sstNormC[m].toFixed(1) + ')');
+      if (_rainWk != null && rainNorm != null) noteBits.push('rain last 7 days ' + Math.round(_rainWk) + ' mm (avg ' + Math.round(rainNorm) + ')');
+      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌡️ Today versus a normal ' + MONTHS[m] + '</div>' + anoms +
+           '<div class="ssd-note">' + noteBits.join(' · ') + '</div></div>';
     }
-    if (org) h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌀 Where this swell was born</div><div class="ssd-txt">' + org + '</div></div>';
+    if (org) h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌀 Where this swell was born</div>' + mapSvg + '<div class="ssd-txt" style="margin-top:8px">' + org + '</div></div>';
     h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">📘 The 2025 scorecard</div><div class="ssd-txt">' +
          'Last year the bay was unswimmable on <b>' + totNo + ' of ' + totDays + ' days</b> — the longest run was <b>' + streak[0] + ' days</b> (ended 27 May, that huge East Coast Low). ' +
          'Biggest swell of 2025: <b>' + top[1].toFixed(1) + ' m</b> at the bay mouth on ' + topStr + '. Blows always pass.</div></div>';
@@ -12562,6 +12614,7 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     try {
       if (sc.innerHTML.indexOf('[[STORM_STATS]]') === -1) return;
       sc.innerHTML = sc.innerHTML.split('[[STORM_STATS]]').join('<div class="ssd" data-ssd></div>');
+      fetchRainWk(function () { if (document.body.contains(sc)) fill(sc); });
       fill(sc);
     } catch (e) {}
   };
@@ -12572,14 +12625,18 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
     '.ssd-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}' +
     '.ssd-tile{background:#f2f6f7;border:1px solid rgba(17,53,65,0.12);border-radius:10px;padding:10px 11px;min-width:0;}' +
     '.ssd-wide{grid-column:1 / -1;}' +
+    '.ssd-center{display:flex;flex-direction:column;justify-content:center;}' +
     '.ssd-cap{font-family:"Inter",sans-serif;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#4a5f6e;margin-bottom:6px;}' +
-    '.ssd-big{font-family:"Bebas Neue",sans-serif;font-size:34px;line-height:1;color:#113541;}' +
+    '.ssd-huge{font-family:"Bebas Neue",sans-serif;font-size:64px;line-height:0.95;color:#113541;text-align:center;margin:4px 0 6px;}' +
+    '.ssd-hunit{font-size:26px;margin-left:4px;color:#4a5f6e;}' +
     '.ssd-sub{font-size:11.5px;color:#4a5f6e;line-height:1.4;margin-top:3px;}' +
+    '.ssd-center .ssd-sub{text-align:center;}' +
     '.ssd-txt{font-size:13px;color:#113541;line-height:1.5;}' +
     '.ssd-pct{font-size:13.5px;color:#113541;line-height:1.3;margin-top:2px;}' +
     '.ssd-gauge{width:100%;max-width:150px;display:block;margin:0 auto;}' +
+    '.ssd-map{width:100%;max-width:280px;display:block;margin:0 auto;border-radius:8px;}' +
     '.ssd-arow{display:flex;align-items:center;gap:8px;margin:7px 0;}' +
-    '.ssd-alab{flex:none;width:44px;font-size:12px;color:#4a5f6e;}' +
+    '.ssd-alab{flex:none;width:58px;font-size:12px;color:#4a5f6e;}' +
     '.ssd-atrack{flex:1;height:16px;position:relative;background:#e7edef;border-radius:4px;overflow:hidden;}' +
     '.ssd-amid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(17,53,65,0.35);}' +
     '.ssd-abar{position:absolute;top:3px;bottom:3px;border-radius:3px;}' +
