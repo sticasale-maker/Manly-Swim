@@ -2006,7 +2006,7 @@
      base rule already uses var(--card), so the override is simply removed. The
      bb-alert-1/2 border-colour states still fire on top of it. */
 
-  /* ══ TODAY'S NEWS relocated into an overlay, launched from the verdict bar ══
+  /* ══ THE ORACLE (was "Today's News") — overlay launched from the verdict bar ══
      The standalone collapsible card is gone; #summary-body is moved (not cloned)
      into #news-slot at boot so every renderer keeps writing to the same nodes. */
   #summary-section { display:none !important; }
@@ -2134,11 +2134,11 @@
     </div>
   </div>
 
-  <!-- Today's News — opened from the verdict bar. #summary-body is relocated here at boot. -->
+  <!-- The Oracle — opened from the verdict bar. #summary-body is relocated here at boot. -->
   <div id="news-overlay" class="db-modal-overlay" onclick="if(event.target===this)closeNews()">
     <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="news-modal-title">
       <div class="db-modal-head">
-        <div class="db-modal-title" id="news-modal-title">Today's News</div>
+        <div class="db-modal-title" id="news-modal-title">The Oracle</div>
         <button class="db-modal-close" onclick="closeNews()" aria-label="Close">&#10005;</button>
       </div>
       <div id="news-slot"></div>
@@ -2785,7 +2785,7 @@
 <!-- Summary (collapsible) -->
   <section id="summary-section">
     <button id="summary-toggle" onclick="toggleSummary()" aria-expanded="false" aria-controls="summary-body">
-      <span class="summary-toggle-label">TODAY'S NEWS</span>
+      <span class="summary-toggle-label">THE ORACLE</span>
       <span class="summary-toggle-chevron" id="summary-chevron">▾</span>
     </button>
     <div id="summary-body" class="summary-collapsed">
@@ -9510,7 +9510,7 @@ function refreshCommunitySummary() {
 }
 
 // SUMMARY section — collapsed by default, expands on tap
-// ── TODAY'S NEWS ─────────────────────────────────────────────────────────────
+// ── THE ORACLE (was "Today's News") ─────────────────────────────────────────
 // The old collapsible card is retired. #summary-body is MOVED (not cloned) into
 // #news-slot at boot, so fetchSummary / renderDiverBanner / the weather banner all
 // keep writing to #banner-water-text, #db-inline-summary and #banner-wx-text with
@@ -9609,6 +9609,41 @@ function emphasise(t) {
   return String(t || '').replace(/\b(\d+[\u2013\-]\d+\u00b0[Cc]|\d+\u00b0[Cc]|\d+[\u2013\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
 }
 
+// The Worker summariser is an LLM, and it has been caught contradicting the very
+// facts it is handed: with verdict.entry = "Doable" and bayResidualH = 0.1 it
+// wrote "the bay's copped 1.1 m of that, making for an easy entry" — quoting the
+// RAMP height as the bay's, and calling a Doable entry easy. The rails are the
+// source of truth, so validate the prose against them and drop it if it argues
+// with the metric the swimmer is looking at. Nothing is lost when it fails: the
+// local baseline is already on screen. (The Worker's prompt is the real fix, but
+// that lives outside this repo.)
+function summaryConflict(text, facts) {
+  if (!text || !facts) return null;
+  const t = ' ' + String(text).toLowerCase().replace(/\s+/g, ' ') + ' ';
+  const v = facts.verdict || {};
+  const w = facts.water || {};
+  if (v.entry && v.entry !== 'Easy' && /\beasy\b/.test(t))
+    return 'says "easy" but Entry=' + v.entry;
+  if (v.entry === 'Easy' && /\b(dangerous|treacherous|do not swim)\b/.test(t))
+    return 'says dangerous but Entry=Easy';
+  if (['Choppy', 'Messy'].indexOf(v.swim) !== -1 && /\b(glassy|smooth|like glass)\b/.test(t))
+    return 'says smooth but Chop=' + v.swim;
+  if (['Surgy', 'Washy'].indexOf(v.surge) !== -1 && /\b(no real surge|minimal surge|no significant surge|isn't surging)\b/.test(t))
+    return 'downplays surge but Surge=' + v.surge;
+  // A height quoted as being "in the bay" must be the bay residual, not the
+  // ramp/offshore figure — the mistake that started this. Stay inside one
+  // clause ([^.;,]): otherwise "out the back 1.9 m; in the bay 0.1 m" pins the
+  // 1.9 on the bay and rejects correct prose (verified against both cases).
+  if (w.bayResidualH != null) {
+    const U = '(?:m|met(?:re|er)s?)';
+    const m = t.match(new RegExp('(\\d+(?:\\.\\d+)?)\\s*' + U + '\\b[^.;,]{0,25}?\\bbay\\b'))
+           || t.match(new RegExp('\\bbay\\b[^.;,]{0,25}?(\\d+(?:\\.\\d+)?)\\s*' + U + '\\b'));
+    if (m && Math.abs(parseFloat(m[1]) - w.bayResidualH) > 0.3)
+      return 'quotes ' + m[1] + 'm in the bay but bayResidualH=' + w.bayResidualH;
+  }
+  return null;
+}
+
 // LLM wrapper: render the local baseline first (instant + safe), then try the
 // Worker summariser and re-skin the two prose lines only if it comes back clean.
 async function generateBannerSummary() {
@@ -9626,6 +9661,8 @@ async function generateBannerSummary() {
     if (!res.ok) return;
     const j = await res.json();
     if (!j || !j.water_text) return;
+    const clash = summaryConflict(j.water_text, _bannerFacts);
+    if (clash) { diag('Oracle: kept local baseline — LLM ' + clash); return; }
     const wxEl = document.getElementById('banner-wx-text');
     const waterEl = document.getElementById('banner-water-text');
     if (j.wx_text && wxEl) wxEl.innerHTML = emphasise(j.wx_text);
@@ -9737,6 +9774,13 @@ async function generateBannerSummaryLocal() {
   const swimBad  = ['Choppy','Messy'].includes(domSwim);
   const surgeBad = ['Surgy','Washy'].includes(domSurge);
   const allGood  = !entryBad && !swimBad && !surgeBad;
+  // allGood only means "nothing concerning" — Doable counts. So the prose must
+  // NOT hardcode "easy": on a Doable rail that directly contradicted the metric
+  // the swimmer is looking at. Word the entry from the actual label.
+  const entryIsEasy   = domEntry === 'Easy';
+  const entryAdj      = entryIsEasy ? 'easy'          : 'doable';
+  const entryNoun     = entryIsEasy ? 'easy entry'    : 'a doable entry';
+  const entrySimple   = entryIsEasy ? 'straightforward' : 'doable, if not effortless';
 
   function emphasise(t) {
     return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
@@ -9793,12 +9837,24 @@ async function generateBannerSummaryLocal() {
   // ── PARAGRAPH 2: In the water ─────────────────────────────────────────────
   let waterText = '';
 
-  const swellIntroStr = avgS1H >= 1.5
-    ? `${avgS1H.toFixed(1)}m swell inside the bay from the ${dominantS1Dir} on a ${Math.round(avgS1P)}s period`
-    : avgS1H >= 0.8
-    ? `${avgS1H.toFixed(1)}m of swell inside the bay from the ${dominantS1Dir}`
-    : avgS1H >= 0.3
-    ? `small ${avgS1H.toFixed(1)}m swell inside the bay from the ${dominantS1Dir}`
+  // "Inside the bay" must be the SHELTERED residual, not the feed height. The NS
+  // feed is node 103218 at the bay MOUTH, so quoting avgS1H as what's "inside the
+  // bay" overstates it — and contradicted the Surge readout, which shows the same
+  // residual the swimmer actually meets (H x sqrt(BL transmit), as in the metric
+  // rail). Bands are lowered to suit bay-scale heights.
+  const avgBayH = rows.length
+    ? avg(rows.map(r => {
+        const H = r.swell1H || 0;
+        const tx = SITE.blDisp ? Math.max(0, Math.min(1, blDispLookup(r.swell1Dir, r.swell1P))) : 1;
+        return H * Math.sqrt(tx);
+      }))
+    : avgS1H;
+  const swellIntroStr = avgBayH >= 0.8
+    ? `${avgBayH.toFixed(1)}m of swell inside the bay from the ${dominantS1Dir} on a ${Math.round(avgS1P)}s period`
+    : avgBayH >= 0.4
+    ? `${avgBayH.toFixed(1)}m of swell inside the bay from the ${dominantS1Dir}`
+    : avgBayH >= 0.15
+    ? `a small ${avgBayH.toFixed(1)}m of swell inside the bay from the ${dominantS1Dir}`
     : `very little swell inside the bay`;
 
   // How much of that offshore swell actually reaches the bay? The GEM transmit
@@ -9825,15 +9881,15 @@ async function generateBannerSummaryLocal() {
   if (allGood) {
     if (shelteredContrast) {
       waterText = pick([
-        `${shelteredOpener} Entry off the beach at South Steyne is easy, the surface is ${domSwim === 'Smooth' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
-        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — easy entry off the beach at South Steyne, ${domSwim === 'Smooth' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
-        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in off the beach at South Steyne is easy, the surface is ${domSwim === 'Smooth' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
+        `${shelteredOpener} Entry off the beach at South Steyne is ${entryAdj}, the surface is ${domSwim === 'Smooth' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
+        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — ${entryNoun} off the beach at South Steyne, ${domSwim === 'Smooth' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
+        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in off the beach at South Steyne is ${entryAdj}, the surface is ${domSwim === 'Smooth' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
       ]);
     } else {
     waterText = pick([
-      `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach at South Steyne is easy, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
-      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry off the beach at South Steyne is easy, water surface is ${domSwim === 'Smooth' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
-      `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry off the beach at South Steyne is straightforward, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
+      `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach at South Steyne is ${entryAdj}, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
+      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry off the beach at South Steyne is ${entryAdj}, water surface is ${domSwim === 'Smooth' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
+      `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry off the beach at South Steyne is ${entrySimple}, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
     ]);
     }
   } else {
@@ -12903,7 +12959,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     /* Deliberately not "bay closed/reopens": the bay is never officially shut
        by the lifesavers, and implying that would be wrong. This is a condition
        readout — when it is calm enough to swim again. */
-    h += '<div class="ssd-tile ssd-wide ssd-center"><div class="ssd-cap">⏳ Swimmable again in</div>' +
+    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap">⏳ Swimmable again in</div>' +
          (cdHrs != null
             ? (cdHrs < 1
                 ? '<div class="ssd-huge">now</div><div class="ssd-sub">entry is still swimmable this hour — get in before it turns!</div>'
@@ -12918,8 +12974,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
        2025 percentile apples-to-apples (the hindcast carries no tide). Its
        swell/wind lines were duplicated by the Swell + wind tile anyway. */
     if (liveRes && cur) {
-      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Entry &amp; Surge right now</div>' +
-           '<div class="ssd-metrow">' +
+      h += '<div class="ssd-tile"><div class="ssd-cap">🏊 Entry &amp; Surge</div>' +
+           '<div class="ssd-metrow ssd-metcol">' +
              metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
              metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
            '</div></div>';
@@ -12997,6 +13053,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-swell{width:100%;display:block;border-radius:8px;}' +
     '.ssd-swline{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:#4a5f6e;margin-top:5px;}' +
     '.ssd-metrow{display:flex;gap:10px;}' +
+    '.ssd-metcol{flex-direction:column;gap:8px;}' +
+    '.ssd-metcol .ssd-met-fig img{max-width:120px;}' +
+    '.ssd-metcol .ssd-met-lab{font-size:19px;}' +
     '.ssd-met{flex:1;min-width:0;text-align:center;}' +
     '.ssd-met-cap{font-family:"Inter",sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#4a5f6e;margin-bottom:4px;}' +
     '.ssd-met-fig{position:relative;display:inline-block;max-width:100%;}' +
