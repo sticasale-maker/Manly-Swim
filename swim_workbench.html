@@ -132,26 +132,8 @@
       <img id="bg" src="map_flat.png" alt="Cabbage Tree Bay chart">
       <svg id="ov" viewBox="0 0 1520 952" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
-
     <div class="panel">
-      <h2>On the map <small>drag ○ pivot · drag ◑ handles to set direction</small></h2>
-      <div class="rowflex"><span class="swatch" style="background:var(--s1)"></span> Primary swell — drag its handle or use the bench slider</div>
-      <div class="rowflex" id="s2hint" style="display:none"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
-      <div class="rowflex"><span class="swatch" style="background:#38e0ff"></span> Entry &nbsp;<span class="swatch" style="background:#ffd23f"></span> Chop &nbsp;<span class="swatch" style="background:#ff3df0"></span> NS node 103218</div>
-      <div class="grp-t">Display</div>
-      <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
-      <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
-      <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
-      <div class="rowflex"><input type="checkbox" id="zoomIn"> Zoom 1.5&times; on node 103218</div>
-
-      <div class="grp-t">At node 103218 <small>2025 hindcast &middot; 7512 h</small></div>
-      <div class="rowflex"><input type="checkbox" id="roseSwell"> <span class="swatch" style="background:#19b3e6"></span> Swell rose (from)</div>
-      <div class="rowflex"><input type="checkbox" id="roseSea"> <span class="swatch" style="background:#4fd1a5"></span> Sea rose (from)</div>
-      <div class="rowflex"><input type="checkbox" id="roseWind"> <span class="swatch" style="background:#c9a3ff"></span> Wind rose (from)</div>
-      <div class="rowflex"><input type="checkbox" id="roseE" checked> Weight by energy (&Sigma;H&sup2;P) &mdash; off = hours</div>
-
-      <div class="rowflex"><input type="checkbox" id="dirTo" checked> Draw directions as <b>TO</b> (travel) &mdash; off = FROM</div>
-
+      <h2>Lobes &amp; table editor <small>the dispersion tables, next to the chart they draw</small></h2>
       <div class="grp-t">Dispersion lobes <small>radius = transmit</small></div>
       <div class="rowflex"><input type="checkbox" id="blRing"> <span class="swatch" style="background:#4fd1e6"></span> <b>BL</b> lobe &mdash; Bower Lane (Chop + Surge)</div>
       <div class="rowflex"><input type="checkbox" id="ssRing"> <span class="swatch" style="background:#ff8c42"></span> <b>SS</b> lobe &mdash; South Steyne (Entry)</div>
@@ -209,6 +191,27 @@
       </div>
       <div class="note" id="blEditNote"></div>
       <div class="note" id="blRingNote"></div>
+    </div>
+
+    <div class="panel">
+      <h2>On the map <small>drag ○ pivot · drag ◑ handles to set direction</small></h2>
+      <div class="rowflex"><span class="swatch" style="background:var(--s1)"></span> Primary swell — drag its handle or use the bench slider</div>
+      <div class="rowflex" id="s2hint" style="display:none"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
+      <div class="rowflex"><span class="swatch" style="background:#38e0ff"></span> Entry &nbsp;<span class="swatch" style="background:#ffd23f"></span> Chop &nbsp;<span class="swatch" style="background:#ff3df0"></span> NS node 103218</div>
+      <div class="grp-t">Display</div>
+      <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
+      <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
+      <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
+      <div class="rowflex"><input type="checkbox" id="zoomIn"> Zoom 2&times; on node 103218</div>
+
+      <div class="grp-t">At node 103218 <small>2025 hindcast &middot; 7512 h</small></div>
+      <div class="rowflex"><input type="checkbox" id="roseSwell"> <span class="swatch" style="background:#19b3e6"></span> Swell rose (from)</div>
+      <div class="rowflex"><input type="checkbox" id="roseSea"> <span class="swatch" style="background:#4fd1a5"></span> Sea rose (from)</div>
+      <div class="rowflex"><input type="checkbox" id="roseWind"> <span class="swatch" style="background:#c9a3ff"></span> Wind rose (from)</div>
+      <div class="rowflex"><input type="checkbox" id="roseE" checked> Weight by energy (&Sigma;H&sup2;P) &mdash; off = hours</div>
+
+      <div class="rowflex"><input type="checkbox" id="dirTo" checked> Draw directions as <b>TO</b> (travel) &mdash; off = FROM</div>
+
       <div class="btns">
         <button id="pivEntry">Pivot: entry</button>
         <button id="pivBower">Pivot: chop</button>
@@ -1183,12 +1186,12 @@ function calc(I){
    One source of truth for the visible rect. The SVG gets it as a viewBox; the <img>
    underneath gets the identical rect as a CSS transform, so the two stay registered.
    Zoom is centred on the NS node, which is what the roses and the lobe hang off. */
-const ZOOM = 1.5;
+const ZOOM = 2;
 function viewRect(){
   if(!ST.zoomIn) return { x:0, y:0, w:MW, h:MH, z:1 };   // 1x = the whole chart, untouched
   const z = ZOOM, w = MW/z, h = MH/z;
-  // Centred on the node. At 1.5x the rect (255,252,1013,635) sits wholly inside the
-  // 1520x952 chart, so the clamp never fires and the node lands dead centre.
+  // Centred on the node. At 2x the rect (382,332,760,476) still sits wholly inside
+  // the 1520x952 chart, so the clamp never fires and the node lands dead centre.
   let x = FCST_NODE.x - w/2, y = FCST_NODE.y - h/2;
   x = Math.max(0, Math.min(MW-w, x));
   y = Math.max(0, Math.min(MH-h, y));
@@ -1791,16 +1794,25 @@ function updateBlEditNote(){
    App bound to the workbook, called with a shared token. Content-Type is text/plain so
    the POST stays a CORS "simple request" — Apps Script never answers a preflight. */
 const BL_PUSH_URL_KEY = 'swim_bl_push_url', BL_PUSH_TOKEN_KEY = 'swim_bl_push_token';
+/* Prefilled so the panel is one paste (the URL) rather than two. NOTE: this file is
+   served publicly, so this token is public — it is a convenience default, not a
+   secret. The Web App it guards is deployed "Anyone", so anyone who reads this page
+   can write to the dispersion tables. If that ever matters, change TOKEN in
+   bl_table_writer.gs to something not published here and enter it in the panel;
+   a value typed there is stored per-browser and overrides this. */
+const BL_PUSH_TOKEN_DEFAULT = 'manly-intros-2026';
+const pushToken = () => localStorage.getItem(BL_PUSH_TOKEN_KEY) || BL_PUSH_TOKEN_DEFAULT;
 async function blPush(){
   // Pushes EVERY pending edit, on both tables — you should never have to remember
   // which target was selected when you dragged. Each edit carries its own table key.
   const edits = Object.values(BL_EDITS);
   if(!edits.length) return setBlEdit('Nothing to push.','warn');
-  let url = localStorage.getItem(BL_PUSH_URL_KEY), tok = localStorage.getItem(BL_PUSH_TOKEN_KEY);
+  const url = localStorage.getItem(BL_PUSH_URL_KEY), tok = pushToken();
   // Was two prompt() calls. A prompt cannot be corrected once answered — it only
   // reappears when the value is MISSING — so one typo wedged pushing for good.
-  if(!url || !tok){
-    connOpen('Fill these in, press <b>Save &amp; test</b>, then push again. Your edits are still in memory.');
+  // Only the URL can be unset now; the token falls back to BL_PUSH_TOKEN_DEFAULT.
+  if(!url){
+    connOpen('Paste the <b>/exec URL</b>, press <b>Save &amp; test</b>, then push again. Your edits are still in memory.');
     return setBlEdit('Sheet connection not set — see the panel below.','warn');
   }
   const byT = {}; edits.forEach(e=>byT[e.tk]=(byT[e.tk]||0)+1);
@@ -1810,7 +1822,7 @@ async function blPush(){
     const res = await fetch(localStorage.getItem(BL_PUSH_URL_KEY), {
       method:'POST', mode:'cors', redirect:'follow',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ token: localStorage.getItem(BL_PUSH_TOKEN_KEY), tab: BL_SHEET.tab,
+      body: JSON.stringify({ token: tok, tab: BL_SHEET.tab,
         edits: edits.map(e=>({table:e.tk, dir:e.dir, period:e.period, value:e.to})) })
     });
     const j = await res.json();
@@ -1826,7 +1838,10 @@ async function blPush(){
       const badTok = /token/i.test(j.error || '');
       if(badTok){
         localStorage.removeItem(BL_PUSH_TOKEN_KEY);
-        connOpen('The saved token was rejected and has been cleared. Paste the right one and press <b>Save &amp; test</b>.');
+        // Careful with the wording: clearing storage now falls back to the built-in
+        // default, so "cleared" would imply the next push tries something new when
+        // it may retry the very same value.
+        connOpen(`That token was rejected. The field below shows the built-in default (<code>${BL_PUSH_TOKEN_DEFAULT}</code>) — if that is the one that just failed, copy <code>TOKEN</code> from <code>bl_table_writer.gs</code> instead and press <b>Save &amp; test</b>.`);
       }
       setBlEdit(`Sheet script rejected the push: <b>${j.error}</b>.`
         + (badTok ? ` The saved token has been cleared — push again and you will be asked for a new one. It must match <code>TOKEN</code> in <code>bl_table_writer.gs</code>.`
@@ -1947,7 +1962,7 @@ function setConnNote(html, cls){ const n=$c('blConnNote'); n.className='note '+(
 function connOpen(msg){
   $c('blConnBox').style.display = '';
   $c('blConnUrl').value = localStorage.getItem(BL_PUSH_URL_KEY)   || '';
-  $c('blConnTok').value = localStorage.getItem(BL_PUSH_TOKEN_KEY) || '';
+  $c('blConnTok').value = pushToken();      // prefilled with the built-in default
   setConnNote(msg || 'Both are stored in this browser only. The token must match <code>TOKEN</code> in <code>bl_table_writer.gs</code>.','');
   ($c('blConnUrl').value ? $c('blConnTok') : $c('blConnUrl')).focus();
 }
@@ -1955,8 +1970,8 @@ $c('blConn').onclick      = ()=>{ const b=$c('blConnBox'); if(b.style.display===
 $c('blConnClose').onclick = ()=>{ $c('blConnBox').style.display='none'; };
 $c('blConnClear').onclick = ()=>{
   localStorage.removeItem(BL_PUSH_URL_KEY); localStorage.removeItem(BL_PUSH_TOKEN_KEY);
-  $c('blConnUrl').value=''; $c('blConnTok').value='';
-  setConnNote('Both forgotten. Enter them again and press <b>Save &amp; test</b>.','warn');
+  $c('blConnUrl').value=''; $c('blConnTok').value = BL_PUSH_TOKEN_DEFAULT;
+  setConnNote('Forgotten. The token is back to the built-in default; paste the URL and press <b>Save &amp; test</b>.','warn');
 };
 $c('blConnTest').onclick  = async ()=>{
   const url = $c('blConnUrl').value.trim(), tok = $c('blConnTok').value.trim();
