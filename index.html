@@ -9696,8 +9696,15 @@ function summaryConflict(text, facts) {
       return 'offers a way to swim a dangerous day';
     if (/\b(doable|easy|manageable|no problem)\b/.test(t))
       return 'calls part of a dangerous day doable/easy';
-    if (!/\b(no[- ]swim|not a swim|not swimming|don'?t swim|do not swim|stay out|stay on the sand|give it a miss|sit this one out|not a day (?:to|for)|leave it)\b/.test(t))
-      return 'dangerous day with no explicit no-swim call';
+    // A red ENTRY is not a shut bay: the call is to look at the sheltered ways in.
+    // The exact sentence is computed client-side (facts.siteCheck) and must survive
+    // verbatim, so the Bower Lane / Shelly split can never come back inverted.
+    if (facts.siteCheck) {
+      if (t.indexOf(String(facts.siteCheck).toLowerCase()) < 0)
+        return 'missing the site-check line: "' + facts.siteCheck + '"';
+      if (/\b(do not swim|don'?t swim|no[- ]swim|not a swim|stay out of the water)\b/.test(t))
+        return 'gives an absolute no-swim call instead of the site check';
+    }
   }
   if (v.entry && v.entry !== 'Easy' && /\beasy\b/.test(t))
     return 'says "easy" but Entry=' + v.entry;
@@ -10035,14 +10042,21 @@ async function generateBannerSummaryLocal() {
       ]));
     }
 
-    // Closing recommendation. RED ZONE = NO SWIM. Not "experienced swimmers only",
-    // not "go with a mate", not "sit it out if you're not comfortable" — every one
-    // of those frames a red day as swimmable by somebody, which is an invitation
-    // to exactly the person most likely to misjudge it. State the call and stop.
-    if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') {
+    // Closing recommendation on a red day. Still no mitigation advice — no "go with
+    // a mate", no "experienced swimmers only", nothing that frames the day as
+    // swimmable by the right person. But the blanket "do not swim" is gone: when
+    // the ENTRY is the red part, the useful local knowledge is that the bay has
+    // other ways in, and which one depends on the surge (19 Jul 2026).
+    if (domEntry === 'Dangerous') {
+      parts.push(domSurge === 'Washy'
+        ? ` Check on site for entry at Shelly Beach.`
+        : ` Check on site for entry at Bower Lane or Shelly Beach.`);
+    } else if (domSwim === 'Messy' || domSurge === 'Washy') {
+      // Entry itself is fine here — the hazard is out in the water, so an
+      // alternative entry point would not help. Keep it non-absolute but plain.
       parts.push(pick([
-        ` This is a no-swim day in the bay. Give it a miss and come back when it settles.`,
-        ` Not a swimming day — stay out of the water and enjoy it from the sand.`,
+        ` The water itself is the problem today, not getting in — take a good look from the sand before you commit.`,
+        ` Getting in is the easy part today; it's the state of the water that deserves a long look first.`,
       ]));
     } else if (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') {
       parts.push(pick([
@@ -10089,6 +10103,16 @@ async function generateBannerSummaryLocal() {
     verdict: { entry: domEntry, swim: domSwim, surge: domSurge },
     safetyLevel: (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') ? 'dangerous'
                : (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') ? 'caution' : 'good',
+    // Computed HERE, not left to the summariser to derive from the verdicts. The
+    // rule is a small piece of local knowledge (a red entry off South Steyne does
+    // not mean the bay is shut — it means try the sheltered ways in, and which one
+    // depends on the surge), and an LLM asked to infer it would eventually get the
+    // Bower Lane / Shelly split backwards. The Worker echoes this string verbatim
+    // and its validator rejects any draft that omits it.
+    siteCheck: domEntry === 'Dangerous'
+      ? (domSurge === 'Washy' ? 'check on site for entry at Shelly Beach'
+                              : 'check on site for entry at Bower Lane or Shelly Beach')
+      : null,
     weather: {
       sky: wxInfo.desc, tempRange: tempRange || '', feelsLike: avgFeel,
       windChill: windChill, windKmh: avgWind, windDir: dominantWindDir,
