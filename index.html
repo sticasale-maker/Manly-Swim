@@ -9649,12 +9649,30 @@ function summaryConflict(text, facts) {
   const t = ' ' + String(text).toLowerCase().replace(/\s+/g, ' ') + ' ';
   const v = facts.verdict || {};
   const w = facts.water || {};
+  // RED ZONE = NO SWIM. The Worker returned "the entry off South Steyne is
+  // doable ... only get in if you're confident in rough water, and stay with a
+  // mate" on a dangerous day. Mitigation advice is the thing to catch: it turns
+  // a refusal into a briefing, and it reaches the swimmer most likely to
+  // misjudge it. Checked here as well as in the Worker so a stale or
+  // rolled-back Worker cannot put that sentence back on screen.
+  if (String(facts.safetyLevel || '').toLowerCase() === 'dangerous') {
+    if (/\b(with a mate|with a buddy|with someone|bring a mate|stay close|only get in|only swim|if you'?re confident|if you are confident|experienced swimmers?|strong swimmers?)\b/.test(t))
+      return 'offers a way to swim a dangerous day';
+    if (/\b(doable|easy|manageable|no problem)\b/.test(t))
+      return 'calls part of a dangerous day doable/easy';
+    if (!/\b(no[- ]swim|not a swim|not swimming|don'?t swim|do not swim|stay out|stay on the sand|give it a miss|sit this one out|not a day (?:to|for)|leave it)\b/.test(t))
+      return 'dangerous day with no explicit no-swim call';
+  }
   if (v.entry && v.entry !== 'Easy' && /\beasy\b/.test(t))
     return 'says "easy" but Entry=' + v.entry;
   if (v.entry === 'Easy' && /\b(dangerous|treacherous|do not swim)\b/.test(t))
     return 'says dangerous but Entry=Easy';
   if (['Choppy', 'Messy'].indexOf(v.swim) !== -1 && /\b(glassy|smooth|like glass)\b/.test(t))
     return 'says smooth but Chop=' + v.swim;
+  // Overstating is a defect too: told not to soften a red day, the Worker invented
+  // chop the forecast never reported (swim=Smooth, prose "the surface is choppy").
+  if (['Smooth', 'Ripply'].indexOf(v.swim) !== -1 && /\b(choppy|messy|chopped up|rough surface)\b/.test(t))
+    return 'says choppy but Chop=' + v.swim;
   if (['Surgy', 'Washy'].indexOf(v.surge) !== -1 && /\b(no real surge|minimal surge|no significant surge|isn't surging)\b/.test(t))
     return 'downplays surge but Surge=' + v.surge;
   // A height quoted as being "in the bay" must be the bay residual, not the
@@ -9972,7 +9990,7 @@ async function generateBannerSummaryLocal() {
     if (domSurge === 'Washy') {
       parts.push(pick([
         ` The surge inside the bay is significant today — swell is bouncing back off the Shelly headland wall and creating that churned-up, turbulent water that makes it hard to swim a clean line. Visibility underwater will be poor near the rocks. Give the headland wall a wide berth.`,
-        ` Lots of surge through Cabbage Tree Bay — the swell is reflecting off the walls and pushing you around, especially near the Shelly end. The water will be stirred up and visibility might be murky. Experienced swimmers only on days like this.`,
+        ` Lots of surge through Cabbage Tree Bay — the swell is reflecting off the walls and pushing you around, especially near the Shelly end. The water will be stirred up and visibility might be murky.`,
       ]));
     } else if (domSurge === 'Surgy') {
       parts.push(pick([
@@ -9981,11 +9999,14 @@ async function generateBannerSummaryLocal() {
       ]));
     }
 
-    // Closing recommendation
+    // Closing recommendation. RED ZONE = NO SWIM. Not "experienced swimmers only",
+    // not "go with a mate", not "sit it out if you're not comfortable" — every one
+    // of those frames a red day as swimmable by somebody, which is an invitation
+    // to exactly the person most likely to misjudge it. State the call and stop.
     if (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') {
       parts.push(pick([
-        ` Best left to experienced swimmers today — conditions are genuinely challenging and this isn't the day to push your limits if you're still building confidence in open water.`,
-        ` Worth asking yourself honestly whether today's the day. Conditions are tough — experienced open water swimmers will manage, but it's a solid day to sit it out on the sand if you're not fully comfortable.`,
+        ` This is a no-swim day in the bay. Give it a miss and come back when it settles.`,
+        ` Not a swimming day — stay out of the water and enjoy it from the sand.`,
       ]));
     } else if (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') {
       parts.push(pick([
