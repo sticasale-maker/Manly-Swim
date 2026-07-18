@@ -10037,13 +10037,19 @@ async function generateBannerSummaryLocal() {
       windChill: windChill, windKmh: avgWind, windDir: dominantWindDir,
       rainProb: avgRain, cloud: avgCloud, haveWx: haveWx
     },
+    // ONLY the offshore height goes to the summariser. rampBreakH/bayResidualH
+    // are deliberately withheld: they are H*sqrt(transmit), and `transmit` comes
+    // from a table of ENERGY fractions built for SCORING. That makes them useful
+    // relative quantities and terrible absolute ones — stating "1.1 m of bay
+    // swell" as a measurement produced text no swimmer recognised, sitting right
+    // beside the app's own "the surface will be smooth" (18 Jul 2026). The
+    // verdicts are the trustworthy output; let the prose lean on those. The
+    // Worker's validator rejects any figure not present here, so withholding
+    // them is what actually enforces this.
     water: {
       oceanSwellH: Number(oceanSwellH.toFixed(1)),
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
-      rampBreakH: Number(rampBreakH.toFixed(1)),
-      bayResidualH: Number(bayResidualH.toFixed(1)),
-      baySwellH: Number(baySwellH.toFixed(1)),
       shelteredContrast: shelteredContrast
     }
   };
