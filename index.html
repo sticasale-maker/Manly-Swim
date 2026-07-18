@@ -3193,6 +3193,9 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       ".st-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--deep,#113541);margin:14px 0 6px;}" +
       ".st-card{background:#fff;border:1px solid var(--border,#cfe3ea);border-radius:12px;padding:10px;}" +
       ".st-axis{display:flex;justify-content:space-between;font-size:9px;color:var(--dim,#4a5f6e);margin-top:4px;}" +
+      // Fixed height so the card does not jump as the text changes length while
+      // you drag across the bars.
+      ".st-dread{font-size:11px;color:var(--text,#113541);margin-top:5px;min-height:15px;line-height:1.35;font-variant-numeric:tabular-nums;}" +
       ".st-bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:11px;}" +
       ".st-bl{flex:none;width:64px;color:var(--text,#113541);}" +
       ".st-bt{flex:1;height:12px;background:rgba(74,143,173,.12);border-radius:6px;overflow:hidden;}" +
@@ -3407,6 +3410,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '<div style="font-size:11px;color:#6b8a97;margin-top:5px;line-height:1.45;">' +
       '<b>Events</b> = individual tracked actions, one row each (metric opened, mode switch, guide open, share, feedback, session start\u2026), so this far exceeds device/session counts.</div>';
     el('stDaily').innerHTML = dailyChart(d.daily || []);
+    wireDailyChart(d.daily || []);      // must follow the innerHTML — it binds to #stDailySvg
     el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Surge' });
     el('stModes').innerHTML = mixBars(d.modes || [], 'mode', null);
     el('stSources').innerHTML = listRows(d.sources || [], 'source', 'devices');
@@ -3448,9 +3452,45 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
              (hasSes ? '<rect x="' + (x + wDev + sp).toFixed(1) + '" y="' + ySes.toFixed(1) + '" width="' + wSes.toFixed(1) + '" height="' + hSes.toFixed(1) + '" fill="#c9782f">' + t + '</rect>' : '');
     }).join('');
     var first = rows[0].day, last = rows[rows.length - 1].day;
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + bars + '</svg>' +
+    // The readout is a DIV, not SVG text: this chart is preserveAspectRatio="none",
+    // so anything drawn inside it is stretched horizontally by however wide the
+    // modal happens to be \u2014 numbers would render squashed or smeared. It also gives
+    // the figures to touch users, who never see a <title> tooltip.
+    return '<svg id="stDailySvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' + bars + '</svg>' +
            '<div class="st-axis"><span>' + esc(first) + '</span><span><span style="color:var(--deep,#113541);">\u25ae</span> new \u00b7 <span style="color:var(--ocean,#4a8fad);">\u25ae</span> returning' +
-           (hasSes ? ' \u00b7 <span style="color:#c9782f;">\u25ae</span> accesses' : '') + '</span><span>' + esc(last) + '</span></div>';
+           (hasSes ? ' \u00b7 <span style="color:#c9782f;">\u25ae</span> accesses' : '') + '</span><span>' + esc(last) + '</span></div>' +
+           '<div class="st-dread" id="stDailyRead">&nbsp;</div>';
+  }
+
+  /* Hover or drag across the chart to read a day. Bars are evenly spaced and the
+     SVG is stretched to the container, so the index is just the x fraction \u2014 no
+     need to hit-test the rects, which also means the thin gaps between bars do
+     not produce dead spots. */
+  function wireDailyChart(rows) {
+    var svg = el('stDailySvg'), out = el('stDailyRead');
+    if (!svg || !out || !rows.length) return;
+    var hasSes = rows.some(function (r) { return (r.sessions || 0) > 0; });
+    function show(i) {
+      var r = rows[Math.max(0, Math.min(rows.length - 1, i))];
+      if (!r) return;
+      var dev = r.devices || 0, nd = r.new_devices || 0, ret = Math.max(0, dev - nd);
+      out.innerHTML = '<b>' + esc(r.day) + '</b> \u00b7 ' + dev + ' device' + (dev === 1 ? '' : 's') +
+        ' <span style="color:var(--deep,#113541)">' + nd + ' new</span>' +
+        ' <span style="color:var(--ocean,#4a8fad)">' + ret + ' returning</span>' +
+        (hasSes ? ' \u00b7 <span style="color:#c9782f">' + (r.sessions || 0) + ' accesses</span>' +
+          (dev ? ' <span style="opacity:.6">(' + ((r.sessions || 0) / dev).toFixed(1) + ' per device)</span>' : '') : '');
+    }
+    function at(ev) {
+      var b = svg.getBoundingClientRect();
+      if (!b.width) return;
+      var cx = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX);
+      show(Math.floor(((cx - b.left) / b.width) * rows.length));
+    }
+    svg.addEventListener('mousemove', at);
+    svg.addEventListener('touchstart', at, { passive: true });
+    svg.addEventListener('touchmove', at, { passive: true });
+    svg.addEventListener('mouseleave', function () { show(rows.length - 1); });
+    show(rows.length - 1);            // start on the most recent day, not blank
   }
 
   function mixBars(rows, key, labelMap) {
