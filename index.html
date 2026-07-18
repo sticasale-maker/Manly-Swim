@@ -12494,10 +12494,6 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function compassOf(d) { return COMPASS[Math.round(((d % 360) / 22.5)) % 16]; }
   var MONTHS = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
   var ZCOL = { easy: '#2f9e63', doable: '#d9a11e', caution: '#e07b39', dangerous: '#c0392b' };
-  function zoneOf(t) {
-    var E = S.entry;
-    return t <= E.easy ? 'easy' : t <= E.doable ? 'doable' : t <= E.caution ? 'caution' : 'dangerous';
-  }
 
   /* ---- ENTRY + SURGE exactly as the app's metric rails show them ----------
      Same LIVE calcScore, same pictograms (_ICON_ZONE/_ICON_WORD naming), and
@@ -12835,12 +12831,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var dd = Math.abs(t - now);
       if (dd < bd) { bd = dd; cur = r; }
     });
-    var nowTotal = null, pct = null, zone = '', liveRes = null;
+    var nowTotal = null, pct = null, liveRes = null;
     if (cur && bd <= 2 * 36e5) {
       try {
         nowTotal = pinnedTotal(cur);
         pct = pctOf(STORM_CLIMO.hourlyQ, nowTotal);
-        zone = zoneOf(nowTotal);
       } catch (e) {}
       /* the LIVE score — same call the metric rails make, so the pictures and
          labels here always agree with what the app is showing */
@@ -12908,21 +12903,20 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     /* Deliberately not "bay closed/reopens": the bay is never officially shut
        by the lifesavers, and implying that would be wrong. This is a condition
        readout — when it is calm enough to swim again. */
-    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap">⏳ Swimmable again in</div>' +
+    h += '<div class="ssd-tile ssd-wide ssd-center"><div class="ssd-cap">⏳ Swimmable again in</div>' +
          (cdHrs != null
             ? (cdHrs < 1
                 ? '<div class="ssd-huge">now</div><div class="ssd-sub">entry is still swimmable this hour — get in before it turns!</div>'
                 : '<div class="ssd-huge">' + cdHrs + '<span class="ssd-hunit">h</span></div><div class="ssd-sub">' + cdLabel + ' · first entry back at Doable or better</div>')
             : '<div class="ssd-huge">5+<span class="ssd-hunit">days</span></div><div class="ssd-sub">no swimmable window in the current forecast — check back tomorrow</div>') +
          '</div>';
-    if (cur) {
-      h += '<div class="ssd-tile"><div class="ssd-cap">📍 Right now at South Steyne</div>' +
-           (zone ? '<div class="ssd-chip" style="background:' + ZCOL[zone] + '">' + zone.toUpperCase() + '</div>' : '') +
-           '<div class="ssd-nowline"><b>' + (cur.swell1H != null ? cur.swell1H.toFixed(1) : '–') + ' m</b> swell · ' +
-           Math.round(cur.swell1P || 0) + 's ' + compassOf(cur.swell1Dir || 0) + '</div>' +
-           '<div class="ssd-nowline"><b>' + Math.round(cur.windKmh || 0) + ' km/h</b> wind · ' + compassOf(cur.windDir || 0) + '</div>' +
-           '</div>';
-    }
+    /* No "Right now" tile: it showed a zone chip off the PINNED tide-neutral
+       score, which disagreed with the Entry pictogram below (and with the app's
+       own rail) whenever the tide term mattered — e.g. raw 13.8 "Easy"
+       tide-neutral vs 16.0 "Doable" live, on a +2.2 tide demerit. The live
+       score is the true one; the tide-neutral figure exists only to keep the
+       2025 percentile apples-to-apples (the hindcast carries no tide). Its
+       swell/wind lines were duplicated by the Swell + wind tile anyway. */
     if (liveRes && cur) {
       h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Entry &amp; Surge right now</div>' +
            '<div class="ssd-metrow">' +
@@ -13000,8 +12994,6 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-pct{font-size:13.5px;color:#113541;line-height:1.35;margin:0 0 2px;}' +
     '.ssd-dist{width:100%;display:block;margin:2px 0 0;}' +
     '.ssd-map{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:8px;}' +
-    '.ssd-chip{display:inline-block;color:#fff;font-family:"Inter",sans-serif;font-size:10px;font-weight:700;letter-spacing:.5px;border-radius:5px;padding:2px 7px;margin-bottom:5px;}' +
-    '.ssd-nowline{font-size:12.5px;color:#113541;line-height:1.5;}' +
     '.ssd-swell{width:100%;display:block;border-radius:8px;}' +
     '.ssd-swline{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:#4a5f6e;margin-top:5px;}' +
     '.ssd-metrow{display:flex;gap:10px;}' +
