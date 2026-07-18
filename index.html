@@ -12596,24 +12596,47 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var R = b < 60 ? 74 : b < 100 ? 92 : b < 150 ? 82 : 60;
       ox = SX + R * Math.sin(rad); oy = SY - R * Math.cos(rad);
     }
-    ox = Math.max(16, Math.min(184, ox)); oy = Math.max(16, Math.min(136, oy));
+    ox = Math.max(6, Math.min(194, ox)); oy = Math.max(6, Math.min(144, oy));
+
+    /* Zoom to just Sydney + the source. The coast path is baked in fixed map
+       coordinates, so panning/zooming is purely a viewBox change — a nearby
+       fetch gets a tight view, a Coral Sea one gets the wider ocean, and we
+       never show empty sea (or New Zealand) that has nothing to do with it. */
+    var pad = 20, MINW = 78, AR = 200 / 150;
+    var x0 = Math.min(SX, ox) - pad, x1 = Math.max(SX, ox) + pad;
+    var y0 = Math.min(SY, oy) - pad, y1 = Math.max(SY, oy) + pad;
+    if (x1 - x0 < MINW) { var cX = (x0 + x1) / 2; x0 = cX - MINW / 2; x1 = cX + MINW / 2; }
+    if (y1 - y0 < MINW / AR) { var cY = (y0 + y1) / 2; y0 = cY - MINW / AR / 2; y1 = cY + MINW / AR / 2; }
+    if ((x1 - x0) / (y1 - y0) < AR) {                      // too tall -> widen
+      var nw = (y1 - y0) * AR, cx2 = (x0 + x1) / 2; x0 = cx2 - nw / 2; x1 = cx2 + nw / 2;
+    } else {                                               // too wide -> heighten
+      var nh = (x1 - x0) / AR, cy2 = (y0 + y1) / 2; y0 = cy2 - nh / 2; y1 = cy2 + nh / 2;
+    }
+    var vw = Math.min(200, x1 - x0), vh = Math.min(150, y1 - y0);
+    var vx = Math.max(0, Math.min(200 - vw, x0)), vy = Math.max(0, Math.min(150 - vh, y0));
+    /* strokes and type live in map units, so counter-scale them by the zoom to
+       keep a constant on-screen size */
+    var k = vw / 200, f = function (v) { return +(v * k).toFixed(2); };
+
     var dx = SX - ox, dy = SY - oy, len = Math.sqrt(dx*dx + dy*dy) || 1;
     var mx = (ox + SX) / 2, my = (oy + SY) / 2;
-    var cx = mx - dy / len * 15, cy = my + dx / len * 15;   // gentle curve
-    var tx = SX - dx / len * 8, ty = SY - dy / len * 8;     // stop short of Sydney
+    var bow = Math.min(len * 0.2, 15 * k);
+    var cx = mx - dy / len * bow, cy = my + dx / len * bow;      // gentle curve
+    var trim = Math.min(len * 0.3, 9 * k);
+    var tx = SX - dx / len * trim, ty = SY - dy / len * trim;    // stop short of Sydney
     var id = 'ssdM' + (++_uid);
-    var lblY = oy < 28 ? oy + 17 : oy - 11;
-    return '<svg viewBox="0 0 200 150" class="ssd-map" role="img" aria-label="Map: swell travelling from the ' + region + ' to Sydney">' +
+    var lblY = (oy - vy < 22 * k) ? oy + f(17) : oy - f(11);
+    return '<svg viewBox="' + vx.toFixed(1) + ' ' + vy.toFixed(1) + ' ' + vw.toFixed(1) + ' ' + vh.toFixed(1) + '" class="ssd-map" role="img" aria-label="Map: swell travelling from the ' + region + ' to Sydney">' +
       '<defs><marker id="' + id + '" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#113541"/></marker></defs>' +
-      '<rect x="0" y="0" width="200" height="150" rx="8" fill="#cfe2ee"/>' +
-      '<path d="' + STORM_COAST + '" fill="#d8d3bb" stroke="#a89f83" stroke-width="0.7" stroke-linejoin="round"/>' +
-      '<path d="M' + ox.toFixed(1) + ' ' + oy.toFixed(1) + ' Q' + cx.toFixed(1) + ' ' + cy.toFixed(1) + ' ' + tx.toFixed(1) + ' ' + ty.toFixed(1) + '" fill="none" stroke="#113541" stroke-width="3" stroke-linecap="round" stroke-dasharray="7 5" marker-end="url(#' + id + ')"/>' +
-      '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="7.5" fill="none" stroke="#c0392b" stroke-width="2.2"/>' +
-      '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="2.8" fill="#c0392b"/>' +
-      '<text x="' + Math.max(4, Math.min(196, ox)).toFixed(0) + '" y="' + lblY.toFixed(0) + '" text-anchor="middle" font-size="10" font-weight="700" fill="#8c2f1c" stroke="#cfe2ee" stroke-width="2.6" paint-order="stroke">' +
+      '<rect x="' + vx.toFixed(1) + '" y="' + vy.toFixed(1) + '" width="' + vw.toFixed(1) + '" height="' + vh.toFixed(1) + '" fill="#cfe2ee"/>' +
+      '<path d="' + STORM_COAST + '" fill="#d8d3bb" stroke="#a89f83" stroke-width="' + f(0.7) + '" stroke-linejoin="round"/>' +
+      '<path d="M' + ox.toFixed(1) + ' ' + oy.toFixed(1) + ' Q' + cx.toFixed(1) + ' ' + cy.toFixed(1) + ' ' + tx.toFixed(1) + ' ' + ty.toFixed(1) + '" fill="none" stroke="#113541" stroke-width="' + f(3) + '" stroke-linecap="round" stroke-dasharray="' + f(7) + ' ' + f(5) + '" marker-end="url(#' + id + ')"/>' +
+      '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="' + f(7.5) + '" fill="none" stroke="#c0392b" stroke-width="' + f(2.2) + '"/>' +
+      '<circle cx="' + ox.toFixed(1) + '" cy="' + oy.toFixed(1) + '" r="' + f(2.8) + '" fill="#c0392b"/>' +
+      '<text x="' + Math.max(vx + f(28), Math.min(vx + vw - f(28), ox)).toFixed(1) + '" y="' + lblY.toFixed(1) + '" text-anchor="middle" font-size="' + f(10) + '" font-weight="700" fill="#8c2f1c" stroke="#cfe2ee" stroke-width="' + f(2.6) + '" paint-order="stroke">' +
         (origin ? Math.round(origin.U) + ' km/h wind' : region) + '</text>' +
-      '<circle cx="' + SX + '" cy="' + SY + '" r="3.6" fill="#113541"/>' +
-      '<text x="' + (SX - 6) + '" y="' + (SY + 3.5) + '" text-anchor="end" font-size="10" font-weight="700" fill="#113541" stroke="#d8d3bb" stroke-width="2.6" paint-order="stroke">Sydney</text>' +
+      '<circle cx="' + SX + '" cy="' + SY + '" r="' + f(3.6) + '" fill="#113541"/>' +
+      '<text x="' + (SX - f(6)).toFixed(1) + '" y="' + (SY + f(3.5)).toFixed(1) + '" text-anchor="end" font-size="' + f(10) + '" font-weight="700" fill="#113541" stroke="#d8d3bb" stroke-width="' + f(2.6) + '" paint-order="stroke">Sydney</text>' +
     '</svg>';
   }
 
