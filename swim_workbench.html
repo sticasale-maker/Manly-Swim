@@ -1792,8 +1792,16 @@ async function blPush(){
     // the SCRIPT rejected the payload — do not send the user off checking their URL.
     if(!j.ok){
       const stale = /max 304|19x16|bad table|unknown table/i.test(j.error || '');
+      // A REJECTED TOKEN IS A DEAD END unless we forget it: the prompts only fire
+      // when the value is missing, so a wrong token gets resent on every push
+      // forever, and the message says "the token is fine" while it plainly isn't.
+      // Drop it here so the next push asks again. (The URL is left alone — it
+      // demonstrably works, or no JSON would have come back.)
+      const badTok = /token/i.test(j.error || '');
+      if(badTok) localStorage.removeItem(BL_PUSH_TOKEN_KEY);
       setBlEdit(`Sheet script rejected the push: <b>${j.error}</b>.`
-        + (stale ? ` That cap is from the 19-row script. Paste the current <code>bl_table_writer.gs</code>, then <b>Manage deployments &rarr; pencil &rarr; Version: New version &rarr; Deploy</b> — /exec serves the old version until you do.`
+        + (badTok ? ` The saved token has been cleared — push again and you will be asked for a new one. It must match <code>TOKEN</code> in <code>bl_table_writer.gs</code>.`
+          : stale ? ` That cap is from the 19-row script. Paste the current <code>bl_table_writer.gs</code>, then <b>Manage deployments &rarr; pencil &rarr; Version: New version &rarr; Deploy</b> — /exec serves the old version until you do.`
                  : ` The request reached the Web App, so the URL and token are fine.`)
         + ` Edits are still in memory — nothing was lost.`, 'err');
       return;
