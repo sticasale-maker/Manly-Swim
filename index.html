@@ -3221,7 +3221,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  </div>' +
       '  <div class="st-tiles" id="stTiles"></div>' +
       '  <div class="st-stick" id="stStick"></div>' +
-      '  <div class="st-sec">New vs returning, by day</div>' +
+      '  <div class="st-sec">New vs returning · accesses, by day</div>' +
       '  <div class="st-card" id="stDaily"></div>' +
       '  <div class="st-sec">Retention after a date (cohort first seen that week)</div>' +
       '  <div class="st-card">' +
@@ -3416,20 +3416,41 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
   function dailyChart(rows) {
     if (!rows.length) return '<div class="st-empty">No data yet.</div>';
     var W = 320, H = 120, gap = 1.5;
-    var max = rows.reduce(function (m, r) { return Math.max(m, r.devices || 0); }, 1);
+    // Accesses (sessions) share the devices scale rather than getting their own.
+    // Sessions are always >= devices, so a separate axis would flatten them to
+    // look identical; on one scale the GAP between the two bars is readable, and
+    // that gap is the interesting number \u2014 visits per device.
+    var max = rows.reduce(function (m, r) {
+      return Math.max(m, r.devices || 0, r.sessions || 0);
+    }, 1);
     var bw = W / rows.length;
+    // Only draw the accesses series if analytics_summary actually returns it.
+    // r.sessions was already read here for the tooltip behind a `|| 0`, so an
+    // absent field would have shown a silent 0 \u2014 and as a BAR that reads as
+    // "nobody opened the app", which is worse than not drawing it at all.
+    var hasSes = rows.some(function (r) { return (r.sessions || 0) > 0; });
+    // Grouped, not stacked: a session is not a third kind of device, so stacking
+    // it on the same column would imply a total that means nothing.
+    var inner = Math.max(1, bw - gap);
+    var wDev = hasSes ? inner * 0.56 : inner;
+    var wSes = hasSes ? inner * 0.36 : 0;
+    var sp = inner - wDev - wSes;
     var bars = rows.map(function (r, i) {
       var dev = r.devices || 0, nd = r.new_devices || 0, ret = Math.max(0, dev - nd);
-      var x = i * bw, w = Math.max(1, bw - gap);
-      var hRet = (ret / max) * H, hNew = (nd / max) * H;
-      var yRet = H - hRet, yNew = yRet - hNew;
-      var ttl = r.day + ' \u2014 ' + dev + ' devices (' + nd + ' new), ' + (r.sessions || 0) + ' sessions';
-      return '<rect x="' + x.toFixed(1) + '" y="' + yRet.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + hRet.toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.42"><title>' + esc(ttl) + '</title></rect>' +
-             '<rect x="' + x.toFixed(1) + '" y="' + yNew.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + hNew.toFixed(1) + '" fill="var(--deep,#113541)"><title>' + esc(ttl) + '</title></rect>';
+      var ses = r.sessions || 0;
+      var x = i * bw;
+      var hRet = (ret / max) * H, hNew = (nd / max) * H, hSes = (ses / max) * H;
+      var yRet = H - hRet, yNew = yRet - hNew, ySes = H - hSes;
+      var ttl = r.day + ' \u2014 ' + dev + ' devices (' + nd + ' new)' + (hasSes ? ', ' + ses + ' accesses' : '');
+      var t = '<title>' + esc(ttl) + '</title>';
+      return '<rect x="' + x.toFixed(1) + '" y="' + yRet.toFixed(1) + '" width="' + wDev.toFixed(1) + '" height="' + hRet.toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.42">' + t + '</rect>' +
+             '<rect x="' + x.toFixed(1) + '" y="' + yNew.toFixed(1) + '" width="' + wDev.toFixed(1) + '" height="' + hNew.toFixed(1) + '" fill="var(--deep,#113541)">' + t + '</rect>' +
+             (hasSes ? '<rect x="' + (x + wDev + sp).toFixed(1) + '" y="' + ySes.toFixed(1) + '" width="' + wSes.toFixed(1) + '" height="' + hSes.toFixed(1) + '" fill="#c9782f">' + t + '</rect>' : '');
     }).join('');
     var first = rows[0].day, last = rows[rows.length - 1].day;
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + bars + '</svg>' +
-           '<div class="st-axis"><span>' + esc(first) + '</span><span><span style="color:var(--deep,#113541);">\u25ae</span> new \u00b7 <span style="color:var(--ocean,#4a8fad);">\u25ae</span> returning</span><span>' + esc(last) + '</span></div>';
+           '<div class="st-axis"><span>' + esc(first) + '</span><span><span style="color:var(--deep,#113541);">\u25ae</span> new \u00b7 <span style="color:var(--ocean,#4a8fad);">\u25ae</span> returning' +
+           (hasSes ? ' \u00b7 <span style="color:#c9782f;">\u25ae</span> accesses' : '') + '</span><span>' + esc(last) + '</span></div>';
   }
 
   function mixBars(rows, key, labelMap) {
