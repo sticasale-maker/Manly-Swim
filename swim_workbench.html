@@ -205,7 +205,7 @@
       <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
       <div class="rowflex"><input type="checkbox" id="fan"> Exposure fan (transmit-coloured rays)</div>
       <div class="rowflex"><input type="checkbox" id="rose" checked> Compass rose</div>
-      <div class="rowflex"><input type="checkbox" id="zoomIn"> Zoom 2&times; on node 103218</div>
+      <div class="rowflex"><input type="checkbox" id="zoomIn"> Zoom to fit <small style="opacity:.65">&mdash; 2&times; on the points, easing out to hold a whole lobe</small></div>
 
       <div class="grp-t">At node 103218 <small>2025 hindcast &middot; 7512 h</small></div>
       <div class="rowflex"><input type="checkbox" id="roseSwell"> <span class="swatch" style="background:#19b3e6"></span> Swell rose (from)</div>
@@ -1192,29 +1192,33 @@ function calc(I){
    One source of truth for the visible rect. The SVG gets it as a viewBox; the <img>
    underneath gets the identical rect as a CSS transform, so the two stay registered.
    Zoom is centred on the NS node, which is what the roses and the lobe hang off. */
-const ZOOM = 2;
-/* Centre on the CONTENT, not on the node. Centring on the node alone put ENTRY
-   (352,658) outside the left edge at 2x — the viewport is only 760 wide and the
-   node sits at x=762, so everything interesting fell off one side.
-   The box covers the node, ENTRY and CHOP, plus the lobe's 300 px reach when a
-   lobe is on. A 600 px-tall lobe cannot fit a 476 px-tall viewport at 2x, so it
-   still crops — but centred, it crops evenly top and bottom instead of hiding a
-   whole point of interest. */
+/* FIT the zoom to what is on screen, capped at 2x. A fixed 2x cannot work for both
+   states: the points of interest span ~410x224 px and take 2x happily, but a lobe is
+   600x600 and the 2x viewport is only 760x476 — so switching a lobe on at a fixed 2x
+   both cropped it and dragged the centre off the node to make room for ENTRY.
+   Fitting instead means: no lobe -> the cap, so 2x exactly as before; lobe on -> zoom
+   out just enough (~1.45x) that the whole lobe fits, centred on the node it hangs off. */
+const ZOOM_MAX = 2;
 function contentBox(){
   const pts = [FCST_NODE, PT_ENTRY, PT_CHOP];
   let x0 = Math.min(...pts.map(p=>p.x)), x1 = Math.max(...pts.map(p=>p.x));
   let y0 = Math.min(...pts.map(p=>p.y)), y1 = Math.max(...pts.map(p=>p.y));
-  if(ST.blRing || ST.ssRing || ST.blAll){
+  const lobe = ST.blRing || ST.ssRing || ST.blAll;
+  if(lobe){
     x0 = Math.min(x0, FCST_NODE.x-LOBE_R100); x1 = Math.max(x1, FCST_NODE.x+LOBE_R100);
     y0 = Math.min(y0, FCST_NODE.y-LOBE_R100); y1 = Math.max(y1, FCST_NODE.y+LOBE_R100);
   }
-  return { cx:(x0+x1)/2, cy:(y0+y1)/2 };
+  // Breathing room: tight around a lobe (it is already the biggest thing on screen),
+  // generous around the bare points so their labels are not flush to the edge.
+  const pad = lobe ? 24 : 70;
+  return { x0:x0-pad, y0:y0-pad, x1:x1+pad, y1:y1+pad };
 }
 function viewRect(){
   if(!ST.zoomIn) return { x:0, y:0, w:MW, h:MH, z:1 };   // 1x = the whole chart, untouched
-  const z = ZOOM, w = MW/z, h = MH/z;
-  const c = contentBox();
-  let x = c.cx - w/2, y = c.cy - h/2;
+  const b = contentBox();
+  const z = Math.max(1, Math.min(ZOOM_MAX, Math.min(MW/(b.x1-b.x0), MH/(b.y1-b.y0))));
+  const w = MW/z, h = MH/z;
+  let x = (b.x0+b.x1)/2 - w/2, y = (b.y0+b.y1)/2 - h/2;
   x = Math.max(0, Math.min(MW-w, x));
   y = Math.max(0, Math.min(MH-h, y));
   return { x, y, w, h, z };
