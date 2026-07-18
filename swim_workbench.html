@@ -172,8 +172,11 @@
         </div>
         <div class="rowflex" style="margin-bottom:4px">
           <label for="blConnTok" style="width:64px;flex:none">Token</label>
-          <input id="blConnTok" type="text" spellcheck="false" style="flex:1;min-width:0"
+          <!-- password, so it is not sitting in plain sight on a shared screen.
+               Tick Show to check a paste. -->
+          <input id="blConnTok" type="password" spellcheck="false" style="flex:1;min-width:0"
                  placeholder="must match TOKEN in bl_table_writer.gs">
+          <label style="flex:none;margin-left:6px"><input type="checkbox" id="blConnTokShow"> Show</label>
         </div>
         <div class="btns">
           <button id="blConnTest">Save &amp; test</button>
@@ -1794,13 +1797,17 @@ function updateBlEditNote(){
    App bound to the workbook, called with a shared token. Content-Type is text/plain so
    the POST stays a CORS "simple request" — Apps Script never answers a preflight. */
 const BL_PUSH_URL_KEY = 'swim_bl_push_url', BL_PUSH_TOKEN_KEY = 'swim_bl_push_token';
-/* Prefilled so the panel is one paste (the URL) rather than two. NOTE: this file is
-   served publicly, so this token is public — it is a convenience default, not a
-   secret. The Web App it guards is deployed "Anyone", so anyone who reads this page
-   can write to the dispersion tables. If that ever matters, change TOKEN in
-   bl_table_writer.gs to something not published here and enter it in the panel;
-   a value typed there is stored per-browser and overrides this. */
-const BL_PUSH_TOKEN_DEFAULT = 'manly-intros-2026';
+/* Prefilled so the panel is one paste (the URL) rather than two.
+   BE CLEAR ABOUT WHAT THIS IS: base64 keeps the token out of a casual view-source
+   and out of a GitHub search for the literal string. It is NOT encryption and NOT
+   a secret — this file is served publicly, atob() is right there, and anyone who
+   opens devtools has it in ten seconds. The Web App it guards must be deployed
+   "Anyone" to work at all, so treat write access to the dispersion tables as
+   obscured, not protected.
+   To make it genuinely private: set TOKEN in bl_table_writer.gs to a value that is
+   NOT in this file, redeploy a new version, and enter it once in the panel — it is
+   stored per-browser and overrides this default. */
+const BL_PUSH_TOKEN_DEFAULT = atob('dG9rZW5mb3J0YWJsZXM=');
 const pushToken = () => localStorage.getItem(BL_PUSH_TOKEN_KEY) || BL_PUSH_TOKEN_DEFAULT;
 async function blPush(){
   // Pushes EVERY pending edit, on both tables — you should never have to remember
@@ -1840,8 +1847,8 @@ async function blPush(){
         localStorage.removeItem(BL_PUSH_TOKEN_KEY);
         // Careful with the wording: clearing storage now falls back to the built-in
         // default, so "cleared" would imply the next push tries something new when
-        // it may retry the very same value.
-        connOpen(`That token was rejected. The field below shows the built-in default (<code>${BL_PUSH_TOKEN_DEFAULT}</code>) — if that is the one that just failed, copy <code>TOKEN</code> from <code>bl_table_writer.gs</code> instead and press <b>Save &amp; test</b>.`);
+        // it may retry the very same value. The token itself is never echoed.
+        connOpen('That token was rejected. The field below has reverted to the built-in default — if that is the one that just failed, copy <code>TOKEN</code> from <code>bl_table_writer.gs</code> instead (tick <b>Show</b> to check the paste) and press <b>Save &amp; test</b>.');
       }
       setBlEdit(`Sheet script rejected the push: <b>${j.error}</b>.`
         + (badTok ? ` The saved token has been cleared — push again and you will be asked for a new one. It must match <code>TOKEN</code> in <code>bl_table_writer.gs</code>.`
@@ -1968,6 +1975,7 @@ function connOpen(msg){
 }
 $c('blConn').onclick      = ()=>{ const b=$c('blConnBox'); if(b.style.display==='none') connOpen(); else b.style.display='none'; };
 $c('blConnClose').onclick = ()=>{ $c('blConnBox').style.display='none'; };
+$c('blConnTokShow').onchange = e => { $c('blConnTok').type = e.target.checked ? 'text' : 'password'; };
 $c('blConnClear').onclick = ()=>{
   localStorage.removeItem(BL_PUSH_URL_KEY); localStorage.removeItem(BL_PUSH_TOKEN_KEY);
   $c('blConnUrl').value=''; $c('blConnTok').value = BL_PUSH_TOKEN_DEFAULT;
