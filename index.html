@@ -12464,35 +12464,58 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '</div>';
   }
 
-  /* ---- Swell + Wind map, borrowed from the app's own canvas ---------------
+  /* ---- Swell + Wind map, mirrored LIVE from the app's own canvas ----------
      The renderer is an IIFE bound to #swellCanvas and animated on rAF, so it
-     can't be instantiated a second time. Snapshot the live canvas instead —
-     that IS the app's rendering, refraction arrows, wind arrow and all. Taken
-     on every fill(), so it refreshes as the async data lands. Returns '' when
-     the card is hidden by the detail-level setting (canvas then has no bitmap)
-     or if the export ever throws. */
+     can't be instantiated a second time. Instead we blit its frames into a
+     canvas in the popup, so the arrows actually move — the app's own render,
+     refraction arrows, wind arrow and all. The source loop runs continuously
+     (gated only by document.hidden), so it stays live while the popup is up.
+     Renders nothing when the card is hidden by the detail-level setting, in
+     which case the source canvas has no bitmap. */
   function swellWindTile(cur, liveRes) {
     var src = document.getElementById('swellCanvas');
     if (!src || !src.width || !src.height) return '';
-    var url;
-    try {
-      var w = Math.min(560, src.width), k = w / src.width;
-      var c = document.createElement('canvas');
-      c.width = w; c.height = Math.round(src.height * k);
-      c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
-      /* the bay render is fully opaque (checked: no transparent pixels), so
-         JPEG is safe here and costs 27 KB against 161 KB for the same PNG */
-      url = c.toDataURL('image/jpeg', 0.9);
-    } catch (e) { return ''; }
-    if (!url || url.length < 200) return '';
     var swLine = compassOf(cur.swell1Dir || 0) + ' swell · ' + Math.round(cur.swell1P || 0) + 's';
     var wdLine = compassOf(cur.windDir || 0) + ' wind · ' + Math.round(cur.windKmh || 0) + ' km/h';
     var chop = liveRes && liveRes.swim ? liveRes.swim : null;
     return '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🗺️ Swell + wind in the bay</div>' +
-      '<img class="ssd-swell" src="' + url + '" alt="Swell refracting around the headland into the bay, with the wind arrow">' +
+      '<canvas class="ssd-swell" data-swellmirror aria-label="Swell refracting around the headland into the bay, with the wind arrow"></canvas>' +
       '<div class="ssd-swline"><span>' + swLine + '</span><span>' + wdLine +
         (chop ? ' · <b style="color:' + (RAIL_COL[chop.cls] || '#113541') + '">' + chop.label + '</b>' : '') + '</span></div>' +
     '</div>';
+  }
+
+  /* Copy every frame of the live swell canvas into the popup's mirror. Stops
+     itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
+     there is never a loop running against a detached node. */
+  var _mirrorRaf = null;
+  function startSwellMirror(sc) {
+    if (_mirrorRaf) { cancelAnimationFrame(_mirrorRaf); _mirrorRaf = null; }
+    var dst = sc.querySelector('canvas[data-swellmirror]');
+    var src = document.getElementById('swellCanvas');
+    if (!dst || !src) return;
+    var ctx = dst.getContext('2d');
+    /* Visibility, NOT the overlay's .show class: showPopup() injects the body
+       before it adds .show, so keying off the class killed the loop on frame
+       one. Wait (bounded) until the canvas is actually laid out, then run until
+       it is detached or hidden again — i.e. until the popup is dismissed. */
+    function paint() {
+      if (!src.width || !src.height) return;
+      if (dst.width !== src.width || dst.height !== src.height) { dst.width = src.width; dst.height = src.height; }
+      try { ctx.drawImage(src, 0, 0); } catch (e) {}
+    }
+    /* Paint once up front so the tile is never blank: rAF is frozen while the
+       page is hidden/backgrounded, so without this the canvas could render
+       empty. Worst case we degrade to a still frame; normally we animate. */
+    paint();
+    var seen = false, waited = 0;
+    (function loop() {
+      if (!document.contains(dst)) { _mirrorRaf = null; return; }
+      var visible = dst.getClientRects().length > 0;
+      if (visible) { seen = true; paint(); }
+      else if (seen || ++waited > 900) { _mirrorRaf = null; return; }
+      _mirrorRaf = requestAnimationFrame(loop);
+    })();
   }
 
   function fmtSlot(dt) {
@@ -12872,6 +12895,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       el.innerHTML = ready ? buildHTML()
         : '<div class="ssd-grid"><div class="ssd-tile ssd-wide"><div class="ssd-sub">crunching the live forecast…</div></div></div>';
     });
+    if (ready) startSwellMirror(sc);       // (re)attach the live swell animation
     if (!ready) {
       clearTimeout(_retry);
       _retry = setTimeout(function () { if (document.body.contains(sc)) fill(sc); }, 1200);
