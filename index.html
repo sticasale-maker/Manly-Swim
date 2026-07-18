@@ -10775,15 +10775,31 @@ function shareApp() {
   var body =
     'Have a look at this new app: Swim Manly — ocean swim forecast for South Steyne ↔ Shelly Beach:\n' +
     url + '\n\n' +
-    'To add tile on your phone and use it in full screen mode (recommended)\n\n' +
-    'iPhone:\n' +
-    '1. From within the app, tap the three dots at the bottom right and select "Share".\n' +
-    '2. scroll down till you see "Add to Home Screen" and tap it.\n' +
-    '3. Check that "Open as Web App" is ON, tap on Add.\n\n' +
-    'Android\n' +
-    '1. From within the app, tap the three vertical dots in the top right corner.\n' +
-    '2. Select "Add to Home screen" (or "Install app" if available).\n' +
-    '3. Confirm by tapping "Add".';
+    'To add the tile and use it full screen (recommended):\n\n' +
+    // Facebook/Instagram open links in their own in-app browser, which CANNOT
+    // install a tile — no Add to Home Screen on iOS, no install prompt on
+    // Android. This step has to come first or the rest simply won't be there.
+    'OPENED THIS FROM FACEBOOK? Tap the three dots in the corner and choose\n' +
+    '"Open in browser" (or "Open in Safari" / "Open in Chrome") first — a tile\n' +
+    'cannot be added from inside Facebook. Then follow your phone below.\n\n' +
+    'iPHONE — Safari:\n' +
+    '1. Tap the Share icon (square with an arrow pointing up) in the bar at the\n' +
+    '   BOTTOM of the screen.\n' +
+    '2. Scroll down and tap "Add to Home Screen".\n' +
+    '3. Tap "Add" (top right).\n\n' +
+    'iPHONE — Chrome:\n' +
+    '1. Tap the Share icon at the TOP right, beside the address bar.\n' +
+    '   (Ignore "Share to Chrome" at the bottom — it does not add a tile.)\n' +
+    '2. Scroll down and tap "Add to Home Screen".\n' +
+    '3. Tap "Add" (top right).\n\n' +
+    'ANDROID — Chrome:\n' +
+    '1. Tap the three vertical dots (top right).\n' +
+    '2. Tap "Install app" (or "Add to Home screen").\n' +
+    '3. Confirm with "Install" / "Add".\n\n' +
+    'ANDROID — Samsung Internet:\n' +
+    '1. Tap the three lines (bottom right).\n' +
+    '2. Tap "Add page to", then "Home screen".\n' +
+    '3. Confirm with "Add".';
   if (navigator.share) {
     navigator.share({ title: title, text: body }).catch(function () {});
   } else {
@@ -14463,6 +14479,18 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   <span class="a2hs-banner-txt"><strong>&#128241; Enable full functionality</strong>Install the Swim Manly tile to unlock the full-screen app: tap the &#8942; menu (top-right), then &lsquo;Install app&rsquo;.</span>
   <button id="a2hsHintClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
 </div>
+<!-- Facebook/Instagram in-app browser: installing is impossible here, so the only
+     useful instruction is how to get out. Shown INSTEAD of the banners above. -->
+<div id="a2hsInApp" class="a2hs-banner" role="dialog" aria-label="Open in browser to install" hidden>
+  <span class="a2hs-banner-txt"><strong>&#128241; Open in your browser first</strong>A tile can&rsquo;t be added from inside Facebook:
+    <ol class="a2hs-steps">
+      <li>Tap the <b>&hellip;</b> (three dots) in the corner.</li>
+      <li>Choose &lsquo;<b>Open in browser</b>&rsquo; (or &lsquo;Open in Safari&rsquo; / &lsquo;Open in Chrome&rsquo;).</li>
+      <li>The install steps will appear there.</li>
+    </ol>
+  </span>
+  <button id="a2hsInAppClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
+</div>
 <script>
 (function () {
   var REMIND_MS = 2 * 24 * 60 * 60 * 1000;   // re-offer install at most once per ~2 days
@@ -14492,6 +14520,23 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return !(until && Date.now() < until);
   }
   function snooze() { lsSet('a2hs_snooze_until', String(Date.now() + REMIND_MS)); }
+
+  // ---- 0) In-app browsers (Facebook, Instagram) CANNOT install a tile at all:
+  // iOS gives them no "Add to Home Screen" in the share sheet, and Android never
+  // fires beforeinstallprompt. Showing the normal steps here sends people hunting
+  // for a menu item that does not exist — a common way in, since links are shared
+  // on the Manly swim Facebook page. Tell them how to get OUT instead, and show
+  // nothing else.
+  var uaEarly = navigator.userAgent || '';
+  if (/FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(uaEarly)) {
+    var iab = byId('a2hsInApp');
+    if (iab && remindDue()) {
+      iab.hidden = false; snooze();
+      var iabClose = byId('a2hsInAppClose');
+      if (iabClose) iabClose.addEventListener('click', function () { iab.hidden = true; });
+    }
+    return;
+  }
 
   // ---- A) Android / Chromium: capture the native prompt, offer an install pill.
   var deferredPrompt = null;
