@@ -12611,6 +12611,7 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
   var APP_LABEL = { swim: 'Swim app', viz: 'Forecast app' };
 
   var _active = [];     // the live announcements (may be several at once)
+  var _preview = false; // admin: popup is showing an UNSAVED draft, not _active
   var _editId = null;   // admin: id being edited (null = new)
   var _imgUrl = '';     // admin: image url currently in the form
   var _app    = 'swim'; // admin: which app the form publishes to
@@ -12736,6 +12737,9 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
   }
   function dismissPopup(){
     var ov = $('annOverlay'); if (ov) ov.classList.remove('show');
+    // A draft preview must NOT mark the real live set as seen (and must restore
+    // the z-index bump that lifted the popup above the admin overlay).
+    if (_preview) { _preview = false; if (ov) ov.style.zIndex = ''; return; }
     if (_active.length) { markSeen(_active); var p = $('annWhatsNew'); if (p) p.classList.remove('unseen'); }
   }
   function ensurePill(){
@@ -12877,6 +12881,7 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
           '<div><label class="aa-lbl">Ends</label><input class="aa-in" id="annInEnd" type="datetime-local"></div>' +
         '</div>' +
         '<button type="button" class="aa-btn aa-pub" id="annPubBtn">Publish</button>' +
+        '<button type="button" class="aa-btn aa-sec" id="annPrevBtn" style="width:100%;margin-top:8px;">Preview — only you see this</button>' +
         '<div id="annPubMsg" style="font-size:12px;text-align:center;margin-top:8px;min-height:14px;color:var(--dim,#4a5f6e);"></div>' +
         '<div class="aa-draftnote" id="annDraftNote"></div>' +
         '<div id="annAdminList" style="margin-top:8px;"></div>' +
@@ -12894,6 +12899,19 @@ var STORM_CLIMO = {"meta":{"generated":"2026-07-18","source":"NS hindcast node 1
         if (cmd === 'createLink') { var u = window.prompt('Link URL', 'https://'); if (u) document.execCommand('createLink', false, u); }
         else document.execCommand(cmd, false, null);
       });
+    });
+    $('annPrevBtn').addEventListener('click', function () {
+      // Render the CURRENT (unsaved) draft through the exact same popup pipeline
+      // users get — clean() sanitizer, [[STORM_STATS]] injection, styling — on
+      // this device only. Nothing is saved or published.
+      _preview = true;
+      showPopup([{
+        title: $('annInTitle') ? $('annInTitle').value : '',
+        body_html: $('annEdBody') ? $('annEdBody').innerHTML : '',
+        image_url: _imgUrl || null,
+        created_at: new Date().toISOString()
+      }]);
+      var o = $('annOverlay'); if (o) o.style.zIndex = '99998';   // above the admin overlay (99996)
     });
     $('annImgBtn').addEventListener('click', function () { $('annImgInput').click(); });
     $('annImgInput').addEventListener('change', async function () {
