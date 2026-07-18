@@ -12649,7 +12649,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var swLine = compassOf(cur.swell1Dir || 0) + ' swell · ' + Math.round(cur.swell1P || 0) + 's';
     var wdLine = compassOf(cur.windDir || 0) + ' wind · ' + Math.round(cur.windKmh || 0) + ' km/h';
     var chop = liveRes && liveRes.swim ? liveRes.swim : null;
-    return '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🗺️ Swell + wind in the bay</div>' +
+    return '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🗺️ Real-time swell &amp; wind</div>' +
       '<canvas class="ssd-swell" data-swellmirror aria-label="Swell refracting around the headland into the bay, with the wind arrow"></canvas>' +
       '<div class="ssd-swline"><span>' + swLine + '</span><span>' + wdLine +
         (chop ? ' · <b style="color:' + (RAIL_COL[chop.cls] || '#113541') + '">' + chop.label + '</b>' : '') + '</span></div>' +
@@ -12659,6 +12659,39 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   /* Copy every frame of the live swell canvas into the popup's mirror. Stops
      itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
      there is never a loop running against a detached node. */
+  /* ---- "Swimmable again in" live countdown -------------------------------
+     Ticks hh:mm:ss to the first future slot scoring Doable or better. setInterval
+     (not rAF) so it keeps counting while the tab is hidden — a countdown that
+     silently froze in the background would read as a wrong time on return.
+     Stops itself when the node leaves the DOM, so a re-fill or a closed popup
+     never leaves a timer running against a detached element. */
+  var _cdTimer = null;
+  function fmtHMS(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return p(Math.floor(s / 3600)) + ':' + p(Math.floor((s % 3600) / 60)) + ':' + p(s % 60);
+  }
+  function startCountdown(sc) {
+    if (_cdTimer) { clearInterval(_cdTimer); _cdTimer = null; }
+    var el = sc.querySelector('.ssd-cd[data-at]');
+    if (!el) return;
+    var at = +el.getAttribute('data-at');
+    if (!at) return;
+    var sub = sc.querySelector('[data-cdsub]');
+    function tick() {
+      if (!document.contains(el)) { clearInterval(_cdTimer); _cdTimer = null; return; }
+      var left = at - Date.now();
+      if (left < 1000) {
+        el.textContent = 'now';
+        if (sub) sub.textContent = 'entry is back at Doable or better — get in!';
+        clearInterval(_cdTimer); _cdTimer = null; return;
+      }
+      el.textContent = fmtHMS(left);
+    }
+    tick();
+    _cdTimer = setInterval(tick, 1000);
+  }
+
   var _mirrorRaf = null;
   function startSwellMirror(sc) {
     if (_mirrorRaf) { cancelAnimationFrame(_mirrorRaf); _mirrorRaf = null; }
@@ -12910,7 +12943,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var now = Date.now();
 
     /* ---- countdown: first future daylight slot at Doable or better (LIVE score) */
-    var cdHrs = null, cdLabel = '';
+    // cdAt is the absolute instant, not a rounded hour count: the tile now ticks
+    // down in hh:mm:ss, so it needs a target to count TO. (Rounded hours also
+    // read badly here — 90 minutes out showed "2h" and then stayed "2h".)
+    var cdAt = null, cdLabel = '';
     try {
       var doable = SITE.entryThresholds.doable;
       for (var i = 0; i < (_matrix || []).length; i++) {
@@ -12920,7 +12956,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         var hh = +r.dateTime.substring(11, 13);
         if (hh < 6 || hh > 18) continue;
         var res = calcScore(r);
-        if (res && res.entry && res.entry.raw <= doable) { cdHrs = Math.round((t - now) / 36e5); cdLabel = fmtSlot(r.dateTime); break; }
+        if (res && res.entry && res.entry.raw <= doable) { cdAt = t; cdLabel = fmtSlot(r.dateTime); break; }
       }
     } catch (e) {}
 
@@ -13004,11 +13040,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     /* Deliberately not "bay closed/reopens": the bay is never officially shut
        by the lifesavers, and implying that would be wrong. This is a condition
        readout — when it is calm enough to swim again. */
-    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap">⏳ Swimmable again in</div>' +
-         (cdHrs != null
-            ? (cdHrs < 1
+    h += '<div class="ssd-tile ssd-center"><div class="ssd-cap ssd-cap-lg">⏳ Swimmable again in</div>' +
+         (cdAt != null
+            ? (cdAt - now < 60000
                 ? '<div class="ssd-huge">now</div><div class="ssd-sub">entry is still swimmable this hour — get in before it turns!</div>'
-                : '<div class="ssd-huge">' + cdHrs + '<span class="ssd-hunit">h</span></div><div class="ssd-sub">' + cdLabel + ' · first entry back at Doable or better</div>')
+                // data-at drives the live hh:mm:ss tick (startCountdown). The
+                // server-rendered value is already correct, so it reads right
+                // even in the frame before the first tick.
+                : '<div class="ssd-huge ssd-cd" data-at="' + cdAt + '">' + fmtHMS(cdAt - now) + '</div>' +
+                  '<div class="ssd-sub" data-cdsub>' + cdLabel + ' · first entry back at Doable or better</div>')
             : '<div class="ssd-huge">5+<span class="ssd-hunit">days</span></div><div class="ssd-sub">no swimmable window in the current forecast — check back tomorrow</div>') +
          '</div>';
     /* No "Right now" tile: it showed a zone chip off the PINNED tide-neutral
@@ -13019,7 +13059,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
        2025 percentile apples-to-apples (the hindcast carries no tide). Its
        swell/wind lines were duplicated by the Swell + wind tile anyway. */
     if (liveRes && cur) {
-      h += '<div class="ssd-tile"><div class="ssd-cap">🏊 Entry &amp; surge right now</div>' +
+      h += '<div class="ssd-tile"><div class="ssd-cap">🏊 Real-time entry &amp; surge</div>' +
            '<div class="ssd-metrow ssd-metcol">' +
              metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
              metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
@@ -13064,7 +13104,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       el.innerHTML = ready ? buildHTML()
         : '<div class="ssd-grid"><div class="ssd-tile ssd-wide"><div class="ssd-sub">crunching the live forecast…</div></div></div>';
     });
-    if (ready) startSwellMirror(sc);       // (re)attach the live swell animation
+    if (ready) { startSwellMirror(sc); startCountdown(sc); }   // (re)attach the live animation + tick
     if (!ready) {
       clearTimeout(_retry);
       _retry = setTimeout(function () { if (document.body.contains(sc)) fill(sc); }, 1200);
@@ -13087,7 +13127,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-wide{grid-column:1 / -1;}' +
     '.ssd-center{display:flex;flex-direction:column;justify-content:center;}' +
     '.ssd-cap{font-family:"Inter",sans-serif;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#4a5f6e;margin-bottom:6px;}' +
+    '.ssd-cap-lg{font-size:14.5px;letter-spacing:.4px;color:#113541;margin-bottom:8px;text-align:center;}' +
     '.ssd-huge{font-family:"Bebas Neue",sans-serif;font-size:64px;line-height:0.95;color:#113541;text-align:center;margin:4px 0 6px;}' +
+    /* hh:mm:ss is 8 glyphs where "17h" was 3 — 64px would overflow a half-width
+       tile. tabular-nums stops the digits jittering as they tick. */
+    '.ssd-cd{font-size:35px;font-variant-numeric:tabular-nums;letter-spacing:.5px;}' +
     '.ssd-hunit{font-size:26px;margin-left:4px;color:#4a5f6e;}' +
     '.ssd-sub{font-size:11.5px;color:#4a5f6e;line-height:1.4;margin-top:3px;}' +
     '.ssd-center .ssd-sub{text-align:center;}' +
