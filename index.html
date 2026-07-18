@@ -13246,12 +13246,30 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return out.innerHTML;
   }
 
-  /* ---- seen tracking (signature spans ALL live announcements) -------------- */
+  /* ---- seen tracking (signature spans ALL live announcements) --------------
+     Scoped to the DAY as well as the content. Previously the stored value was
+     the content signature alone, so one dismissal silenced the popup until a
+     post was edited or added — someone who dismissed it in the morning never
+     saw it again, however long it stayed live. Storing "<sydney-date>@<sig>"
+     re-arms it once per calendar day: at most one popup a day for unchanged
+     content, and still an immediate one whenever the content itself changes
+     (a new id, or an edit bumping updated_at). */
+  function annDay(){
+    try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' }); }
+    catch (e) { return new Date().toISOString().slice(0, 10); }
+  }
   function seenSig(list){
     return (list || []).map(function (a) { return a.id + '|' + (a.updated_at || ''); }).sort().join(';');
   }
-  function isSeen(list){ try { return localStorage.getItem(SEEN_KEY) === seenSig(list); } catch (e) { return false; } }
-  function markSeen(list){ try { localStorage.setItem(SEEN_KEY, seenSig(list)); } catch (e) {} }
+  function isSeen(list){
+    try {
+      var v = localStorage.getItem(SEEN_KEY) || '';
+      var i = v.indexOf('@');                       // ids and ISO stamps carry no '@'
+      if (i < 0) return false;                      // pre-dated value → treat as unseen
+      return v.slice(0, i) === annDay() && v.slice(i + 1) === seenSig(list);
+    } catch (e) { return false; }
+  }
+  function markSeen(list){ try { localStorage.setItem(SEEN_KEY, annDay() + '@' + seenSig(list)); } catch (e) {} }
 
   /* ---- popup + pill -------------------------------------------------------- */
   function buildPopup(){
