@@ -1009,6 +1009,11 @@
     border-color: var(--red); color: var(--red);
   }
   .bb-btn.bb-confirm:hover { background: var(--red); color: #fff; }
+  /* Post-confirm undo window: the report is queued, not yet sent */
+  .bb-btn.bb-undo {
+    border-color: var(--ocean); color: #fff; background: var(--ocean);
+  }
+  .bb-btn.bb-undo:hover { background: var(--deep); border-color: var(--deep); color: #fff; }
 
   /* ── MARINE-LIFE SIGHTINGS ─────────────────────────────────────────────── */
   .sight-strip {
@@ -7999,7 +8004,9 @@ async function bbFetch() {
 // itself; the deviceId arg is no longer sent (kept only for call-site compat).
 // A 4xx here = server cooldown rejected the report; bbReport treats any throw as
 // "report failed" and re-enables the button.
-async function bbInsert(_deviceId) {
+// `keepalive` lets a queued report still reach Supabase when the undo window is
+// cut short by the user backgrounding or closing the page (see bbFlushPending).
+async function bbInsert(_deviceId, keepalive) {
   const res = await fetch(
     `${BB_SUPABASE_URL}/rest/v1/rpc/report_bluebottle`,
     {
@@ -8009,7 +8016,8 @@ async function bbInsert(_deviceId) {
         'Authorization': `Bearer ${BB_SUPABASE_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: '{}'
+      body: '{}',
+      keepalive: !!keepalive
     }
   );
   if (!res.ok) throw new Error(`Supabase rpc ${res.status}`);
@@ -8049,8 +8057,9 @@ function bbRenderFromData(reports) {
     btn.textContent = `Again in ${h > 0 ? h + 'h ' : ''}${m}m`;
   } else {
     btn.disabled    = false;
-    // Don't clobber the "Sure?" prompt if the user is mid-confirm
-    if (!_bbConfirming) { btn.classList.remove('bb-confirm'); btn.textContent = 'Report'; }
+    // Don't clobber the "Sure?" prompt (mid-confirm) or the "Undo n" countdown
+    // (report queued) — a refresh tick must not steal either state.
+    if (!_bbConfirming && !_bbPending) { btn.classList.remove('bb-confirm', 'bb-undo'); btn.textContent = 'Report'; }
   }
 }
 
@@ -8085,6 +8094,9 @@ function bbCancelConfirm() {
 // First tap arms an "are you sure?" prompt; second tap actually sends.
 // The prompt auto-cancels after 4s if untouched.
 function bbReport() {
+  // While a report is queued the button IS the undo — tapping it cancels.
+  if (_bbPending) { bbUndo(); return; }
+
   const now      = Date.now();
   const lastMine = bbGetLastMine();
   if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
@@ -8103,13 +8115,68 @@ function bbReport() {
   bbSend();
 }
 
-async function bbSend() {
+// ── Undo window ────────────────────────────────────────────────────────────
+// A confirmed report is HELD for a few seconds instead of firing straight away,
+// so a mis-tap can be taken back. Nothing is sent until the window closes, so
+// undo needs no server support (there is no delete RPC — RLS denies direct
+// writes and the row is keyed to a hashed IP, not to anything the client holds).
+//
+// The one risk with holding it is losing a REAL report if the swimmer closes
+// the app mid-window — bad for a safety feature — so a pending report is
+// flushed immediately (keepalive, survives teardown) when the page is hidden
+// or unloaded. Undo is a grace period, never a way to drop a genuine report.
+const BB_UNDO_MS = 6000;
+let _bbPending = null;   // { timer, tick } while a report is queued
+
+function bbClearPending() {
+  if (!_bbPending) return;
+  clearTimeout(_bbPending.timer);
+  clearInterval(_bbPending.tick);
+  _bbPending = null;
+}
+
+// Queue the confirmed report and turn the button into the undo control.
+function bbSend() {
   const btn = document.getElementById('bbBtn');
-  if (btn) { btn.classList.remove('bb-confirm'); btn.disabled = true; btn.textContent = 'Sending…'; }
+  const fireAt = Date.now() + BB_UNDO_MS;
+  const paint = () => {
+    const left = Math.max(0, Math.ceil((fireAt - Date.now()) / 1000));
+    if (btn) {
+      btn.classList.remove('bb-confirm');
+      btn.classList.add('bb-undo');
+      btn.disabled = false;
+      btn.textContent = 'Undo ' + left;
+    }
+  };
+  bbClearPending();
+  _bbPending = {
+    timer: setTimeout(() => bbSendNow(false), BB_UNDO_MS),
+    tick:  setInterval(paint, 250)
+  };
+  paint();
+  const sub = document.getElementById('bbSub');
+  if (sub) sub.textContent = 'Sending your report — tap Undo to cancel';
+}
+
+// Cancel a queued report: nothing was ever sent.
+function bbUndo() {
+  bbClearPending();
+  const btn = document.getElementById('bbBtn');
+  if (btn) { btn.classList.remove('bb-undo', 'bb-confirm'); btn.disabled = false; btn.textContent = 'Report'; }
+  const sub = document.getElementById('bbSub');
+  if (sub) sub.textContent = 'Report cancelled';
+  setTimeout(bbLoad, 1600);   // restore the normal strip text
+}
+
+// Actually push the report to Supabase.
+async function bbSendNow(keepalive) {
+  bbClearPending();
+  const btn = document.getElementById('bbBtn');
+  if (btn) { btn.classList.remove('bb-confirm', 'bb-undo'); btn.disabled = true; btn.textContent = 'Sending…'; }
 
   try {
     const deviceId = await bbDeviceId();
-    await bbInsert(deviceId);
+    await bbInsert(deviceId, keepalive);
     bbSetLastMine();
     _bbCache   = null; // bust cache so we re-fetch fresh count
     _bbCacheAt = 0;
@@ -8119,6 +8186,13 @@ async function bbSend() {
     if (btn) { btn.disabled = false; btn.textContent = 'Report'; }
   }
 }
+
+// Never lose a genuine report to a backgrounded/closed page mid-undo-window.
+function bbFlushPending() { if (_bbPending) bbSendNow(true); }
+window.addEventListener('pagehide', bbFlushPending);
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') bbFlushPending();
+});
 
 // Initial load + refresh every 5 min
 bbLoad();
@@ -13105,8 +13179,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annWhatsNew')) return $('annWhatsNew');
     buildPopup();   // ensures the pill CSS is present
     var b = document.createElement('button'); b.id = 'annWhatsNew'; b.type = 'button';
-    b.setAttribute('aria-label', 'See the latest announcement');
-    b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>What\u2019s new</span>';
+    b.setAttribute('aria-label', 'See the announcements');
+    b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>Announcements</span>';
     b.addEventListener('click', function () { if (_active.length) showPopup(_active); });
     document.body.appendChild(b);
     return b;
