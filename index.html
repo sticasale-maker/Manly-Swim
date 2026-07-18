@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Swim NEW">
+<meta name="apple-mobile-web-app-title" content="Swim Manly">
 <link rel="apple-touch-icon" sizes="180x180" href="images/logos/icon-180.png?v=3">
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="images/logos/icon-180.png?v=3">
 <link rel="apple-touch-icon" href="images/logos/icon-180.png?v=3">
@@ -13676,5 +13676,85 @@ if ('serviceWorker' in navigator) {
       </div>
     </div>
   </div>
+
+<!-- ===== Add-to-Home-Screen prompts (Android install pill + iOS hint). Never shown in standalone; see a2hs script below. ===== -->
+<style>
+  .a2hs-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:9998;display:flex;align-items:center;background:var(--deep);color:#fff;border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,0.3);overflow:hidden;max-width:calc(100vw - 24px);}
+  .a2hs-pill-main{background:none;border:none;color:#fff;font-family:inherit;font-size:14px;font-weight:600;padding:12px 6px 12px 16px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
+  .a2hs-ios{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:9998;display:flex;align-items:center;gap:10px;background:var(--card);color:var(--text);border:1px solid rgba(17,53,65,0.20);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,0.25);padding:12px 14px;font-size:13.5px;line-height:1.45;}
+  .a2hs-ios-txt{flex:1;}
+  .a2hs-x{flex:none;background:none;border:none;color:inherit;font-size:20px;line-height:1;padding:6px 12px;cursor:pointer;opacity:.7;-webkit-tap-highlight-color:transparent;}
+  .a2hs-x:hover{opacity:1;}
+  .a2hs-pill .a2hs-x{color:#fff;}
+  .a2hs-pill[hidden],.a2hs-ios[hidden]{display:none!important;}
+</style>
+<div id="a2hsPill" class="a2hs-pill" role="dialog" aria-label="Install Swim Manly" hidden>
+  <button id="a2hsInstall" type="button" class="a2hs-pill-main">&#128241; Install Swim Manly</button>
+  <button id="a2hsClose" type="button" class="a2hs-x" aria-label="Dismiss install prompt">&times;</button>
+</div>
+<div id="a2hsIos" class="a2hs-ios" role="dialog" aria-label="Add to Home Screen" hidden>
+  <span class="a2hs-ios-txt">Add to Home Screen: tap Share, then &lsquo;Add to Home Screen&rsquo;.</span>
+  <button id="a2hsIosClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
+</div>
+<script>
+(function () {
+  // Never prompt when the app is already installed / running standalone.
+  function isStandalone() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+           window.navigator.standalone === true;
+  }
+  if (isStandalone()) return;
+
+  var byId = function (id) { return document.getElementById(id); };
+  var pill = byId('a2hsPill');
+
+  // ---- A) Android / Chromium: capture the native prompt, offer an install pill.
+  var deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    try { if (localStorage.getItem('a2hs_dismissed_v1')) return; } catch (err) {}
+    deferredPrompt = e;
+    if (pill) pill.hidden = false;
+  });
+  if (pill) {
+    var installBtn = byId('a2hsInstall');
+    var closeBtn = byId('a2hsClose');
+    if (installBtn) installBtn.addEventListener('click', function () {
+      if (!deferredPrompt) { pill.hidden = true; return; }
+      deferredPrompt.prompt();
+      if (deferredPrompt.userChoice) deferredPrompt.userChoice.then(function () { deferredPrompt = null; });
+      pill.hidden = true;
+    });
+    if (closeBtn) closeBtn.addEventListener('click', function () {
+      pill.hidden = true;
+      try { localStorage.setItem('a2hs_dismissed_v1', '1'); } catch (err) {}   // never again
+    });
+  }
+  window.addEventListener('appinstalled', function () {
+    if (pill) pill.hidden = true;
+    try { localStorage.setItem('a2hs_dismissed_v1', '1'); } catch (err) {}
+  });
+
+  // ---- B) iOS Safari: one-time hint (iOS has no beforeinstallprompt API).
+  var ua = navigator.userAgent || '';
+  var isIOS = /iPhone|iPad|iPod/.test(ua) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // iPadOS 13+ reports as Mac
+  var isSafari = isIOS && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);   // only Safari has the Share→A2HS flow
+  var seen = false;
+  try { seen = !!localStorage.getItem('a2hs_ios_seen_v1'); } catch (err) {}
+  if (isSafari && !window.navigator.standalone && !seen) {
+    var ban = byId('a2hsIos');
+    if (ban) {
+      ban.hidden = false;
+      var iosClose = byId('a2hsIosClose');
+      if (iosClose) iosClose.addEventListener('click', function () {
+        ban.hidden = true;
+        try { localStorage.setItem('a2hs_ios_seen_v1', '1'); } catch (err) {}
+      });
+    }
+  }
+})();
+</script>
+<!-- ===== /Add-to-Home-Screen ===== -->
 </body>
 </html>
