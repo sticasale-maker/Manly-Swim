@@ -12778,7 +12778,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
      itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
      there is never a loop running against a detached node. */
   /* ---- "Swimmable again in" live countdown -------------------------------
-     Ticks hh:mm:ss to the first future slot scoring Doable or better. setInterval
+     Ticks hh:mm:ss to the first future slot scoring Caution or better. setInterval
      (not rAF) so it keeps counting while the tab is hidden — a countdown that
      silently froze in the background would read as a wrong time on return.
      Stops itself when the node leaves the DOM, so a re-fill or a closed popup
@@ -12801,7 +12801,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var left = at - Date.now();
       if (left < 1000) {
         el.textContent = 'now';
-        if (sub) sub.textContent = 'entry is back at Doable or better — get in!';
+        if (sub) sub.textContent = 'entry is back at Caution or better — worth a look';
         clearInterval(_cdTimer); _cdTimer = null; return;
       }
       el.textContent = fmtHMS(left);
@@ -12957,6 +12957,31 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var x = Math.cos(p1)*Math.sin(p2) - Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
     return (toDeg(Math.atan2(y, x)) + 360) % 360;
   }
+  /* ---- FREEZE THE BACK-TRACE ----------------------------------------------
+     The trace is computed relative to "now": it walks back lag = R/celerity hours
+     and reads the wind there. So the same swell re-traced an hour later lands on a
+     different cell, and the tile quietly rewrites history — 1800 km becomes 2400,
+     45 km/h becomes 38. Whatever the true answer is, it is not changing, and a
+     panel that keeps revising the past reads as guesswork.
+     So the first successful trace for a swell is kept and reused verbatim. It is
+     released only when the swell is clearly a DIFFERENT one (arrival direction
+     more than 45° away) or the stored trace is over 5 days old — otherwise the
+     next storm would inherit this storm's birthplace, which is a worse lie than
+     the one being fixed. */
+  var ORIGIN_KEY = 'swim_storm_origin_v1';
+  function loadFrozenOrigin() {
+    try { return JSON.parse(localStorage.getItem(ORIGIN_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function saveFrozenOrigin(o) {
+    try { localStorage.setItem(ORIGIN_KEY, JSON.stringify(o)); } catch (e) {}
+  }
+  function angDiff(a, b) { var d = Math.abs((a - b) % 360); return d > 180 ? 360 - d : d; }
+  function frozenHolds(f, liveDir) {
+    return !!f && f.dir != null && f.R != null &&
+           angDiff(f.dir, liveDir) <= 45 &&
+           (Date.now() - (f.at || 0)) < 5 * 24 * 3600 * 1000;
+  }
+
   function fetchOrigin(periodS, fromDir, cb) {
     if (_origTried || !(periodS > 0)) return;
     _origTried = true;
@@ -13060,13 +13085,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var m = +today.substring(5, 7);
     var now = Date.now();
 
-    /* ---- countdown: first future daylight slot at Doable or better (LIVE score) */
+    /* ---- countdown: first future daylight slot at Caution or better (LIVE score) */
     // cdAt is the absolute instant, not a rounded hour count: the tile now ticks
     // down in hh:mm:ss, so it needs a target to count TO. (Rounded hours also
     // read badly here — 90 minutes out showed "2h" and then stayed "2h".)
+    // Threshold is CAUTION, not Doable (19 Jul 2026): during a big blow the first
+    // Doable slot can be days out, which makes the tile read like the bay is shut
+    // for the week. Caution is the point where it is worth going down to look.
     var cdAt = null, cdLabel = '';
     try {
-      var doable = SITE.entryThresholds.doable;
+      var reopen = SITE.entryThresholds.caution;
       for (var i = 0; i < (_matrix || []).length; i++) {
         var r = _matrix[i]; if (!r || !r.dateTime) continue;
         var t = new Date(r.dateTime.replace(' ', 'T')).getTime();
@@ -13074,7 +13102,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         var hh = +r.dateTime.substring(11, 13);
         if (hh < 6 || hh > 18) continue;
         var res = calcScore(r);
-        if (res && res.entry && res.entry.raw <= doable) { cdAt = t; cdLabel = fmtSlot(r.dateTime); break; }
+        if (res && res.entry && res.entry.raw <= reopen) { cdAt = t; cdLabel = fmtSlot(r.dateTime); break; }
       }
     } catch (e) {}
 
@@ -13116,22 +13144,36 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var org = '', mapSvg = '';
     var ref = cur || (_matrix && _matrix[0]);
     if (ref && ref.swell1P) {
-      var P = ref.swell1P, dir = ref.swell1Dir || 0;
+      // Period and direction are frozen alongside the trace, not just the distance
+      // and wind: the sentence names all four, so letting any of them drift would
+      // still make the tile rewrite itself between reloads.
+      var liveDir = ref.swell1Dir || 0;
+      var frozen = loadFrozenOrigin();
+      var held = frozenHolds(frozen, liveDir);
+      var P = held ? frozen.P : ref.swell1P;
+      var dir = held ? frozen.dir : liveDir;
       var kmh = Math.round(0.78 * P * 3.6);
       var reg = dir < 60 ? 'Coral Sea' : dir < 100 ? 'open Tasman' : dir < 150 ? 'Tasman Sea' : 'Southern Ocean';
-      fetchOrigin(P, dir, function () { if (_sc && document.body.contains(_sc)) fill(_sc); });
-      if (_origin) {
-        var days = _origin.lag / 24;
-        var age = days >= 1.5 ? days.toFixed(1) + ' days' : Math.round(_origin.lag) + ' hours';
+      if (!held) {
+        fetchOrigin(P, dir, function () {
+          if (_origin) saveFrozenOrigin({ P: P, dir: dir, R: _origin.R, U: _origin.U,
+                                          lag: _origin.lag, la: _origin.la, lo: _origin.lo, at: Date.now() });
+          if (_sc && document.body.contains(_sc)) fill(_sc);
+        });
+      }
+      var orig = held ? frozen : _origin;
+      if (orig) {
+        var days = orig.lag / 24;
+        var age = days >= 1.5 ? days.toFixed(1) + ' days' : Math.round(orig.lag) + ' hours';
         org = 'Traced back: this ' + Math.round(P) + 's ' + compassOf(dir) + ' swell was raised about <b>' +
-              Math.round(_origin.R / 100) * 100 + ' km</b> away in the ' + reg + ', where the wind was blowing <b>' +
-              Math.round(_origin.U) + ' km/h</b> straight at us. It has been travelling for <b>' + age +
+              Math.round(orig.R / 100) * 100 + ' km</b> away in the ' + reg + ', where the wind was blowing <b>' +
+              Math.round(orig.U) + ' km/h</b> straight at us. It has been travelling for <b>' + age +
               '</b> at ' + kmh + ' km/h to get here.';
       } else {
         org = 'This ' + Math.round(P) + 's ' + compassOf(dir) + ' swell is arriving from the ' + reg +
               ', travelling at roughly ' + kmh + ' km/h across open water.';
       }
-      mapSvg = originMap(dir, reg, _origin);
+      mapSvg = originMap(dir, reg, orig);
     }
 
     /* ---- archive scorecard */
@@ -13166,7 +13208,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
                 // server-rendered value is already correct, so it reads right
                 // even in the frame before the first tick.
                 : '<div class="ssd-huge ssd-cd" data-at="' + cdAt + '">' + fmtHMS(cdAt - now) + '</div>' +
-                  '<div class="ssd-sub" data-cdsub>' + cdLabel + ' · first entry back at Doable or better</div>')
+                  '<div class="ssd-sub" data-cdsub>' + cdLabel + ' · first entry back at Caution or better</div>')
             : '<div class="ssd-huge">5+<span class="ssd-hunit">days</span></div><div class="ssd-sub">no swimmable window in the current forecast — check back tomorrow</div>') +
          '</div>';
     /* No "Right now" tile: it showed a zone chip off the PINNED tide-neutral
