@@ -13681,20 +13681,24 @@ if ('serviceWorker' in navigator) {
 <style>
   .a2hs-pill{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));z-index:9998;display:flex;align-items:center;background:var(--deep);color:#fff;border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,0.3);overflow:hidden;max-width:calc(100vw - 24px);}
   .a2hs-pill-main{background:none;border:none;color:#fff;font-family:inherit;font-size:14px;font-weight:600;padding:12px 6px 12px 16px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
-  .a2hs-ios{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:9998;display:flex;align-items:center;gap:10px;background:var(--card);color:var(--text);border:1px solid rgba(17,53,65,0.20);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,0.25);padding:12px 14px;font-size:13.5px;line-height:1.45;}
-  .a2hs-ios-txt{flex:1;}
+  .a2hs-banner{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:9998;display:flex;align-items:center;gap:10px;background:var(--card);color:var(--text);border:1px solid rgba(17,53,65,0.20);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,0.25);padding:12px 14px;font-size:13.5px;line-height:1.45;}
+  .a2hs-banner-txt{flex:1;}
   .a2hs-x{flex:none;background:none;border:none;color:inherit;font-size:20px;line-height:1;padding:6px 12px;cursor:pointer;opacity:.7;-webkit-tap-highlight-color:transparent;}
   .a2hs-x:hover{opacity:1;}
   .a2hs-pill .a2hs-x{color:#fff;}
-  .a2hs-pill[hidden],.a2hs-ios[hidden]{display:none!important;}
+  .a2hs-pill[hidden],.a2hs-banner[hidden]{display:none!important;}
 </style>
 <div id="a2hsPill" class="a2hs-pill" role="dialog" aria-label="Install Swim Manly" hidden>
   <button id="a2hsInstall" type="button" class="a2hs-pill-main">&#128241; Install Swim Manly</button>
   <button id="a2hsClose" type="button" class="a2hs-x" aria-label="Dismiss install prompt">&times;</button>
 </div>
-<div id="a2hsIos" class="a2hs-ios" role="dialog" aria-label="Add to Home Screen" hidden>
-  <span class="a2hs-ios-txt">Add to Home Screen: tap Share, then &lsquo;Add to Home Screen&rsquo;.</span>
+<div id="a2hsIos" class="a2hs-banner" role="dialog" aria-label="Add to Home Screen" hidden>
+  <span class="a2hs-banner-txt">Add to Home Screen: tap Share, then &lsquo;Add to Home Screen&rsquo;.</span>
   <button id="a2hsIosClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
+</div>
+<div id="a2hsHint" class="a2hs-banner" role="dialog" aria-label="Install Swim Manly" hidden>
+  <span class="a2hs-banner-txt">To install: tap the &#8942; menu (top-right), then &lsquo;Install app&rsquo; / &lsquo;Add to Home screen&rsquo;.</span>
+  <button id="a2hsHintClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
 </div>
 <script>
 (function () {
@@ -13707,50 +13711,75 @@ if ('serviceWorker' in navigator) {
 
   var byId = function (id) { return document.getElementById(id); };
   var pill = byId('a2hsPill');
+  var hint = byId('a2hsHint');
+  function dismissed() { try { return !!localStorage.getItem('a2hs_dismissed_v1'); } catch (e) { return false; } }
+  function setDismissed() { try { localStorage.setItem('a2hs_dismissed_v1', '1'); } catch (e) {} }
 
   // ---- A) Android / Chromium: capture the native prompt, offer an install pill.
   var deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
-    try { if (localStorage.getItem('a2hs_dismissed_v1')) return; } catch (err) {}
+    if (dismissed()) return;
     deferredPrompt = e;
+    if (hint) hint.hidden = true;      // native prompt beats the manual hint
     if (pill) pill.hidden = false;
   });
   if (pill) {
     var installBtn = byId('a2hsInstall');
     var closeBtn = byId('a2hsClose');
     if (installBtn) installBtn.addEventListener('click', function () {
-      if (!deferredPrompt) { pill.hidden = true; return; }
-      deferredPrompt.prompt();
-      if (deferredPrompt.userChoice) deferredPrompt.userChoice.then(function () { deferredPrompt = null; });
-      pill.hidden = true;
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        if (deferredPrompt.userChoice) deferredPrompt.userChoice.then(function () { deferredPrompt = null; });
+        pill.hidden = true;
+      } else {
+        // Chrome never fired the native event → show the manual ⋮ steps instead.
+        pill.hidden = true;
+        if (hint) hint.hidden = false;
+      }
     });
-    if (closeBtn) closeBtn.addEventListener('click', function () {
-      pill.hidden = true;
-      try { localStorage.setItem('a2hs_dismissed_v1', '1'); } catch (err) {}   // never again
-    });
+    if (closeBtn) closeBtn.addEventListener('click', function () { pill.hidden = true; setDismissed(); });   // never again
+  }
+  if (hint) {
+    var hintClose = byId('a2hsHintClose');
+    if (hintClose) hintClose.addEventListener('click', function () { hint.hidden = true; setDismissed(); });
   }
   window.addEventListener('appinstalled', function () {
     if (pill) pill.hidden = true;
-    try { localStorage.setItem('a2hs_dismissed_v1', '1'); } catch (err) {}
+    if (hint) hint.hidden = true;
+    setDismissed();
   });
 
-  // ---- B) iOS Safari: one-time hint (iOS has no beforeinstallprompt API).
   var ua = navigator.userAgent || '';
+
+  // ---- Android fallback: Chrome gates beforeinstallprompt behind an engagement
+  // heuristic, so it often never fires. If it hasn't after a short delay, show the
+  // pill anyway (Android Chromium only) — tapping it reveals the ⋮ install steps.
+  var isAndroid = /Android/.test(ua);
+  var isFirefox = /Firefox/.test(ua);   // Firefox Android has no beforeinstallprompt and its own install UI
+  if (isAndroid && !isFirefox && !dismissed()) {
+    setTimeout(function () {
+      if (!deferredPrompt && pill && pill.hidden && (!hint || hint.hidden) && !dismissed()) {
+        pill.hidden = false;
+      }
+    }, 3500);
+  }
+
+  // ---- B) iOS Safari: one-time hint (iOS has no beforeinstallprompt API). Shown
+  // at most ONCE, ever — the seen flag is set on display, not on dismiss, because
+  // from a Safari tab there is no way to detect the app is already installed.
   var isIOS = /iPhone|iPad|iPod/.test(ua) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // iPadOS 13+ reports as Mac
   var isSafari = isIOS && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);   // only Safari has the Share→A2HS flow
-  var seen = false;
-  try { seen = !!localStorage.getItem('a2hs_ios_seen_v1'); } catch (err) {}
-  if (isSafari && !window.navigator.standalone && !seen) {
+  var iosSeen = false;
+  try { iosSeen = !!localStorage.getItem('a2hs_ios_seen_v1'); } catch (err) {}
+  if (isSafari && !window.navigator.standalone && !iosSeen) {
     var ban = byId('a2hsIos');
     if (ban) {
       ban.hidden = false;
+      try { localStorage.setItem('a2hs_ios_seen_v1', '1'); } catch (err) {}   // show once, ever
       var iosClose = byId('a2hsIosClose');
-      if (iosClose) iosClose.addEventListener('click', function () {
-        ban.hidden = true;
-        try { localStorage.setItem('a2hs_ios_seen_v1', '1'); } catch (err) {}
-      });
+      if (iosClose) iosClose.addEventListener('click', function () { ban.hidden = true; });
     }
   }
 })();
