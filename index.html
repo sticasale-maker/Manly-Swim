@@ -13702,6 +13702,8 @@ if ('serviceWorker' in navigator) {
 </div>
 <script>
 (function () {
+  var REMIND_MS = 2 * 24 * 60 * 60 * 1000;   // re-offer install at most once per ~2 days
+
   // Never prompt when the app is already installed / running standalone.
   function isStandalone() {
     return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
@@ -13712,17 +13714,30 @@ if ('serviceWorker' in navigator) {
   var byId = function (id) { return document.getElementById(id); };
   var pill = byId('a2hsPill');
   var hint = byId('a2hsHint');
-  function dismissed() { try { return !!localStorage.getItem('a2hs_dismissed_v1'); } catch (e) { return false; } }
-  function setDismissed() { try { localStorage.setItem('a2hs_dismissed_v1', '1'); } catch (e) {} }
+
+  function ls(k)      { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k,v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  // Recurring cadence: an install offer is "due" unless the app is already
+  // installed (permanent stop) or we've shown one within the last ~2 days.
+  // A home-screen (standalone) launch returned above, so the cadence only
+  // applies to people who keep opening the app in a browser.
+  function installed() { return !!ls('a2hs_installed_v1'); }
+  function remindDue() {
+    if (installed()) return false;
+    var until = parseInt(ls('a2hs_snooze_until') || '0', 10);
+    return !(until && Date.now() < until);
+  }
+  function snooze() { lsSet('a2hs_snooze_until', String(Date.now() + REMIND_MS)); }
 
   // ---- A) Android / Chromium: capture the native prompt, offer an install pill.
   var deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', function (e) {
     e.preventDefault();
-    if (dismissed()) return;
+    if (!remindDue()) return;
     deferredPrompt = e;
-    if (hint) hint.hidden = true;      // native prompt beats the manual hint
-    if (pill) pill.hidden = false;
+    if (hint) hint.hidden = true;                       // native prompt beats the manual hint
+    if (pill) { pill.hidden = false; snooze(); }        // shown → don't re-offer for ~2 days
   });
   if (pill) {
     var installBtn = byId('a2hsInstall');
@@ -13738,47 +13753,45 @@ if ('serviceWorker' in navigator) {
         if (hint) hint.hidden = false;
       }
     });
-    if (closeBtn) closeBtn.addEventListener('click', function () { pill.hidden = true; setDismissed(); });   // never again
+    if (closeBtn) closeBtn.addEventListener('click', function () { pill.hidden = true; snooze(); });   // remind again in ~2 days
   }
   if (hint) {
     var hintClose = byId('a2hsHintClose');
-    if (hintClose) hintClose.addEventListener('click', function () { hint.hidden = true; setDismissed(); });
+    if (hintClose) hintClose.addEventListener('click', function () { hint.hidden = true; snooze(); });
   }
   window.addEventListener('appinstalled', function () {
     if (pill) pill.hidden = true;
     if (hint) hint.hidden = true;
-    setDismissed();
+    lsSet('a2hs_installed_v1', '1');   // installed → stop offering for good
   });
 
   var ua = navigator.userAgent || '';
 
   // ---- Android fallback: Chrome gates beforeinstallprompt behind an engagement
   // heuristic, so it often never fires. If it hasn't after a short delay, show the
-  // pill anyway (Android Chromium only) — tapping it reveals the ⋮ install steps.
+  // pill anyway (Android Chromium only, respecting the ~2-day cadence) — tapping it
+  // reveals the ⋮ install steps.
   var isAndroid = /Android/.test(ua);
   var isFirefox = /Firefox/.test(ua);   // Firefox Android has no beforeinstallprompt and its own install UI
-  if (isAndroid && !isFirefox && !dismissed()) {
+  if (isAndroid && !isFirefox && remindDue()) {
     setTimeout(function () {
-      if (!deferredPrompt && pill && pill.hidden && (!hint || hint.hidden) && !dismissed()) {
-        pill.hidden = false;
+      if (!deferredPrompt && pill && pill.hidden && (!hint || hint.hidden) && remindDue()) {
+        pill.hidden = false; snooze();
       }
     }, 3500);
   }
 
-  // ---- B) iOS: one-time hint (iOS has no beforeinstallprompt API in ANY browser).
-  // Shown for every iOS browser — Safari, Chrome (CriOS), Edge, Firefox — since all
-  // install via a Share → "Add to Home Screen" flow. Shown at most ONCE, ever: the
-  // seen flag is set on display, not on dismiss, because from a browser tab there is
-  // no way to detect the app is already installed.
+  // ---- B) iOS (all browsers): Share → "Add to Home Screen" hint. iOS has no
+  // beforeinstallprompt in ANY browser (Safari, Chrome/CriOS, Edge, Firefox) — all
+  // install via the Share flow. Re-offered on the same ~2-day cadence; from a browser
+  // tab iOS gives no way to detect an existing install, so a home-screen launch
+  // (standalone, returned above) is what keeps installed users from seeing it.
   var isIOS = /iPhone|iPad|iPod/.test(ua) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // iPadOS 13+ reports as Mac
-  var iosSeen = false;
-  try { iosSeen = !!localStorage.getItem('a2hs_ios_seen_v1'); } catch (err) {}
-  if (isIOS && !window.navigator.standalone && !iosSeen) {
+  if (isIOS && !window.navigator.standalone && remindDue()) {
     var ban = byId('a2hsIos');
     if (ban) {
-      ban.hidden = false;
-      try { localStorage.setItem('a2hs_ios_seen_v1', '1'); } catch (err) {}   // show once, ever
+      ban.hidden = false; snooze();
       var iosClose = byId('a2hsIosClose');
       if (iosClose) iosClose.addEventListener('click', function () { ban.hidden = true; });
     }
