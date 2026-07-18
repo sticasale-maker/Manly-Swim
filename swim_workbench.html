@@ -177,6 +177,28 @@
       <div class="btns">
         <button id="blRevert">Revert edits</button>
         <button id="blPush">Push to sheet</button>
+        <button id="blConn">Sheet connection…</button>
+      </div>
+      <!-- Replaces the old one-shot prompt() pair. Those only fired when a value
+           was MISSING, so a typo could never be corrected from the UI, and there
+           was no way to see what was stored. -->
+      <div id="blConnBox" style="display:none;margin-top:6px">
+        <div class="rowflex" style="margin-bottom:4px">
+          <label for="blConnUrl" style="width:64px;flex:none">/exec URL</label>
+          <input id="blConnUrl" type="text" spellcheck="false" style="flex:1;min-width:0"
+                 placeholder="https://script.google.com/macros/s/…/exec">
+        </div>
+        <div class="rowflex" style="margin-bottom:4px">
+          <label for="blConnTok" style="width:64px;flex:none">Token</label>
+          <input id="blConnTok" type="text" spellcheck="false" style="flex:1;min-width:0"
+                 placeholder="must match TOKEN in bl_table_writer.gs">
+        </div>
+        <div class="btns">
+          <button id="blConnTest">Save &amp; test</button>
+          <button id="blConnClear">Forget both</button>
+          <button id="blConnClose">Close</button>
+        </div>
+        <div class="note" id="blConnNote"></div>
       </div>
       <div id="blPasteBox" style="display:none;margin-top:6px">
         <textarea id="blPasteTxt" rows="6" spellcheck="false"
@@ -1775,8 +1797,12 @@ async function blPush(){
   const edits = Object.values(BL_EDITS);
   if(!edits.length) return setBlEdit('Nothing to push.','warn');
   let url = localStorage.getItem(BL_PUSH_URL_KEY), tok = localStorage.getItem(BL_PUSH_TOKEN_KEY);
-  if(!url){ url = prompt('Apps Script Web App /exec URL:'); if(!url) return; localStorage.setItem(BL_PUSH_URL_KEY, url.trim()); }
-  if(!tok){ tok = prompt('Shared token (must match TOKEN in the script):'); if(!tok) return; localStorage.setItem(BL_PUSH_TOKEN_KEY, tok.trim()); }
+  // Was two prompt() calls. A prompt cannot be corrected once answered — it only
+  // reappears when the value is MISSING — so one typo wedged pushing for good.
+  if(!url || !tok){
+    connOpen('Fill these in, press <b>Save &amp; test</b>, then push again. Your edits are still in memory.');
+    return setBlEdit('Sheet connection not set — see the panel below.','warn');
+  }
   const byT = {}; edits.forEach(e=>byT[e.tk]=(byT[e.tk]||0)+1);
   setBlEdit(`Pushing ${edits.length} cell${edits.length>1?'s':''} (`
     + Object.keys(byT).map(k=>`${byT[k]} ${tblOf(k).name}`).join(', ') + `) …`,'');
@@ -1798,7 +1824,10 @@ async function blPush(){
       // Drop it here so the next push asks again. (The URL is left alone — it
       // demonstrably works, or no JSON would have come back.)
       const badTok = /token/i.test(j.error || '');
-      if(badTok) localStorage.removeItem(BL_PUSH_TOKEN_KEY);
+      if(badTok){
+        localStorage.removeItem(BL_PUSH_TOKEN_KEY);
+        connOpen('The saved token was rejected and has been cleared. Paste the right one and press <b>Save &amp; test</b>.');
+      }
       setBlEdit(`Sheet script rejected the push: <b>${j.error}</b>.`
         + (badTok ? ` The saved token has been cleared — push again and you will be asked for a new one. It must match <code>TOKEN</code> in <code>bl_table_writer.gs</code>.`
           : stale ? ` That cap is from the 19-row script. Paste the current <code>bl_table_writer.gs</code>, then <b>Manage deployments &rarr; pencil &rarr; Version: New version &rarr; Deploy</b> — /exec serves the old version until you do.`
@@ -1907,6 +1936,48 @@ document.getElementById('blCopyCol').onclick = ()=>copyText(blTSV(true),  `${tbl
 document.getElementById('blCopyAll').onclick = ()=>copyText(blTSV(false), `the full ${tblOf(tgt()).name} 36×16 table`);
 document.getElementById('blRevert').onclick  = ()=>{ const tk=tgt(); blRevert(tk); setBlEdit(`Reverted ${tblOf(tk).name} to the sheet values held in memory.`,'ok'); };
 document.getElementById('blPush').onclick    = blPush;
+
+/* ---- Sheet connection panel ------------------------------------------------
+   Both values are visible and re-editable here. "Save & test" posts an EMPTY
+   edit list, which is the only way to tell a bad token from a bad URL without
+   writing to the sheet: a JSON reply at all means the URL and deployment are
+   good, and whether the script complains about the token tells you the rest. */
+const $c = id => document.getElementById(id);
+function setConnNote(html, cls){ const n=$c('blConnNote'); n.className='note '+(cls||''); n.innerHTML=html; }
+function connOpen(msg){
+  $c('blConnBox').style.display = '';
+  $c('blConnUrl').value = localStorage.getItem(BL_PUSH_URL_KEY)   || '';
+  $c('blConnTok').value = localStorage.getItem(BL_PUSH_TOKEN_KEY) || '';
+  setConnNote(msg || 'Both are stored in this browser only. The token must match <code>TOKEN</code> in <code>bl_table_writer.gs</code>.','');
+  ($c('blConnUrl').value ? $c('blConnTok') : $c('blConnUrl')).focus();
+}
+$c('blConn').onclick      = ()=>{ const b=$c('blConnBox'); if(b.style.display==='none') connOpen(); else b.style.display='none'; };
+$c('blConnClose').onclick = ()=>{ $c('blConnBox').style.display='none'; };
+$c('blConnClear').onclick = ()=>{
+  localStorage.removeItem(BL_PUSH_URL_KEY); localStorage.removeItem(BL_PUSH_TOKEN_KEY);
+  $c('blConnUrl').value=''; $c('blConnTok').value='';
+  setConnNote('Both forgotten. Enter them again and press <b>Save &amp; test</b>.','warn');
+};
+$c('blConnTest').onclick  = async ()=>{
+  const url = $c('blConnUrl').value.trim(), tok = $c('blConnTok').value.trim();
+  if(!url || !tok) return setConnNote('Enter both the /exec URL and the token.','warn');
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url))
+    setConnNote('Saved, but that does not look like a deployed <b>/exec</b> URL — testing anyway…','warn');
+  else setConnNote('Testing…','');
+  localStorage.setItem(BL_PUSH_URL_KEY, url); localStorage.setItem(BL_PUSH_TOKEN_KEY, tok);
+  try{
+    const res = await fetch(url, { method:'POST', mode:'cors', redirect:'follow',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ token: tok, tab: BL_SHEET.tab, edits: [] }) });
+    const j = await res.json();
+    if(j.ok) setConnNote('&check; Connected. URL and token both accepted — you can push.','ok');
+    else if(/token/i.test(j.error||''))
+      setConnNote(`Token rejected: <b>${j.error}</b>. The URL is fine (the script answered). Copy <code>TOKEN</code> from <code>bl_table_writer.gs</code> — and if you changed it there, redeploy: <b>Manage deployments &rarr; pencil &rarr; Version: New version</b>.`,'err');
+    else setConnNote(`&check; URL and token accepted. The script returned "<b>${j.error}</b>" for an empty push, which is expected.`,'ok');
+  }catch(err){
+    setConnNote(`Could not reach the Web App (${err.message}). Check the URL is the deployed <b>/exec</b> one, and that access is set to <b>Anyone</b>.`,'err');
+  }
+};
 
 /* ===================== PNG EXPORT ===================== */
 document.getElementById('snap').onclick=()=>{const img=document.getElementById('bg'),cv=document.getElementById('exportCanvas');cv.width=MW;cv.height=MH;const ctx=cv.getContext('2d');
