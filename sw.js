@@ -66,6 +66,44 @@ self.addEventListener('message', event => {
   }
 });
 
+// ── Push: bluebottle alerts ───────────────────────────────────
+// Payload-less by design — the sender (Cloudflare Worker) posts a VAPID-signed
+// push with no encrypted body, so we show a fixed notification. If a body is
+// ever attached later, we honour it.
+self.addEventListener('push', event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) { /* no or non-JSON payload */ }
+  const title = data.title || '🪼 Bluebottles at Manly';
+  const body  = data.body  || 'A swimmer reported bluebottles with a photo. Tap to check the bay.';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: './images/logos/icon-192.png',
+      badge: './images/logos/favicon-32.png',
+      tag: 'bluebottle',
+      renotify: true,
+      data: { url: './' }
+    })
+  );
+});
+
+// ── Notification click: focus an open tab or open the app ─────
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || './';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cls => {
+      for (const c of cls) {
+        if ('focus' in c) {
+          if (typeof c.navigate === 'function') { try { c.navigate(url); } catch (e) {} }
+          return c.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(url);
+    })
+  );
+});
+
 // ── Activate: delete old caches ───────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(

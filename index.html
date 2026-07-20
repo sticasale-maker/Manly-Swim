@@ -997,6 +997,22 @@
     font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
     margin-top: 3px; text-align: center;
   }
+  /* Opt-in for bluebottle push alerts (hidden until a VAPID key is configured) */
+  .bb-notify {
+    display: block; width: 100%; margin: -2px 0 10px;
+    font-family: 'Bebas Neue', sans-serif; font-size: 13px; letter-spacing: 1px;
+    padding: 8px 12px; border-radius: 8px;
+    border: 1.5px solid var(--ocean); background: transparent; color: var(--ocean);
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+  }
+  .bb-notify:hover { background: var(--ocean); color: #fff; }
+  .bb-notify.on { background: var(--ocean); color: #fff; }
+  .bb-notify[hidden] { display: none; }
+  .bb-notify-note {
+    font-size: 10px; color: var(--dim); line-height: 1.4;
+    margin: -4px 0 10px; text-align: center;
+  }
+  .bb-notify-note[hidden] { display: none; }
   .bb-strip.bb-alert-1 { border-color: var(--yellow); }
   .bb-strip.bb-alert-2 { border-color: var(--red); }
   .bb-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
@@ -2524,6 +2540,10 @@
         </div>
         <div class="bb-gallery" id="bbGallery"></div>
       </div>
+      <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
+        <span id="bbNotifyLabel">🔔 Get notified about bluebottles</span>
+      </button>
+      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
     </div>
 
     <!-- "Nice to meet you" — community self-introductions (moved into the group) -->
@@ -8325,6 +8345,96 @@ function bbToggle(ev) {
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }
 
+// ── Push opt-in ──────────────────────────────────────────────────────────────
+// A photo-backed report triggers a push (sent by the Worker). Users opt in here.
+// Everything is inert until VAPID_PUBLIC_KEY is filled in — the toggle stays
+// hidden, so this is safe to ship before the push backend is deployed.
+const VAPID_PUBLIC_KEY = 'BMmtVCbwuuz-uPiLILJow0Jds6620nzYuUZ6fmdbvPznamv5uVYev0RnKoEeY0D8ugtFbwac1alwmMV9U6DlB2o';   // VAPID public key (base64url) — private key lives only in the Worker
+
+function bbPushConfigured() { return typeof VAPID_PUBLIC_KEY === 'string' && VAPID_PUBLIC_KEY.length > 20; }
+function bbPushSupported() { return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+
+function bbUrlB64ToUint8(base64) {
+  const pad = '='.repeat((4 - base64.length % 4) % 4);
+  const b64 = (base64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(b64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+async function bbPushRpc(fn, body) {
+  const res = await fetch(`${BB_SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error(`rpc ${fn} ${res.status}`);
+}
+
+// Reflect current state on the toggle. States: on | off | denied | unavailable.
+function bbPushRender(state, note) {
+  const btn   = document.getElementById('bbNotifyBtn');
+  const label = document.getElementById('bbNotifyLabel');
+  const noteEl = document.getElementById('bbNotifyNote');
+  if (!btn) return;
+  if (!bbPushConfigured() || !bbPushSupported()) { btn.hidden = true; if (noteEl) noteEl.hidden = true; return; }
+  btn.hidden = false;
+  btn.classList.toggle('on', state === 'on');
+  if (label) {
+    label.textContent =
+      state === 'on'      ? '🔔 Bluebottle alerts on — tap to turn off' :
+      state === 'denied'  ? '🔕 Notifications blocked in settings' :
+                            '🔔 Get notified about bluebottles';
+  }
+  btn.disabled = (state === 'denied');
+  if (noteEl) {
+    if (note) { noteEl.textContent = note; noteEl.hidden = false; }
+    else { noteEl.hidden = true; noteEl.textContent = ''; }
+  }
+}
+
+async function bbPushSync() {
+  if (!bbPushConfigured() || !bbPushSupported()) { bbPushRender('unavailable'); return; }
+  try {
+    if (Notification.permission === 'denied') { bbPushRender('denied'); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    bbPushRender(sub ? 'on' : 'off');
+  } catch (e) { bbPushRender('off'); }
+}
+
+async function bbPushToggle() {
+  if (!bbPushConfigured() || !bbPushSupported()) return;
+  // iOS only delivers web push to a home-screen install.
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent);
+  if (isIOS && !standalone) {
+    bbPushRender('off', 'On iPhone/iPad, add this app to your Home Screen first (Share → Add to Home Screen), then turn on alerts.');
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const endpoint = sub.endpoint;
+      try { await sub.unsubscribe(); } catch (e) {}
+      try { await bbPushRpc('delete_push_subscription', { p_endpoint: endpoint }); } catch (e) {}
+      bbPushRender('off', 'Alerts off.');
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { bbPushRender(perm === 'denied' ? 'denied' : 'off'); return; }
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bbUrlB64ToUint8(VAPID_PUBLIC_KEY) });
+    const j = sub.toJSON();
+    await bbPushRpc('save_push_subscription', { p_endpoint: sub.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+    bbPushRender('on', 'You’ll get a heads-up when someone reports bluebottles with a photo.');
+  } catch (e) {
+    console.warn('Push toggle failed:', e.message);
+    bbPushRender('off', 'Couldn’t change notifications — try again.');
+  }
+}
+
 // Render the strip from a reports array
 function bbRenderFromData(reports) {
   const strip  = document.getElementById('bbStrip');
@@ -8541,6 +8651,9 @@ document.addEventListener('visibilitychange', function () {
 // Initial load + refresh every 5 min
 bbLoad();
 setInterval(bbLoad, BB_CACHE_TTL);
+
+// Reflect push opt-in state on the toggle (stays hidden until a VAPID key is set).
+bbPushSync();
 
 // =============================================================================
 // MARINE-LIFE SIGHTINGS — swimmer species reports (Supabase)
