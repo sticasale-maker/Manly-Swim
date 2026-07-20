@@ -12635,10 +12635,38 @@ if ('serviceWorker' in navigator) {
     };
   }
 
+  // Re-check for a new build without needing a pull-to-refresh. reg.update() just
+  // re-fetches sw.js (a few KB from the Pages CDN) and compares bytes; it re-caches
+  // the shell ONLY when the build actually changed, and never touches the data APIs
+  // (those are in the worker's PASSTHROUGH_HOSTS). A single in-memory throttle covers
+  // both callers below so rapid app-switching can't fire a burst. A found update
+  // surfaces the existing toast — we deliberately do NOT force a reload here, so a
+  // check can never interrupt a read or cut the splash.
+  var _swReg = null;
+  var _swLastCheck = 0;
+  var SW_CHECK_THROTTLE_MS = 15 * 60 * 1000;   // at most one update check per 15 min
+  function swMaybeCheck() {
+    if (!_swReg || typeof _swReg.update !== 'function') return;
+    var now = Date.now();
+    if (now - _swLastCheck < SW_CHECK_THROTTLE_MS) return;
+    _swLastCheck = now;
+    try { _swReg.update().catch(function () {}); } catch (e) {}
+  }
+  // Returning to the app (warm resume / tab refocus) is the moment a stale tile most
+  // needs this — the OS resumes a frozen page and no navigation re-checks the build.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) swMaybeCheck();
+  });
+  // And a slow heartbeat for a session left open for hours. The throttle makes the
+  // effective rate ~4 checks/hour worst case; the interval just guarantees one.
+  setInterval(swMaybeCheck, 30 * 60 * 1000);
+
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('./sw.js')
       .then(function (reg) {
         console.log('[SW] registered, scope:', reg.scope);
+        _swReg = reg;
+        _swLastCheck = Date.now();   // register() already triggered a check; don't double up
 
         // A worker may already be waiting from a previous visit.
         if (reg.waiting && navigator.serviceWorker.controller) {
