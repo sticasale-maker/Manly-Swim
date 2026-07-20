@@ -8460,7 +8460,7 @@ function bbRenderFromData(reports) {
   if (count === 0) {
     strip.className  = 'bb-strip community';
     status.textContent = 'No blue bottles · last 24h';
-    sub.textContent  = '📷 A photo starts a warning';
+    sub.textContent  = '📷 Photo required to start a warning';
   } else {
     strip.className  = count >= 3 ? 'bb-strip community bb-alert-2' : 'bb-strip community bb-alert-1';
     status.textContent = `${count} blue bottle report${count > 1 ? 's' : ''} · last 24h`;
@@ -8469,7 +8469,7 @@ function bbRenderFromData(reports) {
   }
   // A staged photo's hint must survive refresh ticks (and mid-confirm/undo states).
   if (_bbPhoto && !_bbPending) {
-    sub.textContent = 'Photo attached — tap Report to alert other swimmers';
+    sub.textContent = 'Photo attached — tap Send to alert other swimmers';
   }
 
   // Gallery: photo-backed reports (newest first). The strip is only tap-to-expand
@@ -8513,7 +8513,14 @@ function bbRenderFromData(reports) {
     if (pbtn) pbtn.disabled = false;
     // Don't clobber the "Sure?" prompt (mid-confirm) or the "Undo n" countdown
     // (report queued) — a refresh tick must not steal either state.
-    if (!_bbConfirming && !_bbPending) { btn.classList.remove('bb-confirm', 'bb-undo'); btn.textContent = 'Report'; }
+    if (!_bbConfirming && !_bbPending) {
+      btn.classList.remove('bb-confirm', 'bb-undo');
+      // Make the photo requirement explicit on the button itself: a first
+      // reporter needs a photo to START a warning; a staged photo → "Send";
+      // an active warning → plain "Report" (bare tap confirms).
+      btn.textContent = _bbPhoto ? 'Send'
+                      : (!_bbWarningActive ? '📷 Report' : 'Report');
+    }
   }
 }
 
