@@ -1025,7 +1025,10 @@
   /* Match the "Who's Out There?" title size (.ntm-title = 20px) for Bay Talk + the sightings strip.
      Scoped by id/container so the visibility & bluebottle strips keep the default size.
      Id specificity also beats the small-screen ".bb-status{font-size:13px}" override. */
-  #boardStrip .bb-status, #sightTitle, #bbStatus { font-size: 20px; }
+  #boardStrip .bb-status, #sightTitle { font-size: 20px; }
+  /* Bluebottle status is a full sentence, not a short title — keep it compact so
+     it doesn't wrap to many lines in the narrow space beside the buttons. */
+  #bbStatus { font-size: 15px; line-height: 1.25; }
   #boardStrip .bb-status, #sightTitle { color: var(--deep); }
   /* Bluebottle title matches too — but ONLY when there's no alert, so the
      bb-alert-1/2 yellow/red title colour still wins when reports exist. */
@@ -8258,6 +8261,10 @@ async function bbInsert(_deviceId, keepalive, photoUrl) {
 const BB_PHOTO_BUCKET = 'board-images';
 const BB_PHOTO_PREFIX = `${BB_SUPABASE_URL}/storage/v1/object/public/${BB_PHOTO_BUCKET}/`;
 let _bbPhoto = null;   // { blob, url } while a photo is staged, else null
+// A warning is "active" when there's at least one photo-backed report in the
+// window. Starting a warning REQUIRES a photo; once active, others may confirm
+// with a bare tap. Kept in sync by bbRenderFromData.
+let _bbWarningActive = false;
 
 function bbPhotoPick() {
   const inp = document.getElementById('bbPhotoInput');
@@ -8452,11 +8459,11 @@ function bbRenderFromData(reports) {
   // Status
   if (count === 0) {
     strip.className  = 'bb-strip community';
-    status.textContent = 'No blue bottles reported in the last 24h';
-    sub.textContent  = '';
+    status.textContent = 'No blue bottles · last 24h';
+    sub.textContent  = '📷 A photo starts a warning';
   } else {
     strip.className  = count >= 3 ? 'bb-strip community bb-alert-2' : 'bb-strip community bb-alert-1';
-    status.textContent = `${count} swimmer${count > 1 ? 's' : ''} reported blue bottles in the last 24h`;
+    status.textContent = `${count} blue bottle report${count > 1 ? 's' : ''} · last 24h`;
     const lastTs = new Date(reports[reports.length - 1].reported_at);
     sub.textContent = `Last reported at ${lastTs.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`;
   }
@@ -8472,6 +8479,7 @@ function bbRenderFromData(reports) {
   const shots = reports
     .filter(r => bbSafePhoto(r.photo_url))
     .sort((a, b) => new Date(b.reported_at) - new Date(a.reported_at));
+  _bbWarningActive = shots.length > 0;
   if (gallery) {
     if (shots.length) {
       strip.classList.add('bb-expandable');
@@ -8546,6 +8554,16 @@ function bbReport() {
   const now      = Date.now();
   const lastMine = bbGetLastMine();
   if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
+
+  // Starting a NEW warning requires a photo; confirming an active one does not.
+  // No photo staged + no active warning → open the camera instead of reporting.
+  if (!_bbPhoto && !_bbWarningActive) {
+    bbCancelConfirm();
+    const sub = document.getElementById('bbSub');
+    if (sub) sub.textContent = '📷 Add a photo to start a bluebottle warning';
+    bbPhotoPick();
+    return;
+  }
 
   if (!_bbConfirming) {
     _bbConfirming = true;
