@@ -980,9 +980,22 @@
     border-radius: var(--radius);
     padding: 11px 14px;
     margin-bottom: 10px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  }
+  .bb-head { display: flex; align-items: center; gap: 12px; }
+  /* Only offer the tap-to-expand affordance when there are photo reports to show */
+  #bbStrip.bb-expandable .bb-head { cursor: pointer; }
+  .bb-chev { color: var(--dim); font-size: 13px; flex-shrink: 0; transition: transform 0.15s; }
+  .bb-chev[hidden] { display: none; }
+  .bb-gallery { display: none; margin-top: 10px; padding-top: 9px; border-top: 1px solid rgba(17,53,65,0.13); }
+  .bb-gallery.open { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .bb-shot { display: block; text-decoration: none; }
+  .bb-shot img {
+    width: 100%; aspect-ratio: 4 / 3; object-fit: cover;
+    border-radius: 8px; border: 1px solid var(--border); display: block;
+  }
+  .bb-shot-time {
+    font-size: 9px; letter-spacing: 0.5px; color: var(--dim);
+    margin-top: 3px; text-align: center;
   }
   .bb-strip.bb-alert-1 { border-color: var(--yellow); }
   .bb-strip.bb-alert-2 { border-color: var(--red); }
@@ -1037,6 +1050,33 @@
     border-color: var(--ocean); color: #fff; background: var(--ocean);
   }
   .bb-btn.bb-undo:hover { background: var(--deep); border-color: var(--deep); color: #fff; }
+  /* Camera button + attached-photo thumbnail (optional photo raises a report to push-worthy) */
+  .bb-photo-btn {
+    flex-shrink: 0; width: 34px; height: 34px; padding: 0;
+    border: 1.5px solid var(--ocean); border-radius: 8px;
+    background: transparent; cursor: pointer; font-size: 17px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .bb-photo-btn:hover { background: rgba(10,126,164,0.12); }
+  .bb-photo-btn:disabled { border-color: var(--dim); opacity: 0.5; cursor: default; }
+  /* [hidden] must beat the display:inline-flex above (higher-specificity attr selector) */
+  .bb-photo-btn[hidden], .bb-photo-wrap[hidden] { display: none; }
+  .bb-photo-wrap {
+    position: relative; flex-shrink: 0; width: 34px; height: 34px;
+    display: inline-flex;
+  }
+  .bb-photo-wrap img {
+    width: 34px; height: 34px; object-fit: cover;
+    border-radius: 8px; border: 1.5px solid var(--ocean); display: block;
+  }
+  .bb-photo-remove {
+    position: absolute; top: -6px; right: -6px;
+    width: 17px; height: 17px; padding: 0; border-radius: 50%;
+    border: none; background: var(--red); color: #fff;
+    font-size: 13px; line-height: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
 
   /* ── MARINE-LIFE SIGHTINGS ─────────────────────────────────────────────── */
   .sight-strip {
@@ -2467,12 +2507,22 @@
     <!-- Bluebottle reports strip — community reports (Supabase) for the last 24h -->
     <div id="bbSection">
       <div class="bb-strip community" id="bbStrip">
-        <div class="bb-icon">🪼</div>
-        <div class="bb-body">
-          <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
-          <div class="bb-sub" id="bbSub"></div>
+        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
+          <div class="bb-icon">🪼</div>
+          <div class="bb-body">
+            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
+            <div class="bb-sub" id="bbSub"></div>
+          </div>
+          <input type="file" id="bbPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
+          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
+            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
+            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
+          </span>
+          <button class="bb-photo-btn" id="bbPhotoBtn" type="button" onclick="bbPhotoPick()" aria-label="Add a photo" title="Add a photo so others know it's real">📷</button>
+          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
         </div>
-        <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+        <div class="bb-gallery" id="bbGallery"></div>
       </div>
     </div>
 
@@ -8144,7 +8194,7 @@ async function bbDeviceId() {
 async function bbFetch() {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const res = await fetch(
-    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports?select=reported_at&reported_at=gte.${since}&order=reported_at.asc`,
+    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports?select=reported_at,photo_url&reported_at=gte.${since}&order=reported_at.asc`,
     { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}` } }
   );
   if (!res.ok) throw new Error(`Supabase fetch ${res.status}`);
@@ -8159,7 +8209,11 @@ async function bbFetch() {
 // "report failed" and re-enables the button.
 // `keepalive` lets a queued report still reach Supabase when the undo window is
 // cut short by the user backgrounding or closing the page (see bbFlushPending).
-async function bbInsert(_deviceId, keepalive) {
+async function bbInsert(_deviceId, keepalive, photoUrl) {
+  // Only send p_photo_url when there's actually a photo — a bare report still
+  // posts an empty body, so the existing (no-photo) path keeps working before
+  // the report_bluebottle RPC is updated to accept the new arg.
+  const body = photoUrl ? JSON.stringify({ p_photo_url: photoUrl }) : '{}';
   const res = await fetch(
     `${BB_SUPABASE_URL}/rest/v1/rpc/report_bluebottle`,
     {
@@ -8169,11 +8223,106 @@ async function bbInsert(_deviceId, keepalive) {
         'Authorization': `Bearer ${BB_SUPABASE_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: '{}',
+      body,
       keepalive: !!keepalive
     }
   );
   if (!res.ok) throw new Error(`Supabase rpc ${res.status}`);
+}
+
+// ── Optional photo ───────────────────────────────────────────────────────────
+// A bluebottle photo is what makes a report trustworthy enough to push an alert
+// (a curious tapper won't have one). The photo is OPTIONAL: a bare tap still
+// counts on the strip; only a photo-backed report is push-worthy. Reuses the
+// board's public 'board-images' bucket + the same compress/upload approach.
+const BB_PHOTO_BUCKET = 'board-images';
+const BB_PHOTO_PREFIX = `${BB_SUPABASE_URL}/storage/v1/object/public/${BB_PHOTO_BUCKET}/`;
+let _bbPhoto = null;   // { blob, url } while a photo is staged, else null
+
+function bbPhotoPick() {
+  const inp = document.getElementById('bbPhotoInput');
+  if (inp) inp.click();
+}
+
+function bbPhotoReset() {
+  if (_bbPhoto && _bbPhoto.url) { try { URL.revokeObjectURL(_bbPhoto.url); } catch(e){} }
+  _bbPhoto = null;
+  const inp   = document.getElementById('bbPhotoInput'); if (inp)   inp.value = '';
+  const wrap  = document.getElementById('bbPhotoWrap');  if (wrap)  wrap.hidden = true;
+  const pbtn  = document.getElementById('bbPhotoBtn');   if (pbtn)  pbtn.hidden = false;
+  const thumb = document.getElementById('bbPhotoThumb'); if (thumb) thumb.removeAttribute('src');
+}
+
+// Downscale to <=1200px JPEG (mirrors the board's compressImage, which lives in a
+// separate closure and isn't reachable here).
+function bbCompressImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const max = 1200, w = img.naturalWidth, h = img.naturalHeight;
+        const scale = Math.min(1, max / Math.max(w, h));
+        const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+        c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        URL.revokeObjectURL(url);
+        c.toBlob(b => b ? resolve(b) : reject(new Error('encode')), 'image/jpeg', 0.82);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    img.src = url;
+  });
+}
+
+async function bbPhotoPicked(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const sub = document.getElementById('bbSub');
+  if (!/^image\//.test(file.type || '')) { ev.target.value = ''; if (sub) sub.textContent = 'That file isn’t an image.'; return; }
+  if (file.size > 15 * 1024 * 1024) { ev.target.value = ''; if (sub) sub.textContent = 'That photo is too large (max 15MB).'; return; }
+  try {
+    const blob = await bbCompressImage(file);
+    bbPhotoReset();
+    const url = URL.createObjectURL(blob);
+    _bbPhoto = { blob, url };
+    const thumb = document.getElementById('bbPhotoThumb'); if (thumb) thumb.src = url;
+    const wrap  = document.getElementById('bbPhotoWrap');  if (wrap)  wrap.hidden = false;
+    const pbtn  = document.getElementById('bbPhotoBtn');   if (pbtn)  pbtn.hidden = true;
+    if (sub) sub.textContent = 'Photo attached — tap Report to alert other swimmers';
+  } catch (e) {
+    if (sub) sub.textContent = 'Couldn’t process that photo — try another.';
+  }
+}
+
+// Upload the staged photo to the public bucket; returns the public URL.
+async function bbUploadPhoto(blob) {
+  const name = 'bb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.jpg';
+  const r = await fetch(`${BB_SUPABASE_URL}/storage/v1/object/${BB_PHOTO_BUCKET}/${name}`, {
+    method: 'POST',
+    headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
+    body: blob
+  });
+  if (!r.ok) throw new Error('photo upload HTTP ' + r.status);
+  return BB_PHOTO_PREFIX + name;
+}
+
+// Only trust photo URLs that live in our own public bucket — never render an
+// arbitrary URL as an <img src> (mirrors the board's safePhoto guard).
+function bbSafePhoto(u) {
+  return (u && String(u).indexOf(BB_PHOTO_PREFIX) === 0) ? String(u) : '';
+}
+
+// Tap-to-expand the strip into a gallery of photo-backed reports. Only active
+// when there's at least one photo to show; taps on the buttons are ignored.
+function bbToggle(ev) {
+  if (ev && ev.target.closest('.bb-btn, .bb-photo-btn, .bb-photo-wrap, #bbPhotoInput')) return;
+  const strip = document.getElementById('bbStrip');
+  const gallery = document.getElementById('bbGallery');
+  const chev = document.getElementById('bbChev');
+  if (!strip || !gallery || !strip.classList.contains('bb-expandable')) return;
+  const open = gallery.classList.toggle('open');
+  if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
 }
 
 // Render the strip from a reports array
@@ -8201,15 +8350,49 @@ function bbRenderFromData(reports) {
     const lastTs = new Date(reports[reports.length - 1].reported_at);
     sub.textContent = `Last reported at ${lastTs.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`;
   }
+  // A staged photo's hint must survive refresh ticks (and mid-confirm/undo states).
+  if (_bbPhoto && !_bbPending) {
+    sub.textContent = 'Photo attached — tap Report to alert other swimmers';
+  }
+
+  // Gallery: photo-backed reports (newest first). The strip is only tap-to-expand
+  // when there's at least one photo to show.
+  const gallery = document.getElementById('bbGallery');
+  const chev    = document.getElementById('bbChev');
+  const shots = reports
+    .filter(r => bbSafePhoto(r.photo_url))
+    .sort((a, b) => new Date(b.reported_at) - new Date(a.reported_at));
+  if (gallery) {
+    if (shots.length) {
+      strip.classList.add('bb-expandable');
+      if (chev) chev.hidden = false;
+      gallery.innerHTML = shots.map(r => {
+        const t = new Date(r.reported_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+        const url = bbSafePhoto(r.photo_url);
+        return `<a class="bb-shot" href="${url}" target="_blank" rel="noopener">
+            <img src="${url}" loading="lazy" alt="Bluebottle reported at ${t}">
+            <div class="bb-shot-time">${t}</div>
+          </a>`;
+      }).join('');
+    } else {
+      strip.classList.remove('bb-expandable');
+      if (chev) chev.hidden = true;
+      gallery.classList.remove('open');
+      gallery.innerHTML = '';
+    }
+  }
 
   // Button
+  const pbtn = document.getElementById('bbPhotoBtn');
   if (onCooldown) {
     const h = Math.floor(cooldownLeft / 3600000);
     const m = Math.floor((cooldownLeft % 3600000) / 60000);
     btn.disabled    = true;
     btn.textContent = `Again in ${h > 0 ? h + 'h ' : ''}${m}m`;
+    if (pbtn) pbtn.disabled = true;
   } else {
     btn.disabled    = false;
+    if (pbtn) pbtn.disabled = false;
     // Don't clobber the "Sure?" prompt (mid-confirm) or the "Undo n" countdown
     // (report queued) — a refresh tick must not steal either state.
     if (!_bbConfirming && !_bbPending) { btn.classList.remove('bb-confirm', 'bb-undo'); btn.textContent = 'Report'; }
@@ -8329,8 +8512,16 @@ async function bbSendNow(keepalive) {
 
   try {
     const deviceId = await bbDeviceId();
-    await bbInsert(deviceId, keepalive);
+    let photoUrl = null;
+    // Upload a staged photo on the normal path. On teardown (keepalive flush) we
+    // skip the upload — a bare report still counts; it just won't be push-worthy.
+    if (_bbPhoto && _bbPhoto.blob && !keepalive) {
+      try { photoUrl = await bbUploadPhoto(_bbPhoto.blob); }
+      catch (e) { console.warn('Bluebottle photo upload failed:', e.message); }
+    }
+    await bbInsert(deviceId, keepalive, photoUrl);
     bbSetLastMine();
+    bbPhotoReset();
     _bbCache   = null; // bust cache so we re-fetch fresh count
     _bbCacheAt = 0;
     await bbLoad();
