@@ -399,6 +399,36 @@
   }
   /* Let the band label give way first if the row ever runs out of room. */
   .metric-block #metricBluebottlesVal { min-width:0; }
+  /* Slot the card is describing — two rows, so the day and the time each get
+     room to be read at a glance instead of being squeezed onto one small line. */
+  .bbf-when { display:flex; flex-direction:column; line-height:1.12; margin:1px 0 3px; }
+  .bbf-when-day {
+    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:1.2px;
+    text-transform:uppercase; color:var(--deep); opacity:0.85;
+  }
+  .bbf-when-time {
+    font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:1.2px;
+    color:var(--deep);
+  }
+  .bbf-note {
+    display:block; font-family:'Inter',sans-serif; font-size:10.5px;
+    font-weight:600; color:var(--dim); letter-spacing:0; margin-bottom:2px;
+  }
+  .bbf-note:empty { display:none; }
+  /* No usable wind (past the wind feed's horizon, ~6+ days out). The card keeps
+     its shape and background — dropping to a bare .metric-block left it with no
+     fill or border at all, which read as a broken card rather than an honest
+     "nothing to say". Neutral, never green: an absent reading must not look like
+     a low one. Dot parks at the left of the rail. */
+  .metric-block.bbf-noreading {
+    background:rgba(74,143,173,0.06); border:1.5px solid var(--border);
+  }
+  .metric-block.bbf-noreading .metric-name,
+  .metric-block.bbf-noreading .metric-value,
+  .metric-block.bbf-noreading .bbf-when-day,
+  .metric-block.bbf-noreading .bbf-when-time { color:var(--dim); }
+  .metric-block.bbf-noreading .metric-track-rail { opacity:0.35; }
+  .metric-block.bbf-noreading .metric-value { font-size:17px; }
   /* Subordinated state — a photo-backed sighting is live in the reports strip, so
      the wind forecast steps back: neutral border, muted fill, quieter type. The
      observed report is the authority; this card must not shout over it. */
@@ -2521,7 +2551,11 @@
           <div class="metric-value" id="metricBluebottlesVal">—</div>
           <span class="bbf-offseason" id="metricBluebottlesOff" style="display:none">off-season</span>
         </div>
-        <span class="metric-sub" id="metricBluebottlesWhen">—</span>
+        <div class="bbf-when">
+          <span class="bbf-when-day" id="metricBluebottlesDay">—</span>
+          <span class="bbf-when-time" id="metricBluebottlesTime"></span>
+        </div>
+        <span class="bbf-note" id="metricBluebottlesNote"></span>
         <div class="metric-track-wrap">
           <div class="metric-track-rail">
             <div class="z" style="background:var(--rail-green);flex:1"></div>
@@ -6594,7 +6628,9 @@ function renderBluebottleForecast(h){
   const block = document.getElementById('metricBluebottles');
   if (!block || !h) return;
   const valEl  = document.getElementById('metricBluebottlesVal');
-  const whenEl = document.getElementById('metricBluebottlesWhen');
+  const dayEl  = document.getElementById('metricBluebottlesDay');
+  const timeEl = document.getElementById('metricBluebottlesTime');
+  const noteEl = document.getElementById('metricBluebottlesNote');
   const offEl  = document.getElementById('metricBluebottlesOff');
   const dotEl  = document.getElementById('metricBluebottlesDot');
   const tickEl = document.getElementById('metricBluebottlesCapTick');
@@ -6602,34 +6638,44 @@ function renderBluebottleForecast(h){
   const band = bbfScore(bbfLast3hWind(h.dateTime), bbfLocalMonth(h.dateTime));
   _bbfLast = band;
 
-  // The card sits under the day/time selector, so it always states the slot it
-  // is describing — otherwise a band with no timestamp reads as "right now".
+  // The card sits away from the day/time selector, so it always states the slot
+  // it is describing — otherwise a band with no timestamp reads as "right now".
   const dt = new Date(String(h.dateTime).replace(' ','T'));
-  const when = isNaN(dt) ? '' :
-    dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'}) + ' · ' +
+  if (dayEl)  dayEl.textContent  = isNaN(dt) ? '—' :
+    dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'});
+  if (timeEl) timeEl.textContent = isNaN(dt) ? '' :
     dt.toLocaleTimeString('en-AU',{hour:'2-digit', minute:'2-digit'});
-  if (whenEl) {
-    const sighting = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
-    whenEl.textContent = when + (sighting ? ' · reported sightings below take precedence' : '');
-  }
 
-  if (!band) {                     // no usable wind -> no reading, never a silent "Low"
-    block.className = 'metric-block';
+  const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
+
+  if (!band) {
+    // No usable wind — the wind feed's horizon is shorter than the swell outlook,
+    // so slots ~6+ days out have null windKmh. Never a silent "Low": the card
+    // keeps its shape, says so plainly, and parks the dot at the left of the rail.
+    block.className = 'metric-block bbf-noreading';
     if (valEl)  valEl.textContent = 'No reading';
+    if (noteEl) noteEl.textContent = 'beyond the wind forecast';
     if (offEl)  offEl.style.display = 'none';
     if (tickEl) tickEl.style.display = 'none';
-    if (dotEl)  dotEl.style.display = 'none';
+    if (dotEl) {
+      dotEl.style.display = '';
+      dotEl.style.setProperty('--pos', '0%');
+      dotEl.style.color = 'var(--border)';
+      dotEl.style.background = 'var(--border)';
+    }
     if (_openMetricKey === 'bluebottles') refreshMetricModalBody('bluebottles');
     return;
   }
+
+  if (noteEl) noteEl.textContent = sightingLive ? 'Reported sightings below take precedence' : '';
 
   const railVar = { low:'--rail-green', building:'--rail-amber',
                     elevated:'--rail-yellow', high:'--rail-red' }[band.key];
   // SAFETY / integration rule: this is a WIND FORECAST, and the community photo
   // reports are observed fact. When a photo-backed sighting is live, the forecast
   // must not compete with it — a confident green "Low" sitting above a real
-  // reported sighting is exactly the misread to avoid. Mute the card and say so.
-  const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
+  // reported sighting is exactly the misread to avoid. Mute the card and say so
+  // (sightingLive is resolved above, before the no-reading branch returns).
   block.className = 'metric-block ' + band.key + (sightingLive ? ' bbf-subordinate' : '');
   if (valEl) valEl.textContent = band.label;
   if (offEl) offEl.style.display = band.capped ? '' : 'none';
@@ -12027,8 +12073,13 @@ const METRIC_INFO = {
 // `white-space:normal` so the markup can never reintroduce the gaps.
 function bbfModalHTML(){
   const band = _bbfLast;
-  const whenEl = document.getElementById('metricBluebottlesWhen');
-  const when = whenEl ? whenEl.textContent : '';
+  // Read the slot back off the card's own two rows, so the sheet's subline can
+  // never name a different time than the face it was opened from.
+  const dEl = document.getElementById('metricBluebottlesDay');
+  const tEl = document.getElementById('metricBluebottlesTime');
+  const dTxt = dEl && dEl.textContent !== '—' ? dEl.textContent : '';
+  const tTxt = tEl ? tEl.textContent : '';
+  const when = [dTxt, tTxt].filter(Boolean).join(' · ');
   const head = band
     ? `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">${band.label} — &asymp; ${band.rr}&times; a typical day</div>` +
       (band.capped ? `<div style="font-size:10.5px;color:var(--dim);margin-top:1px;">off-season — held down by the seasonal cap</div>` : '')
