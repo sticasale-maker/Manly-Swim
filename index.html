@@ -399,20 +399,63 @@
   }
   /* Let the band label give way first if the row ever runs out of room. */
   .metric-block #metricBluebottlesVal { min-width:0; }
+  /* This card has no pictogram, so it gets its own grid template: the empty
+     "icon" column becomes the day/time block, which fills space the rail stack
+     needs anyway instead of adding a row of its own. Without an explicit
+     grid-area these children were auto-placed into that column and the card grew
+     to roughly twice the height it needed. */
+  .bbf-row .metric-block {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "when header"
+      "when track"
+      "when labels"
+      "note note";
+    column-gap: 11px;
+    align-items: center;
+    padding: 5px 9px;
+  }
+  .bbf-row .bbf-when   { grid-area: when; align-self: center; }
+  .bbf-row .metric-header { grid-area: header; justify-content: center; gap: 6px; }
+  .bbf-row .bbf-note   { grid-area: note; }
+  /* Title centred over the rail rather than ranged left, so the name and the
+     dot it describes share an axis. */
+  .bbf-row .metric-name { text-align: center; }
+  /* Thinner rail + dot: this card is secondary to the three scored metrics and
+     doesn't need their touch target — nothing on it is draggable. */
+  .bbf-row .metric-track-wrap  { height: 22px; margin: 1px 0 0; }
+  .bbf-row .metric-track-dot   { width: 22px; height: 22px; border-width: 3px; }
+  .bbf-row .metric-track-rail  { height: 11px; }
+  .bbf-row .metric-track-labels { font-size: 10px; margin-top: 1px; }
+  .bbf-row .metric-value { font-size: 17px; }
+  /* Badge rides with the centred title instead of being flung to the right edge
+     by the margin-left:auto that the old left-ranged header needed. */
+  .bbf-row .bbf-offseason { margin-left: 0; }
+  /* ?vrail=1 gives .metric-block its own template at higher specificity than the
+     rules above, which would leave when/note unplaced and auto-flowing again.
+     Keep vrail's vertical rail, but give the two extra children a home. */
+  body.vrail .bbf-row .metric-block {
+    grid-template-columns: auto auto 1fr;
+    grid-template-areas:
+      "when header header"
+      "when track  labels"
+      "note note   note";
+  }
+
   /* Slot the card is describing — two rows, so the day and the time each get
      room to be read at a glance instead of being squeezed onto one small line. */
-  .bbf-when { display:flex; flex-direction:column; line-height:1.12; margin:1px 0 3px; }
+  .bbf-when { display:flex; flex-direction:column; line-height:1.1; }
   .bbf-when-day {
-    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:1.2px;
-    text-transform:uppercase; color:var(--deep); opacity:0.85;
+    font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px;
+    text-transform:uppercase; color:var(--deep); opacity:0.8; white-space:nowrap;
   }
   .bbf-when-time {
-    font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:1.2px;
-    color:var(--deep);
+    font-family:'Bebas Neue',sans-serif; font-size:19px; letter-spacing:1px;
+    color:var(--deep); white-space:nowrap;
   }
   .bbf-note {
-    display:block; font-family:'Inter',sans-serif; font-size:10.5px;
-    font-weight:600; color:var(--dim); letter-spacing:0; margin-bottom:2px;
+    font-family:'Inter',sans-serif; font-size:10px;
+    font-weight:600; color:var(--dim); letter-spacing:0; margin-top:2px;
   }
   .bbf-note:empty { display:none; }
   /* No usable wind (past the wind feed's horizon, ~6+ days out). The card keeps
