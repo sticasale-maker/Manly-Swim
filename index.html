@@ -698,6 +698,29 @@
     font-size: clamp(20px, 5.5vw, 26px); letter-spacing: 1px; margin: 0;
   }
   .quality-card .pollution-sub { font-size: 10px; color: var(--dim); margin-top: 2px; }
+
+  /* ── Live cam row (Surfline stills, 2 cols) ── */
+  .livecam-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 8px;
+  }
+  .livecam {
+    position: relative; display: block; border: 1.5px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; text-decoration: none;
+    background: var(--card); aspect-ratio: 16 / 10;
+  }
+  .livecam img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .livecam-cap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+    color: #fff; padding: 10px 8px 5px;
+    background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0));
+  }
+  .livecam-live {
+    margin-left: auto; font-size: 8.5px; letter-spacing: 1px; color: #ff5a5a;
+  }
   /* Pollution risk flashes fast whenever it is NOT "Unlikely" (i.e. Possible/Likely). */
   @keyframes pollFlash { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0.25; } }
   .pollution-text.fair, .pollution-text.poor { animation: pollFlash 0.5s step-end infinite; }
@@ -2377,6 +2400,33 @@
         <div class="pollution-sub" id="pollutionSubSlim"></div>
       </div>
     </div>
+
+    <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
+    <div class="livecam-row" id="liveCamRow">
+      <a class="livecam" href="https://manlylsc.com/surfline-camera/" target="_blank" rel="noopener">
+        <img id="camSouthSteyne" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlysouthsteyne/latest_small.jpg" alt="Live cam — Manly South Steyne" loading="lazy">
+        <span class="livecam-cap">South Steyne <span class="livecam-live">● LIVE</span></span>
+      </a>
+      <a class="livecam" href="https://manlypacific.com.au/live-webcam/" target="_blank" rel="noopener">
+        <img id="camBeachOverview" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlybeachoverview/latest_small.jpg" alt="Live cam — Manly Beach overview" loading="lazy">
+        <span class="livecam-cap">Beach overview <span class="livecam-live">● LIVE</span></span>
+      </a>
+    </div>
+    <script>
+    // Live-cam stills: load fresh (cache-bust) and refresh every 90s while visible.
+    (function () {
+      var imgs = document.querySelectorAll('#liveCamRow img[data-cam]');
+      function refresh() {
+        if (document.hidden) return;
+        for (var i = 0; i < imgs.length; i++) {
+          imgs[i].src = imgs[i].dataset.cam + '?t=' + Date.now();
+        }
+      }
+      refresh();
+      setInterval(refresh, 90000);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+    })();
+    </script>
 
     <!-- ── Community section ("Swimmers' Corner") — reports & hellos from swimmers ── -->
     <div class="community-group">
@@ -11410,7 +11460,7 @@ const METRIC_INFO = {
   },
   surge: {
     title: 'Surge',
-    text: "What the swim across the bay actually feels like \u2014 both the sideways push of surge and the chop you're stroking through. Swell reflects off the Shelly headland wall and the wind roughs up the surface; together they decide whether you glide or get washed around. Strongest near the rocks."
+    text: "What the swim across the bay actually feels like due to the sideways push of surge. Its effects can be seen when waves reflect off the wall and in making entry at Bower Lane tricky, plus a general underwater low visibility."
   }
 };
 
