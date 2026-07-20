@@ -20,6 +20,26 @@ governed by onshore wind, not by waves or water temperature. The card:
 
 It reports **relative risk** (how a day compares with an average day), not an absolute probability.
 
+### Display: 6-hour windows (not part of the fit)
+
+Steps 1–4 are the calibrated per-hour model. The **card** does not show a single hour — stamping a
+band with a clock time would imply a resolution the model doesn't have. Instead it reports one band
+per fixed 6-hour window (overnight / morning / afternoon / evening). For a window it takes the
+per-hour onshore values inside the block and forms
+
+```
+window value = 0.6 · peak  +  0.4 · mean            (BBF_PEAK_WEIGHT = 0.6)
+```
+
+then bands that value through the same thresholds and seasonal cap. The **mean** is the integral of
+the onshore curve over the window divided by its length (every window is a fixed 6 h, so mean ∝
+integral); the **peak** is its strongest hour. Blending the two distinguishes a lone gust from a
+sustained blow — a brief spike lifts the reading a little, a six-hour push lifts it a lot — and
+leans toward the peak because this is a hazard cue. This blend is a **display heuristic**: the
+0.6/0.4 weighting is chosen, not fitted, and it changes no threshold, multiplier, or cap. The dot
+sits continuously within the winning band to show where the whole window falls, which is a
+window-level quantity, not a per-hour one.
+
 ## 2. Source data
 
 - **Sightings:** iNaturalist, genus *Physalia*, queried by taxon within a Sydney bounding box

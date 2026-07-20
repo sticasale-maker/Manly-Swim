@@ -6616,20 +6616,26 @@ const BBF_SEASON_CAP = [3,3,3,2,1,1,1,1,2,3,3,3];  // Jan..Dec: max band index (
 //   Source = the WILLYWEATHER WIND feed (windKmh/windDir) — NOT wind-wave
 //   (windWaveDir); bluebottles are wind-drifted sailors. cf. the windDir scar ~index.html:4642.
 // monthLocal: 0-indexed Sydney-LOCAL month of the selected time (never UTC).
-function bbfScore(wind3h, monthLocal){
+// Mean onshore component (km/h) of a wind sample. Offshore (cos<0) clamped to 0
+// BY DESIGN: offshore wind does not retrieve bluebottles already inshore. Null if
+// no finite reading — missing data must never read as a silent calm.
+function bbfOnshore(wind3h){
   const w = (wind3h || []).filter(h => Number.isFinite(h.speedKmh) && Number.isFinite(h.fromDeg));
-  if(!w.length) return null;                    // missing data -> no reading, never a silent "Low"
+  if(!w.length) return null;
   let sum = 0;
-  for(const h of w){
-    // onshore component; offshore (cos<0) clamped to 0 BY DESIGN:
-    // offshore wind does not retrieve bluebottles already inshore.
-    sum += h.speedKmh * Math.max(0, Math.cos((h.fromDeg - BBF_ASPECT) * Math.PI/180));
-  }
-  const onshore = sum / w.length;
+  for(const h of w) sum += h.speedKmh * Math.max(0, Math.cos((h.fromDeg - BBF_ASPECT) * Math.PI/180));
+  return sum / w.length;
+}
+
+// onshore (km/h) -> band object. The single banding path: bbfScore (per hour) and
+// the window aggregator both call it, so a threshold or cap change can never apply
+// to only one. The needle is continuous WITHIN the band's zone, derived AFTER the
+// cap so dot and label agree, with headroom both ends so it never reads 0% or 100%
+// (this is relative risk, not a probability).
+function bbfBandForOnshore(onshore, monthLocal){
+  if(!Number.isFinite(onshore)) return null;
   let bi = 0; while(bi < BBF_THRESHOLDS.length && onshore > BBF_THRESHOLDS[bi]) bi++;
   const cap = BBF_SEASON_CAP[monthLocal]; const capped = bi > cap; if(capped) bi = cap;
-  // needle continuous WITHIN the shown band's zone, derived AFTER the cap so dot & label agree;
-  // headroom both ends so it never reads as 0% or 100% (this is relative risk, not a probability).
   const lo = bi === 0 ? 0 : BBF_THRESHOLDS[bi-1];
   const hi = bi < BBF_THRESHOLDS.length ? BBF_THRESHOLDS[bi] : lo + 8;   // soft top for open High band
   const frac = Math.max(0, Math.min(1, (onshore - lo) / (hi - lo)));
@@ -6637,6 +6643,12 @@ function bbfScore(wind3h, monthLocal){
   const pos = Math.max(6, Math.min(94, bi*zoneW + frac*zoneW));
   const b = BBF_BANDS[bi];
   return { onshore, key:b.key, label:b.label, rr:b.rr, pos, capped, month:monthLocal };
+}
+
+// Per-hour band: mean prior-3h onshore -> band. This is the calibrated unit the
+// model was fitted on; the window aggregator below is built from its outputs.
+function bbfScore(wind3h, monthLocal){
+  return bbfBandForOnshore(bbfOnshore(wind3h), monthLocal);
 }
 
 // ── BBF wiring helpers ────────────────────────────────────────────────────────
@@ -6684,30 +6696,41 @@ function bbfWindowOf(dtStr){
   const idx = Math.floor(t.getHours() / 6);
   return Object.assign({ idx, day: String(dtStr).substring(0, 10) }, BBF_WINDOWS[idx]);
 }
-// Evaluate the calibrated per-hour model at every hour in T's window and take the
-// PEAK (most cautious) band. A drift-arrival hazard is honestly summarised by its
-// worst hour, not its average: a two-hour onshore push inside the window is enough
-// to bring bluebottles in, and averaging would dilute a real arrival. The dot is
-// SNAPPED to the centre of the winning band's zone — a continuous needle would
-// reintroduce exactly the sub-band precision this whole change removes. Returns
-// null only when no hour in the window has usable wind.
+// How the window blends its two summary statistics. The window value is
+//   BBF_PEAK_WEIGHT · peak  +  (1 − BBF_PEAK_WEIGHT) · mean
+// of the per-hour onshore across the block. Peak alone can't tell a lone spike
+// from a sustained blow; the mean is the integral of the onshore curve over the
+// window divided by its length (every window is a fixed 6 h, so mean ∝ integral).
+// Blending the two makes both register: a brief gust lifts the reading a little,
+// a six-hour push lifts it a lot. Weighted toward the peak because this is a
+// hazard heads-up. Display heuristic only — NOT part of the calibrated fit; the
+// per-hour thresholds and multipliers are untouched. See docs/bluebottle-model.md.
+const BBF_PEAK_WEIGHT = 0.6;
+
+// One band for T's 6 h window, from the peak-and-integral blend above, so scrubbing
+// within a window can't imply hour-by-hour prediction. The needle is continuous
+// again — but it now encodes a genuine WINDOW-level intensity (how the whole block
+// sits within its band), not a single hour, so it carries information rather than
+// false precision. Returns null only when no hour in the window has usable wind.
 function bbfWindowBand(dtStr){
   const win = bbfWindowOf(dtStr);
   if (!win || !Array.isArray(_matrix)) return null;
   const month = bbfLocalMonth(dtStr);
-  let best = null;
+  const vals = [];
   for (const r of _matrix){
     if (String(r.dateTime).substring(0, 10) !== win.day) continue;
     const hr = new Date(String(r.dateTime).replace(' ','T')).getHours();
     if (isNaN(hr) || Math.floor(hr / 6) !== win.idx) continue;
-    const band = bbfScore(bbfLast3hWind(r.dateTime), month);
-    if (!band) continue;
-    const bi = BBF_BANDS.findIndex(x => x.key === band.key);
-    if (!best || bi > best.bi) best = { bi, band };
+    const onshore = bbfOnshore(bbfLast3hWind(r.dateTime));
+    if (Number.isFinite(onshore)) vals.push(onshore);
   }
-  if (!best) return null;
-  const zoneW = 100 / BBF_BANDS.length;
-  return Object.assign({}, best.band, { pos: (best.bi + 0.5) * zoneW, window: win });
+  if (!vals.length) return null;
+  const peak = Math.max(...vals);
+  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;   // integral / window length
+  const eff  = BBF_PEAK_WEIGHT * peak + (1 - BBF_PEAK_WEIGHT) * mean;
+  const band = bbfBandForOnshore(eff, month);
+  if (!band) return null;
+  return Object.assign({}, band, { window: win, peak, mean });
 }
 
 // Last painted band — the modal reads this so the sheet and the face can never
