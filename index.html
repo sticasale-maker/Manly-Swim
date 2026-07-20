@@ -370,6 +370,42 @@
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
+  /* Bluebottle FORECAST band keys (BBF_). Separate class names from the
+     green/amber/yellow/red used by the scored metrics, because these are band
+     identities, not verdicts — but they ride the same four rail colours. */
+  .metric-block.low       { background:rgba(26,158,110,0.15); border:1.5px solid var(--green); }
+  .metric-block.building  { background:rgba(122,80,0,0.15);   border:1.5px solid var(--amber); }
+  .metric-block.elevated  { background:rgba(224,124,42,0.15); border:1.5px solid var(--yellow); }
+  .metric-block.high      { background:rgba(192,57,43,0.15);  border:1.5px solid var(--red); }
+  .metric-block.low       .metric-name, .metric-block.low      .metric-value { color:var(--green); }
+  .metric-block.building  .metric-name, .metric-block.building .metric-value { color:var(--amber); }
+  .metric-block.elevated  .metric-name, .metric-block.elevated .metric-value { color:var(--yellow); }
+  .metric-block.high      .metric-name, .metric-block.high     .metric-value { color:var(--red); }
+  /* Off-season badge — shown only when the seasonal abundance cap held the band
+     down, so the face explains why a windy day still reads low. */
+  .bbf-offseason {
+    font-family:'Inter',sans-serif; font-size:9.5px; font-weight:700;
+    letter-spacing:0.4px; text-transform:uppercase;
+    color:var(--dim); background:rgba(74,143,173,0.12);
+    border-radius:6px; padding:1px 5px; margin-left:6px; white-space:nowrap;
+  }
+  /* Subordinated state — a photo-backed sighting is live in the reports strip, so
+     the wind forecast steps back: neutral border, muted fill, quieter type. The
+     observed report is the authority; this card must not shout over it. */
+  .metric-block.bbf-subordinate {
+    background:rgba(74,143,173,0.06) !important;
+    border:1.5px solid var(--border) !important;
+    opacity:0.72;
+  }
+  .metric-block.bbf-subordinate .metric-name,
+  .metric-block.bbf-subordinate .metric-value { color:var(--dim) !important; }
+  /* Season-cap tick — a subtle ceiling marker on the rail at the cap boundary. */
+  .metric-track-captick {
+    position:absolute; top:50%; left:var(--cappos, 100%);
+    width:2px; height:18px; transform:translate(-50%,-50%);
+    background:var(--deep); opacity:0.35; border-radius:2px;
+    z-index:2; display:none;
+  }
   .metric-sub { display:block; font-family:'Inter',sans-serif; font-size:12px; font-weight:600; letter-spacing:0; margin-left:0; margin-top:1px; color:var(--dim); }
   .metric-score {
     font-family:'Inter',sans-serif;
@@ -2075,7 +2111,9 @@
   .wx-bar-desc, .wx-bar-feels-label, .wx-bar-feels-val { color:#c8bda0; }
   .metrics-panel { background:rgba(22,50,66,0.60); border-color:rgba(180,210,230,0.10); }
   .metric-block.green, .metric-block.amber, .metric-block.yellow,
-  .metric-block.orange, .metric-block.red { background:#c8bda0; }
+  .metric-block.orange, .metric-block.red,
+  .metric-block.low, .metric-block.building,
+  .metric-block.elevated, .metric-block.high { background:#c8bda0; }
   .day-btn { background:rgba(22,50,66,0.75); border-color:rgba(180,210,230,0.10); color:rgba(200,189,160,0.85); }
   .slider-wrap { background:rgba(22,50,66,0.50); border-color:rgba(180,210,230,0.08); }
   .slider-date, .slider-time { color:#c8bda0; }
@@ -2429,6 +2467,32 @@
             <div class="assess-label">My call ▸ drag to where the dot should be</div>
             <input type="range" class="assess-range" id="assessSwim" min="0" max="100" step="0.5" value="50"
                    oninput="onAssess('swim', this.value)">
+          </div>
+        </div>
+        <!-- Bluebottle FORECAST card (BBF_) — onshore-wind risk band for the SELECTED
+             time. Entirely separate from the community photo-report strip (BB_/Supabase)
+             further down the page; that strip is the authority on actual sightings and
+             this card must never outrank it. No "My call" slider: this is not a scored
+             metric the swimmer calibrates, it's a conditions band. -->
+        <div class="metric-block low" id="metricBluebottles" onclick="openMetricModal('bluebottles')">
+          <div class="metric-header">
+            <div class="metric-name">Bluebottles: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-value" id="metricBluebottlesVal">—</div>
+            <span class="bbf-offseason" id="metricBluebottlesOff" style="display:none">off-season</span>
+          </div>
+          <span class="metric-sub" id="metricBluebottlesWhen">—</span>
+          <div class="metric-track-wrap">
+            <div class="metric-track-rail">
+              <div class="z" style="background:var(--rail-green);flex:1"></div>
+              <div class="z" style="background:var(--rail-amber);flex:1"></div>
+              <div class="z" style="background:var(--rail-yellow);flex:1"></div>
+              <div class="z" style="background:var(--rail-red);flex:1"></div>
+            </div>
+            <div class="metric-track-captick" id="metricBluebottlesCapTick"></div>
+            <div class="metric-track-dot" id="metricBluebottlesDot" style="color:var(--rail-green)"></div>
+          </div>
+          <div class="metric-track-labels" id="metricBluebottlesLabels">
+            <span style="flex:1">Low</span><span style="flex:1">Building</span><span style="flex:1">Elevated</span><span style="flex:1">High</span>
           </div>
         </div>
       </div>
@@ -6435,6 +6499,139 @@ function setSlotHeader(dt) {
   if (tEl) tEl.textContent = dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
 }
 
+// ===== Bluebottle FORECAST band (BBF_) — onshore-wind risk =====================
+// SEPARATE system from the community photo-report code (BB_/Supabase). Wind only.
+// It must NEVER visually outrank a live posted sighting (see integration rule).
+const BBF_ASPECT = 82;               // Cabbage Tree Bay faces ~ENE (deg, wind-FROM). tuning knob
+const BBF_THRESHOLDS = [2, 6, 12];   // km/h mean onshore -> Low | Building | Elevated | High
+const BBF_BANDS = [
+  { key:'low', label:'Low', rr:0.4 }, { key:'building', label:'Building', rr:1.3 },
+  { key:'elevated', label:'Elevated', rr:2.3 }, { key:'high', label:'High', rr:3.3 }
+];
+const BBF_SEASON_CAP = [3,3,3,2,1,1,1,1,2,3,3,3];  // Jan..Dec: max band index (abundance gate)
+
+// wind3h: ~3 hourly readings UP TO the selected time, each {speedKmh, fromDeg}.
+//   Source = the WILLYWEATHER WIND feed (windKmh/windDir) — NOT wind-wave
+//   (windWaveDir); bluebottles are wind-drifted sailors. cf. the windDir scar ~index.html:4642.
+// monthLocal: 0-indexed Sydney-LOCAL month of the selected time (never UTC).
+function bbfScore(wind3h, monthLocal){
+  const w = (wind3h || []).filter(h => Number.isFinite(h.speedKmh) && Number.isFinite(h.fromDeg));
+  if(!w.length) return null;                    // missing data -> no reading, never a silent "Low"
+  let sum = 0;
+  for(const h of w){
+    // onshore component; offshore (cos<0) clamped to 0 BY DESIGN:
+    // offshore wind does not retrieve bluebottles already inshore.
+    sum += h.speedKmh * Math.max(0, Math.cos((h.fromDeg - BBF_ASPECT) * Math.PI/180));
+  }
+  const onshore = sum / w.length;
+  let bi = 0; while(bi < BBF_THRESHOLDS.length && onshore > BBF_THRESHOLDS[bi]) bi++;
+  const cap = BBF_SEASON_CAP[monthLocal]; const capped = bi > cap; if(capped) bi = cap;
+  // needle continuous WITHIN the shown band's zone, derived AFTER the cap so dot & label agree;
+  // headroom both ends so it never reads as 0% or 100% (this is relative risk, not a probability).
+  const lo = bi === 0 ? 0 : BBF_THRESHOLDS[bi-1];
+  const hi = bi < BBF_THRESHOLDS.length ? BBF_THRESHOLDS[bi] : lo + 8;   // soft top for open High band
+  const frac = Math.max(0, Math.min(1, (onshore - lo) / (hi - lo)));
+  const zoneW = 100 / BBF_BANDS.length;
+  const pos = Math.max(6, Math.min(94, bi*zoneW + frac*zoneW));
+  const b = BBF_BANDS[bi];
+  return { onshore, key:b.key, label:b.label, rr:b.rr, pos, capped, month:monthLocal };
+}
+
+// ── BBF wiring helpers ────────────────────────────────────────────────────────
+// The matrix carries LOCAL Sydney wall-clock strings ("YYYY-MM-DD HH:MM:SS"), so
+// both the month and the 3 h window are read straight off the string / its parsed
+// local Date. Nothing here ever touches UTC.
+function bbfLocalMonth(dtStr){
+  if (!dtStr || dtStr.length < 7) return null;
+  const m = parseInt(dtStr.substring(5, 7), 10);
+  return Number.isFinite(m) ? m - 1 : null;     // 0-indexed, Sydney-local
+}
+
+// The ~3 h of wind UP TO and including T. Sliced by TIMESTAMP, not by row count,
+// so it stays correct if the feed's row spacing is ever not 1 h.
+function bbfLast3hWind(dtStr){
+  if (!dtStr || !Array.isArray(_matrix)) return [];
+  const tsOf = s => new Date(String(s).replace(' ','T')).getTime();
+  const t = tsOf(dtStr);
+  if (!Number.isFinite(t)) return [];
+  const from = t - 3 * 3600 * 1000;
+  return _matrix
+    .filter(r => { const ts = tsOf(r.dateTime); return Number.isFinite(ts) && ts > from && ts <= t; })
+    .map(r => ({ speedKmh: r.windKmh, fromDeg: r.windDir }));
+}
+
+// Last painted band — the modal reads this so the sheet and the face can never
+// disagree about which band is showing.
+let _bbfLast = null;
+// Which metric sheet is currently open (null when closed) — lets the paint path
+// refresh the sheet's live fields as the selector moves. Declared HERE, above the
+// first reader (renderBluebottleForecast), not next to METRIC_INFO further down:
+// a `let` read before its declaration line is a TDZ throw, not undefined.
+let _openMetricKey = null;
+
+function renderBluebottleForecast(h){
+  const block = document.getElementById('metricBluebottles');
+  if (!block || !h) return;
+  const valEl  = document.getElementById('metricBluebottlesVal');
+  const whenEl = document.getElementById('metricBluebottlesWhen');
+  const offEl  = document.getElementById('metricBluebottlesOff');
+  const dotEl  = document.getElementById('metricBluebottlesDot');
+  const tickEl = document.getElementById('metricBluebottlesCapTick');
+
+  const band = bbfScore(bbfLast3hWind(h.dateTime), bbfLocalMonth(h.dateTime));
+  _bbfLast = band;
+
+  // The card sits under the day/time selector, so it always states the slot it
+  // is describing — otherwise a band with no timestamp reads as "right now".
+  const dt = new Date(String(h.dateTime).replace(' ','T'));
+  const when = isNaN(dt) ? '' :
+    dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'}) + ' · ' +
+    dt.toLocaleTimeString('en-AU',{hour:'2-digit', minute:'2-digit'});
+  if (whenEl) {
+    const sighting = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
+    whenEl.textContent = when + (sighting ? ' · reported sightings below take precedence' : '');
+  }
+
+  if (!band) {                     // no usable wind -> no reading, never a silent "Low"
+    block.className = 'metric-block';
+    if (valEl)  valEl.textContent = 'No reading';
+    if (offEl)  offEl.style.display = 'none';
+    if (tickEl) tickEl.style.display = 'none';
+    if (dotEl)  dotEl.style.display = 'none';
+    if (_openMetricKey === 'bluebottles') refreshMetricModalBody('bluebottles');
+    return;
+  }
+
+  const railVar = { low:'--rail-green', building:'--rail-amber',
+                    elevated:'--rail-yellow', high:'--rail-red' }[band.key];
+  // SAFETY / integration rule: this is a WIND FORECAST, and the community photo
+  // reports are observed fact. When a photo-backed sighting is live, the forecast
+  // must not compete with it — a confident green "Low" sitting above a real
+  // reported sighting is exactly the misread to avoid. Mute the card and say so.
+  const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
+  block.className = 'metric-block ' + band.key + (sightingLive ? ' bbf-subordinate' : '');
+  if (valEl) valEl.textContent = band.label;
+  if (offEl) offEl.style.display = band.capped ? '' : 'none';
+  if (dotEl) {
+    dotEl.style.display = '';
+    dotEl.style.setProperty('--pos', band.pos + '%');
+    dotEl.style.color = `var(${railVar})`;
+    dotEl.style.background = `var(${railVar})`;
+  }
+  // Ceiling marker at the top of the capped band, so the rail shows WHY the
+  // needle stopped where it did rather than looking stuck.
+  if (tickEl) {
+    if (band.capped) {
+      const capIdx = BBF_SEASON_CAP[band.month];
+      tickEl.style.display = '';
+      tickEl.style.setProperty('--cappos', ((capIdx + 1) * (100 / BBF_BANDS.length)) + '%');
+    } else {
+      tickEl.style.display = 'none';
+    }
+  }
+  if (_openMetricKey === 'bluebottles') refreshMetricModalBody('bluebottles');
+}
+
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) {
     diag('renderSnapshot BAILED — ' + (!h ? 'no row object' : 'row has no dateTime'));
@@ -6496,6 +6693,9 @@ function renderSnapshot(h, wx) {
   const dt = new Date(h.dateTime.replace(' ','T'));
   setSlotHeader(dt);
   updateFvSub(h);
+  // Bluebottle forecast band — same paint path as the three dots, so it slides
+  // with the day/time selector. Isolated: a throw here must not blank the dots.
+  try { renderBluebottleForecast(h); } catch (e) { console.warn('BBF render failed:', e.message); }
   // Tune workbench: mirror this slot's raw forecast inputs into the sticky-left
   // inputs card (no-op unless the ?tune=1 panel has been built). UI only.
   try { updateTuneInputs(h); } catch (e) {}
@@ -8469,6 +8669,11 @@ function bbRenderFromData(reports) {
     .filter(r => bbSafePhoto(r.photo_url))
     .sort((a, b) => new Date(b.reported_at) - new Date(a.reported_at));
   _bbWarningActive = shots.length > 0;
+  // A sighting appearing (or ageing out) changes whether the wind-forecast card
+  // must step back, so repaint it from the slot currently on screen.
+  try {
+    if (_lastSnapshot && _lastSnapshot.h) renderBluebottleForecast(_lastSnapshot.h);
+  } catch (e) {}
   if (gallery) {
     if (shots.length) {
       strip.classList.add('bb-expandable');
@@ -11779,8 +11984,61 @@ const METRIC_INFO = {
   surge: {
     title: 'Surge',
     text: "What the swim across the bay actually feels like due to the sideways push of surge. Its effects can be seen when waves reflect off the wall and in making entry at Bower Lane tricky, plus a general underwater low visibility."
+  },
+  bluebottles: {
+    title: 'Bluebottles',
+    text: "Reads the onshore wind over the 3 hours up to the time you've selected — the recent push that blows bluebottles ashore — then eases off in the cooler months, when few are out there to arrive."
   }
 };
+
+// Bluebottle sheet body. Built from _bbfLast, the SAME band object the card face
+// was painted from, so the sheet can never state a different band than the card.
+function bbfModalHTML(){
+  const band = _bbfLast;
+  const whenEl = document.getElementById('metricBluebottlesWhen');
+  const when = whenEl ? whenEl.textContent : '';
+  const sub = `<p style="margin:0 0 10px;font-family:'Inter',sans-serif;font-size:12px;color:var(--dim);">
+      Cabbage Tree Bay${when ? ' · ' + when : ''}</p>`;
+  const head = band
+    ? `<p style="margin:0 0 10px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep);">
+         ${band.label} — &asymp; ${band.rr}&times; a typical day${band.capped ? ' <span style="font-family:\'Inter\',sans-serif;font-size:11px;letter-spacing:0;color:var(--dim);">(off-season — held down by the seasonal cap)</span>' : ''}</p>`
+    : `<p style="margin:0 0 10px;font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep);">
+         No reading — wind data unavailable for this slot</p>`;
+  const wrap = (t, inner) =>
+    `<div style="margin-top:6px;padding:10px 12px;background:rgba(74,143,173,0.06);border-radius:10px;
+       font-family:'Inter',sans-serif;font-size:11px;line-height:1.5;">
+       <div style="font-weight:700;color:var(--deep);letter-spacing:0.5px;margin-bottom:4px;">${t}</div>
+       ${inner}</div>`;
+  const bandRow = (b, desc) =>
+    `<div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0;
+        ${band && band.key === b.key ? 'font-weight:700;color:var(--deep);' : 'color:var(--dim);'}">
+       <span>${b.label} <span style="opacity:0.75;">${desc}</span></span>
+       <b style="font-variant-numeric:tabular-nums;">${b.rr}&times;</b></div>`;
+  const descs = ['calm or offshore wind', 'onshore building', 'wind favouring them', 'strong onshore push'];
+  return sub + head +
+    `<p style="margin:0 0 10px;">${METRIC_INFO.bluebottles.text}</p>` +
+    wrap('THE BANDS', BBF_BANDS.map((b, i) => bandRow(b, '· ' + descs[i])).join('')) +
+    wrap('READING IT',
+      "These compare today with an average day — 'High' means roughly three times as likely as usual, " +
+      "not a certainty. There's deliberately no '100%' here; even the most bluebottle-prone days often stay clear.") +
+    wrap('HOW IT WAS BUILT',
+      "From 705 bluebottle sightings along the Sydney coast (2021–2026) matched to wind records, and checked " +
+      "against 48 sightings here at Cabbage Tree Bay. It's a guide to conditions, not a forecast of stings — " +
+      "always check the water before you get in.");
+}
+
+// Paint the sheet body for `key`. Split out of openMetricModal so the paint path
+// can refresh an already-open sheet without reopening it.
+function refreshMetricModalBody(key) {
+  const info = METRIC_INFO[key];
+  const body = document.getElementById('metric-modal-summary');
+  if (!info || !body) return;
+  if (key === 'bluebottles') { body.innerHTML = bbfModalHTML(); return; }
+  const blk = document.getElementById('metric' + key.charAt(0).toUpperCase() + key.slice(1));
+  const ro  = blk && blk.dataset.readout;
+  const roHTML = ro ? '<p style="margin:0 0 10px;font-family:\'Bebas Neue\',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep);">' + ro + '</p>' : '';
+  body.innerHTML = roHTML + '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key);
+}
 
 function openMetricModal(key) {
   const info = METRIC_INFO[key];
@@ -11788,15 +12046,10 @@ function openMetricModal(key) {
   try { if (window.track) window.track('view_metric', { metric: key }); } catch (e) {}
   const overlay = document.getElementById('metric-modal');
   const title   = document.getElementById('metric-modal-title');
-  const body    = document.getElementById('metric-modal-summary');
   if (!overlay) return;
   if (title) title.textContent = info.title;
-  if (body) {
-    const blk = document.getElementById('metric' + key.charAt(0).toUpperCase() + key.slice(1));
-    const ro  = blk && blk.dataset.readout;
-    const roHTML = ro ? '<p style="margin:0 0 10px;font-family:\'Bebas Neue\',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep);">' + ro + '</p>' : '';
-    body.innerHTML = roHTML + '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key);
-  }
+  refreshMetricModalBody(key);
+  _openMetricKey = key;
   overlay.classList.add('open');
   document.addEventListener('keydown', _metricEsc);
 }
@@ -11884,6 +12137,7 @@ function metricBreakdownHTML(key) {
 function closeMetricModal() {
   const overlay = document.getElementById('metric-modal');
   if (overlay) overlay.classList.remove('open');
+  _openMetricKey = null;
   document.removeEventListener('keydown', _metricEsc);
 }
 
