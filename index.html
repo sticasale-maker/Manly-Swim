@@ -381,14 +381,24 @@
   .metric-block.building  .metric-name, .metric-block.building .metric-value { color:var(--amber); }
   .metric-block.elevated  .metric-name, .metric-block.elevated .metric-value { color:var(--yellow); }
   .metric-block.high      .metric-name, .metric-block.high     .metric-value { color:var(--red); }
+  /* The card now sits under the Sea Temp / Pollution row rather than in the
+     metrics grid, so it carries that row's bottom margin instead of the grid's. */
+  .metrics-grid.bbf-row { margin: 0 0 8px; }
   /* Off-season badge — shown only when the seasonal abundance cap held the band
-     down, so the face explains why a windy day still reads low. */
+     down, so the face explains why a windy day still reads low.
+     flex:0 0 auto + margin-left:auto are load-bearing: .metric-header is a flex
+     row and .metric-block is overflow:hidden, so a shrinkable nowrap badge gets
+     squeezed by the value beside it and clipped to "off-seas…". It must keep its
+     intrinsic width and take the free space on the right instead. */
   .bbf-offseason {
     font-family:'Inter',sans-serif; font-size:9.5px; font-weight:700;
     letter-spacing:0.4px; text-transform:uppercase;
     color:var(--dim); background:rgba(74,143,173,0.12);
-    border-radius:6px; padding:1px 5px; margin-left:6px; white-space:nowrap;
+    border-radius:6px; padding:1px 6px; white-space:nowrap;
+    flex:0 0 auto; margin-left:auto; align-self:center;
   }
+  /* Let the band label give way first if the row ever runs out of room. */
+  .metric-block #metricBluebottlesVal { min-width:0; }
   /* Subordinated state — a photo-backed sighting is live in the reports strip, so
      the wind forecast steps back: neutral border, muted fill, quieter type. The
      observed report is the authority; this card must not shout over it. */
@@ -2469,32 +2479,6 @@
                    oninput="onAssess('swim', this.value)">
           </div>
         </div>
-        <!-- Bluebottle FORECAST card (BBF_) — onshore-wind risk band for the SELECTED
-             time. Entirely separate from the community photo-report strip (BB_/Supabase)
-             further down the page; that strip is the authority on actual sightings and
-             this card must never outrank it. No "My call" slider: this is not a scored
-             metric the swimmer calibrates, it's a conditions band. -->
-        <div class="metric-block low" id="metricBluebottles" onclick="openMetricModal('bluebottles')">
-          <div class="metric-header">
-            <div class="metric-name">Bluebottles: <span class="metric-info">ⓘ</span></div>
-            <div class="metric-value" id="metricBluebottlesVal">—</div>
-            <span class="bbf-offseason" id="metricBluebottlesOff" style="display:none">off-season</span>
-          </div>
-          <span class="metric-sub" id="metricBluebottlesWhen">—</span>
-          <div class="metric-track-wrap">
-            <div class="metric-track-rail">
-              <div class="z" style="background:var(--rail-green);flex:1"></div>
-              <div class="z" style="background:var(--rail-amber);flex:1"></div>
-              <div class="z" style="background:var(--rail-yellow);flex:1"></div>
-              <div class="z" style="background:var(--rail-red);flex:1"></div>
-            </div>
-            <div class="metric-track-captick" id="metricBluebottlesCapTick"></div>
-            <div class="metric-track-dot" id="metricBluebottlesDot" style="color:var(--rail-green)"></div>
-          </div>
-          <div class="metric-track-labels" id="metricBluebottlesLabels">
-            <span style="flex:1">Low</span><span style="flex:1">Building</span><span style="flex:1">Elevated</span><span style="flex:1">High</span>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -2521,6 +2505,36 @@
         <div class="quality-card-label">Pollution Risk <a href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank" style="color:var(--dim);text-decoration:none;font-size:9px;">↗</a></div>
         <div class="pollution-text unknown" id="pollutionTextSlim">—</div>
         <div class="pollution-sub" id="pollutionSubSlim"></div>
+      </div>
+    </div>
+
+    <!-- Bluebottle FORECAST card (BBF_) — onshore-wind risk band for the SELECTED
+         time. Sits under the Sea Temp / Pollution row, below the slider, so it reads
+         as a condition of the water rather than one of the three scored metrics.
+         Entirely separate from the community photo-report strip (BB_/Supabase) further
+         down; that strip is the authority on actual sightings and this card must never
+         outrank it. No "My call" slider: this is not a metric the swimmer calibrates. -->
+    <div class="metrics-grid bbf-row">
+      <div class="metric-block low" id="metricBluebottles" onclick="openMetricModal('bluebottles')">
+        <div class="metric-header">
+          <div class="metric-name">Bluebottles: <span class="metric-info">ⓘ</span></div>
+          <div class="metric-value" id="metricBluebottlesVal">—</div>
+          <span class="bbf-offseason" id="metricBluebottlesOff" style="display:none">off-season</span>
+        </div>
+        <span class="metric-sub" id="metricBluebottlesWhen">—</span>
+        <div class="metric-track-wrap">
+          <div class="metric-track-rail">
+            <div class="z" style="background:var(--rail-green);flex:1"></div>
+            <div class="z" style="background:var(--rail-amber);flex:1"></div>
+            <div class="z" style="background:var(--rail-yellow);flex:1"></div>
+            <div class="z" style="background:var(--rail-red);flex:1"></div>
+          </div>
+          <div class="metric-track-captick" id="metricBluebottlesCapTick"></div>
+          <div class="metric-track-dot" id="metricBluebottlesDot" style="color:var(--rail-green)"></div>
+        </div>
+        <div class="metric-track-labels" id="metricBluebottlesLabels">
+          <span style="flex:1">Low</span><span style="flex:1">Building</span><span style="flex:1">Elevated</span><span style="flex:1">High</span>
+        </div>
       </div>
     </div>
 
@@ -11994,10 +12008,14 @@ const METRIC_INFO = {
   },
   bluebottles: {
     title: 'Bluebottles',
-    // User-facing copy deliberately says "the hours leading up to" rather than
-    // naming the window: the number read as the whole model. The window itself
-    // is still exactly 3 h — see bbfLast3hWind(). Change one, change the other.
-    text: "Weighs the onshore wind in the hours leading up to the time you've selected — the recent push that carries bluebottles into the bay — against the season, easing off through the cooler months when far fewer are out there to arrive."
+    // User-facing copy deliberately says "the last few hours" rather than naming
+    // the window: the number read as the whole model. It is still exactly 3 h —
+    // see bbfLast3hWind(). Change one, change the other.
+    // "700-plus" is also deliberate: the cleaned set is 705 records across the
+    // full span, but only 556 of those (443 stranding-days) fall in the 2021-26
+    // modelled window, so a precise figure here would need a qualifier to be
+    // true. See docs/bluebottle-model.md.
+    text: "Bluebottles drift wherever the wind blows them, so what lands them on the beach is wind blowing in from the sea — not the surf or the water temperature. This card reads the sea-breeze over the last few hours before the time you've picked and rates how likely bluebottles are to be pushed in. In the cooler months it eases the rating down, since few are out there to blow in."
   }
 };
 
@@ -12015,16 +12033,19 @@ function bbfModalHTML(){
     ? `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">${band.label} — &asymp; ${band.rr}&times; a typical day</div>` +
       (band.capped ? `<div style="font-size:10.5px;color:var(--dim);margin-top:1px;">off-season — held down by the seasonal cap</div>` : '')
     : `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">No reading — wind data unavailable</div>`;
-  const sec = (t, inner) => `<div style="margin-top:8px;"><div style="font-size:9.5px;font-weight:700;color:var(--deep);letter-spacing:0.6px;margin-bottom:2px;">${t}</div>${inner}</div>`;
+  // Lead-in headings rather than uppercase section labels: the copy is written as
+  // full sentences, and small-caps headers over three short paragraphs was most of
+  // what made the sheet feel padded.
+  const sec = (t, body) => `<div style="margin-top:7px;"><b style="color:var(--deep);">${t}</b> ${body}</div>`;
   const descs = ['calm or offshore wind', 'onshore building', 'wind favouring them', 'strong onshore push'];
   const bandRow = (b, i) => `<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0;${band && band.key === b.key ? 'font-weight:700;color:var(--deep);' : 'color:var(--dim);'}"><span>${b.label} <span style="opacity:0.7;">· ${descs[i]}</span></span><b style="font-variant-numeric:tabular-nums;">${b.rr}&times;</b></div>`;
   return `<div style="white-space:normal;font-family:'Inter',sans-serif;font-size:11.5px;line-height:1.45;">` +
     `<div style="font-size:10.5px;color:var(--dim);margin-bottom:3px;">Cabbage Tree Bay${when ? ' · ' + when : ''}</div>` +
     head +
-    sec('HOW IT WORKS', `<div>${METRIC_INFO.bluebottles.text}</div>`) +
-    sec('THE BANDS', BBF_BANDS.map(bandRow).join('')) +
-    sec('READING IT', `<div>These compare today with an average day — 'High' means roughly three times as likely as usual, not a certainty. There's deliberately no '100%' here; even the most bluebottle-prone days often stay clear.</div>`) +
-    sec('HOW IT WAS BUILT', `<div>From 705 bluebottle sightings along the Sydney coast (2021–2026) matched to wind records, and checked against 48 sightings here at Cabbage Tree Bay. It's a guide to conditions, not a forecast of stings — always check the water before you get in.</div>`) +
+    sec('What this shows.', METRIC_INFO.bluebottles.text) +
+    `<div style="margin-top:7px;">${BBF_BANDS.map(bandRow).join('')}</div>` +
+    sec('Where it comes from.', "We matched 700-plus bluebottle sightings around Sydney to the wind at the time. The pattern was clear: more onshore wind beforehand meant more bluebottles — and it holds up strongly here at Cabbage Tree Bay, in line with what marine scientists have found.") +
+    sec('How to read it.', "A heads-up, not a guarantee. &ldquo;High&rdquo; means a day like today usually brings a lot more than average — not that they're definitely there, and a low reading doesn't mean the water's clear. Always look before you get in.") +
     `</div>`;
 }
 
