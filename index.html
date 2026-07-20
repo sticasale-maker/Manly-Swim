@@ -450,7 +450,7 @@
     text-transform:uppercase; color:var(--deep); opacity:0.8; white-space:nowrap;
   }
   .bbf-when-time {
-    font-family:'Bebas Neue',sans-serif; font-size:19px; letter-spacing:1px;
+    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:0.5px;
     color:var(--deep); white-space:nowrap;
   }
   .bbf-note {
@@ -6662,6 +6662,54 @@ function bbfLast3hWind(dtStr){
     .map(r => ({ speedKmh: r.windKmh, fromDeg: r.windDir }));
 }
 
+// ── 6-HOUR WINDOWS ────────────────────────────────────────────────────────────
+// The model is calibrated on a prior-3h onshore push, which does NOT resolve to a
+// single clock hour — stamping the band with an exact time ("12:00 AM") implied a
+// precision the model doesn't have. The card now reports one band per fixed 6 h
+// window (overnight / morning / afternoon / evening), stable across every hour
+// inside it, so scrubbing within a window cannot suggest hour-by-hour prediction.
+// The per-hour model below is UNCHANGED and every constant is used exactly as
+// calibrated; the window only aggregates its output for display.
+const BBF_WINDOWS = [
+  { name:'Overnight', range:'12–6am' },
+  { name:'Morning',   range:'6am–12pm' },
+  { name:'Afternoon', range:'12–6pm' },
+  { name:'Evening',   range:'6pm–12am' }
+];
+// The fixed 6 h bucket (0..3) containing T, Sydney-local. Anchored to the day, not
+// to T, so every hour in the same block returns the same window.
+function bbfWindowOf(dtStr){
+  const t = new Date(String(dtStr).replace(' ','T'));
+  if (isNaN(t)) return null;
+  const idx = Math.floor(t.getHours() / 6);
+  return Object.assign({ idx, day: String(dtStr).substring(0, 10) }, BBF_WINDOWS[idx]);
+}
+// Evaluate the calibrated per-hour model at every hour in T's window and take the
+// PEAK (most cautious) band. A drift-arrival hazard is honestly summarised by its
+// worst hour, not its average: a two-hour onshore push inside the window is enough
+// to bring bluebottles in, and averaging would dilute a real arrival. The dot is
+// SNAPPED to the centre of the winning band's zone — a continuous needle would
+// reintroduce exactly the sub-band precision this whole change removes. Returns
+// null only when no hour in the window has usable wind.
+function bbfWindowBand(dtStr){
+  const win = bbfWindowOf(dtStr);
+  if (!win || !Array.isArray(_matrix)) return null;
+  const month = bbfLocalMonth(dtStr);
+  let best = null;
+  for (const r of _matrix){
+    if (String(r.dateTime).substring(0, 10) !== win.day) continue;
+    const hr = new Date(String(r.dateTime).replace(' ','T')).getHours();
+    if (isNaN(hr) || Math.floor(hr / 6) !== win.idx) continue;
+    const band = bbfScore(bbfLast3hWind(r.dateTime), month);
+    if (!band) continue;
+    const bi = BBF_BANDS.findIndex(x => x.key === band.key);
+    if (!best || bi > best.bi) best = { bi, band };
+  }
+  if (!best) return null;
+  const zoneW = 100 / BBF_BANDS.length;
+  return Object.assign({}, best.band, { pos: (best.bi + 0.5) * zoneW, window: win });
+}
+
 // Last painted band — the modal reads this so the sheet and the face can never
 // disagree about which band is showing.
 let _bbfLast = null;
@@ -6682,16 +6730,18 @@ function renderBluebottleForecast(h){
   const dotEl  = document.getElementById('metricBluebottlesDot');
   const tickEl = document.getElementById('metricBluebottlesCapTick');
 
-  const band = bbfScore(bbfLast3hWind(h.dateTime), bbfLocalMonth(h.dateTime));
+  const band = bbfWindowBand(h.dateTime);
   _bbfLast = band;
 
   // The card sits away from the day/time selector, so it always states the slot
-  // it is describing — otherwise a band with no timestamp reads as "right now".
+  // it is describing. It names a 6 h WINDOW, not a clock time — the model can't
+  // resolve to the hour, and pretending to would be the misleading precision this
+  // card was reworked to drop.
   const dt = new Date(String(h.dateTime).replace(' ','T'));
+  const win = bbfWindowOf(h.dateTime);
   if (dayEl)  dayEl.textContent  = isNaN(dt) ? '—' :
     dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'});
-  if (timeEl) timeEl.textContent = isNaN(dt) ? '' :
-    dt.toLocaleTimeString('en-AU',{hour:'2-digit', minute:'2-digit'});
+  if (timeEl) timeEl.textContent = win ? win.range.toUpperCase() : '';
 
   const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
 
@@ -12104,14 +12154,14 @@ const METRIC_INFO = {
   },
   bluebottles: {
     title: 'Bluebottles Risk',
-    // User-facing copy deliberately says "the last few hours" rather than naming
-    // the window: the number read as the whole model. It is still exactly 3 h —
-    // see bbfLast3hWind(). Change one, change the other.
+    // Copy talks about a six-hour window, never a clock time: the model is
+    // calibrated on a prior-3h onshore push and can't resolve to the hour, so an
+    // exact time would be false precision. See bbfWindowBand().
     // "700-plus" is also deliberate: the cleaned set is 705 records across the
     // full span, but only 556 of those (443 stranding-days) fall in the 2021-26
     // modelled window, so a precise figure here would need a qualifier to be
     // true. See docs/bluebottle-model.md.
-    text: "Bluebottles drift wherever the wind blows them, so what lands them on the beach is wind blowing in from the sea — not the surf or the water temperature. This card reads the sea-breeze over the last few hours before the time you've picked and rates how likely bluebottles are to be pushed in. In the cooler months it eases the rating down, since few are out there to blow in."
+    text: "Bluebottles drift wherever the wind blows them, so what lands them on the beach is wind blowing in from the sea — not the surf or the water temperature. This card looks at the onshore wind across a six-hour window — overnight, morning, afternoon or evening — and rates how likely bluebottles are to be pushed in during it. It deliberately doesn't try to pick the exact hour. In the cooler months it eases the rating down, since few are out there to blow in."
   }
 };
 
@@ -12123,13 +12173,12 @@ const METRIC_INFO = {
 // `white-space:normal` so the markup can never reintroduce the gaps.
 function bbfModalHTML(){
   const band = _bbfLast;
-  // Read the slot back off the card's own two rows, so the sheet's subline can
-  // never name a different time than the face it was opened from.
+  // Subline names the same 6 h window the face shows. Prefer the band's own window
+  // object; fall back to the card's day row so a no-reading slot still says when.
   const dEl = document.getElementById('metricBluebottlesDay');
-  const tEl = document.getElementById('metricBluebottlesTime');
   const dTxt = dEl && dEl.textContent !== '—' ? dEl.textContent : '';
-  const tTxt = tEl ? tEl.textContent : '';
-  const when = [dTxt, tTxt].filter(Boolean).join(' · ');
+  const win = band && band.window;
+  const when = win ? [dTxt, win.name + ' (' + win.range + ')'].filter(Boolean).join(' · ') : dTxt;
   const head = band
     ? `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">${band.label} — &asymp; ${band.rr}&times; a typical day</div>` +
       (band.capped ? `<div style="font-size:10.5px;color:var(--dim);margin-top:1px;">off-season — held down by the seasonal cap</div>` : '')
