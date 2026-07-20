@@ -20,25 +20,17 @@ governed by onshore wind, not by waves or water temperature. The card:
 
 It reports **relative risk** (how a day compares with an average day), not an absolute probability.
 
-### Display: 6-hour windows (not part of the fit)
+### Display: one colour per day (not part of the fit)
 
-Steps 1–4 are the calibrated per-hour model. The **card** does not show a single hour — stamping a
-band with a clock time would imply a resolution the model doesn't have. Instead it reports one band
-per fixed 6-hour window (overnight / morning / afternoon / evening). For a window it takes the
-per-hour onshore values inside the block and forms
-
-```
-window value = 0.6 · peak  +  0.4 · mean            (BBF_PEAK_WEIGHT = 0.6)
-```
-
-then bands that value through the same thresholds and seasonal cap. The **mean** is the integral of
-the onshore curve over the window divided by its length (every window is a fixed 6 h, so mean ∝
-integral); the **peak** is its strongest hour. Blending the two distinguishes a lone gust from a
-sustained blow — a brief spike lifts the reading a little, a six-hour push lifts it a lot — and
-leans toward the peak because this is a hazard cue. This blend is a **display heuristic**: the
-0.6/0.4 weighting is chosen, not fitted, and it changes no threshold, multiplier, or cap. The dot
-sits continuously within the winning band to show where the whole window falls, which is a
-window-level quantity, not a per-hour one.
+Steps 1–4 are the calibrated per-hour model. The **card** is a 5-day strip — one colour per day,
+not a slider-following hour, because stamping a band with a clock time would imply a resolution the
+model doesn't have. A day's colour is its **worst 3-hour window**: the maximum across the day of the
+per-hour band. Each hourly value is already a 3-hour trailing mean of onshore wind, so a single gust
+can't spike it — it takes roughly three hours of sustained onshore to move — and taking the day's
+maximum then answers "do conditions favour arrival at any point today?" while the smoothing keeps a
+fluke from turning a whole day red. This aggregation changes no threshold, multiplier, or cap; it
+only summarises the per-hour output to a day. A day past the wind-forecast horizon (the wind feed is
+shorter than the swell outlook) shows a neutral "no reading", never a green Low.
 
 ## 2. Source data
 

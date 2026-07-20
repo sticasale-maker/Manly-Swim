@@ -370,125 +370,49 @@
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
-  /* Bluebottle FORECAST band keys (BBF_). Separate class names from the
-     green/amber/yellow/red used by the scored metrics, because these are band
-     identities, not verdicts — but they ride the same four rail colours. */
-  .metric-block.low       { background:rgba(26,158,110,0.15); border:1.5px solid var(--green); }
-  .metric-block.building  { background:rgba(122,80,0,0.15);   border:1.5px solid var(--amber); }
-  .metric-block.elevated  { background:rgba(224,124,42,0.15); border:1.5px solid var(--yellow); }
-  .metric-block.high      { background:rgba(192,57,43,0.15);  border:1.5px solid var(--red); }
-  .metric-block.low       .metric-name, .metric-block.low      .metric-value { color:var(--green); }
-  .metric-block.building  .metric-name, .metric-block.building .metric-value { color:var(--amber); }
-  .metric-block.elevated  .metric-name, .metric-block.elevated .metric-value { color:var(--yellow); }
-  .metric-block.high      .metric-name, .metric-block.high     .metric-value { color:var(--red); }
-  /* The card now sits under the Sea Temp / Pollution row rather than in the
-     metrics grid, so it carries that row's bottom margin instead of the grid's. */
-  .metrics-grid.bbf-row { margin: 0 0 8px; }
-  /* Off-season badge — shown only when the seasonal abundance cap held the band
-     down, so the face explains why a windy day still reads low.
-     flex:0 0 auto + margin-left:auto are load-bearing: .metric-header is a flex
-     row and .metric-block is overflow:hidden, so a shrinkable nowrap badge gets
-     squeezed by the value beside it and clipped to "off-seas…". It must keep its
-     intrinsic width and take the free space on the right instead. */
-  .bbf-offseason {
-    font-family:'Inter',sans-serif; font-size:9.5px; font-weight:700;
-    letter-spacing:0.4px; text-transform:uppercase;
-    color:var(--dim); background:rgba(74,143,173,0.12);
-    border-radius:6px; padding:1px 6px; white-space:nowrap;
-    flex:0 0 auto; margin-left:auto; align-self:center;
+  /* ── Bluebottle risk: 5-day strip (BBF_) ────────────────────────────────────
+     One colour per day, like the swell day-picker. Each day is rated by its
+     WORST 3 h onshore-wind window (see bbfDayBand), so the colour reflects a
+     risk that holds through the day, not a single hour. Wind forecast only —
+     separate from the community photo reports lower down. */
+  .bbf-row { margin: 0 0 10px; }
+  .bbf-strip-head { display:flex; align-items:center; justify-content:center; gap:6px; margin-bottom:5px; }
+  .bbf-strip-title {
+    font-family:'Bebas Neue',sans-serif; font-size:16px; letter-spacing:1.5px;
+    text-transform:uppercase; color:var(--deep);
   }
-  /* Let the band label give way first if the row ever runs out of room. */
-  .metric-block #metricBluebottlesVal { min-width:0; }
-  /* This card has no pictogram, so it gets its own grid template: the empty
-     "icon" column becomes the day/time block, which fills space the rail stack
-     needs anyway instead of adding a row of its own. Without an explicit
-     grid-area these children were auto-placed into that column and the card grew
-     to roughly twice the height it needed. */
-  .bbf-row .metric-block {
-    grid-template-columns: auto 1fr;
-    grid-template-areas:
-      "when header"
-      "when track"
-      "when labels"
-      "note note";
-    column-gap: 11px;
-    align-items: center;
-    padding: 5px 9px;
+  .bbf-strip-head .metric-info { cursor:pointer; }
+  .bbf-strip { display:flex; gap:6px; }
+  .bbf-day {
+    flex:1; min-width:0; border:none; border-radius:12px; cursor:pointer;
+    padding:7px 3px 6px; display:flex; flex-direction:column; align-items:center; gap:1px;
+    background:rgba(200,189,160,0.35); color:#fff; text-align:center;
+    font-family:'Inter',sans-serif; transition:filter .15s, transform .15s;
   }
-  .bbf-row .bbf-when   { grid-area: when; align-self: center; }
-  .bbf-row .metric-header { grid-area: header; justify-content: center; gap: 6px; }
-  .bbf-row .bbf-note   { grid-area: note; }
-  /* Title centred over the rail rather than ranged left, so the name and the
-     dot it describes share an axis. */
-  .bbf-row .metric-name { text-align: center; }
-  /* Thinner rail + dot: this card is secondary to the three scored metrics and
-     doesn't need their touch target — nothing on it is draggable. */
-  .bbf-row .metric-track-wrap  { height: 22px; margin: 1px 0 0; }
-  .bbf-row .metric-track-dot   { width: 22px; height: 22px; border-width: 3px; }
-  .bbf-row .metric-track-rail  { height: 11px; }
-  .bbf-row .metric-track-labels { font-size: 10px; margin-top: 1px; }
-  .bbf-row .metric-value { font-size: 17px; }
-  /* Badge rides with the centred title instead of being flung to the right edge
-     by the margin-left:auto that the old left-ranged header needed. */
-  .bbf-row .bbf-offseason { margin-left: 0; }
-  /* ?vrail=1 gives .metric-block its own template at higher specificity than the
-     rules above, which would leave when/note unplaced and auto-flowing again.
-     Keep vrail's vertical rail, but give the two extra children a home. */
-  body.vrail .bbf-row .metric-block {
-    grid-template-columns: auto auto 1fr;
-    grid-template-areas:
-      "when header header"
-      "when track  labels"
-      "note note   note";
-  }
-
-  /* Slot the card is describing — two rows, so the day and the time each get
-     room to be read at a glance instead of being squeezed onto one small line. */
-  .bbf-when { display:flex; flex-direction:column; line-height:1.1; }
-  .bbf-when-day {
-    font-family:'Bebas Neue',sans-serif; font-size:14px; letter-spacing:1px;
-    text-transform:uppercase; color:var(--deep); opacity:0.8; white-space:nowrap;
-  }
-  .bbf-when-time {
-    font-family:'Bebas Neue',sans-serif; font-size:17px; letter-spacing:0.5px;
-    color:var(--deep); white-space:nowrap;
-  }
+  .bbf-day:active { transform:scale(0.97); }
+  .bbf-day-name { font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:1px; text-transform:uppercase; opacity:0.92; }
+  .bbf-day-num  { font-family:'Bebas Neue',sans-serif; font-size:20px; letter-spacing:0.5px; line-height:1; -webkit-text-stroke:0.4px currentColor; }
+  .bbf-day-band { font-size:9.5px; font-weight:700; letter-spacing:0.3px; margin-top:1px; }
+  /* Coloured days get a dark text shadow so white type stays legible on green/amber. */
+  .bbf-day.has-band { text-shadow:0 1px 2px rgba(0,0,0,0.5), 0 0 3px rgba(0,0,0,0.4); }
+  /* Selected day (the one the main view is showing) gets a ring, mirroring the
+     day-picker so the two strips read as the same calendar. */
+  .bbf-day.bbf-day-sel { box-shadow:0 0 0 2px var(--deep), 0 0 0 4px var(--ocean); }
+  /* No usable wind past the forecast horizon: neutral, NEVER green — an absent
+     reading must not look like a genuine Low. */
+  .bbf-day.bbf-day-none { background:rgba(74,143,173,0.10); color:var(--dim); }
+  .bbf-day.bbf-day-none .bbf-day-num { -webkit-text-stroke:0; }
+  /* Off-season cap held this day down: a small ° after the label, and a dimmer
+     fill, so a low colour on a windy day is explained rather than puzzling. */
+  .bbf-day.bbf-capped { filter:saturate(0.7) brightness(0.96); }
+  /* A live photo sighting outranks the wind forecast: the whole strip steps back
+     and a note points down to the reports. */
+  .bbf-row.bbf-subordinate .bbf-strip { opacity:0.6; }
   .bbf-note {
-    font-family:'Inter',sans-serif; font-size:10px;
-    font-weight:600; color:var(--dim); letter-spacing:0; margin-top:2px;
+    display:block; text-align:center; font-family:'Inter',sans-serif;
+    font-size:10px; font-weight:600; color:var(--dim); letter-spacing:0; margin-top:5px;
   }
   .bbf-note:empty { display:none; }
-  /* No usable wind (past the wind feed's horizon, ~6+ days out). The card keeps
-     its shape and background — dropping to a bare .metric-block left it with no
-     fill or border at all, which read as a broken card rather than an honest
-     "nothing to say". Neutral, never green: an absent reading must not look like
-     a low one. Dot parks at the left of the rail. */
-  .metric-block.bbf-noreading {
-    background:rgba(74,143,173,0.06); border:1.5px solid var(--border);
-  }
-  .metric-block.bbf-noreading .metric-name,
-  .metric-block.bbf-noreading .metric-value,
-  .metric-block.bbf-noreading .bbf-when-day,
-  .metric-block.bbf-noreading .bbf-when-time { color:var(--dim); }
-  .metric-block.bbf-noreading .metric-track-rail { opacity:0.35; }
-  .metric-block.bbf-noreading .metric-value { font-size:17px; }
-  /* Subordinated state — a photo-backed sighting is live in the reports strip, so
-     the wind forecast steps back: neutral border, muted fill, quieter type. The
-     observed report is the authority; this card must not shout over it. */
-  .metric-block.bbf-subordinate {
-    background:rgba(74,143,173,0.06) !important;
-    border:1.5px solid var(--border) !important;
-    opacity:0.72;
-  }
-  .metric-block.bbf-subordinate .metric-name,
-  .metric-block.bbf-subordinate .metric-value { color:var(--dim) !important; }
-  /* Season-cap tick — a subtle ceiling marker on the rail at the cap boundary. */
-  .metric-track-captick {
-    position:absolute; top:50%; left:var(--cappos, 100%);
-    width:2px; height:18px; transform:translate(-50%,-50%);
-    background:var(--deep); opacity:0.35; border-radius:2px;
-    z-index:2; display:none;
-  }
   .metric-sub { display:block; font-family:'Inter',sans-serif; font-size:12px; font-weight:600; letter-spacing:0; margin-left:0; margin-top:1px; color:var(--dim); }
   .metric-score {
     font-family:'Inter',sans-serif;
@@ -2194,9 +2118,7 @@
   .wx-bar-desc, .wx-bar-feels-label, .wx-bar-feels-val { color:#c8bda0; }
   .metrics-panel { background:rgba(22,50,66,0.60); border-color:rgba(180,210,230,0.10); }
   .metric-block.green, .metric-block.amber, .metric-block.yellow,
-  .metric-block.orange, .metric-block.red,
-  .metric-block.low, .metric-block.building,
-  .metric-block.elevated, .metric-block.high { background:#c8bda0; }
+  .metric-block.orange, .metric-block.red { background:#c8bda0; }
   .day-btn { background:rgba(22,50,66,0.75); border-color:rgba(180,210,230,0.10); color:rgba(200,189,160,0.85); }
   .slider-wrap { background:rgba(22,50,66,0.50); border-color:rgba(180,210,230,0.08); }
   .slider-date, .slider-time { color:#c8bda0; }
@@ -2581,42 +2503,20 @@
       </div>
     </div>
 
-    <!-- Bluebottle FORECAST card (BBF_) — onshore-wind risk band for the SELECTED
-         time. Sits under the Sea Temp / Pollution row, below the slider, so it reads
-         as a condition of the water rather than one of the three scored metrics.
-         Entirely separate from the community photo-report strip (BB_/Supabase) further
-         down; that strip is the authority on actual sightings and this card must never
-         outrank it. No "My call" slider: this is not a metric the swimmer calibrates. -->
-    <div class="metrics-grid bbf-row">
-      <div class="metric-block low" id="metricBluebottles" onclick="openMetricModal('bluebottles')">
-        <div class="metric-header">
-          <div class="metric-name">Bluebottles Risk <span class="metric-info">ⓘ</span></div>
-          <!-- Deliberately empty while a band is showing: the dot and the rail
-               labels already say which band it is. This slot is kept only so the
-               no-reading state has somewhere to say so — without it, a card with
-               the dot parked at 0% is indistinguishable from a genuine Low. -->
-          <div class="metric-value" id="metricBluebottlesVal"></div>
-          <span class="bbf-offseason" id="metricBluebottlesOff" style="display:none">off-season</span>
-        </div>
-        <div class="bbf-when">
-          <span class="bbf-when-day" id="metricBluebottlesDay">—</span>
-          <span class="bbf-when-time" id="metricBluebottlesTime"></span>
-        </div>
-        <span class="bbf-note" id="metricBluebottlesNote"></span>
-        <div class="metric-track-wrap">
-          <div class="metric-track-rail">
-            <div class="z" style="background:var(--rail-green);flex:1"></div>
-            <div class="z" style="background:var(--rail-amber);flex:1"></div>
-            <div class="z" style="background:var(--rail-yellow);flex:1"></div>
-            <div class="z" style="background:var(--rail-red);flex:1"></div>
-          </div>
-          <div class="metric-track-captick" id="metricBluebottlesCapTick"></div>
-          <div class="metric-track-dot" id="metricBluebottlesDot" style="color:var(--rail-green)"></div>
-        </div>
-        <div class="metric-track-labels" id="metricBluebottlesLabels">
-          <span style="flex:1">Low</span><span style="flex:1">Building</span><span style="flex:1">Elevated</span><span style="flex:1">High</span>
-        </div>
+    <!-- Bluebottle FORECAST — 5-day risk strip (BBF_). One colour per day, rated by
+         the day's worst 3 h onshore-wind window, so the colour holds through the day
+         rather than following the time slider. Wind forecast only; entirely separate
+         from the community photo-report strip (BB_/Supabase) further down, which is
+         the authority on actual sightings and which this must never outrank. Built by
+         renderBluebottleForecast(); tapping a day opens the explainer for that day. -->
+    <div class="bbf-row" id="bbfRow">
+      <div class="bbf-strip-head">
+        <span class="bbf-strip-title">Bluebottle Risk</span>
+        <span class="metric-info" role="button" tabindex="0" aria-label="About the bluebottle forecast"
+              onclick="openMetricModal('bluebottles')">ⓘ</span>
       </div>
+      <div class="bbf-strip" id="bbfStrip"></div>
+      <span class="bbf-note" id="bbfNote"></span>
     </div>
 
     <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
@@ -6674,63 +6574,31 @@ function bbfLast3hWind(dtStr){
     .map(r => ({ speedKmh: r.windKmh, fromDeg: r.windDir }));
 }
 
-// ── 6-HOUR WINDOWS ────────────────────────────────────────────────────────────
-// The model is calibrated on a prior-3h onshore push, which does NOT resolve to a
-// single clock hour — stamping the band with an exact time ("12:00 AM") implied a
-// precision the model doesn't have. The card now reports one band per fixed 6 h
-// window (overnight / morning / afternoon / evening), stable across every hour
-// inside it, so scrubbing within a window cannot suggest hour-by-hour prediction.
-// The per-hour model below is UNCHANGED and every constant is used exactly as
-// calibrated; the window only aggregates its output for display.
-const BBF_WINDOWS = [
-  { name:'Overnight', range:'12–6am' },
-  { name:'Morning',   range:'6am–12pm' },
-  { name:'Afternoon', range:'12–6pm' },
-  { name:'Evening',   range:'6pm–12am' }
-];
-// The fixed 6 h bucket (0..3) containing T, Sydney-local. Anchored to the day, not
-// to T, so every hour in the same block returns the same window.
-function bbfWindowOf(dtStr){
-  const t = new Date(String(dtStr).replace(' ','T'));
-  if (isNaN(t)) return null;
-  const idx = Math.floor(t.getHours() / 6);
-  return Object.assign({ idx, day: String(dtStr).substring(0, 10) }, BBF_WINDOWS[idx]);
-}
-// How the window blends its two summary statistics. The window value is
-//   BBF_PEAK_WEIGHT · peak  +  (1 − BBF_PEAK_WEIGHT) · mean
-// of the per-hour onshore across the block. Peak alone can't tell a lone spike
-// from a sustained blow; the mean is the integral of the onshore curve over the
-// window divided by its length (every window is a fixed 6 h, so mean ∝ integral).
-// Blending the two makes both register: a brief gust lifts the reading a little,
-// a six-hour push lifts it a lot. Weighted toward the peak because this is a
-// hazard heads-up. Display heuristic only — NOT part of the calibrated fit; the
-// per-hour thresholds and multipliers are untouched. See docs/bluebottle-model.md.
-const BBF_PEAK_WEIGHT = 0.6;
-
-// One band for T's 6 h window, from the peak-and-integral blend above, so scrubbing
-// within a window can't imply hour-by-hour prediction. The needle is continuous
-// again — but it now encodes a genuine WINDOW-level intensity (how the whole block
-// sits within its band), not a single hour, so it carries information rather than
-// false precision. Returns null only when no hour in the window has usable wind.
-function bbfWindowBand(dtStr){
-  const win = bbfWindowOf(dtStr);
-  if (!win || !Array.isArray(_matrix)) return null;
-  const month = bbfLocalMonth(dtStr);
-  const vals = [];
+// ── DAILY RISK ────────────────────────────────────────────────────────────────
+// The card shows one band per DAY, not a slider-following hour: a clock time would
+// imply a precision the model (a prior-3h onshore push) doesn't have. A day is
+// rated by its WORST 3 h window — the max across the day of the per-hour band.
+// Each hourly value is already a 3 h trailing mean, so a single gust can't spike it
+// (it takes ~3 h of sustained onshore to move); taking the day's maximum then
+// answers "do conditions favour arrival at any point today?" while the smoothing
+// keeps a fluke from turning the whole day red. The per-hour model and every
+// calibrated constant are UNCHANGED; this only aggregates their output to a day.
+// Returns the winning band plus {date}; { noReading:true } when the day exists in
+// the matrix but has no wind (past the forecast horizon); null when absent.
+function bbfDayBand(dateStr){
+  if (!Array.isArray(_matrix) || !dateStr) return null;
+  const month = bbfLocalMonth(dateStr + ' 12:00:00');
+  let best = null, anyRow = false;
   for (const r of _matrix){
-    if (String(r.dateTime).substring(0, 10) !== win.day) continue;
-    const hr = new Date(String(r.dateTime).replace(' ','T')).getHours();
-    if (isNaN(hr) || Math.floor(hr / 6) !== win.idx) continue;
-    const onshore = bbfOnshore(bbfLast3hWind(r.dateTime));
-    if (Number.isFinite(onshore)) vals.push(onshore);
+    if (String(r.dateTime).substring(0, 10) !== dateStr) continue;
+    anyRow = true;
+    const band = bbfScore(bbfLast3hWind(r.dateTime), month);
+    if (!band) continue;
+    const bi = BBF_BANDS.findIndex(x => x.key === band.key);
+    if (!best || bi > best.bi) best = { bi, band };
   }
-  if (!vals.length) return null;
-  const peak = Math.max(...vals);
-  const mean = vals.reduce((a, b) => a + b, 0) / vals.length;   // integral / window length
-  const eff  = BBF_PEAK_WEIGHT * peak + (1 - BBF_PEAK_WEIGHT) * mean;
-  const band = bbfBandForOnshore(eff, month);
-  if (!band) return null;
-  return Object.assign({}, band, { window: win, peak, mean });
+  if (!best) return anyRow ? { noReading:true, date:dateStr } : null;
+  return Object.assign({}, best.band, { date:dateStr });
 }
 
 // Last painted band — the modal reads this so the sheet and the face can never
@@ -6742,84 +6610,78 @@ let _bbfLast = null;
 // a `let` read before its declaration line is a TDZ throw, not undefined.
 let _openMetricKey = null;
 
+const BBF_RAIL = { low:'--rail-green', building:'--rail-amber', elevated:'--rail-yellow', high:'--rail-red' };
+
+// Human day label for the sheet header, e.g. "Tue 22 Jul". `today` gets that word.
+function bbfDayLabel(dateStr){
+  const d = new Date(dateStr + 'T00:00');
+  if (isNaN(d)) return dateStr;
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  return dateStr === todayStr ? 'Today'
+    : d.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'});
+}
+
+// Build the 5-day risk strip. `h` is the slot the main view is on — used only to
+// ring the matching day, so the strip and the day-picker read as one calendar.
+// Called on every render; cheap (a handful of bbfDayBand passes over _matrix).
 function renderBluebottleForecast(h){
-  const block = document.getElementById('metricBluebottles');
-  if (!block || !h) return;
-  const valEl  = document.getElementById('metricBluebottlesVal');
-  const dayEl  = document.getElementById('metricBluebottlesDay');
-  const timeEl = document.getElementById('metricBluebottlesTime');
-  const noteEl = document.getElementById('metricBluebottlesNote');
-  const offEl  = document.getElementById('metricBluebottlesOff');
-  const dotEl  = document.getElementById('metricBluebottlesDot');
-  const tickEl = document.getElementById('metricBluebottlesCapTick');
+  const strip = document.getElementById('bbfStrip');
+  const row   = document.getElementById('bbfRow');
+  const note  = document.getElementById('bbfNote');
+  if (!strip || !Array.isArray(_matrix)) return;
 
-  const band = bbfWindowBand(h.dateTime);
-  _bbfLast = band;
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const days = [...new Set(_matrix.map(r => String(r.dateTime).substring(0,10)))]
+    .filter(d => d >= todayStr).sort().slice(0, 5);
+  const selDay = h && h.dateTime ? String(h.dateTime).substring(0,10) : null;
 
-  // The card sits away from the day/time selector, so it always states the slot
-  // it is describing. It names a 6 h WINDOW, not a clock time — the model can't
-  // resolve to the hour, and pretending to would be the misleading precision this
-  // card was reworked to drop.
-  const dt = new Date(String(h.dateTime).replace(' ','T'));
-  const win = bbfWindowOf(h.dateTime);
-  if (dayEl)  dayEl.textContent  = isNaN(dt) ? '—' :
-    dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'});
-  if (timeEl) timeEl.textContent = win ? win.range.toUpperCase() : '';
-
+  // SAFETY / integration rule: a WIND FORECAST must never outrank an observed photo
+  // sighting. When one is live, the whole strip steps back and points to the reports.
   const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
+  if (row) row.classList.toggle('bbf-subordinate', sightingLive);
+  if (note) note.textContent = sightingLive ? 'Reported sightings below take precedence' : '';
 
-  if (!band) {
-    // No usable wind — the wind feed's horizon is shorter than the swell outlook,
-    // so slots ~6+ days out have null windKmh. Never a silent "Low": the card
-    // keeps its shape, says so plainly, and parks the dot at the left of the rail.
-    block.className = 'metric-block bbf-noreading';
-    if (valEl)  valEl.textContent = 'No reading';
-    if (noteEl) noteEl.textContent = 'beyond the wind forecast';
-    if (offEl)  offEl.style.display = 'none';
-    if (tickEl) tickEl.style.display = 'none';
-    if (dotEl) {
-      dotEl.style.display = '';
-      dotEl.style.setProperty('--pos', '0%');
-      dotEl.style.color = 'var(--border)';
-      dotEl.style.background = 'var(--border)';
-    }
-    if (_openMetricKey === 'bluebottles') refreshMetricModalBody('bluebottles');
-    return;
-  }
+  strip.innerHTML = '';
+  let todayBand = null;
+  days.forEach(date => {
+    const db = bbfDayBand(date);
+    const d  = new Date(date + 'T00:00');
+    const banded = db && !db.noReading;
+    if (date === todayStr) todayBand = db;
 
-  if (noteEl) noteEl.textContent = sightingLive ? 'Reported sightings below take precedence' : '';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'bbf-day'
+      + (banded ? ' has-band' : ' bbf-day-none')
+      + (banded && db.capped ? ' bbf-capped' : '')
+      + (date === selDay ? ' bbf-day-sel' : '');
+    if (banded) btn.style.background = `var(${BBF_RAIL[db.key]})`;
 
-  const railVar = { low:'--rail-green', building:'--rail-amber',
-                    elevated:'--rail-yellow', high:'--rail-red' }[band.key];
-  // SAFETY / integration rule: this is a WIND FORECAST, and the community photo
-  // reports are observed fact. When a photo-backed sighting is live, the forecast
-  // must not compete with it — a confident green "Low" sitting above a real
-  // reported sighting is exactly the misread to avoid. Mute the card and say so
-  // (sightingLive is resolved above, before the no-reading branch returns).
-  block.className = 'metric-block ' + band.key + (sightingLive ? ' bbf-subordinate' : '');
-  // Band name intentionally not printed — the dot's position against the four
-  // rail labels already carries it. Cleared, not left stale, or a "No reading"
-  // from a previous slot would persist over a card that now has a real band.
-  if (valEl) valEl.textContent = '';
-  if (offEl) offEl.style.display = band.capped ? '' : 'none';
-  if (dotEl) {
-    dotEl.style.display = '';
-    dotEl.style.setProperty('--pos', band.pos + '%');
-    dotEl.style.color = `var(${railVar})`;
-    dotEl.style.background = `var(${railVar})`;
+    const label = banded ? (db.label + (db.capped ? '°' : '')) : '—';
+    btn.innerHTML =
+      `<span class="bbf-day-name">${date === todayStr ? 'Today' : d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
+      `<span class="bbf-day-num">${d.getDate()}</span>` +
+      `<span class="bbf-day-band">${label}</span>`;
+    btn.setAttribute('aria-label', 'Bluebottle risk ' + bbfDayLabel(date) + ': ' + (banded ? db.label : 'no reading'));
+    // Tapping a day opens the explainer FOR THAT DAY: stash its band as _bbfLast so
+    // the sheet header names the same day and band the tile shows.
+    btn.onclick = () => {
+      _bbfLast = db ? Object.assign({}, db, { dayLabel: bbfDayLabel(date) }) : { noReading:true, dayLabel: bbfDayLabel(date) };
+      openMetricModal('bluebottles');
+    };
+    strip.appendChild(btn);
+  });
+
+  // While the sheet is open it is pinned to whichever day was tapped — a background
+  // re-render (slider move, data refresh) must not yank it back to today. Only seed
+  // _bbfLast with today when the sheet is closed, so the next ⓘ tap shows today.
+  if (_openMetricKey === 'bluebottles') {
+    refreshMetricModalBody('bluebottles');
+  } else {
+    _bbfLast = todayBand ? Object.assign({}, todayBand, { dayLabel: bbfDayLabel(todayStr) }) : null;
   }
-  // Ceiling marker at the top of the capped band, so the rail shows WHY the
-  // needle stopped where it did rather than looking stuck.
-  if (tickEl) {
-    if (band.capped) {
-      const capIdx = BBF_SEASON_CAP[band.month];
-      tickEl.style.display = '';
-      tickEl.style.setProperty('--cappos', ((capIdx + 1) * (100 / BBF_BANDS.length)) + '%');
-    } else {
-      tickEl.style.display = 'none';
-    }
-  }
-  if (_openMetricKey === 'bluebottles') refreshMetricModalBody('bluebottles');
 }
 
 function renderSnapshot(h, wx) {
@@ -12177,14 +12039,14 @@ const METRIC_INFO = {
   },
   bluebottles: {
     title: 'Bluebottles Risk',
-    // Copy talks about a six-hour window, never a clock time: the model is
-    // calibrated on a prior-3h onshore push and can't resolve to the hour, so an
-    // exact time would be false precision. See bbfWindowBand().
+    // Copy rates each DAY, never a clock time: the model is calibrated on a prior-3h
+    // onshore push and can't resolve to the hour, so a per-day colour is the honest
+    // grain. Each day = its worst sustained onshore period. See bbfDayBand().
     // "700-plus" is also deliberate: the cleaned set is 705 records across the
     // full span, but only 556 of those (443 stranding-days) fall in the 2021-26
     // modelled window, so a precise figure here would need a qualifier to be
     // true. See docs/bluebottle-model.md.
-    text: "Bluebottles drift wherever the wind blows them, so what lands them on the beach is wind blowing in from the sea — not the surf or the water temperature. This card looks at the onshore wind across a six-hour window — overnight, morning, afternoon or evening — and rates how likely bluebottles are to be pushed in during it. It deliberately doesn't try to pick the exact hour. In the cooler months it eases the rating down, since few are out there to blow in."
+    text: "Bluebottles drift wherever the wind blows them, so what lands them on the beach is wind blowing in from the sea — not the surf or the water temperature. Each day is rated by its strongest sustained onshore-wind period, so a day reads high if conditions favour bluebottles arriving at any point during it, not just on average. In the cooler months the rating eases down, since few are out there to blow in."
   }
 };
 
@@ -12196,16 +12058,14 @@ const METRIC_INFO = {
 // `white-space:normal` so the markup can never reintroduce the gaps.
 function bbfModalHTML(){
   const band = _bbfLast;
-  // Subline names the same 6 h window the face shows. Prefer the band's own window
-  // object; fall back to the card's day row so a no-reading slot still says when.
-  const dEl = document.getElementById('metricBluebottlesDay');
-  const dTxt = dEl && dEl.textContent !== '—' ? dEl.textContent : '';
-  const win = band && band.window;
-  const when = win ? [dTxt, win.name + ' (' + win.range + ')'].filter(Boolean).join(' · ') : dTxt;
-  const head = band
+  // Subline and header name the day the tapped tile shows (dayLabel), so the sheet
+  // and the strip can never disagree about which day is described.
+  const when = band && band.dayLabel ? band.dayLabel : '';
+  const banded = band && !band.noReading;
+  const head = banded
     ? `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">${band.label} — &asymp; ${band.rr}&times; a typical day</div>` +
       (band.capped ? `<div style="font-size:10.5px;color:var(--dim);margin-top:1px;">off-season — held down by the seasonal cap</div>` : '')
-    : `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">No reading — wind data unavailable</div>`;
+    : `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">No reading — beyond the wind forecast</div>`;
   // Lead-in headings rather than uppercase section labels: the copy is written as
   // full sentences, and small-caps headers over three short paragraphs was most of
   // what made the sheet feel padded.
@@ -12836,10 +12696,10 @@ if ('serviceWorker' in navigator) {
     { key:'wxbar', label:"Weather bar (sky + feels)", sel:'#wxBar', essential:1, complete:1 },
     { key:'slider', label:"Time slider", sel:'.slider-wrap', essential:1, complete:1, core:1 },
     { key:'quality', label:"Sea temp + Pollution", sel:'.quality-row-slim', essential:1, complete:1 },
-    // The wind-driven forecast band, NOT the community reports (those ride in
-    // 'swimmers' below). Listed here so the panel order matches the page order.
+    // The wind-driven 5-day forecast strip, NOT the community reports (those ride
+    // in 'swimmers' below). Listed here so the panel order matches the page order.
     // essential:1 — it's a hazard card, so it belongs in the pared-back view too.
-    { key:'bluebottleforecast', label:"Bluebottles forecast (wind)", sel:'.bbf-row', essential:1, complete:1 },
+    { key:'bluebottleforecast', label:"Bluebottles forecast (5-day)", sel:'.bbf-row', essential:1, complete:1 },
     { key:'swimmers', label:"Swimmers' Corner (visibility, sightings, bluebottle reports, hellos)", sel:'.community-group', essential:1, complete:1 },
     { key:'daywindow', label:"Best swim window (day chart)", sel:'#dayWindowWrap', essential:1, complete:1 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', essential:0, complete:1 },
