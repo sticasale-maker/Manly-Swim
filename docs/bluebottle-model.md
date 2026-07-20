@@ -25,7 +25,15 @@ It reports **relative risk** (how a day compares with an average day), not an ab
 - **Sightings:** iNaturalist, genus *Physalia*, queried by taxon within a Sydney bounding box
   (Cronulla → Palm Beach). Not the hand-curated project #115085 (only ~400 manually added); the
   full taxon query returned 718 records, **705** after removing location-obscured
-  (`geoprivacy = obscured`, fuzzed to ~20 km). File: `obs_sydney.csv`.
+  (`geoprivacy = obscured`, fuzzed to ~20 km). File: [`data/obs_sydney.csv`](data/obs_sydney.csv),
+  committed alongside this doc. Columns: `id, lat, lng, geoprivacy, observed_on,
+  time_observed_at, place_guess`. Six records carry no usable `observed_on` and drop out of every
+  date-based figure below. Observation records are from iNaturalist contributors — see
+  <https://www.inaturalist.org> for per-record attribution and licence terms.
+
+  Run [`verify_bluebottle_data.js`](verify_bluebottle_data.js) to reproduce the counts in this
+  section straight from the CSV. As of 2026-07 all four data claims (705 / all-open / 556 / 443)
+  reproduce exactly.
 - **Cabbage Tree Bay subset:** 48 records (36 distinct sighting-days), 2011–2026.
 - **Wind:** Open-Meteo — ERA5 reanalysis archive, cross-checked against the higher-resolution
   Historical Forecast model (~2–11 km). The two gave identical skill: bluebottle drift is
@@ -60,10 +68,26 @@ events can't leak).
   beach, over 2021–2026. Because the matched set is 1 : 3.7 case:control (not the true base rate),
   these are **relative, not absolute** — hence "× a typical day," never "%".
 - **Seasonal cap:** derived from monthly distinct-stranding-day counts (the abundance envelope).
-  Cap = High for Oct–Mar (factor ≥ 0.6), Elevated for Apr/Sep (0.3–0.6), Building for May–Aug
-  (< 0.3). The shape matches the peer-reviewed year-round lifeguard record (Bourg et al. 2022:
-  ~50% of beachings in summer, near-zero in winter), so it is not an observation-effort artifact;
-  the exact winter cut-offs are approximate.
+  Cap = High for Oct–Mar, Elevated for Apr/Sep, Building for May–Aug. The shape matches the
+  peer-reviewed year-round lifeguard record (Bourg et al. 2022: ~50% of beachings in summer,
+  near-zero in winter), so it is not an observation-effort artifact; the exact winter cut-offs are
+  approximate.
+
+  > **The stated cut-offs don't reproduce the shipped cap.** This doc originally gave the rule as
+  > High ≥ 0.6, Elevated 0.3–0.6, Building < 0.3 on a max-normalised factor. Run against
+  > `data/obs_sydney.csv` that rule yields `[3,2,3,1,1,1,1,1,1,3,2,2]`, not the shipped
+  > `[3,3,3,2,1,1,1,1,2,3,3,3]` — Feb, Apr, Sep, Nov and Dec all come out one band lower.
+  >
+  > The likely cause is the normaliser: October carries 107 distinct stranding-days against
+  > January's 68, so dividing by the maximum lets one exceptional month depress every other
+  > month's factor. A mean- or median-normalised envelope, or a peak-season grouping done by eye
+  > against the literature, all give something closer to the shipped values.
+  >
+  > **The shipped cap is retained**, for two reasons: it matches the Oct–Mar summer dominance in
+  > Bourg et al., and in all five disagreeing months it is the *more* cautious of the two — it
+  > warns where the arithmetic rule would not. The threshold arithmetic is what's unreliable here,
+  > not the cap. Recorded rather than quietly corrected, because the next person to retune this
+  > will otherwise rediscover the same gap. `verify_bluebottle_data.js` prints the comparison.
 
 ## 5. Validation
 
