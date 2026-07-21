@@ -1,0 +1,2 @@
+-- admin_save_announcement gains p_quiet (default false). Run in Supabase SQL editor.
+-- See chat for the full drop+recreate; this file is the record of that change.

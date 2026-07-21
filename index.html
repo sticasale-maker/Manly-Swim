@@ -14133,6 +14133,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var _editId = null;   // admin: id being edited (null = new)
   var _imgUrl = '';     // admin: image url currently in the form
   var _app    = 'swim'; // admin: which app the form publishes to
+  var _quiet  = false;  // admin: quiet = pill+dot only (no popup); default mandatory
   var _rows   = [];     // admin: last loaded list (for edit)
 
   function $(id){ return document.getElementById(id); }
@@ -14399,6 +14400,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
           '<button type="button" class="aa-segbtn on" data-app="swim">Swim app</button>' +
           '<button type="button" class="aa-segbtn" data-app="viz">Forecast app</button>' +
         '</div>' +
+        '<label class="aa-lbl">Visibility</label>' +
+        '<div class="aa-seg" id="annQuietSeg">' +
+          '<button type="button" class="aa-segbtn on" data-quiet="0">Mandatory</button>' +
+          '<button type="button" class="aa-segbtn" data-quiet="1">Quiet</button>' +
+        '</div>' +
         '<label class="aa-lbl">Title (optional)</label>' +
         '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
         '<label class="aa-lbl">Message</label>' +
@@ -14464,6 +14470,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     Array.prototype.forEach.call(ov.querySelectorAll('#annAppSeg .aa-segbtn'), function (btn) {
       btn.addEventListener('click', function () { setApp(btn.getAttribute('data-app')); saveDraft(); });
     });
+    Array.prototype.forEach.call(ov.querySelectorAll('#annQuietSeg .aa-segbtn'), function (btn) {
+      btn.addEventListener('click', function () { setQuiet(btn.getAttribute('data-quiet') === '1'); saveDraft(); });
+    });
     // start a fresh post (clears the draft)
     $('annNewBtn').addEventListener('click', function () { resetForm(); clearDraft(); $('annPubMsg').textContent = ''; if ($('annInTitle')) $('annInTitle').focus(); });
 
@@ -14482,12 +14491,18 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       btn.classList.toggle('on', btn.getAttribute('data-app') === _app);
     });
   }
+  function setQuiet(q){
+    _quiet = !!q;
+    Array.prototype.forEach.call(document.querySelectorAll('#annQuietSeg .aa-segbtn'), function (btn) {
+      btn.classList.toggle('on', (btn.getAttribute('data-quiet') === '1') === _quiet);
+    });
+  }
 
   /* ---- draft persistence (survives reload / session switch) --------------- */
   function saveDraft(){
     try {
       var d = {
-        editId: _editId, app: _app, imgUrl: _imgUrl,
+        editId: _editId, app: _app, quiet: _quiet, imgUrl: _imgUrl,
         title: $('annInTitle') ? $('annInTitle').value : '',
         body:  $('annEdBody')  ? $('annEdBody').innerHTML : '',
         start: $('annInStart') ? $('annInStart').value : '',
@@ -14507,6 +14522,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     _editId = d.editId || null;
     _imgUrl = d.imgUrl || '';
     setApp(d.app || 'swim');
+    setQuiet(!!d.quiet);
     if ($('annInTitle')) $('annInTitle').value = d.title || '';
     if ($('annEdBody'))  $('annEdBody').innerHTML = clean(d.body || '');
     if ($('annInStart')) $('annInStart').value = d.start || '';
@@ -14534,6 +14550,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annFormTitle')) $('annFormTitle').textContent = 'Publish announcement';
     if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
     setApp('swim');
+    setQuiet(false);
   }
 
   async function publish(){
@@ -14549,7 +14566,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     $('annPubMsg').textContent = 'Publishing\u2026';
     try {
       var r = await fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({
-        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: _app
+        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: _app, p_quiet: _quiet
       }) });
       if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
       $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published to ' + (APP_LABEL[_app] || _app) + '.';
@@ -14657,6 +14674,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     $('annInEnd').value   = isoToDtLocal(x.ends_at);
     if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; } else { $('annImgWrap').style.display = 'none'; }
     setApp(appOf(x));
+    setQuiet(!!x.quiet);
     $('annFormTitle').textContent = 'Edit announcement';
     $('annPubBtn').textContent = 'Save changes';
     $('annPubMsg').textContent = '';
