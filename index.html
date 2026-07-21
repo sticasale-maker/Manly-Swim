@@ -6496,7 +6496,35 @@ function setSlotHeader(dt) {
   const tEl = document.getElementById('sliderTime');
   if (dEl) dEl.textContent = dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'}).toUpperCase();
   if (tEl) tEl.textContent = dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+  fitSliderDate();
 }
+
+// Grow the weekday/day/month to fill the width left of the time, so it's as large
+// as it can be without colliding — a fixed clamp can't, since both the date string
+// (SHORT vs longer months) and the time string (12:00 AM vs 9:00 PM) change width,
+// as does the viewport. Measure the date once at a reference size, then scale by
+// the width ratio: Bebas Neue advance width is ~linear in font-size, and the fixed
+// 1px letter-spacing that doesn't scale only makes the result slightly narrower —
+// erring away from a collision. One measure, one write; no per-pixel loop.
+function fitSliderDate() {
+  const header = document.querySelector('.slider-header');
+  const dEl = document.getElementById('sliderDate');
+  const tEl = document.getElementById('sliderTime');
+  if (!header || !dEl || !tEl) return;
+  const GAP = 14;   // breathing room between date and time
+  const avail = header.clientWidth - tEl.getBoundingClientRect().width - GAP;
+  if (avail <= 0) return;
+  const MAX = 60, MIN = 22;
+  dEl.style.fontSize = MAX + 'px';
+  const wRef = dEl.scrollWidth;               // nowrap => full text width even if clipped
+  if (!wRef) return;
+  let size = Math.floor(MAX * avail / wRef);
+  dEl.style.fontSize = Math.max(MIN, Math.min(MAX, size)) + 'px';
+}
+window.addEventListener('resize', fitSliderDate);
+// Bebas Neue may not be loaded at first paint; re-fit once it is, or the first
+// measurement is taken against the fallback font's metrics.
+if (document.fonts && document.fonts.ready) { document.fonts.ready.then(fitSliderDate).catch(function(){}); }
 
 // ===== Bluebottle FORECAST band (BBF_) — onshore-wind risk =====================
 // SEPARATE system from the community photo-report code (BB_/Supabase). Wind only.
