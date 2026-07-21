@@ -11215,6 +11215,30 @@ function submitFeedback(e) {
     }
     return _boardPass;
   }
+  // Validate a passphrase at entry so a wrong one is caught at the door, not on
+  // first action. Probes /board-status with a no-op (post_id -1, pinned:false):
+  // bad token -> 401 (re-prompt); good token -> banked. Network error -> bank it
+  // and let the first real action validate, so a flaky signal can't lock you out.
+  async function ensurePassValidated(){
+    while (true) {
+      var p = ''; try { p = window.prompt('Board admin passphrase:'); } catch (e) { p = ''; }
+      if (p == null) { _boardPass = ''; return false; }   // cancelled
+      p = String(p).trim();
+      if (!p) { continue; }
+      try {
+        var r = await fetch(BOARD_WORKER + '/board-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Admin-Token': p },
+          body: JSON.stringify({ post_id: -1, pinned: false })
+        });
+        if (r.status === 401) { setMsg('Passphrase rejected — try again.'); continue; }
+        _boardPass = p; setMsg(''); return true;          // validated
+      } catch (e) {
+        _boardPass = p; setMsg('');                        // network hiccup: bank + defer
+        return true;
+      }
+    }
+  }
   async function boardAdmin(path, payload){
     var pass = ensurePass(false);
     if (!pass) throw new Error('no-pass');
@@ -11529,7 +11553,7 @@ function submitFeedback(e) {
     }
     updateCounter();
     refresh();                                 // render the board first…
-    if (BOARD_ADMIN) ensurePass(false);        // …then prompt once on entry
+    if (BOARD_ADMIN) ensurePassValidated();     // …then prompt + validate on entry
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wire);
