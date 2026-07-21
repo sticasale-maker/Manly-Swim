@@ -2586,7 +2586,7 @@
       </div>
     </div>
 
-    <!-- Bluebottle reports strip — community reports (Supabase) for the last 24h -->
+    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
     <div id="bbSection">
       <div class="bb-strip community" id="bbStrip">
         <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
@@ -8458,15 +8458,27 @@ async function bbDeviceId() {
   } catch(e) { return 'unknown'; }
 }
 
-// Fetch reports from last 24h
+// Fetch reports from last 48h
 async function bbFetch() {
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   const res = await fetch(
     `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports?select=reported_at,photo_url&reported_at=gte.${since}&order=reported_at.asc`,
     { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}` } }
   );
   if (!res.ok) throw new Error(`Supabase fetch ${res.status}`);
   return await res.json(); // [{reported_at: '...'}, ...]
+}
+
+// Compact day word for the "last reported" line. With a 48 h window the last report
+// is Today or Yesterday almost always; a boundary case (early morning now) can reach
+// two calendar days back, so fall through to a weekday name. Keeps the line to one
+// row — no date, so the strip stays the same size. Sydney-local, like the app.
+function bbRelDay(d){
+  const startOf = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+  if (diff <= 0) return 'today';
+  if (diff === 1) return 'yesterday';
+  return d.toLocaleDateString('en-AU', { weekday: 'short' });
 }
 
 // Insert a new report — routed through the report_bluebottle() RPC so the
@@ -8704,13 +8716,15 @@ function bbRenderFromData(reports) {
   // Status
   if (count === 0) {
     strip.className  = 'bb-strip community';
-    status.textContent = 'No blue bottles · last 24h';
+    status.textContent = 'No blue bottles · last 48h';
     sub.textContent  = '📷 Photo required to start a warning';
   } else {
     strip.className  = count >= 3 ? 'bb-strip community bb-alert-2' : 'bb-strip community bb-alert-1';
-    status.textContent = `${count} blue bottle report${count > 1 ? 's' : ''} · last 24h`;
+    status.textContent = `${count} blue bottle report${count > 1 ? 's' : ''} · last 48h`;
+    // reports are ordered asc, so the last element is the most recent.
     const lastTs = new Date(reports[reports.length - 1].reported_at);
-    sub.textContent = `Last reported at ${lastTs.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}`;
+    const lastTime = lastTs.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+    sub.textContent = `Last reported ${bbRelDay(lastTs)} at ${lastTime}`;
   }
   // A staged photo's hint must survive refresh ticks (and mid-confirm/undo states).
   if (_bbPhoto && !_bbPending) {
@@ -8735,11 +8749,16 @@ function bbRenderFromData(reports) {
       strip.classList.add('bb-expandable');
       if (chev) chev.hidden = false;
       gallery.innerHTML = shots.map(r => {
-        const t = new Date(r.reported_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+        const ts = new Date(r.reported_at);
+        const t  = ts.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+        // Now the window is 48 h, a bare time is ambiguous across two days, so each
+        // shot carries its day word too (today/yesterday/weekday) — same idiom as
+        // the "last reported" line. Kept to one short caption line.
+        const when = bbRelDay(ts) + ' ' + t;
         const url = bbSafePhoto(r.photo_url);
         return `<a class="bb-shot" href="${url}" target="_blank" rel="noopener">
-            <img src="${url}" loading="lazy" alt="Bluebottle reported at ${t}">
-            <div class="bb-shot-time">${t}</div>
+            <img src="${url}" loading="lazy" alt="Bluebottle reported ${when}">
+            <div class="bb-shot-time">${when}</div>
           </a>`;
       }).join('');
     } else {
