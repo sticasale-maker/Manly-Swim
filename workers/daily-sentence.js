@@ -9,7 +9,8 @@
 //      leaves this code correct but never fired.
 //
 // The daily-sentence sheet is keyed BY DATE, one row per calendar day:
-//   col A = date "MM-DD"   col B = sentence   col C = title   col D = active (boolean)
+//   col A = date "MM-DD"  col B = sentence  col C = title  col D = active (boolean)
+//   col E = optional "Find out more" https link, appended to the body when present.
 // The row is chosen by matching today's Sydney date to col A; title comes from col C
 // and the body from col B. Secrets: env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY.
 const DAILY_SHEET_ID = "1yUTCH1tpJ8HpyaLKlwqzQaZ8CEB-zDIW276zej5jcR0";
@@ -57,6 +58,13 @@ async function postDailySentence(env) {
   const pick = rows.find((r) => normMonthDay(r[0]) === today && r[1] && (r[3] || "").toLowerCase() !== "false" && (r[3] || "").toLowerCase() !== "n");
   if (!pick) return;
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Col E ("Find out more") optional link. Only https is honoured; appended as a
+  // trailing anchor AFTER the sentence is escaped, so the anchor tag survives.
+  // The client's clean() sanitiser re-checks the href (https/mailto only) and
+  // forces target=_blank rel=noopener, so a bad cell can't inject markup.
+  const link = (pick[4] || "").trim();
+  let bodyHtml = esc(pick[1]);
+  if (/^https:\/\//i.test(link)) bodyHtml += ' <a href="' + esc(link) + '">Find out more</a>';
   const now = new Date();
   const ends = new Date(now.getTime() + 16 * 3600 * 1e3);
   const SB = env.SUPABASE_URL;
@@ -78,7 +86,7 @@ async function postDailySentence(env) {
         quiet: true,
         sort_order: sortOrder,
         title: pick[2] || null,
-        body_html: esc(pick[1]),
+        body_html: bodyHtml,
         starts_at: now.toISOString(),
         ends_at: ends.toISOString()
       })
