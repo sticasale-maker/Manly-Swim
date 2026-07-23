@@ -1422,6 +1422,22 @@
     border:4px solid white;
     box-shadow:0 3px 12px rgba(74,143,173,0.4);
   }
+  /* ── Tap-a-time buttons — a slider alternative, chosen in the Custom panel.
+     Hidden by default; body.timesel-buttons swaps them in for the slider+ticks. */
+  .time-buttons { display:none; flex-wrap:wrap; gap:6px; }
+  .time-btn {
+    flex:0 0 auto; min-width:46px; padding:8px 11px;
+    background:rgba(22,50,66,0.75);
+    border:1px solid var(--border); border-radius:999px;
+    font-family:'Bebas Neue',sans-serif; font-size:16px; letter-spacing:.5px;
+    color:var(--dim); cursor:pointer; text-align:center; line-height:1;
+    transition:all .15s; -webkit-tap-highlight-color:transparent;
+  }
+  .time-btn:active { transform:scale(0.96); }
+  .time-btn.active { background:var(--ocean); border-color:var(--ocean); color:#fff; box-shadow:0 2px 8px rgba(74,143,173,0.35); }
+  body.timesel-buttons #timeSlider,
+  body.timesel-buttons #sliderTicks { display:none; }
+  body.timesel-buttons .time-buttons { display:flex; }
   /* ── Snapshot board: metrics + time slider share one light-blue surface ── */
   .snapshot-board {
     background:transparent;
@@ -2361,6 +2377,15 @@
       .ind-demo-rail span { flex: 1; }
       .ind-demo-dot { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%;
         transform: translate(-50%, -50%); background: #fff; border: 2px solid var(--rail-green); box-shadow: 0 0 0 1px var(--rail-green); }
+      /* time-picker chooser demos (slider vs tap buttons) */
+      .tsel-demo-rail { position: relative; height: 8px; border-radius: 4px;
+        background: linear-gradient(to right, var(--ocean) 45%, rgba(74,143,173,0.2) 45%); }
+      .tsel-demo-thumb { position: absolute; top: 50%; left: 45%; width: 15px; height: 15px; border-radius: 50%;
+        transform: translate(-50%, -50%); background: var(--ocean); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(74,143,173,0.5); }
+      .tsel-demo-pills { display: flex; gap: 5px; justify-content: center; }
+      .tsel-demo-pills span { width: 26px; height: 16px; border-radius: 999px;
+        background: rgba(17,53,65,0.12); border: 1px solid rgba(17,53,65,0.28); }
+      .tsel-demo-pills span.on { background: var(--ocean); border-color: var(--ocean); }
     </style>
     <!-- Detail-level toggle (Complete / Essential / Custom) + its Custom panel were
          moved to the BOTTOM of this snapshot panel (just before /panel-snapshot). -->
@@ -2487,6 +2512,8 @@
       <div class="long-range" id="longRange"></div>
       <div class="slider-ticks" id="sliderTicks"></div>
       <input type="range" id="timeSlider" min="0" max="0" value="0" oninput="onSlider(this.value)">
+      <!-- Tap-a-time alternative to the slider (shown when body.timesel-buttons; toggled in Custom) -->
+      <div class="time-buttons" id="timeButtons" role="group" aria-label="Pick a time of day"></div>
     </div>
 
     </div><!-- /snapshot-board -->
@@ -3055,6 +3082,22 @@
             </div>
           </div>
           <div class="ind-label">Slider only</div>
+        </button>
+      </div>
+
+      <div class="ind-head">Time-of-day picker</div>
+      <div class="ind-choice" id="timeChoice" role="group" aria-label="Time picker style">
+        <button type="button" class="ind-opt" data-time="slider" aria-pressed="true">
+          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
+            <div class="tsel-demo-rail"><i class="tsel-demo-thumb"></i></div>
+          </div>
+          <div class="ind-label">Slider</div>
+        </button>
+        <button type="button" class="ind-opt" data-time="buttons" aria-pressed="false">
+          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
+            <div class="tsel-demo-pills"><span></span><span class="on"></span><span></span></div>
+          </div>
+          <div class="ind-label">Tap buttons</div>
         </button>
       </div>
 
@@ -7233,6 +7276,16 @@ function selectDay(date) {
   renderSnapshot(h, wxLookup(h && h.dateTime ? h.dateTime : dt));
 }
 
+// Friendly compact clock label for a row's dateTime ("YYYY-MM-DD HH:MM"),
+// e.g. "6am", "12pm", "1:30pm". Used by the tap-a-time buttons.
+function fmtHourLabel(dateTime) {
+  const hh = parseInt(dateTime.substring(11, 13), 10);
+  const mm = dateTime.substring(14, 16);
+  const ap = hh < 12 ? 'am' : 'pm';
+  let h12 = hh % 12; if (h12 === 0) h12 = 12;
+  return (mm && mm !== '00') ? (h12 + ':' + mm + ap) : (h12 + ap);
+}
+
 function renderSlider(matrix) {
   // Initialise _selectedDay if not set — default to the day containing _sliderIdx
   if (!_selectedDay && matrix.length) {
@@ -7271,6 +7324,28 @@ function renderSlider(matrix) {
       ticks.appendChild(span);
     }
   });
+
+  // Tap-a-time buttons — the slider alternative. Rendered from the same day rows
+  // so the two pickers stay perfectly in step; only one is visible at a time
+  // (body.timesel-buttons, chosen in the Custom panel). Each button drives the
+  // same onSlider(pos) path the slider's oninput uses.
+  const tb = document.getElementById('timeButtons');
+  if (tb) {
+    tb.innerHTML = '';
+    // Daylight swim window only — 6am → 8pm. `pos` stays the row's index within the
+    // full day so onSlider(pos) still lands on the right hour after filtering.
+    dayRows.forEach(({ r }, pos) => {
+      const hr = parseInt(r.dateTime.substring(11, 13), 10);
+      if (hr < 6 || hr > 20) return;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'time-btn' + (pos === clampedPos ? ' active' : '');
+      btn.textContent = fmtHourLabel(r.dateTime);
+      if (pos === clampedPos) btn.setAttribute('aria-pressed', 'true');
+      btn.onclick = () => onSlider(pos);
+      tb.appendChild(btn);
+    });
+  }
 
   // Update day picker active state
   renderDayPicker(matrix);
@@ -12910,6 +12985,24 @@ if ('serviceWorker' in navigator) {
   }
   window.setMetricStyle = setMetricStyle; window.getMetricStyle = getMetricStyle;
 
+  // Time-of-day picker style — 'slider' (default) drag, or 'buttons' tap targets.
+  // Both render from the same day rows in renderSlider; a body class swaps which
+  // one shows. Choice lives in the Custom panel and persists like the rail style.
+  var TIMESEL_KEY = 'swim_time_style';   // 'slider' | 'buttons'
+  function getTimeStyle(){ var v = _pGet(TIMESEL_KEY); return v === 'buttons' ? 'buttons' : 'slider'; }
+  function applyTimeStyle(v){
+    document.body.classList.toggle('timesel-buttons', v === 'buttons');
+    var ch = document.getElementById('timeChoice');
+    if (ch) ch.querySelectorAll('.ind-opt').forEach(function (o) {
+      o.setAttribute('aria-pressed', o.getAttribute('data-time') === v ? 'true' : 'false');
+    });
+  }
+  function setTimeStyle(v){
+    _pSet(TIMESEL_KEY, v); applyTimeStyle(v);
+    try { if (window.track) window.track('time_style', { style: v, explicit: true, changed: 1 }); } catch (e) {}
+  }
+  window.setTimeStyle = setTimeStyle; window.getTimeStyle = getTimeStyle;
+
   function openCustom(){
     var p = document.getElementById('customPanel'); if (p) p.classList.add('show');
     // Exposure: the rail-style picker lives in here and nowhere else. Without this
@@ -13029,6 +13122,9 @@ if ('serviceWorker' in navigator) {
     var ch = document.getElementById('indChoice');
     if (ch) ch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setMetricStyle(o.getAttribute('data-ind')); });
     applyMetricStyle(getMetricStyle());   // global display preference, applies in every mode
+    var tch = document.getElementById('timeChoice');
+    if (tch) tch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setTimeStyle(o.getAttribute('data-time')); });
+    applyTimeStyle(getTimeStyle());        // slider vs tap-buttons, applies in every mode
     var _m = getMode();
     // Report both preferences once per session, BEFORE the _pSet re-stamp below,
     // so the dashboard sees the whole population and not just the minority who
