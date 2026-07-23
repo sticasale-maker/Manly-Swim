@@ -1438,6 +1438,45 @@
   body.timesel-buttons #timeSlider,
   body.timesel-buttons #sliderTicks { display:none; }
   body.timesel-buttons .time-buttons { display:grid; }
+  /* ── Time-picker preference poll — one-time popup, 10s after open ── */
+  .tpoll-overlay { position:fixed; inset:0; z-index:99998; display:none; align-items:center; justify-content:center;
+    background:rgba(6,26,34,0.72); -webkit-backdrop-filter:blur(3px); backdrop-filter:blur(3px); padding:20px; }
+  .tpoll-overlay.show { display:flex; }
+  .tpoll-card { position:relative; width:100%; max-width:400px;
+    background:linear-gradient(155deg,#ffb24d 0%,#f7913a 45%,#ee6a27 100%);
+    border:1px solid rgba(255,255,255,0.38); border-radius:20px; padding:26px 20px 20px;
+    box-shadow:0 18px 50px rgba(214,90,20,0.55), 0 0 0 4px rgba(255,150,60,0.22); animation:tpollIn .26s cubic-bezier(.2,.9,.3,1.3); }
+  @keyframes tpollIn { from { transform:translateY(14px) scale(0.94); opacity:0; } to { transform:none; opacity:1; } }
+  .tpoll-x { position:absolute; top:9px; right:12px; border:none; background:transparent; color:rgba(255,255,255,0.82);
+    font-size:19px; line-height:1; cursor:pointer; padding:4px; }
+  .tpoll-eyebrow { display:block; width:-moz-fit-content; width:fit-content; margin:0 auto 14px;
+    padding:7px 20px; border-radius:999px; background:rgba(15,42,54,0.92); color:#fff;
+    font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:2.5px; text-transform:uppercase;
+    box-shadow:0 4px 14px rgba(120,45,0,0.32); }
+  .tpoll-q { font-family:'Bebas Neue',sans-serif; font-size:27px; letter-spacing:.5px; color:#fff;
+    text-align:center; line-height:1.08; margin:2px 6px 18px; text-shadow:0 2px 6px rgba(120,45,0,0.35); }
+  .tpoll-opts { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .tpoll-opt { background:rgba(15,42,54,0.86); border:2px solid rgba(255,255,255,0.4); border-radius:14px;
+    padding:15px 10px; cursor:pointer; font-family:inherit; display:flex; flex-direction:column; align-items:center; gap:9px;
+    transition:border-color .15s, background .15s, transform .1s, box-shadow .15s; -webkit-tap-highlight-color:transparent; }
+  .tpoll-opt:active { transform:scale(0.97); }
+  .tpoll-overlay:not(.voted) .tpoll-opt:hover { border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,0.25); }
+  .tpoll-opt.chose { border-color:#fff; background:rgba(15,42,54,0.98); box-shadow:0 0 0 3px rgba(255,255,255,0.35); }
+  .tpoll-demo { width:100%; height:50px; display:flex; align-items:center; justify-content:center; }
+  .tpoll-mini-buttons { display:grid; grid-template-columns:repeat(5,1fr); gap:3px; width:100%; }
+  .tpoll-mini-buttons span { font-family:'Bebas Neue',sans-serif; font-size:9.5px; color:var(--foam);
+    background:rgba(22,50,66,0.9); border:1px solid rgba(200,189,160,0.3); border-radius:4px; text-align:center; padding:5px 0; line-height:1; }
+  .tpoll-mini-buttons span.on { background:var(--ocean); border-color:var(--ocean); color:#fff; }
+  .tpoll-mini-rail { position:relative; width:86%; height:8px; border-radius:4px;
+    background:linear-gradient(to right, var(--ocean) 45%, rgba(74,143,173,0.25) 45%); }
+  .tpoll-mini-rail i { position:absolute; top:50%; left:45%; width:17px; height:17px; border-radius:50%;
+    transform:translate(-50%,-50%); background:var(--ocean); border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4); }
+  .tpoll-label { font-family:'Bebas Neue',sans-serif; font-size:22px; letter-spacing:.6px; color:#fff; }
+  .tpoll-count { display:none; font-size:14px; font-weight:700; color:var(--foam); letter-spacing:.3px; }
+  .tpoll-overlay.voted .tpoll-opt { cursor:default; }
+  .tpoll-overlay.voted .tpoll-count { display:block; }
+  .tpoll-thanks { display:none; text-align:center; color:rgba(255,255,255,0.95); font-weight:700; font-size:13px; margin-top:15px; text-shadow:0 1px 3px rgba(120,45,0,0.3); }
+  .tpoll-overlay.voted .tpoll-thanks { display:block; }
   /* ── Snapshot board: metrics + time slider share one light-blue surface ── */
   .snapshot-board {
     background:transparent;
@@ -10987,6 +11026,106 @@ async function generateBannerSummaryLocal() {
 
 
 
+// =============================================================================
+// TIME-PICKER PREFERENCE POLL — a popup 20s after the app opens, asking slider vs
+// tap-buttons. A vote is permanent: it stamps localStorage so the popup never shows
+// again. Dismissing with "✕" (or the backdrop) without voting brings it back 10 min
+// later, and again each dismiss, until they vote.
+// Global tallies use the same anon-key REST/RPC + security-definer pattern as the
+// visit counter, so anon users can vote and read counts without extra RLS.
+//
+// Setup SQL (run once in the Supabase SQL editor):
+//   create table if not exists time_picker_poll (
+//     choice text primary key,               -- 'slider' | 'buttons'
+//     votes  bigint not null default 0
+//   );
+//   insert into time_picker_poll(choice,votes) values ('slider',0),('buttons',0)
+//     on conflict do nothing;
+//   create or replace function vote_time_picker(p_choice text)
+//     returns setof time_picker_poll language plpgsql security definer as $$
+//     begin
+//       if p_choice not in ('slider','buttons') then raise exception 'bad choice'; end if;
+//       update time_picker_poll set votes = votes + 1 where choice = p_choice;
+//       return query select * from time_picker_poll order by choice;
+//     end; $$;
+//   -- RLS: allow anon SELECT on time_picker_poll; the function is security definer.
+// =============================================================================
+function initTimePoll() {
+  var ov = document.getElementById('timePollOverlay');
+  if (!ov) return;
+  var VKEY = 'swim_time_poll_voted';
+  var _pGet = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var _pSet = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
+  // Belt-and-suspenders: persist the "voted" flag to BOTH the app store and raw
+  // localStorage, and treat either as authoritative on read — so the popup can
+  // never reappear after a vote regardless of which store is durable on a device.
+  function hasVoted() { try { return !!(_pGet(VKEY) || localStorage.getItem(VKEY)); } catch (e) { return !!_pGet(VKEY); } }
+  function markVoted(v) { try { _pSet(VKEY, v); } catch (e) {} try { localStorage.setItem(VKEY, v); } catch (e) {} }
+  if (hasVoted()) return;                         // already voted → never build/show
+
+  var SB  = (typeof BB_SUPABASE_URL !== 'undefined') ? BB_SUPABASE_URL : '';
+  var KEY = (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : '';
+  var HDRS = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+  function fmt(n) { n = Number(n || 0); return n.toLocaleString() + (n === 1 ? ' vote' : ' votes'); }
+
+  function showCounts(tally, choice) {
+    ov.querySelectorAll('.tpoll-count').forEach(function (c) {
+      c.textContent = fmt(tally[c.getAttribute('data-count')]);
+    });
+    var picked = ov.querySelector('.tpoll-opt[data-vote="' + choice + '"]');
+    if (picked) picked.classList.add('chose');
+    ov.classList.add('voted');
+  }
+
+  async function readTally() {
+    try {
+      var r = await fetch(SB + '/rest/v1/time_picker_poll?select=choice,votes', { headers: HDRS });
+      if (r.ok) { var rows = await r.json(); var t = {}; (rows || []).forEach(function (x) { t[x.choice] = x.votes; }); return t; }
+    } catch (e) {}
+    return null;
+  }
+
+  var _busy = false;
+  async function vote(choice) {
+    if (_busy || ov.classList.contains('voted')) return;
+    _busy = true;
+    markVoted(choice);                           // permanent: never show again, whatever the network does
+    var tally = null;
+    try {
+      var r = await fetch(SB + '/rest/v1/rpc/vote_time_picker', { method: 'POST', headers: HDRS, body: JSON.stringify({ p_choice: choice }) });
+      if (r.ok) { var rows = await r.json(); if (Array.isArray(rows)) { tally = {}; rows.forEach(function (x) { tally[x.choice] = x.votes; }); } }
+    } catch (e) {}
+    if (!tally) tally = (await readTally()) || {};
+    if (tally[choice] == null) tally[choice] = 1;  // reflect this vote even if the backend table isn't set up yet
+    showCounts(tally, choice);
+    try { if (window.track) window.track('time_poll_vote', { choice: choice }); } catch (e) {}
+    setTimeout(function () { ov.classList.remove('show'); }, 3600);  // auto-dismiss after showing the result
+  }
+
+  var _reshowTimer = null;
+  function scheduleShow(ms) {
+    if (_reshowTimer) clearTimeout(_reshowTimer);
+    _reshowTimer = setTimeout(function () { if (!hasVoted()) ov.classList.add('show'); }, ms);
+  }
+  // Dismiss without voting (✕ or backdrop): hide now, then nudge again in 10 min —
+  // keep coming back until they actually vote, at which point hasVoted() stops it.
+  function dismiss() {
+    ov.classList.remove('show');
+    if (!hasVoted()) scheduleShow(600000);
+  }
+
+  ov.addEventListener('click', function (e) {
+    if (e.target === ov || e.target.closest('#tpollClose')) { dismiss(); return; }
+    var opt = e.target.closest('.tpoll-opt');
+    if (opt) vote(opt.getAttribute('data-vote'));
+  });
+
+  scheduleShow(20000);   // first appearance: 20s after opening
+}
+// The overlay markup lives at the end of <body>, so defer until the DOM is parsed.
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initTimePoll);
+else initTimePoll();
+
 function submitFeedback(e) {
   e.preventDefault();
   var contact = document.getElementById('feedbackContact').value.trim();
@@ -15766,5 +15905,31 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 })();
 </script>
 <!-- ===== /Add-to-Home-Screen ===== -->
+
+  <!-- Time-picker preference poll — appears once, 10s after opening; hidden forever after a vote -->
+  <div class="tpoll-overlay" id="timePollOverlay" role="dialog" aria-modal="true" aria-labelledby="tpollQ">
+    <div class="tpoll-card">
+      <button class="tpoll-x" id="tpollClose" type="button" aria-label="Close">✕</button>
+      <div class="tpoll-eyebrow">Shape the app</div>
+      <div class="tpoll-q" id="tpollQ">Which one do you prefer for selecting the time?</div>
+      <div class="tpoll-opts">
+        <button class="tpoll-opt" type="button" data-vote="buttons">
+          <div class="tpoll-demo">
+            <div class="tpoll-mini-buttons"><span>6a</span><span>7a</span><span class="on">8a</span><span>9a</span><span>10a</span></div>
+          </div>
+          <div class="tpoll-label">Tap buttons</div>
+          <div class="tpoll-count" data-count="buttons"></div>
+        </button>
+        <button class="tpoll-opt" type="button" data-vote="slider">
+          <div class="tpoll-demo">
+            <div class="tpoll-mini-rail"><i></i></div>
+          </div>
+          <div class="tpoll-label">Slider</div>
+          <div class="tpoll-count" data-count="slider"></div>
+        </button>
+      </div>
+      <div class="tpoll-thanks" id="tpollThanks">Thanks for voting!</div>
+    </div>
+  </div>
 </body>
 </html>
