@@ -3176,6 +3176,8 @@
   </div>
   <div class="status-bar" id="statusBar">Loading…</div>
 
+  <p style="text-align:center; margin:14px 0 4px; font-size:11px; color:var(--dim); letter-spacing:0.4px;">&#128065; App views: <strong id="visitCount" style="color:var(--ocean);">&mdash;</strong></p>
+
 </div><!-- /wrap -->
 
 <script>
@@ -6855,7 +6857,7 @@ function renderSnapshot(h, wx) {
     swellSet(h.swell1Dir, h.swell1H, h.swell1P, nsDispLookup(h.swell1Dir, h.swell1P),
              result.entry.label, result.entry.cls,
              h.windDir, result.swim.raw, (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14,
-             result.swim.label, result.swim.cls);
+             result.swim.label, result.swim.cls, h.windKmh);
   }
 
   // Time
@@ -12719,7 +12721,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   // ── Wind-chop overlay (restored) — the animated Calmer→Choppier surface field from
   // the old wind-chop map, drawn on this SAME basemap under the swell arrows. The fetch
   // shadow is ray-cast against the swell coastline (landBit) so it matches the map.
-  var _windLevel = 0, _windFieldKey = -999;
+  var _windLevel = 0, _windFieldKey = -999, _windSpd = 0;
   var CGW = 72, CGH = 35, _cfield = null;
   function _lerp(a, b, t) { return a + (b - a) * t; }
   var C_STOPS = [[0,[76,175,80]],[0.4,[201,194,70]],[0.7,[224,138,60]],[1,[176,57,47]]];
@@ -12802,14 +12804,14 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     render();
   }
 
-  function swellSet(swellDir, height, period, transmit, zoneLabel, zoneCls, windDir, windQ7, windScaleMax, windLabel, windCls) {
+  function swellSet(swellDir, height, period, transmit, zoneLabel, zoneCls, windDir, windQ7, windScaleMax, windLabel, windCls, windKmh) {
     if (typeof swellDir === 'number' && isFinite(swellDir)) _sw = ((swellDir % 360) + 360) % 360;
     if (typeof height === 'number' && isFinite(height) && height >= 0) _hgt = height;
     if (typeof period === 'number' && isFinite(period) && period > 0) _sp = period;
     if (typeof transmit === 'number' && isFinite(transmit)) _tx = clamp(transmit, 0, 1);
     _key = Math.round(_sw) + '|' + (Math.round(_sp * 10) / 10);
     var nowD = document.getElementById('swellNowDir'), nowZ = document.getElementById('swellNowZone');
-    if (nowD) nowD.textContent = dir16(_sw) + ' swell \u00b7 ' + Math.round(_sp) + 's';
+    if (nowD) nowD.textContent = dir16(_sw) + ' swell \u00b7 ' + _hgt.toFixed(1) + 'm \u00b7 ' + Math.round(_sp) + 's';
     if (nowZ) {
       nowZ.textContent = zoneLabel || '';
       nowZ.style.color = zoneCls === 'green' ? 'var(--green)' : zoneCls === 'amber' ? 'var(--amber)'
@@ -12817,10 +12819,11 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
     // Merged card: wind arrow direction, chop-field intensity + line-2 wind readout.
     if (typeof windDir === 'number' && isFinite(windDir)) _windDir = ((windDir % 360) + 360) % 360;
+    if (typeof windKmh === 'number' && isFinite(windKmh) && windKmh >= 0) _windSpd = windKmh;
     var _sm = windScaleMax > 0 ? windScaleMax : 14;
     _windLevel = clamp((windQ7 || 0) / _sm, 0, 1);
     var nowW = document.getElementById('chopNowWind'), nowWZ = document.getElementById('chopNowZone');
-    if (nowW) nowW.textContent = dir16(_windDir) + ' wind';
+    if (nowW) nowW.textContent = dir16(_windDir) + ' wind · ' + Math.round(_windSpd) + ' km/h';
     if (nowWZ) {
       nowWZ.textContent = windLabel || '';
       nowWZ.style.color = windCls === 'green' ? 'var(--green)' : windCls === 'amber' ? 'var(--amber)'
