@@ -2725,7 +2725,8 @@
         <div class="sight-body" id="boardBody">
           <div id="featureCard">
             <p class="bd-lede">Community chat &mdash; ask a question, make a comment, say hi, or whatever you fancy. Every post is public, and others (and we) will see it and add a comment.</p>
-            <div class="bd-compose">
+            <button type="button" id="frAddBtn" class="fr-addbtn"><span aria-hidden="true">&#9998;</span> Add your post</button>
+            <div class="bd-compose" id="frCompose" hidden>
               <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)">
               <textarea id="frInput" class="fr-input" maxlength="200" rows="3" placeholder="Ask a question or request a feature&hellip;"></textarea>
               <div id="frPhotoWrap" class="fr-photo-wrap" hidden>
@@ -2970,6 +2971,9 @@
       #featureCard .bd-head{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;color:var(--deep);line-height:1;margin:0 0 5px;}
       #featureCard .bd-lede{color:var(--dim);font-size:14px;line-height:1.45;margin:0 0 14px;}
       #featureCard .bd-compose{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}
+      #featureCard .bd-compose[hidden]{display:none;}
+      #featureCard .fr-addbtn{display:inline-flex;align-items:center;gap:7px;padding:11px 16px;background:var(--ocean);color:#fff;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;margin-bottom:10px;-webkit-tap-highlight-color:transparent;}
+      #featureCard .fr-addbtn[hidden]{display:none;}
       #featureCard .fr-name,#featureCard .fr-input{background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:12px;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;}
       #featureCard textarea.fr-input{min-height:80px;resize:vertical;line-height:1.4;}
       #featureCard .bd-composerow{display:flex;gap:8px;align-items:center;}
@@ -11945,6 +11949,8 @@ function submitFeedback(e) {
       rememberName(name);
       notifyBoard(name, body);
       inp.value = ''; if (nameEl) nameEl.value = ''; photoReset(); updateCounter();
+      var c = $('frCompose'); if (c) c.hidden = true;                 // re-collapse the composer
+      var ab = $('frAddBtn'); if (ab) ab.hidden = false;
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
       await refresh();
     } catch (e) {
@@ -12087,6 +12093,12 @@ function submitFeedback(e) {
       nm.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); inp.focus(); } });
     }
     var btn = $('frSubmit'); if (btn) btn.addEventListener('click', doSubmit);
+    var addBtn = $('frAddBtn');
+    if (addBtn) addBtn.addEventListener('click', function () {
+      var c = $('frCompose'); if (c) c.hidden = false;
+      addBtn.hidden = true;
+      var i = $('frInput'); if (i) i.focus();
+    });
     var photo = $('frPhoto'); if (photo) photo.addEventListener('change', onPhotoPick);
     var prm = $('frPhotoRemove'); if (prm) prm.addEventListener('click', photoReset);
     var list = $('frList');
