@@ -749,6 +749,9 @@
     font-size: clamp(20px, 5.5vw, 26px); letter-spacing: 1px; margin: 0;
   }
   .quality-card .pollution-sub { font-size: 10px; color: var(--dim); margin-top: 2px; }
+  /* Sea Temp card: value on the left, a temperature-matched penguin on the right. */
+  .sea-temp-card2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .st-penguin { height: 46px; width: auto; flex: 0 0 auto; display: none; image-rendering: pixelated; image-rendering: crisp-edges; }
 
   /* ── Live cam row (Surfline stills, 2 cols) ── */
   .livecam-row {
@@ -2563,12 +2566,15 @@
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim">
-      <div class="quality-card">
-        <div class="quality-card-label">Sea Temp</div>
-        <div style="display:flex;align-items:baseline;gap:3px;">
-          <span style="font-family:'Bebas Neue',sans-serif;font-size:clamp(22px,6vw,28px);letter-spacing:1px;color:var(--text);line-height:1;" id="seaTempValSlim">—</span>
-          <span style="font-size:11px;color:var(--dim);">°C</span>
+      <div class="quality-card sea-temp-card2">
+        <div>
+          <div class="quality-card-label">Sea Temp</div>
+          <div style="display:flex;align-items:baseline;gap:3px;">
+            <span style="font-family:'Bebas Neue',sans-serif;font-size:clamp(22px,6vw,28px);letter-spacing:1px;color:var(--text);line-height:1;" id="seaTempValSlim">—</span>
+            <span style="font-size:11px;color:var(--dim);">°C</span>
+          </div>
         </div>
+        <img id="seaTempPenguin" class="st-penguin" alt="" aria-hidden="true">
       </div>
       <div class="quality-card">
         <div class="quality-card-label">Pollution Risk <a href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank" style="color:var(--dim);text-decoration:none;font-size:9px;">↗</a></div>
@@ -7100,6 +7106,7 @@ function renderSnapshot(h, wx) {
     const stTxt = (st != null && st > 1) ? st.toFixed(1) : '—';
     if (seaTempEl)   seaTempEl.textContent   = stTxt;
     if (seaTempSlim) seaTempSlim.textContent = stTxt;
+    setSeaPenguin(st);
   }
 
   // Conditions bar
@@ -8574,6 +8581,20 @@ const BB_SUPABASE_KEY  = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
 // the sea-temp tile — WW/Open-Meteo is never used. The stored value stands until the
 // pipeline overwrites it, so yesterday's reading shows until today's is posted.
 window._communitySeaTemp = null;
+
+// Sea-temp mood penguin: six pixel-art states across 16→24 °C, shown on the right
+// of the Sea Temp card. Bands: ≤16 very cold, ≤18 cold, ≤20 cool, ≤22 mild,
+// <24 warm, ≥24 hot. Hidden when there is no reading (—).
+function setSeaPenguin(v) {
+  var img = document.getElementById('seaTempPenguin');
+  if (!img) return;
+  if (v == null || !(v > 1)) { img.style.display = 'none'; img.removeAttribute('src'); return; }
+  var f = v <= 16 ? '1-verycold' : v <= 18 ? '2-cold' : v <= 20 ? '3-cool'
+        : v <= 22 ? '4-mild' : v < 24 ? '5-warm' : '6-hot';
+  var src = 'images/penguins/penguin-' + f + '.png';
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  img.style.display = '';
+}
 function _sydTodayStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney',
     year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -8597,6 +8618,7 @@ async function fetchCommunitySeaTemp() {
       if (a) a.textContent = txt;
       if (b) b.textContent = txt;
     }
+    setSeaPenguin(window._communitySeaTemp);
   } catch (_) { /* leave the last community value in place */ }
 }
 window.addEventListener('load', fetchCommunitySeaTemp);
