@@ -1,18 +1,13 @@
 -- ============================================================================
 -- Bay Talk multi-reactions  (👍 like · ❤️ love · 😂 laugh · 😮 wow · 😢 sad)
 -- ============================================================================
--- Adds a reaction TYPE per device per post to feature_votes and upgrades the two
--- board RPCs. Wrapped in ONE transaction: if anything mismatches your schema the
--- whole thing ROLLS BACK and the existing single-vote system keeps working.
+-- Matches the REAL schema: feature_votes(request_id bigint, device_hash text),
+-- where device_hash = md5(p_device). Adds a reaction TYPE per device per post and
+-- upgrades the two RPCs (keeping their existing return columns, just adding
+-- reactions + my_reaction to the list one). Wrapped in ONE transaction: if
+-- anything fails it ALL rolls back and the current single-vote system is untouched.
 --
 -- HOW TO RUN: paste this ENTIRE file into the Supabase SQL editor and Run once.
---   (Do NOT run a single highlighted statement — the DROP/CREATE pairs and the
---    rollback safety only work as a whole.)
---
--- ASSUMPTION: feature_votes has columns (request_id bigint, device text), one row
---   per device per post — matching vote_feature_request(p_request_id, p_device).
---   If your column names differ, tweak them below and re-run (it's transactional,
---   so a wrong guess just errors out and changes nothing).
 -- ============================================================================
 
 begin;
@@ -26,75 +21,81 @@ alter table public.feature_votes
   add constraint feature_votes_reaction_chk
   check (reaction in ('like','love','laugh','wow','sad'));
 
--- one reaction per device per post (the upsert/toggle relies on this)
-create unique index if not exists feature_votes_req_dev_uidx
-  on public.feature_votes (request_id, device);
-
 -- 2) react: same type again = remove; a different type = switch; none = insert.
---    The client always sends the tapped reaction; the server decides.
+--    Keeps the original guard + hash + (request_id, device_hash) key + return shape.
 drop function if exists public.vote_feature_request(bigint, text);
 drop function if exists public.vote_feature_request(bigint, text, text);
 create function public.vote_feature_request(p_request_id bigint, p_device text, p_reaction text default 'like')
-returns void
+returns table(request_id bigint, votes integer, voted boolean)
 language plpgsql
 security definer
 set search_path = public
-as $$
-declare v_existing text;
+as $function$
+declare
+  v_hash     text := md5(p_device);
+  v_existing text;
 begin
+  if p_device is null or char_length(p_device) < 8 then raise exception 'bad device'; end if;
   if p_reaction is null or p_reaction not in ('like','love','laugh','wow','sad') then
     p_reaction := 'like';
   end if;
-  select reaction into v_existing
-    from feature_votes where request_id = p_request_id and device = p_device;
+
+  select fv.reaction into v_existing
+    from feature_votes fv
+    where fv.request_id = p_request_id and fv.device_hash = v_hash;
+
   if v_existing is null then
-    insert into feature_votes (request_id, device, reaction)
-      values (p_request_id, p_device, p_reaction);
+    insert into feature_votes(request_id, device_hash, reaction)
+      values (p_request_id, v_hash, p_reaction)
+      on conflict do nothing;
   elsif v_existing = p_reaction then
-    delete from feature_votes where request_id = p_request_id and device = p_device;
+    delete from feature_votes fv
+      where fv.request_id = p_request_id and fv.device_hash = v_hash;
   else
-    update feature_votes set reaction = p_reaction
-      where request_id = p_request_id and device = p_device;
+    update feature_votes fv set reaction = p_reaction
+      where fv.request_id = p_request_id and fv.device_hash = v_hash;
   end if;
-end $$;
+
+  return query
+    select p_request_id,
+           (select count(*)::int from feature_votes fv where fv.request_id = p_request_id),
+           exists(select 1 from feature_votes fv
+                  where fv.request_id = p_request_id and fv.device_hash = v_hash);
+end $function$;
 grant execute on function public.vote_feature_request(bigint, text, text) to anon;
 
--- 3) list: per-post total (votes), this device's reaction, and per-type counts.
---    Return type changed, so DROP first (CREATE OR REPLACE can't change it).
+-- 3) list: same columns as before + reactions (jsonb {type:count}) + my_reaction.
 drop function if exists public.list_feature_requests(text);
 create function public.list_feature_requests(p_device text)
-returns table(id bigint, votes bigint, voted boolean, reactions jsonb, my_reaction text)
-language sql
+returns table(id bigint, body text, votes integer, voted boolean, created_at timestamptz,
+              reactions jsonb, my_reaction text)
+language plpgsql
 security definer
 set search_path = public
-as $$
-  with counts as (
-    select request_id, reaction, count(*)::int as n
-    from feature_votes
-    group by request_id, reaction
-  ),
-  agg as (
-    select request_id, sum(n)::bigint as votes, jsonb_object_agg(reaction, n) as reactions
-    from counts
-    group by request_id
-  ),
-  mine as (
-    select request_id, reaction as my_reaction
-    from feature_votes
-    where device = p_device
-  )
-  select r.id,
-         coalesce(a.votes, 0)               as votes,
-         (m.my_reaction is not null)         as voted,
-         coalesce(a.reactions, '{}'::jsonb)  as reactions,
-         m.my_reaction
-  from feature_requests r
-  left join agg  a on a.request_id = r.id
-  left join mine m on m.request_id = r.id;
-$$;
+as $function$
+declare v_hash text := md5(coalesce(p_device,''));
+begin
+  return query
+    select fr.id, fr.body,
+           (select count(*)::int from feature_votes fv where fv.request_id = fr.id) as votes,
+           exists(select 1 from feature_votes fv
+                  where fv.request_id = fr.id and fv.device_hash = v_hash) as voted,
+           fr.created_at,
+           coalesce((select jsonb_object_agg(k.reaction, k.n)
+                     from (select fv.reaction, count(*)::int n
+                           from feature_votes fv
+                           where fv.request_id = fr.id
+                           group by fv.reaction) k), '{}'::jsonb) as reactions,
+           (select fv.reaction from feature_votes fv
+            where fv.request_id = fr.id and fv.device_hash = v_hash limit 1) as my_reaction
+    from feature_requests fr
+    where fr.hidden = false
+    order by votes desc, fr.created_at desc
+    limit 100;
+end $function$;
 grant execute on function public.list_feature_requests(text) to anon;
 
 commit;
 
--- After COMMIT: the app's Bay Talk cards show all five reactions with live
--- per-type counts. Until you run this, the app keeps showing the single 👍.
+-- After COMMIT: hard-refresh the app — Bay Talk shows all five reactions with
+-- live per-type counts (existing votes carry over as 👍).
