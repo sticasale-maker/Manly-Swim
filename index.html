@@ -758,8 +758,9 @@
   .st-penguin { height: 42px; width: auto; flex: 0 0 auto; display: none; }
   /* Pollution card: a state-matched penguin (label baked in), linked to Beachwatch. */
   .pollution-card2 { display: flex; align-items: center; justify-content: center; padding: 4px 8px; background: #fff; }
-  .poll-link { display: block; width: 100%; line-height: 0; }
-  .poll-penguin { display: block; height: 48px; width: auto; max-width: 100%; margin: 0 auto; }
+  .poll-link { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; text-decoration: none; }
+  .poll-penguin { display: block; height: 44px; width: auto; flex: 0 0 auto; }
+  .poll-label { font-family: 'Bebas Neue', sans-serif; font-size: 15px; line-height: 1.02; letter-spacing: 0.5px; color: var(--deep); white-space: pre-line; text-align: left; flex: 0 0 auto; }
 
   /* ── Live cam row (Surfline stills, 2 cols) ── */
   .livecam-row {
@@ -2587,6 +2588,7 @@
       <div class="quality-card pollution-card2">
         <a class="poll-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank" rel="noopener" aria-label="Pollution forecast — open Beachwatch">
           <img id="pollutionPenguin" class="poll-penguin" alt="Pollution forecast" style="display:none">
+          <span id="pollutionLabel" class="poll-label"></span>
         </a>
       </div>
     </div>
@@ -8117,15 +8119,18 @@ function renderPollution(bw) {
     // the colour shows through; unlikely stays on white.
     const card = pImg.closest('.pollution-card2');
     if (card) card.style.background = cls === 'poor' ? '#f19a86' : cls === 'fair' ? '#ffd36e' : '#fff';
+    const lbl = document.getElementById('pollutionLabel');
     const nm = cls === 'good' ? 'unlikely' : cls === 'fair' ? 'possible' : cls === 'poor' ? 'likely' : null;
     if (nm) {
       const src = 'images/penguins/penguin-poll-' + nm + '.png';
       if (pImg.getAttribute('src') !== src) pImg.setAttribute('src', src);
       pImg.alt = 'Pollution forecast: ' + (label || '');
       pImg.style.display = 'block';
+      if (lbl) lbl.textContent = 'POLLUTION\n' + (label || '').toUpperCase();   // HTML text, positionable
     } else {
       pImg.style.display = 'none';   // forecast unavailable — no penguin (discarded)
       pImg.removeAttribute('src');
+      if (lbl) lbl.textContent = '';
     }
   }
 
