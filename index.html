@@ -3506,6 +3506,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  <div class="st-card" id="stDaily"></div>' +
       '  <div class="st-sec">Accesses by weekday — week over week</div>' +
       '  <div class="st-card" id="stWeekday"></div>' +
+      '  <div class="st-sec">Accesses by hour — last 7 days</div>' +
+      '  <div class="st-card" id="stHourly"></div>' +
       '  <div class="st-sec">Retention after a date (cohort first seen that week)</div>' +
       '  <div class="st-card">' +
       '    <div class="st-ret"><input type="date" id="stRetDate"><button id="stRetRun">Run</button></div>' +
@@ -3589,7 +3591,19 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       setStatus(asked > days ? ('Since launch \u2014 ' + days + (days === 1 ? ' day' : ' days')) : '');
       renderSummary(data);
       loadPrefs(days);          // separate RPC: distinct-device split, not an event count
+      loadHourly();             // separate RPC: accesses by hour, last 7 days (fixed window)
     } catch (e) { setStatus('Could not load (' + ((e && e.message) || e) + ')'); }
+  }
+
+  async function loadHourly() {
+    var box = el('stHourly'); if (!box) return;
+    try {
+      var rows = await rpc('analytics_hourly', { p_token: tok(), p_days: 7 });
+      if (!Array.isArray(rows)) { box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>'; return; }
+      box.innerHTML = hourlyChart(rows);
+    } catch (e) {
+      box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>';
+    }
   }
 
   /* PREFERENCES vs ACTIVITY.
@@ -3775,6 +3789,32 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var axis = '<div style="display:flex;font-size:10px;color:#6b8a97;margin-top:4px;">' + days.map(function (d) { return '<span style="flex:1;text-align:center;">' + d + '</span>'; }).join('') + '</div>';
     var cap = '<div class="st-axis"><span>' + n + ' week' + (n === 1 ? '' : 's') + ' · older faint → newest bold</span><span>newest wk of ' + esc(keys[keys.length - 1]) + '</span></div>';
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + bars + '</svg>' + axis + cap;
+  }
+
+  // Accesses by hour of day — one coloured line per day for the last 7 days.
+  // x = hour 0–23 (Sydney), y = accesses; hours with no access count as 0.
+  function hourlyChart(rows) {
+    if (!rows.length) return '<div class="st-empty">No data yet.</div>';
+    var byDay = {};
+    rows.forEach(function (r) { (byDay[r.day] || (byDay[r.day] = {}))[+r.hour] = (+r.accesses || 0); });
+    var days = Object.keys(byDay).sort();                        // oldest → newest
+    if (!days.length) return '<div class="st-empty">No data yet.</div>';
+    var max = 1;
+    days.forEach(function (d) { for (var h = 0; h < 24; h++) if ((byDay[d][h] || 0) > max) max = byDay[d][h]; });
+    var W = 480, H = 140;
+    var COLORS = ['#4a8fad','#2b9348','#e07c2a','#c0392b','#7d5ba6','#118ab2','#e8608a'];
+    var lines = days.map(function (d, i) {
+      var col = COLORS[i % COLORS.length], pts = [];
+      for (var h = 0; h < 24; h++) { var v = byDay[d][h] || 0; pts.push(((h / 23) * W).toFixed(1) + ',' + (H - (v / max) * H).toFixed(1)); }
+      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-opacity="0.9" stroke-linejoin="round"/>';
+    }).join('');
+    var legend = days.map(function (d, i) {
+      var lbl = new Date(d + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric' });
+      return '<span style="white-space:nowrap;margin-right:9px;"><span style="color:' + (COLORS[i % COLORS.length]) + '">▮</span> ' + esc(lbl) + '</span>';
+    }).join('');
+    var axis = '<div style="display:flex;justify-content:space-between;font-size:10px;color:#6b8a97;margin-top:4px;"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + lines + '</svg>' + axis +
+           '<div class="st-axis" style="flex-wrap:wrap;justify-content:flex-start;">' + legend + '</div>';
   }
 
   /* Hover or drag across the chart to read a day. Bars are evenly spaced and the
