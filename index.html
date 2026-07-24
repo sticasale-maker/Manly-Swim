@@ -310,9 +310,12 @@
   /* The wx-bar-* classes carry a dark-strip (light tan) text colour from when the
      weather sat on the dark board; on this tan --card strip that's invisible, so
      force the card's dark foreground like the metric cards beside it use. */
+  /* Enlarged to fill the strip's existing height (governed by the weather emoji +
+     "The Oracle" pill). line-height:1 keeps each span's box ≤ that height, so the
+     bigger text never thickens the strip. */
   .cond-strip .wx-bar-desc,
   .cond-strip .wx-bar-feels-label,
-  .cond-strip .wx-bar-feels-val { font-size:clamp(12px, 3.3vw, 14px); color:var(--deep); }
+  .cond-strip .wx-bar-feels-val { font-size:clamp(15px, 4.8vw, 21px); line-height:1; color:var(--deep); }
   .cond-strip .verdict-news { font-size:clamp(10px, 2.9vw, 12px); padding:5px 9px; gap:6px; letter-spacing:0.5px; }
   .cond-strip .verdict-news .live-dot { width:9px; height:9px; }
 
@@ -1341,11 +1344,12 @@
   .cond-value { font-family:'Bebas Neue',sans-serif; font-size:clamp(24px, 7vw, 30px); color:var(--deep); line-height:1; }
   .cond-unit  { font-size:11px; color:var(--dim); margin-top:3px; }
   .cond-sub   { font-size:11px; color:var(--ocean); margin-top:2px; }
-  /* Swell card shows two sheltered heights: at the ramp (SS) and in the bay (BL) */
-  .cond-swell-rows { display:flex; flex-direction:column; gap:4px; }
-  .cond-swell-row  { display:flex; align-items:baseline; gap:5px; flex-wrap:nowrap; }
-  .cond-swell-h    { font-family:'Bebas Neue',sans-serif; font-size:clamp(18px,4.6vw,22px); color:var(--deep); line-height:1; white-space:nowrap; }
-  .cond-swell-loc  { font-size:10px; color:var(--dim); white-space:nowrap; line-height:1; }
+  /* Swell card, four rows: Oceanside (WW), bay entrance (NS), the ramp (NS·SS)
+     and Bower Ln (NS·BL). Each row is "H m, [dir,] Ps" + a dimmed location. */
+  .cond-swell-rows { display:flex; flex-direction:column; gap:6px; }
+  .cond-swell-row  { display:flex; align-items:baseline; gap:5px; flex-wrap:wrap; }
+  .cond-swell-h    { font-family:inherit; font-weight:700; font-size:12.5px; color:var(--deep); line-height:1.2; white-space:nowrap; }
+  .cond-swell-loc  { font-size:10px; color:var(--dim); white-space:nowrap; line-height:1.2; }
 
   /* ── Tabs ── */
   /* ── View panels ── */
@@ -2842,12 +2846,11 @@
         <div class="cond-card">
           <div class="cond-label">Swell</div>
           <div class="cond-swell-rows">
-            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Ocean">—</span><span class="cond-swell-loc">oceanside</span></div>
+            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Ocean">—</span><span class="cond-swell-loc">Oceanside</span></div>
+            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Entry">—</span><span class="cond-swell-loc">bay entrance</span></div>
             <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Ramp">—</span><span class="cond-swell-loc">at the ramp</span></div>
-            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Bay">—</span><span class="cond-swell-loc">in the bay</span></div>
+            <div class="cond-swell-row"><span class="cond-swell-h" id="sSwell1Bay">—</span><span class="cond-swell-loc">at Bower Ln</span></div>
           </div>
-          <div class="cond-unit" id="sSwell1D">—</div>
-          <div class="cond-sub" id="sSwell1P">—</div>
         </div>
         <div class="cond-card" id="sSwell2Card" style="display:none">
           <div class="cond-label">Secondary Swell</div>
@@ -7110,23 +7113,33 @@ function renderSnapshot(h, wx) {
   // Display only: h.swell1H is untouched, so scores are unaffected. Each value
   // falls back to the raw mouth height if its table has not loaded yet.
   (function () {
-    const Hm = h.swell1H;
+    const Hm = h.swell1H;                    // raw NS bay-mouth height (node 103218)
     const s  = (typeof SITE !== 'undefined') ? SITE : null;
     const clampTx = (v) => Math.max(0, Math.min(1, v));
-    const resid = (tbl, lookup) => (Hm > 0 && tbl)
-      ? (Hm * Math.sqrt(clampTx(lookup(h.swell1Dir, h.swell1P)))).toFixed(1) + ' m'
-      : Hm.toFixed(1) + ' m';
+    // Sheltered residual height H·√transmit (display only; scores untouched).
+    const residH = (tbl, lookup) => (Hm > 0 && tbl)
+      ? Hm * Math.sqrt(clampTx(lookup(h.swell1Dir, h.swell1P)))
+      : Hm;
+    const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+
+    // Row 1 — Oceanside: the WillyWeather offshore swell (outside the bay), with
+    // its own direction + period. Falls back to NS when the _ww snapshot is absent.
+    const o = h._ww || {};
+    const oH   = (o.swell1H   != null) ? o.swell1H   : Hm;
+    const oDir = (o.swell1Dir != null) ? o.swell1Dir : h.swell1Dir;
+    const oP   = (o.swell1P   != null) ? o.swell1P   : h.swell1P;
+    set('sSwell1Ocean', `${oH.toFixed(1)} m, ${bearingName(oDir)} ${Math.round(oDir)}°, ${Math.round(oP)}s`);
+    // Row 2 — bay entrance: raw NS nearshore feed, its NS direction + period.
+    set('sSwell1Entry', `${Hm.toFixed(1)} m, ${bearingName(h.swell1Dir)} ${Math.round(h.swell1Dir)}°, ${Math.round(h.swell1P)}s`);
+    // Rows 3 & 4 — sheltered NS residuals, height only (refracted direction not
+    // modelled; period is conserved so it is omitted here per the layout).
+    set('sSwell1Ramp', `${residH(s && s.nsDisp, nsDispLookup).toFixed(1)} m`);
+    set('sSwell1Bay',  `${residH(s && s.blDisp, blDispLookup).toFixed(1)} m`);
+
     const rampEl = document.getElementById('sSwell1Ramp');
-    const bayEl  = document.getElementById('sSwell1Bay');
-    if (rampEl) rampEl.textContent = resid(s && s.nsDisp, nsDispLookup);
-    if (bayEl)  bayEl.textContent  = resid(s && s.blDisp, blDispLookup);
-    const oceanEl = document.getElementById('sSwell1Ocean');
-    if (oceanEl) oceanEl.textContent = Hm.toFixed(1) + ' m';
     const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
-    if (card) card.title = Hm.toFixed(1) + ' m swell at the bay mouth, knocked down by the headland to the height reaching the ramp and the bay';
+    if (card) card.title = `Oceanside ${oH.toFixed(1)} m (WillyWeather) → ${Hm.toFixed(1)} m at the bay entrance (NS), knocked down by the headland to the ramp and Bower Lane.`;
   })();
-  document.getElementById('sSwell1D').textContent = `${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`;
-  document.getElementById('sSwell1P').textContent = `${Math.round(h.swell1P)}s period`;
   document.getElementById('sTide').textContent    = h.tideM.toFixed(2);
 
   // Secondary swell — NOT in the NS model (swell + sea only). The NS merge forces
@@ -14451,7 +14464,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     css.textContent =
       "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:12px;background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
       "#annOverlay.show{display:flex;}" +
-      "#annPopup{background:#fff;border-radius:14px;max-width:min(94vw,460px);width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:92dvh;display:flex;flex-direction:column;}" +
+      "#annPopup{background:rgba(255,255,255,0.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:14px;max-width:min(94vw,460px);width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:92dvh;display:flex;flex-direction:column;}" +
       "#annImg{width:100%;max-height:64dvh;object-fit:contain;background:#eef2f4;display:none;}" +
       "#annPopup.ann-imageonly{background:transparent;box-shadow:none;max-width:none;width:auto;max-height:none;overflow:visible;}" +
       "#annPopup.ann-imageonly #annImg{width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px);object-fit:contain;background:transparent;border-radius:12px;}" +
