@@ -3004,6 +3004,10 @@
       #featureCard .fr-pill{flex:none;display:inline-flex;align-items:center;gap:4px;min-width:48px;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .fr-pill .fr-arrow{font-size:14px;line-height:1;}
       #featureCard .fr-pill--on{background:var(--ocean);color:#fff;}
+      #featureCard .fr-react{display:flex;flex-wrap:wrap;gap:5px;}
+      #featureCard .fr-rx{display:inline-flex;align-items:center;gap:3px;padding:4px 8px;border-radius:999px;border:1px solid rgba(74,143,173,.35);background:#fff;color:var(--deep);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+      #featureCard .fr-rx .fr-rx-e{font-size:15px;line-height:1;}
+      #featureCard .fr-rx--on{background:rgba(74,143,173,.14);border-color:var(--ocean);}
       #featureCard .bd-status{margin-left:auto;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1px;padding:4px 9px;border-radius:6px;text-transform:uppercase;}
       #featureCard .bd-status--open{color:var(--dim);background:rgba(17,53,65,0.07);}
       #featureCard .bd-status--answered{color:#fff;background:var(--ocean);}
@@ -11364,6 +11368,8 @@ function submitFeedback(e) {
         status: (p.status || 'open'), pinned: !!p.pinned, hidden: !!p.hidden,
         created_at: p.created_at,
         votes: (vm.votes != null ? vm.votes : 0), voted: !!vm.voted,
+        reactions: (vm.reactions && typeof vm.reactions === 'object') ? vm.reactions : null,   // null until the reactions migration is live
+        my_reaction: vm.my_reaction || null,
         replies: replies
       };
     });
@@ -11494,6 +11500,10 @@ function submitFeedback(e) {
     }
   }
   async function featureVote(id){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice() }); }
+  // Multi-reactions: same RPC + a reaction type. The server toggles (same type
+  // again = remove), switches, or inserts, so the client always sends the tapped one.
+  var REACTIONS = [ {k:'like',e:'👍'}, {k:'love',e:'❤️'}, {k:'laugh',e:'😂'}, {k:'wow',e:'😮'}, {k:'sad',e:'😢'} ];
+  async function featureReact(id, rx){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice(), p_reaction: rx }); }
 
   // ---- WRITE: user reply (anon RPC; author_role stamped 'user' server-side) --
   async function featureReply(postId, body, name, imageUrl){
@@ -11661,12 +11671,27 @@ function submitFeedback(e) {
       : '';
     var ph = safePhoto(p.image_url);
     var photo = ph ? '<img class="bd-photo" src="' + esc(ph) + '" alt="Photo attached to this post" loading="lazy" onclick="window.open(this.src,\'_blank\',\'noopener\')">' : '';
-    var onv = p.voted ? ' fr-pill--on' : '';
-    var vote = '<button type="button" class="fr-pill' + onv + '" data-id="' + esc(p.id) + '" ' +
-        'aria-pressed="' + (p.voted ? 'true' : 'false') + '" aria-label="React with a thumbs up">' +
-        '<span class="fr-arrow" aria-hidden="true">👍</span>' +
-        '<span class="fr-votes">' + esc(p.votes) + '</span>' +
-      '</button>';
+    var vote;
+    if (p.reactions) {
+      // Multi-reactions: a row of emoji, each with its own count; the device's pick is highlighted.
+      vote = '<div class="fr-react" data-id="' + esc(p.id) + '">' + REACTIONS.map(function(r){
+        var n = (p.reactions && p.reactions[r.k]) ? p.reactions[r.k] : 0;
+        var on = (p.my_reaction === r.k) ? ' fr-rx--on' : '';
+        return '<button type="button" class="fr-rx' + on + '" data-rx="' + r.k + '" data-id="' + esc(p.id) + '" ' +
+            'aria-pressed="' + (p.my_reaction === r.k ? 'true' : 'false') + '" aria-label="' + r.k + '">' +
+            '<span class="fr-rx-e" aria-hidden="true">' + r.e + '</span>' +
+            (n > 0 ? '<span class="fr-rx-n">' + esc(n) + '</span>' : '') +
+          '</button>';
+      }).join('') + '</div>';
+    } else {
+      // Fallback (before the reactions migration): single thumbs-up + total count.
+      var onv = p.voted ? ' fr-pill--on' : '';
+      vote = '<button type="button" class="fr-pill' + onv + '" data-id="' + esc(p.id) + '" ' +
+          'aria-pressed="' + (p.voted ? 'true' : 'false') + '" aria-label="React with a thumbs up">' +
+          '<span class="fr-arrow" aria-hidden="true">👍</span>' +
+          '<span class="fr-votes">' + esc(p.votes) + '</span>' +
+        '</button>';
+    }
     // Everyone-can-reply composer (collapsed). Admins reply as Marco via the
     // admin panel below instead, so it's hidden for them to avoid two composers.
     var replyUI = adminOn ? '' :
@@ -11774,6 +11799,21 @@ function submitFeedback(e) {
     } catch (e) { setMsg('Couldn’t register your vote.'); }
   }
 
+  async function doReact(id, rx){
+    var post = findPost(id); if (!post) return;
+    if (!post.reactions) post.reactions = {};
+    var prev = post.my_reaction;
+    if (prev === rx) {                                   // tap same = remove
+      post.reactions[rx] = Math.max(0, (post.reactions[rx] || 0) - 1); post.my_reaction = null;
+    } else {                                             // switch or add
+      if (prev) post.reactions[prev] = Math.max(0, (post.reactions[prev] || 0) - 1);
+      post.reactions[rx] = (post.reactions[rx] || 0) + 1; post.my_reaction = rx;
+    }
+    renderList();                                        // optimistic
+    try { await featureReact(id, rx); }                  // server figures out toggle/switch/insert
+    catch (e) { setMsg('Couldn’t register your reaction.'); await refresh(); }
+  }
+
   // Public reply (any visitor). Body/name read from the card's own composer.
   async function doUserReply(id){
     if (isNaN(id)) return;
@@ -11833,6 +11873,8 @@ function submitFeedback(e) {
 
   function onListClick(e){
     var t = e.target; if (!t || !t.closest) return;
+    var rx = t.closest('.fr-rx');
+    if (rx){ var rid = parseInt(rx.getAttribute('data-id'), 10); var kind = rx.getAttribute('data-rx'); if (!isNaN(rid) && kind) doReact(rid, kind); return; }
     var pill = t.closest('.fr-pill');
     if (pill){ var vid = parseInt(pill.getAttribute('data-id'), 10); if (!isNaN(vid)) doVote(vid); return; }
     // --- public reply controls (available to every visitor) ---
