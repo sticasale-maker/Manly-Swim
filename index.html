@@ -752,6 +752,10 @@
   /* Sea Temp card: value on the left, a temperature-matched penguin on the right. */
   .sea-temp-card2 { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
   .st-penguin { height: 48px; width: auto; flex: 0 0 auto; display: none; }
+  /* Pollution card: a state-matched penguin (label baked in), linked to Beachwatch. */
+  .pollution-card2 { display: flex; align-items: center; justify-content: center; padding: 6px 8px; }
+  .poll-link { display: block; width: 100%; line-height: 0; }
+  .poll-penguin { display: block; width: 100%; height: auto; }
 
   /* ── Live cam row (Surfline stills, 2 cols) ── */
   .livecam-row {
@@ -2576,10 +2580,10 @@
         </div>
         <img id="seaTempPenguin" class="st-penguin" alt="" aria-hidden="true">
       </div>
-      <div class="quality-card">
-        <div class="quality-card-label">Pollution Risk <a href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank" style="color:var(--dim);text-decoration:none;font-size:9px;">↗</a></div>
-        <div class="pollution-text unknown" id="pollutionTextSlim">—</div>
-        <div class="pollution-sub" id="pollutionSubSlim"></div>
+      <div class="quality-card pollution-card2">
+        <a class="poll-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank" rel="noopener" aria-label="Pollution forecast — open Beachwatch">
+          <img id="pollutionPenguin" class="poll-penguin" alt="Pollution forecast" src="images/penguins/penguin-poll-unavailable.png">
+        </a>
       </div>
     </div>
 
@@ -8117,6 +8121,16 @@ function renderPollution(bw) {
   const subSlim = document.getElementById('pollutionSubSlim');
   if (txtSlim) { txtSlim.className = `pollution-text ${cls}`; txtSlim.textContent = (label || '').toUpperCase(); }
   if (subSlim) subSlim.textContent = (bw && bw.forecast) ? '' : sub;
+
+  // Pollution penguin — the label is baked into the art; the whole image links to
+  // Beachwatch. good→Unlikely, fair→Possible, poor→Likely, unknown→Forecast unavailable.
+  const pImg = document.getElementById('pollutionPenguin');
+  if (pImg) {
+    const nm = cls === 'good' ? 'unlikely' : cls === 'fair' ? 'possible' : cls === 'poor' ? 'likely' : 'unavailable';
+    const src = 'images/penguins/penguin-poll-' + nm + '.png';
+    if (pImg.getAttribute('src') !== src) pImg.setAttribute('src', src);
+    pImg.alt = 'Pollution forecast: ' + (label || 'unavailable');
+  }
 
   // Legacy full-width strip — only if it's still in the DOM (guarded, so a
   // missing element can never throw again).
