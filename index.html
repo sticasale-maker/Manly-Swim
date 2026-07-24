@@ -2976,6 +2976,7 @@
       #featureCard .fr-photo-btn{flex:none;display:inline-flex;align-items:center;gap:6px;padding:9px 12px;background:#fff;color:var(--ocean);border:1px solid rgba(17,53,65,0.18);border-radius:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .fr-photo-btn:hover{border-color:var(--ocean);}
       #featureCard .fr-photo-wrap{position:relative;display:inline-block;align-self:flex-start;}
+      #featureCard .fr-photo-wrap[hidden]{display:none;}
       #featureCard .fr-photo-thumb{max-width:140px;max-height:140px;border-radius:10px;border:1px solid rgba(17,53,65,0.18);display:block;object-fit:cover;}
       #featureCard .fr-photo-remove{position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:none;background:var(--deep);color:#fff;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.3);}
       #featureCard .bd-photo{margin-top:8px;max-width:100%;border-radius:10px;border:1px solid rgba(17,53,65,0.12);display:block;cursor:zoom-in;}
@@ -3500,6 +3501,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  <div class="st-stick" id="stStick"></div>' +
       '  <div class="st-sec">New vs returning · accesses, by day</div>' +
       '  <div class="st-card" id="stDaily"></div>' +
+      '  <div class="st-sec">Accesses by weekday — week over week</div>' +
+      '  <div class="st-card" id="stWeekday"></div>' +
       '  <div class="st-sec">Retention after a date (cohort first seen that week)</div>' +
       '  <div class="st-card">' +
       '    <div class="st-ret"><input type="date" id="stRetDate"><button id="stRetRun">Run</button></div>' +
@@ -3685,6 +3688,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '<b>Events</b> = individual tracked actions, one row each (metric opened, mode switch, guide open, share, feedback, session start\u2026), so this far exceeds device/session counts.</div>';
     el('stDaily').innerHTML = dailyChart(d.daily || []);
     wireDailyChart(d.daily || []);      // must follow the innerHTML — it binds to #stDailySvg
+    el('stWeekday').innerHTML = weekdayChart(d.daily || []);
     el('stMetrics').innerHTML = mixBars(d.metrics || [], 'metric', { entry: 'Entry', swim: 'Chop', surge: 'Surge' });
     el('stModes').innerHTML = mixBars(d.modes || [], 'mode', null);
     el('stSources').innerHTML = listRows(d.sources || [], 'source', 'devices');
@@ -3734,6 +3738,41 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
            '<div class="st-axis"><span>' + esc(first) + '</span><span><span style="color:var(--deep,#113541);">\u25ae</span> new \u00b7 <span style="color:var(--ocean,#4a8fad);">\u25ae</span> returning' +
            (hasSes ? ' \u00b7 <span style="color:#c9782f;">\u25ae</span> accesses' : '') + '</span><span>' + esc(last) + '</span></div>' +
            '<div class="st-dread" id="stDailyRead">&nbsp;</div>';
+  }
+
+  // Accesses (sessions) by weekday, one faint→bold line per week (oldest→newest),
+  // built client-side from the same daily rows — week-over-week trend per weekday.
+  function weekdayChart(rows) {
+    if (!rows.length) return '<div class="st-empty">No data yet.</div>';
+    function parse(s){ var p = String(s).split('-'); return new Date(Date.UTC(+p[0], (+p[1] || 1) - 1, +p[2] || 1)); }
+    function wd(d){ return (d.getUTCDay() + 6) % 7; }          // Mon=0 … Sun=6
+    var weeks = {};
+    rows.forEach(function (r) {
+      var d = parse(r.day); if (isNaN(d)) return;
+      var w = wd(d), mon = new Date(d); mon.setUTCDate(d.getUTCDate() - w);
+      (weeks[mon.toISOString().slice(0, 10)] || (weeks[mon.toISOString().slice(0, 10)] = {}))[w] = (r.sessions || 0);
+    });
+    var keys = Object.keys(weeks).sort();                      // oldest → newest
+    if (!keys.length) return '<div class="st-empty">No data yet.</div>';
+    var max = 1;
+    keys.forEach(function (k) { for (var i = 0; i < 7; i++) if (weeks[k][i] > max) max = weeks[k][i]; });
+    var W = 320, H = 120, n = keys.length;
+    var lines = keys.map(function (k, j) {
+      var frac = n === 1 ? 1 : j / (n - 1);
+      var op = (0.22 + 0.78 * frac).toFixed(2), sw = (1.1 + 1.7 * frac).toFixed(1);
+      var pts = [];
+      for (var i = 0; i < 7; i++) {
+        if (weeks[k][i] == null) continue;
+        pts.push(((i / 6) * W).toFixed(1) + ',' + (H - (weeks[k][i] / max) * H).toFixed(1));
+      }
+      if (!pts.length) return '';
+      if (pts.length === 1) { var xy = pts[0].split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.4" fill="#c9782f" fill-opacity="' + op + '"/>'; }
+      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#c9782f" stroke-width="' + sw + '" stroke-opacity="' + op + '" stroke-linejoin="round" stroke-linecap="round"/>';
+    }).join('');
+    var days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    var axis = '<div class="st-axis">' + days.map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>';
+    var cap = '<div class="st-axis"><span>' + n + ' week' + (n === 1 ? '' : 's') + ' · older faint → newest bold</span><span>newest wk of ' + esc(keys[keys.length - 1]) + '</span></div>';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + lines + '</svg>' + axis + cap;
   }
 
   /* Hover or drag across the chart to read a day. Bars are evenly spaced and the
