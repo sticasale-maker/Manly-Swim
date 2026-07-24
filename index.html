@@ -755,7 +755,7 @@
   /* Pollution card: a state-matched penguin (label baked in), linked to Beachwatch. */
   .pollution-card2 { display: flex; align-items: center; justify-content: center; padding: 6px 8px; background: #fff; }
   .poll-link { display: block; width: 100%; line-height: 0; }
-  .poll-penguin { display: block; width: 50%; height: auto; margin: 0 auto; }
+  .poll-penguin { display: block; width: 100%; height: auto; }
 
   /* ── Live cam row (Surfline stills, 2 cols) ── */
   .livecam-row {
@@ -2582,7 +2582,7 @@
       </div>
       <div class="quality-card pollution-card2">
         <a class="poll-link" href="https://www.beachwatch.nsw.gov.au/siteDetails/224fc6a1-f98a-4a10-9603-91dacf9e54b8" target="_blank" rel="noopener" aria-label="Pollution forecast — open Beachwatch">
-          <img id="pollutionPenguin" class="poll-penguin" alt="Pollution forecast" src="images/penguins/penguin-poll-unavailable.png">
+          <img id="pollutionPenguin" class="poll-penguin" alt="Pollution forecast" style="display:none">
         </a>
       </div>
     </div>
@@ -8126,10 +8126,16 @@ function renderPollution(bw) {
   // Beachwatch. good→Unlikely, fair→Possible, poor→Likely, unknown→Forecast unavailable.
   const pImg = document.getElementById('pollutionPenguin');
   if (pImg) {
-    const nm = cls === 'good' ? 'unlikely' : cls === 'fair' ? 'possible' : cls === 'poor' ? 'likely' : 'unavailable';
-    const src = 'images/penguins/penguin-poll-' + nm + '.png';
-    if (pImg.getAttribute('src') !== src) pImg.setAttribute('src', src);
-    pImg.alt = 'Pollution forecast: ' + (label || 'unavailable');
+    const nm = cls === 'good' ? 'unlikely' : cls === 'fair' ? 'possible' : cls === 'poor' ? 'likely' : null;
+    if (nm) {
+      const src = 'images/penguins/penguin-poll-' + nm + '.png';
+      if (pImg.getAttribute('src') !== src) pImg.setAttribute('src', src);
+      pImg.alt = 'Pollution forecast: ' + (label || '');
+      pImg.style.display = 'block';
+    } else {
+      pImg.style.display = 'none';   // forecast unavailable — no penguin (discarded)
+      pImg.removeAttribute('src');
+    }
   }
 
   // Legacy full-width strip — only if it's still in the DOM (guarded, so a
