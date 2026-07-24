@@ -3494,6 +3494,9 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       "#stFsClose{width:38px;height:38px;border-radius:9px;border:none;background:var(--deep,#113541);color:#fff;font-size:18px;cursor:pointer;}" +
       "#stFsBody{max-width:960px;margin:0 auto;}" +
       "#stFsBody>svg,#stFsBody svg{width:100%!important;height:70vh!important;}" +
+      ".hr-leg{background:none;border:none;padding:1px 3px;margin:0;cursor:pointer;font:inherit;color:inherit;border-radius:5px;}" +
+      ".hr-leg:hover{background:rgba(74,143,173,.12);}" +
+      ".hr-leg--dim{opacity:.3;}" +
       "@media(max-width:480px){#statsOverlay .st-tiles{grid-template-columns:repeat(3,1fr);}#statsOverlay .st-grid2{grid-template-columns:1fr;}}";
     document.head.appendChild(css);
 
@@ -3575,8 +3578,21 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     fs.addEventListener('click', function (e) { if (e.target === fs || e.target.id === 'stFsClose') closeFs(); });
     return fs;
   }
-  function openFs(card) { var fs = ensureFs(); el('stFsBody').innerHTML = card.innerHTML; fs.classList.add('show'); }
-  function closeFs() { var fs = el('stFs'); if (fs) { fs.classList.remove('show'); el('stFsBody').innerHTML = ''; } }
+  // MOVE the real card into full screen (and back on close) rather than cloning it,
+  // so its event listeners (hover readout, legend isolate) keep working.
+  var _fsReturn = null;
+  function openFs(card) {
+    var fs = ensureFs();
+    var ph = document.createComment('fs-slot');
+    card.parentNode.insertBefore(ph, card);
+    _fsReturn = { card: card, ph: ph };
+    el('stFsBody').appendChild(card);
+    fs.classList.add('show');
+  }
+  function closeFs() {
+    var fs = el('stFs'); if (fs) fs.classList.remove('show');
+    if (_fsReturn) { _fsReturn.ph.parentNode.insertBefore(_fsReturn.card, _fsReturn.ph); _fsReturn.ph.remove(); _fsReturn = null; }
+  }
 
   function openPanel() { build(); el('statsOverlay').classList.add('show'); document.body.style.overflow = 'hidden'; loadSummary(30); }
   function closePanel() { if (el('statsOverlay')) el('statsOverlay').classList.remove('show'); document.body.style.overflow = ''; }
@@ -3837,11 +3853,11 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var lines = days.map(function (d, i) {
       var col = COLORS[i % COLORS.length], pts = [];
       for (var h = 0; h < 24; h++) { var v = byDay[d][h] || 0; pts.push(((h / 23) * W).toFixed(1) + ',' + (H - (v / max) * H).toFixed(1)); }
-      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="1.8" stroke-opacity="0.92" stroke-linejoin="round"/>';
+      return '<polyline class="hr-line" data-di="' + i + '" points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="1.8" stroke-opacity="0.92" stroke-linejoin="round"/>';
     }).join('');
     var legend = days.map(function (d, i) {
       var lbl = new Date(d + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric' });
-      return '<span style="white-space:nowrap;margin-right:9px;"><span style="color:' + (COLORS[i % COLORS.length]) + '">▮</span> ' + esc(lbl) + '</span>';
+      return '<button type="button" class="hr-leg" data-di="' + i + '" title="Click to isolate this day (click again to show all)" style="white-space:nowrap;margin-right:9px;"><span style="color:' + (COLORS[i % COLORS.length]) + '">▮</span> ' + esc(lbl) + '</button>';
     }).join('');
     var axis = '<div style="display:flex;justify-content:space-between;font-size:10px;color:#6b8a97;margin-top:4px;"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>';
     return '<svg id="stHourlySvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' + lines + '</svg>' + axis +
@@ -3860,14 +3876,27 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var max = 1;
     days.forEach(function (d) { for (var h = 0; h < 24; h++) if ((byDay[d][h] || 0) > max) max = byDay[d][h]; });
     var COLORS = ['#4a8fad','#2b9348','#e07c2a','#c0392b','#7d5ba6','#118ab2','#e8608a'];
+    // Click a legend day to isolate its line (click again to show all).
+    var card = svg.parentNode;
+    var lineEls = svg.querySelectorAll('.hr-line');
+    var legEls = card ? card.querySelectorAll('.hr-leg') : [];
+    var iso = null;
+    function applyIso() {
+      Array.prototype.forEach.call(lineEls, function (ln) { var di = +ln.getAttribute('data-di'); ln.style.opacity = (iso == null || iso === di) ? '' : '0'; });
+      Array.prototype.forEach.call(legEls, function (lg) { var di = +lg.getAttribute('data-di'); lg.classList.toggle('hr-leg--dim', iso != null && iso !== di); });
+    }
+    Array.prototype.forEach.call(legEls, function (lg) {
+      lg.addEventListener('click', function () { var di = +lg.getAttribute('data-di'); iso = (iso === di) ? null : di; applyIso(); });
+    });
     function hlab(h) { var ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12; return h12 + ap; }
     function at(ev) {
       var b = svg.getBoundingClientRect(); if (!b.width || !b.height) return;
       var p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
       var cx = (p.clientX - b.left) / b.width, cy = (p.clientY - b.top) / b.height;
       var hour = Math.max(0, Math.min(23, Math.round(cx * 23)));
+      var pool = (iso == null) ? days : [days[iso]];
       var best = null, bd = 1e9;
-      days.forEach(function (d) { var y = 1 - ((byDay[d][hour] || 0) / max); var dist = Math.abs(y - cy); if (dist < bd) { bd = dist; best = d; } });
+      pool.forEach(function (d) { var y = 1 - ((byDay[d][hour] || 0) / max); var dist = Math.abs(y - cy); if (dist < bd) { bd = dist; best = d; } });
       if (best == null) return;
       var i = days.indexOf(best), col = COLORS[i % COLORS.length], v = byDay[best][hour] || 0;
       var lbl = new Date(best + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
