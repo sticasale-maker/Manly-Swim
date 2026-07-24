@@ -14384,7 +14384,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var KEY  = (typeof BB_SUPABASE_KEY !== 'undefined') ? BB_SUPABASE_KEY : '';
   var RPC  = SB + '/rest/v1/rpc/';
   var hdrs = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
-  var SEEN_KEY  = 'swim_ann_seen';
+  var SEEN_KEY   = 'swim_ann_seen';     // loud/mandatory forced-popup guard
+  var SEEN_KEY_Q = 'swim_ann_seen_q';   // quiet daily-line pill guard, tracked apart
   var DRAFT_KEY = 'swim_ann_draft';
   var ADMIN_MODE = /[?&]announce=1(\b|&|$)/.test(location.search);
   var APP_LABEL = { swim: 'Swim app', viz: 'Forecast app' };
@@ -14396,6 +14397,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var _app    = 'swim'; // admin: which app the form publishes to
   var _quiet  = false;  // admin: quiet = pill+dot only (no popup); default mandatory
   var _rows   = [];     // admin: last loaded list (for edit)
+  var _shownKind = null; // which set the popup is showing: 'loud' (forced) | 'all' (voluntary pill open)
 
   function $(id){ return document.getElementById(id); }
   function token(){ try { return (typeof camToken === 'function') ? camToken() : (localStorage.getItem('swim_admin_token') || ''); } catch (e) { return ''; } }
@@ -14447,15 +14449,18 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function seenSig(list){
     return (list || []).map(function (a) { return a.id + '|' + (a.updated_at || ''); }).sort().join(';');
   }
-  function isSeen(list){
+  // Seen state is tracked per KEY so mandatory and quiet posts stay independent.
+  function _isSeen(key, list){
     try {
-      var v = localStorage.getItem(SEEN_KEY) || '';
+      var v = localStorage.getItem(key) || '';
       var i = v.indexOf('@');                       // ids and ISO stamps carry no '@'
       if (i < 0) return false;                      // pre-dated value → treat as unseen
       return v.slice(0, i) === annDay() && v.slice(i + 1) === seenSig(list);
     } catch (e) { return false; }
   }
-  function markSeen(list){ try { localStorage.setItem(SEEN_KEY, annDay() + '@' + seenSig(list)); } catch (e) {} }
+  function _markSeen(key, list){ try { localStorage.setItem(key, annDay() + '@' + seenSig(list)); } catch (e) {} }
+  function loudOnes(){  return _active.filter(function (a) { return !a.quiet; }); }
+  function quietOnes(){ return _active.filter(function (a) { return  a.quiet; }); }
 
   /* ---- popup + pill -------------------------------------------------------- */
   function buildPopup(){
@@ -14548,7 +14553,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // A draft preview must NOT mark the real live set as seen (and must restore
     // the z-index bump that lifted the popup above the admin overlay).
     if (_preview) { _preview = false; if (ov) ov.style.zIndex = ''; return; }
-    if (_active.length) { markSeen(_active); var p = $('annWhatsNew'); if (p) p.classList.remove('unseen'); }
+    // Mark seen only what was actually shown: a forced (loud) popup leaves the quiet
+    // daily line untouched; a voluntary pill open showed everything, so mark both.
+    _markSeen(SEEN_KEY, loudOnes());
+    if (_shownKind !== 'loud') _markSeen(SEEN_KEY_Q, quietOnes());
+    _shownKind = null;
+    refreshPill();
   }
   function ensurePill(){
     if ($('annWhatsNew')) return $('annWhatsNew');
@@ -14556,7 +14566,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var b = document.createElement('button'); b.id = 'annWhatsNew'; b.type = 'button';
     b.setAttribute('aria-label', 'See the announcements');
     b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>Announcements</span>';
-    b.addEventListener('click', function () { if (_active.length) showPopup(_active); });
+    b.addEventListener('click', function () { if (_active.length) { _shownKind = 'all'; showPopup(_active); } });
     document.body.appendChild(b);
     return b;
   }
@@ -14564,7 +14574,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var b = ensurePill();
     if (!_active.length) { b.classList.remove('show', 'unseen'); return; }
     b.classList.add('show');
-    b.classList.toggle('unseen', !isSeen(_active));
+    var loud = loudOnes(), quiet = quietOnes();
+    var unseen = (loud.length && !_isSeen(SEEN_KEY, loud)) || (quiet.length && !_isSeen(SEEN_KEY_Q, quiet));
+    b.classList.toggle('unseen', unseen);
   }
   async function loadActive(){
     try {
@@ -14572,8 +14584,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (!r.ok) return;
       var rows = await r.json();
       _active = Array.isArray(rows) ? rows : [];
-      var _hasLoud = _active.some(function (a) { return !a.quiet; });   // quiet rows (daily sentence) light the pill dot but never auto-open the modal
-      if (_active.length && _hasLoud && !isSeen(_active) && !ADMIN_MODE) showPopup(_active);
+      // Only MANDATORY posts force the popup, and the forced popup shows ONLY them —
+      // a quiet daily line that happens to be live at the same time is never dragged
+      // in. Quiet rows light the pill dot but never auto-open the modal.
+      var loud = loudOnes();
+      if (loud.length && !_isSeen(SEEN_KEY, loud) && !ADMIN_MODE) { _shownKind = 'loud'; showPopup(loud); }
       refreshPill();
     } catch (e) {}
   }
