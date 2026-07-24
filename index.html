@@ -6850,11 +6850,18 @@ function renderSnapshot(h, wx) {
   _forecastRendered = true;       // real data is on screen — dots have left the 50% default
   hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
 
-  // Merged Swell + Wind map: swell direction/period/height (NS-dispersion transmit
-  // drives crest opacity) PLUS the forecast wind direction + SWIM band for the amber
-  // wind arrow and the line-2 wind readout. One renderer, one basemap.
+  // Merged Swell + Wind map: this map depicts the swell OUTSIDE the bay, so the
+  // arrows are drawn from the WillyWeather (WW) offshore feed — direction, height
+  // and period — with an NS-dispersion transmit for the refraction into the bay.
+  // NS still drives every swimmer-impact SCORE elsewhere; this renderer is
+  // display-only. PLUS the forecast wind direction + speed + SWIM band for the
+  // amber wind arrow and the line-2 wind readout. One renderer, one basemap.
   if (window.swellSet) {
-    swellSet(h.swell1Dir, h.swell1H, h.swell1P, nsDispLookup(h.swell1Dir, h.swell1P),
+    var _o = h._ww || {};
+    var _oDir = (_o.swell1Dir != null) ? _o.swell1Dir : h.swell1Dir;
+    var _oH   = (_o.swell1H   != null) ? _o.swell1H   : h.swell1H;
+    var _oP   = (_o.swell1P   != null) ? _o.swell1P   : h.swell1P;
+    swellSet(_oDir, _oH, _oP, nsDispLookup(_oDir, _oP),
              result.entry.label, result.entry.cls,
              h.windDir, result.swim.raw, (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14,
              result.swim.label, result.swim.cls, h.windKmh);
