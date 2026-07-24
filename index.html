@@ -3486,6 +3486,14 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       ".st-ret input{font-family:inherit;font-size:12px;padding:6px;border:1px solid var(--border,#cfe3ea);border-radius:8px;color:var(--text,#113541);}" +
       ".st-ret button{font-family:inherit;font-size:12px;padding:6px 12px;border:none;border-radius:8px;background:var(--ocean,#4a8fad);color:#fff;cursor:pointer;}" +
       ".st-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}" +
+      ".st-cardwrap{position:relative;}" +
+      ".st-expand{position:absolute;top:6px;right:6px;z-index:3;width:26px;height:26px;padding:0;border-radius:7px;border:1px solid var(--border,#cfe3ea);background:rgba(255,255,255,.92);color:var(--deep,#113541);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}" +
+      "#stFs{position:fixed;inset:0;z-index:100004;display:none;background:var(--foam,#c8bda0);overflow:auto;padding:14px;}" +
+      "#stFs.show{display:block;}" +
+      "#stFs .st-fs-bar{display:flex;justify-content:flex-end;margin-bottom:12px;}" +
+      "#stFsClose{width:38px;height:38px;border-radius:9px;border:none;background:var(--deep,#113541);color:#fff;font-size:18px;cursor:pointer;}" +
+      "#stFsBody{max-width:960px;margin:0 auto;}" +
+      "#stFsBody>svg,#stFsBody svg{width:100%!important;height:70vh!important;}" +
       "@media(max-width:480px){#statsOverlay .st-tiles{grid-template-columns:repeat(3,1fr);}#statsOverlay .st-grid2{grid-template-columns:1fr;}}";
     document.head.appendChild(css);
 
@@ -3546,7 +3554,29 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var def = d.toISOString().slice(0, 10);
     el('stRetDate').min = LAUNCH_DAY;              // picker cannot reach pre-launch
     el('stRetDate').value = clampAnchor(def);
+
+    // Full-screen expand button on every report card (survives content re-renders
+    // because it lives in a wrapper, not inside the card's replaced innerHTML).
+    Array.prototype.forEach.call(ov.querySelectorAll('.st-card'), function (card) {
+      var wrap = document.createElement('div'); wrap.className = 'st-cardwrap';
+      card.parentNode.insertBefore(wrap, card); wrap.appendChild(card);
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'st-expand';
+      b.setAttribute('aria-label', 'Expand to full screen'); b.textContent = '⤢';
+      b.addEventListener('click', function (e) { e.stopPropagation(); openFs(card); });
+      wrap.appendChild(b);
+    });
   }
+
+  function ensureFs() {
+    var fs = el('stFs'); if (fs) return fs;
+    fs = document.createElement('div'); fs.id = 'stFs';
+    fs.innerHTML = '<div class="st-fs-bar"><button type="button" id="stFsClose" aria-label="Close">✕</button></div><div id="stFsBody"></div>';
+    document.body.appendChild(fs);
+    fs.addEventListener('click', function (e) { if (e.target === fs || e.target.id === 'stFsClose') closeFs(); });
+    return fs;
+  }
+  function openFs(card) { var fs = ensureFs(); el('stFsBody').innerHTML = card.innerHTML; fs.classList.add('show'); }
+  function closeFs() { var fs = el('stFs'); if (fs) { fs.classList.remove('show'); el('stFsBody').innerHTML = ''; } }
 
   function openPanel() { build(); el('statsOverlay').classList.add('show'); document.body.style.overflow = 'hidden'; loadSummary(30); }
   function closePanel() { if (el('statsOverlay')) el('statsOverlay').classList.remove('show'); document.body.style.overflow = ''; }
@@ -3601,6 +3631,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       var rows = await rpc('analytics_hourly', { p_token: tok(), p_days: 7 });
       if (!Array.isArray(rows)) { box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>'; return; }
       box.innerHTML = hourlyChart(rows);
+      wireHourlyChart(rows);      // hover readout: day + hour + accesses
     } catch (e) {
       box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>';
     }
@@ -3806,15 +3837,44 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var lines = days.map(function (d, i) {
       var col = COLORS[i % COLORS.length], pts = [];
       for (var h = 0; h < 24; h++) { var v = byDay[d][h] || 0; pts.push(((h / 23) * W).toFixed(1) + ',' + (H - (v / max) * H).toFixed(1)); }
-      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="1.6" stroke-opacity="0.9" stroke-linejoin="round"/>';
+      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="1.8" stroke-opacity="0.92" stroke-linejoin="round"/>';
     }).join('');
     var legend = days.map(function (d, i) {
       var lbl = new Date(d + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric' });
       return '<span style="white-space:nowrap;margin-right:9px;"><span style="color:' + (COLORS[i % COLORS.length]) + '">▮</span> ' + esc(lbl) + '</span>';
     }).join('');
     var axis = '<div style="display:flex;justify-content:space-between;font-size:10px;color:#6b8a97;margin-top:4px;"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>';
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + lines + '</svg>' + axis +
+    return '<svg id="stHourlySvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' + lines + '</svg>' + axis +
+           '<div class="st-dread" id="stHourlyRead">&nbsp;</div>' +
            '<div class="st-axis" style="flex-wrap:wrap;justify-content:flex-start;">' + legend + '</div>';
+  }
+
+  // Hover/drag the hourly chart: pick the hour from x, the nearest day-line from y,
+  // and read out that day + hour + access count.
+  function wireHourlyChart(rows) {
+    var svg = el('stHourlySvg'), out = el('stHourlyRead');
+    if (!svg || !out || !rows.length) return;
+    var byDay = {};
+    rows.forEach(function (r) { (byDay[r.day] || (byDay[r.day] = {}))[+r.hour] = (+r.accesses || 0); });
+    var days = Object.keys(byDay).sort();
+    var max = 1;
+    days.forEach(function (d) { for (var h = 0; h < 24; h++) if ((byDay[d][h] || 0) > max) max = byDay[d][h]; });
+    var COLORS = ['#4a8fad','#2b9348','#e07c2a','#c0392b','#7d5ba6','#118ab2','#e8608a'];
+    function hlab(h) { var ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12; return h12 + ap; }
+    function at(ev) {
+      var b = svg.getBoundingClientRect(); if (!b.width || !b.height) return;
+      var p = ev.touches && ev.touches[0] ? ev.touches[0] : ev;
+      var cx = (p.clientX - b.left) / b.width, cy = (p.clientY - b.top) / b.height;
+      var hour = Math.max(0, Math.min(23, Math.round(cx * 23)));
+      var best = null, bd = 1e9;
+      days.forEach(function (d) { var y = 1 - ((byDay[d][hour] || 0) / max); var dist = Math.abs(y - cy); if (dist < bd) { bd = dist; best = d; } });
+      if (best == null) return;
+      var i = days.indexOf(best), col = COLORS[i % COLORS.length], v = byDay[best][hour] || 0;
+      var lbl = new Date(best + 'T00:00:00').toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+      out.innerHTML = '<span style="color:' + col + '">▮</span> <b>' + esc(lbl) + '</b> · ' + hlab(hour) + ' — ' + v + ' access' + (v === 1 ? '' : 'es');
+    }
+    svg.addEventListener('mousemove', at);
+    svg.addEventListener('touchmove', function (e) { at(e); }, { passive: true });
   }
 
   /* Hover or drag across the chart to read a day. Bars are evenly spaced and the
