@@ -751,7 +751,7 @@
   .quality-card .pollution-sub { font-size: 10px; color: var(--dim); margin-top: 2px; }
   /* Sea Temp card: value on the left, a temperature-matched penguin centred in the
      space to its right. White tile to match the Pollution card. */
-  .sea-temp-card2 { display: flex; align-items: center; background: #fff; padding: 5px 12px; }
+  .sea-temp-card2 { display: flex; align-items: center; background: #fff; padding: 5px 12px 5px 20px; }
   .sea-temp-card2 .st-left { flex: 0 0 auto; }
   .sea-temp-card2 .quality-card-label { font-size: 20px; margin-bottom: 1px; }
   .st-peng-wrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
@@ -1094,6 +1094,10 @@
   #bbStatus { font-size: 15px; line-height: 1.25; white-space: nowrap; }
   #bbSub { white-space: nowrap; }
   #boardStrip .bb-status, #sightTitle { color: var(--deep); }
+  /* Bay Talk unread indicator — red pulse when a post is newer than last opened. */
+  .board-newdot { display:none; width:9px; height:9px; border-radius:50%; background:var(--red); flex:0 0 auto; margin-right:2px; animation:boardDotPulse 1.2s ease-in-out infinite; }
+  @keyframes boardDotPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(192,57,43,0.55); } 50%{ box-shadow:0 0 0 7px rgba(192,57,43,0); } }
+  @media (prefers-reduced-motion: reduce){ .board-newdot { animation:none; } }
   /* Bluebottle title matches too — but ONLY when there's no alert, so the
      bb-alert-1/2 yellow/red title colour still wins when reports exist. */
   #bbStrip:not(.bb-alert-1):not(.bb-alert-2) #bbStatus { color: var(--deep); }
@@ -2710,6 +2714,7 @@
             <div class="bb-status">Bay Talk</div>
             <div class="bb-sub">Community chat — ask, comment, say hi, whatever you fancy</div>
           </div>
+          <span class="board-newdot" id="boardNewDot" aria-hidden="true"></span>
           <span class="sight-chev" id="boardChev">&#9662;</span>
         </div>
         <div class="sight-body" id="boardBody">
@@ -2992,7 +2997,7 @@
       #featureCard .bd-reply-body{color:var(--text);font-size:13.5px;line-height:1.45;word-break:break-word;white-space:pre-wrap;}
       #featureCard .bd-foot{display:flex;align-items:center;gap:10px;margin-top:10px;}
       #featureCard .fr-pill{flex:none;display:inline-flex;align-items:center;gap:4px;min-width:48px;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
-      #featureCard .fr-pill .fr-arrow{font-size:11px;}
+      #featureCard .fr-pill .fr-arrow{font-size:14px;line-height:1;}
       #featureCard .fr-pill--on{background:var(--ocean);color:#fff;}
       #featureCard .bd-status{margin-left:auto;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1px;padding:4px 9px;border-radius:6px;text-transform:uppercase;}
       #featureCard .bd-status--open{color:var(--dim);background:rgba(17,53,65,0.07);}
@@ -9275,6 +9280,7 @@ function boardToggle(ev) {
   if (!body) return;
   const open = body.classList.toggle('open');
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+  if (window.updateBoardDot) window.updateBoardDot();   // opening marks Bay Talk seen (clears the dot)
 }
 
 // ── report bottom-sheet ──
@@ -11649,8 +11655,8 @@ function submitFeedback(e) {
     var photo = ph ? '<img class="bd-photo" src="' + esc(ph) + '" alt="Photo attached to this post" loading="lazy" onclick="window.open(this.src,\'_blank\',\'noopener\')">' : '';
     var onv = p.voted ? ' fr-pill--on' : '';
     var vote = '<button type="button" class="fr-pill' + onv + '" data-id="' + esc(p.id) + '" ' +
-        'aria-pressed="' + (p.voted ? 'true' : 'false') + '" aria-label="Upvote this post">' +
-        '<span class="fr-arrow" aria-hidden="true">▲</span>' +
+        'aria-pressed="' + (p.voted ? 'true' : 'false') + '" aria-label="React with a thumbs up">' +
+        '<span class="fr-arrow" aria-hidden="true">👍</span>' +
         '<span class="fr-votes">' + esc(p.votes) + '</span>' +
       '</button>';
     // Everyone-can-reply composer (collapsed). Admins reply as Marco via the
@@ -11683,6 +11689,22 @@ function submitFeedback(e) {
     '</div>';
   }
 
+  // ---- Unread dot: red pulse on the Bay Talk head when a post is newer than the
+  // last time this device opened the board. Marked seen whenever it's open. ------
+  var BOARD_SEEN_KEY = 'swim_baytalk_seen';
+  function boardNewest(){ var t = 0; (_cache || []).forEach(function(p){ var d = Date.parse(p.created_at) || 0; if (d > t) t = d; }); return t; }
+  function boardSeenAt(){ try { return parseInt(localStorage.getItem(BOARD_SEEN_KEY) || '0', 10) || 0; } catch (e) { return 0; } }
+  function updateBoardDot(){
+    var dot = $('boardNewDot'); if (!dot) return;
+    var body = $('boardBody');
+    if (body && body.classList.contains('open')) {                 // open = they're reading it → seen
+      try { localStorage.setItem(BOARD_SEEN_KEY, String(boardNewest())); } catch (e) {}
+      dot.style.display = 'none'; return;
+    }
+    dot.style.display = (boardNewest() > boardSeenAt()) ? 'block' : 'none';
+  }
+  window.updateBoardDot = updateBoardDot;
+
   function renderList(){
     var box = $('frList'); if (!box) return;
     var posts = sortPosts(_cache);
@@ -11696,7 +11718,7 @@ function submitFeedback(e) {
   }
 
   async function refresh(){
-    try { _cache = await boardFetch(); renderList(); }
+    try { _cache = await boardFetch(); renderList(); updateBoardDot(); }
     catch (e) { var box = $('frList'); if (box && !box.children.length) box.innerHTML = '<div class="fr-empty">Couldn’t load Bay Talk.</div>'; }
   }
 
