@@ -3743,8 +3743,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
            '<div class="st-dread" id="stDailyRead">&nbsp;</div>';
   }
 
-  // Accesses (sessions) by weekday, one faint→bold line per week (oldest→newest),
-  // built client-side from the same daily rows — week-over-week trend per weekday.
+  // Accesses (sessions) by weekday — grouped vertical bars, one bar per week within
+  // each day (oldest faint → newest bold). Built client-side from the daily rows.
   function weekdayChart(rows) {
     if (!rows.length) return '<div class="st-empty">No data yet.</div>';
     function parse(s){ var p = String(s).split('-'); return new Date(Date.UTC(+p[0], (+p[1] || 1) - 1, +p[2] || 1)); }
@@ -3757,25 +3757,24 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     });
     var keys = Object.keys(weeks).sort();                      // oldest → newest
     if (!keys.length) return '<div class="st-empty">No data yet.</div>';
+    var days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     var max = 1;
     keys.forEach(function (k) { for (var i = 0; i < 7; i++) if (weeks[k][i] > max) max = weeks[k][i]; });
     var W = 320, H = 120, n = keys.length;
-    var lines = keys.map(function (k, j) {
-      var frac = n === 1 ? 1 : j / (n - 1);
-      var op = (0.22 + 0.78 * frac).toFixed(2), sw = (1.1 + 1.7 * frac).toFixed(1);
-      var pts = [];
-      for (var i = 0; i < 7; i++) {
-        if (weeks[k][i] == null) continue;
-        pts.push(((i / 6) * W).toFixed(1) + ',' + (H - (weeks[k][i] / max) * H).toFixed(1));
+    var gw = W / 7, gpad = gw * 0.12, innerW = gw - gpad * 2, bw = innerW / n;
+    var bars = '';
+    for (var d0 = 0; d0 < 7; d0++) {
+      for (var j = 0; j < n; j++) {
+        var v = weeks[keys[j]][d0]; if (v == null) continue;
+        var frac = n === 1 ? 1 : j / (n - 1);
+        var op = (0.30 + 0.70 * frac).toFixed(2);
+        var x = d0 * gw + gpad + j * bw, h = (v / max) * H, y = H - h;
+        bars += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + Math.max(0.6, bw - 0.4).toFixed(1) + '" height="' + h.toFixed(1) + '" fill="#c9782f" fill-opacity="' + op + '"><title>' + esc(days[d0] + ' · wk of ' + keys[j] + ' — ' + v + ' accesses') + '</title></rect>';
       }
-      if (!pts.length) return '';
-      if (pts.length === 1) { var xy = pts[0].split(','); return '<circle cx="' + xy[0] + '" cy="' + xy[1] + '" r="2.4" fill="#c9782f" fill-opacity="' + op + '"/>'; }
-      return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="#c9782f" stroke-width="' + sw + '" stroke-opacity="' + op + '" stroke-linejoin="round" stroke-linecap="round"/>';
-    }).join('');
-    var days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-    var axis = '<div class="st-axis">' + days.map(function (d) { return '<span>' + d + '</span>'; }).join('') + '</div>';
+    }
+    var axis = '<div style="display:flex;font-size:10px;color:#6b8a97;margin-top:4px;">' + days.map(function (d) { return '<span style="flex:1;text-align:center;">' + d + '</span>'; }).join('') + '</div>';
     var cap = '<div class="st-axis"><span>' + n + ' week' + (n === 1 ? '' : 's') + ' · older faint → newest bold</span><span>newest wk of ' + esc(keys[keys.length - 1]) + '</span></div>';
-    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + lines + '</svg>' + axis + cap;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + bars + '</svg>' + axis + cap;
   }
 
   /* Hover or drag across the chart to read a day. Bars are evenly spaced and the
