@@ -374,7 +374,7 @@
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
-  /* ── Bluebottle risk: 5-day strip (BBF_) ────────────────────────────────────
+  /* ── Bluebottle risk strip (BBF_) ───────────────────────────────────────────
      One colour per day, like the swell day-picker. Each day is rated by its
      WORST 3 h onshore-wind window (see bbfDayBand), so the colour reflects a
      risk that holds through the day, not a single hour. Wind forecast only —
@@ -400,7 +400,11 @@
   .bbf-day:active { transform:scale(0.97); }
   .bbf-day-name { font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:1px; text-transform:uppercase; opacity:0.92; }
   .bbf-day-num  { font-family:'Bebas Neue',sans-serif; font-size:20px; letter-spacing:0.5px; line-height:1; -webkit-text-stroke:0.4px currentColor; }
-  .bbf-day-band { font-size:9.5px; font-weight:700; letter-spacing:0.3px; margin-top:1px; }
+  /* nowrap + a hair smaller so the longest labels ("Building"/"Elevated", and their
+     capped "°" variants) stay on one line now that the strip can hold 6 tiles
+     (yesterday + today + 4). Single words can't wrap anyway, so this guards against
+     mid-tile overflow rather than a line break. */
+  .bbf-day-band { font-size:9px; font-weight:700; letter-spacing:0.2px; margin-top:1px; white-space:nowrap; }
   /* Coloured days get a dark text shadow so white type stays legible on green/amber. */
   .bbf-day.has-band { text-shadow:0 1px 2px rgba(0,0,0,0.5), 0 0 3px rgba(0,0,0,0.4); }
   /* Selected day (the one the main view is showing) gets a ring, mirroring the
@@ -2619,7 +2623,8 @@
       </div>
     </div>
 
-    <!-- Bluebottle FORECAST — 5-day risk strip (BBF_). One colour per day, rated by
+    <!-- Bluebottle FORECAST — risk strip (BBF_): yesterday (once its history rows
+         load) + today + the next few days. One colour per day, rated by
          the day's worst 3 h onshore-wind window, so the colour holds through the day
          rather than following the time slider. Wind forecast only; entirely separate
          from the community photo-report strip (BB_/Supabase) further down, which is
@@ -6964,8 +6969,14 @@ function bbfDayLabel(dateStr){
     : d.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'});
 }
 
-// Build the 5-day risk strip. `h` is the slot the main view is on — used only to
-// ring the matching day, so the strip and the day-picker read as one calendar.
+// Build the risk strip: today + up to 4 forward days, PLUS yesterday when the
+// forecast-history rows for it are loaded. Yesterday earns its slot because a
+// beach lands the bluebottles the PRIOR ~24 h of onshore wind blew in — so it's
+// the reading that explains what's washed up right now. That puts TODAY in the
+// second slot from the left whenever yesterday is present (it drops back to the
+// first slot if history didn't load — see loadForecastHistory). `h` is the slot
+// the main view is on — used only to ring the matching day, so the strip and the
+// day-picker read as one calendar.
 // Called on every render; cheap (a handful of bbfDayBand passes over _matrix).
 function renderBluebottleForecast(h){
   const strip = document.getElementById('bbfStrip');
@@ -6975,8 +6986,14 @@ function renderBluebottleForecast(h){
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-  const days = [...new Set(_matrix.map(r => String(r.dateTime).substring(0,10)))]
-    .filter(d => d >= todayStr).sort().slice(0, 5);
+  const y = new Date(now.getTime() - 24 * 3600 * 1000);
+  const yesterdayStr = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
+  const allDays = [...new Set(_matrix.map(r => String(r.dateTime).substring(0,10)))];
+  // Today + the next 4 forecast days, then prepend yesterday only if its history
+  // rows are actually in the matrix — so the count stays put (today + ≤4 forward)
+  // and yesterday is a genuine reading, never an empty "—" placeholder.
+  const forward = allDays.filter(d => d >= todayStr).sort().slice(0, 5);
+  const days = allDays.includes(yesterdayStr) ? [yesterdayStr, ...forward] : forward;
   const selDay = h && h.dateTime ? String(h.dateTime).substring(0,10) : null;
 
   // SAFETY / integration rule: a WIND FORECAST must never outrank an observed photo
@@ -13380,7 +13397,7 @@ if ('serviceWorker' in navigator) {
     // The wind-driven 5-day forecast strip, NOT the community reports (those ride
     // in 'swimmers' below). Listed here so the panel order matches the page order.
     // essential:1 — it's a hazard card, so it belongs in the pared-back view too.
-    { key:'bluebottleforecast', label:"Bluebottles forecast (5-day)", sel:'.bbf-row', essential:1, complete:1 },
+    { key:'bluebottleforecast', label:"Bluebottles forecast (risk strip)", sel:'.bbf-row', essential:1, complete:1 },
     { key:'swimmers', label:"Swimmers' Corner (visibility, sightings, bluebottle reports, hellos)", sel:'.community-group', essential:1, complete:1 },
     { key:'daywindow', label:"Best swim window (day chart)", sel:'#dayWindowWrap', essential:1, complete:1 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', essential:0, complete:1 },
