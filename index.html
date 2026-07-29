@@ -10695,7 +10695,26 @@ function communitySummaryLine() {
   if (!parts.length) return '';
   return ' ' + parts.join(' ');
 }
-function appendCommunity(text) { return (text || '') + communitySummaryLine(); }
+// Beachwatch pollution caution for the water summary. Reads the cached forecast
+// (fetchBeachwatch stores it under BW_CACHE_KEY) and adds a one-line heads-up when
+// pollution is Possible/Likely — Beachwatch's forecast IS the stormwater model, i.e.
+// the "don't swim for ~a day after rain" call. Appended client-side (not via the
+// Worker LLM) so this safety line is guaranteed on screen and its exact wording is
+// controlled here; silent (returns '') when pollution is Unlikely/unknown.
+function waterQualityLine() {
+  try {
+    const bw = loadCache(BW_CACHE_KEY);
+    const f = bw && bw.data && bw.data.forecast ? String(bw.data.forecast).toLowerCase() : '';
+    if (!f) return '';
+    if (f.includes('likely') || f.includes('poor'))
+      return ' Heads up: Beachwatch is forecasting pollution as likely today — stormwater runoff after rain — so it’s best to skip the swim or wait about a day for it to clear, and steer clear of the lagoon outlet.';
+    if (f.includes('possible') || f.includes('fair'))
+      return ' Beachwatch is forecasting pollution as possible today (stormwater runoff after rain) — worth a look at the water and the beach sign before you get in.';
+    return '';
+  } catch (e) { return ''; }
+}
+// Water-quality caution first (safety), then the friendly community clause.
+function appendCommunity(text) { return (text || '') + waterQualityLine() + communitySummaryLine(); }
 // Re-append the community clause to the stored base text once reports arrive
 // (the summary itself only generates once, so we patch the water line in place).
 function refreshCommunitySummary() {
@@ -11228,6 +11247,18 @@ async function generateBannerSummaryLocal() {
   const oceanSwellDir = rows.length ? bearingName(_wwF(_oMid, 'swell1Dir', 0)) : '\u2014';
   const oceanSwellH   = rows.length ? avg(rows.map(r => _wwF(r, 'swell1H', 0))) : 0;
   const oceanSwellP   = rows.length ? avg(rows.map(r => _wwF(r, 'swell1P', 8))) : 8;
+  // Swell trend across the forecast window (offshore _ww height, first half vs
+  // second half of the day). WORD-ONLY \u2014 no new number reaches the prose, so the
+  // Worker's number validator is unaffected; the model just says "building/easing
+  // through the day". 'holding' = steady (the model is told it needn't mention it).
+  const _wwHs = rows.map(r => _wwF(r, 'swell1H', null)).filter(v => v != null);
+  let swellTrend = 'holding';
+  if (_wwHs.length >= 4) {
+    const _half = Math.floor(_wwHs.length / 2);
+    const _mean = a => a.reduce((s, x) => s + x, 0) / a.length;
+    const _d = _mean(_wwHs.slice(_half)) - _mean(_wwHs.slice(0, _half));
+    swellTrend = _d >= 0.3 ? 'building' : _d <= -0.3 ? 'easing' : 'holding';
+  }
   // The two sheltered figures, averaged over the window, from the SAME helpers the
   // metric readouts use \u2014 so the prose can never disagree with the pictogram next
   // to it. baySwellH is kept = bayResidualH so a not-yet-updated Worker still
@@ -11273,6 +11304,7 @@ async function generateBannerSummaryLocal() {
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
       rampBreakH: Number(rampBreakH.toFixed(1)),
+      swellTrend: swellTrend,
       shelteredContrast: shelteredContrast
     }
   };
