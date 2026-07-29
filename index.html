@@ -11212,16 +11212,22 @@ async function generateBannerSummaryLocal() {
     domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
     domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
 
-  // NOT _ww. `_ww` is the pre-merge WillyWeather snapshot, kept ONLY so the
-  // WW-vs-NS compare tick can score the old feed; `r.swell1H` is the NS value the
-  // whole app scores and displays on. Reading the offshore figure from _ww while
-  // the sheltered figures below came from NS mixed two feeds inside one sentence
-  // \u2014 that is how the prose reported 1.9 m out the back yet 2.4 m at the ramp,
-  // which reads as impossible (18 Jul 2026).
+  // Oceanside = the true out-the-back / OFFSHORE swell, read from the stashed
+  // WillyWeather snapshot `_ww` \u2014 the SAME source the "Oceanside" row on the swell
+  // card already uses (renderSnapshot ~7365), with a per-field fallback to the NS
+  // value when _ww is absent. `r.swell1H` is the NS node 103218 feed, which sits at
+  // the bay MOUTH, not offshore; feeding it to the summariser as "oceanSwellH" is
+  // what made the prose call a 2.0 m offshore swell "0.3 m from the SE" while the
+  // card beside it read 2.0 m (29 Jul 2026). Using _ww was previously avoided to
+  // stop WW+NS mixing inside one sentence, but that risk is gone: the sheltered
+  // heights are withheld from the prose entirely, so this offshore figure is now
+  // the ONLY height the summariser ever sees.
+  const _wwF = (r, k, d) => (r && r._ww && r._ww[k] != null) ? r._ww[k]
+                          : (r && r[k] != null ? r[k] : d);
   const _oMid = rows.length ? rows[Math.floor(rows.length/2)] : {};
-  const oceanSwellDir = rows.length ? bearingName(_oMid.swell1Dir) : '\u2014';
-  const oceanSwellH   = rows.length ? avg(rows.map(r => r.swell1H || 0)) : 0;
-  const oceanSwellP   = rows.length ? avg(rows.map(r => r.swell1P || 8)) : 8;
+  const oceanSwellDir = rows.length ? bearingName(_wwF(_oMid, 'swell1Dir', 0)) : '\u2014';
+  const oceanSwellH   = rows.length ? avg(rows.map(r => _wwF(r, 'swell1H', 0))) : 0;
+  const oceanSwellP   = rows.length ? avg(rows.map(r => _wwF(r, 'swell1P', 8))) : 8;
   // The two sheltered figures, averaged over the window, from the SAME helpers the
   // metric readouts use \u2014 so the prose can never disagree with the pictogram next
   // to it. baySwellH is kept = bayResidualH so a not-yet-updated Worker still
@@ -11250,19 +11256,23 @@ async function generateBannerSummaryLocal() {
       windChill: windChill, windKmh: avgWind, windDir: dominantWindDir,
       rainProb: avgRain, cloud: avgCloud, haveWx: haveWx
     },
-    // ONLY the offshore height goes to the summariser. rampBreakH/bayResidualH
-    // are deliberately withheld: they are H*sqrt(transmit), and `transmit` comes
-    // from a table of ENERGY fractions built for SCORING. That makes them useful
-    // relative quantities and terrible absolute ones — stating "1.1 m of bay
-    // swell" as a measurement produced text no swimmer recognised, sitting right
-    // beside the app's own "the surface will be smooth" (18 Jul 2026). The
-    // verdicts are the trustworthy output; let the prose lean on those. The
-    // Worker's validator rejects any figure not present here, so withholding
-    // them is what actually enforces this.
+    // Two heights go to the summariser: the offshore swell, and the ramp
+    // residual at South Steyne (the entry point). bayResidualH is STILL withheld —
+    // an in-the-bay height stated as a measurement is what made the app look
+    // ridiculous ("1.1 m of bay swell" beside "the surface will be smooth",
+    // 18 Jul 2026), so the bay stays word-only. South Steyne is different: it is
+    // the one place a swimmer actually stands and gets in, the swell card already
+    // prints "0.2 m at the ramp" right there, and telling the shelter story with
+    // both endpoints (2.0 m offshore easing to ~0.2 m at South Steyne) is the whole
+    // point of the app (29 Jul 2026). rampBreakH = H*sqrt(transmit); it is small
+    // and believable at the ramp, never larger than the offshore figure. The
+    // Worker's validator only lets this number be attributed to South Steyne / the
+    // ramp — never to the bay.
     water: {
       oceanSwellH: Number(oceanSwellH.toFixed(1)),
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
+      rampBreakH: Number(rampBreakH.toFixed(1)),
       shelteredContrast: shelteredContrast
     }
   };
