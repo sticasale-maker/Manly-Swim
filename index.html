@@ -10718,8 +10718,23 @@ function waterQualityLine() {
     return '';
   } catch (e) { return ''; }
 }
-// Water-quality caution first (safety), then the friendly community clause.
-function appendCommunity(text) { return (text || '') + waterQualityLine() + communitySummaryLine(); }
+// A quiet footnote when the app is serving a STALE forecast — the cached WW data is past
+// its 2h fresh window, which means the live refresh has been failing. Keeps the Oracle
+// honest: the prose must not narrate hours-old conditions as if they were live. Pull-to-
+// refresh (the #ptr-indicator) refetches. Silent whenever the forecast is fresh.
+function forecastStaleLine() {
+  try {
+    const c = loadCache(WW_CACHE_KEY);
+    if (!c || !c.fetchedAt || cacheIsFresh(c, WW_CACHE_TTL)) return '';
+    const ageMin = (Date.now() - c.fetchedAt) / 60000;
+    const h = Math.floor(ageMin / 60);
+    const label = ageMin < 90 ? Math.round(ageMin) + ' min' : (h + (h === 1 ? ' hour' : ' hours'));
+    return ' <span style="color:var(--yellow)">(This read is based on forecast data from about ' + label + ' ago — pull down to refresh.)</span>';
+  } catch (e) { return ''; }
+}
+// Water-quality caution first (safety), then the friendly community clause, then a
+// stale-forecast footnote if the underlying data is old.
+function appendCommunity(text) { return (text || '') + waterQualityLine() + communitySummaryLine() + forecastStaleLine(); }
 // Re-append the community clause to the stored base text once reports arrive
 // (the summary itself only generates once, so we patch the water line in place).
 function refreshCommunitySummary() {
