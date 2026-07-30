@@ -10714,7 +10714,7 @@ function waterQualityLine() {
     if (f.includes('possible') || f.includes('fair'))
       return ' Beachwatch is forecasting pollution as possible today — worth a look at the water and the beach sign before you get in.';
     if (f.includes('likely') || f.includes('poor'))
-      return ' Heads up: Beachwatch is forecasting pollution as likely today — best to skip the swim or wait about a day for it to clear, and steer clear of the lagoon outlet.';
+      return ' One more thing though — Beachwatch is forecasting pollution as likely today, so regardless of how the water looks it\'s best to skip the swim or wait about a day for it to clear, and steer clear of the lagoon outlet.';
     return '';
   } catch (e) { return ''; }
 }
@@ -12693,8 +12693,15 @@ function applySightingToBanner(s) {
     recent = true;
   }
 
-  const when = stamp
-    ? new Date(stamp).toLocaleDateString('en-AU', { day:'numeric', month:'short' })
+  const stampMs = stamp ? new Date(stamp).getTime() : 0;
+  const ageDaysN = stampMs ? (Date.now() - stampMs) / 86400000 : null;
+  const when = stampMs
+    ? new Date(stampMs).toLocaleDateString('en-AU', { day:'numeric', month:'short' }) + ' · ' + visAgo(stampMs)
+    : '';
+  // Flag a report that's getting old, so a stale one never reads as "now" — a 28 Jul
+  // report showing a bare "updated 28 Jul" is exactly what looked current (30 Jul 2026).
+  const staleNote = (ageDaysN != null && ageDaysN >= 2)
+    ? ' <span style="color:var(--yellow)">· may be out of date</span>'
     : '';
 
   if (!recent || !s || !summary) {
@@ -12705,7 +12712,7 @@ function applySightingToBanner(s) {
     return;
   }
 
-  if (subEl) subEl.innerHTML = when ? ('Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated ' + when) : 'Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently';
+  if (subEl) subEl.innerHTML = when ? ('Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated ' + when + staleNote) : 'Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently';
   if (inlineEl) inlineEl.textContent = summary;
 
   _diversSummary = summary;
