@@ -6001,17 +6001,23 @@ function buildHourlyMatrix(j) {
     return (h1 + h2) / 2 - (h2 - h1) / 2 * Math.cos(Math.PI * frac);
   }
 
-  swellDays.forEach((sday, di) => {
-    const wday = windDays[di] || {};
-    (sday.entries||[]).forEach(se => {
-      const we = (wday.entries||[]).find(e => e.dateTime === se.dateTime) || {};
-      const dt = se.dateTime;
+  // Master grid = WIND (hourly across WW's whole window), NOT swell. WW swell thins to
+  // 3-hourly on the last day or two, and it is never scored anyway — the app scores on
+  // the NS swell that mergeNearshoreMatrix overlays below; WW swell survives only as
+  // `_ww` (the 'Oceanside' FYI in the Oracle / the WW-vs-NS compare tick). Keying the
+  // grid to wind keeps every day a full 24 hourly slots, so the time picker no longer
+  // shrinks on days where WW happens to report swell sparsely (30 Jul 2026).
+  windDays.forEach((wday, di) => {
+    const sday = swellDays[di] || {};
+    (wday.entries||[]).forEach(we => {
+      const dt = we.dateTime;
+      const se = (sday.entries||[]).find(e => e.dateTime === dt) || {};
       const row = {
         dateTime:  dt,
         windKmh:   we.speed     ?? 0,
         windDir:   we.direction ?? 0,
-        // NS-ONLY swell + sea (see wwData note). WW never seeds these — a missing
-        // NS hour must yield 0, not a WW arrival dir that NS never reports here.
+        // NS-ONLY swell + sea. WW never seeds these — a missing NS hour must yield 0,
+        // not a WW arrival dir that NS never reports here.
         swell1H:   0,
         swell1Dir: 0,
         swell1P:   8,
@@ -6019,10 +6025,11 @@ function buildHourlyMatrix(j) {
         windWaveH: 0, windWaveDir: 0, windWaveP: 0,
         tideM: getTide(dt),
       };
-      // Stamp the WW-original wave values (from the WW swell entry, NOT the zeroed
-      // slots) so the compare tick always has a real WW feed to score.
+      // WW-original swell for the `_ww` FYI, only where WW actually has an entry this
+      // hour (sparse on far days) — null otherwise, so downstream falls back to the NS
+      // value rather than showing a bogus 0 m offshore.
       row._ww = {
-        swell1H: se.height ?? 0, swell1P: se.period ?? 8, swell1Dir: se.direction ?? 0,
+        swell1H: se.height ?? null, swell1P: se.period ?? null, swell1Dir: se.direction ?? null,
         swell2H: 0, swell2Dir: 0, swell2P: 8,
         windWaveH: 0, windWaveP: 0, windWaveDir: 0,
       };
