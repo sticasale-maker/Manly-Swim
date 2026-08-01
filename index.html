@@ -4034,6 +4034,26 @@ const GEM_DEBUG = location.search.includes('debug=1') || TUNE_PANEL; // tune vie
 const VRAIL = location.search.includes('vrail=1'); // ?vrail=1 → vertical sliders beside each image (B layout); default is horizontal (A)
 const CMP_FEEDS = location.search.includes('compare=1'); // ?compare=1 → show WW tick alongside NS dot on each rail
 const FORCE_FRESH = location.search.includes('fresh=1'); // ?fresh=1 → bypass the 1h config + GEM-table cache and re-pull the sheet now. This device/load only; everyone else keeps the full SWIM_CONFIG_TTL.
+
+// =============================================================================
+// FORECAST SOURCE SWAP — two fully independent scoring paths, running in parallel:
+//   • NS  (default): NS nearshore inputs → SS/BL dispersion tables (the precise path)
+//   • WW  (backup) : WillyWeather inputs → Gem-Cla50-50 2-D table (VECCHIO / "gem")
+// Both are ALWAYS computed every render — the calibration logger already writes the
+// WW→gem score ("Student B", wo_*) to Supabase every hour next to the NS teacher, so
+// WW accuracy is tracked against NS live. This flag ONLY chooses which path DRIVES
+// the display, so the app can be swapped from NS to WW in seconds if the NS
+// integration breaks or NS dies as a data provider. NS scoring code is untouched.
+//   ?src=ww → force the WW/gem path        ?src=ns → force NS (and clear the latch)
+// A ?src= choice is latched in localStorage so it survives reloads until changed.
+// Independently of this flag, any single hour NS does not cover still auto-falls back
+// to WW/gem per-row (see calcScore) — this flag forces WW even when NS is healthy.
+const FORCE_WW = (() => {
+  const m = (location.search.match(/[?&]src=(ww|ns)/) || [])[1];
+  if (m) { try { localStorage.setItem('swim_forecast_src', m); } catch (e) {} }
+  let latched = null; try { latched = localStorage.getItem('swim_forecast_src'); } catch (e) {}
+  return (m || latched) === 'ww';
+})();
 if (VRAIL) document.body.classList.add('vrail');
 if (CMP_FEEDS) document.body.classList.add('cmp-feeds');
 // WW-compare toggle: flips the tick visibility and re-renders the current slot
@@ -5473,10 +5493,24 @@ function calcScore(d, modelOverride) {
   // branch's clothes. Missing either → score through VECCHIO (the Gem-Cla50-50 2-D
   // table, i.e. the model index.html runs in production). See the else-branch below.
   const useGem = modelOverride ? (modelOverride === 'gem')
-                               : (GEM_MODEL && d._nsFeed === true && !!SITE.nsDisp);
+                               : (!FORCE_WW && GEM_MODEL && d._nsFeed === true && !!SITE.nsDisp);
   const lk = SITE.lookup;
+  // Input source for the WW/gem path. buildHourlyMatrix + the snapshot builder ZERO
+  // every row's primary swell/sea slots and stash the real WillyWeather values in
+  // `_ww` (so WW can never leak into an NS-fed hour). Therefore, whenever the live
+  // display path is NOT running the NS branch — because NS is down for this hour, or
+  // ?src=ww forces WW — it must score the `_ww` originals, not the zeroed slots, or
+  // it would report a phantom flat-calm sea. Only wave keys are overlaid; wind + tide
+  // stay as-is (WW already supplies those on `d`). Explicit modelOverride callers (CAL
+  // compare, the calibration logger) pass their own pre-promoted slots and are left on
+  // `d` untouched, so their semantics — and the entire NS path — never change.
+  // Overlay `_ww` ONLY when this hour is genuinely not NS-fed, or WW is force-selected.
+  // A still-NS-fed row that merely lost the dispersion table keeps scoring its NS
+  // inputs through VECCHIO exactly as before — that degraded case is NS's own, untouched.
+  const useWWInputs = !modelOverride && d._ww && (FORCE_WW || d._nsFeed !== true);
+  const src = useWWInputs ? Object.assign({}, d, d._ww) : d;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
-          windWaveH, windWaveDir, windWaveP, tideM } = d;
+          windWaveH, windWaveDir, windWaveP, tideM } = src;
   const windDurHrs = (d.windDurHrs != null) ? d.windDurHrs : 6;
 
   // ── CHOP term: BL-point wind-sea (straight-line fetch, duration-limited) ──────
@@ -6795,10 +6829,21 @@ function setNsFallbackBanner(isFallback) {
       el = document.createElement('div');
       el.id = 'nsFallbackBanner';
       el.style.cssText = 'display:none;margin:8px 0;padding:8px 10px;border-radius:8px;'
-        + 'background:#8a1f1f;color:#fff;font-size:11px;font-weight:700;letter-spacing:.3px;'
+        + 'color:#fff;font-size:11px;font-weight:700;letter-spacing:.3px;'
         + 'text-align:center;line-height:1.35;';
-      el.textContent = '\u26A0 ESTIMATED CONDITIONS \u2014 live nearshore feed unavailable, showing modelled backup.';
       (host.parentElement || host).insertBefore(el, host);
+    }
+    // Two reasons this banner shows, worded distinctly so a deliberate WW swap is
+    // never read as an NS outage: FORCE_WW = we chose the WW/gem path (NS may be
+    // perfectly healthy); otherwise = this hour genuinely has no NS coverage.
+    if (isFallback) {
+      if (FORCE_WW) {
+        el.style.background = '#8a5a1f';
+        el.textContent = '\u26A0 WW / GEM PATH (forced) \u2014 independent backup model, not the live NS feed.';
+      } else {
+        el.style.background = '#8a1f1f';
+        el.textContent = '\u26A0 ESTIMATED CONDITIONS \u2014 live nearshore feed unavailable, showing modelled backup.';
+      }
     }
     el.style.display = isFallback ? 'block' : 'none';
   } catch (e) {}
@@ -7084,7 +7129,7 @@ function renderSnapshot(h, wx) {
   })();
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
-  setNsFallbackBanner(!h._nsFeed);   // show backup banner when this hour isn't NS-fed
+  setNsFallbackBanner(!h._nsFeed || FORCE_WW);   // backup banner when this hour isn't NS-fed OR the WW/gem path is forced
   if (!SITE.nsDisp)  markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
   if (!SITE.gemTable) markNsDegraded('gem_table_missing');      // vecchio fallback has no table either
   // Calibration pair log — runs on every live render (not just compare mode). Builds
