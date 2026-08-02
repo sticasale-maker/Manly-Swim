@@ -4195,7 +4195,7 @@ const OM_WEATHER_URL = `${OM_WEATHER_PROXY}`
 // =============================================================================
 const SITE_DEFAULTS = {
   windSens:       0.15,  // was 0.2; pinned to MASTER P24 (fallback-only param; tab-1 severed)
-  swellSens:      0.9,   // was 2.5; pinned to MASTER P25 (fallback-only; tab-1 severed)
+  swellSens:      1.6,   // 2026-08-03: raised 0.9→1.6 (648-hr calibration midpoint; 0.9 overshot down when tab-1 severed, under-called the WW Entry). was 2.5; tab-1 severed so this code default is live.
   periodPower:    20,
   swellPeriodMult: 5,   // sheet row 27 col P — loaded but no longer used to cap period (cap removed)
   wwSens:         1.8,   // wind-wave demerit scale (held at 1.8 so chop is unaffected by swellSens 2.5; sheet 'WW sens' overrides)
@@ -5642,6 +5642,18 @@ function calcScore(d, modelOverride) {
     ww_d  = swellPower(windWaveH || 0, wwP)        * wwTx * wwSens;
     s1_d  = swellPower(swell1H, swell1P)           * s1Tx * SITE.swellSens;
     rif_d = 0; // absorbed into gemLookup
+
+    // ── ENTRY wind-sea: SS-point straight-line fetch (mirrors the NS branch) ──
+    // Without this the WW/gem Entry was built from swell + tide ALONE (WW's own
+    // wind-wave slot is severed → ww_d≈0), while the NS Entry adds this SS fetch
+    // wind-sea. On windy swell days that made the WW backup read systematically
+    // CALMER than NS — the dangerous direction (see calibration_pairs 19–22 Jul).
+    // Same fetch model + wind inputs as NS (both feed-agnostic); scored in VECCHIO's
+    // energy convention (swellPower) and scaled by the shared windSeaSens knob.
+    // wwTxForChop stays 0 on this path, so windEntry below resolves to this ws_d.
+    const wsSensV = (SITE.windSeaSens != null) ? SITE.windSeaSens : 1;
+    const wsSSV   = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs);
+    ws_d = swellPower(wsSSV.hs, wsSSV.tp) * wsSensV;
   }
 
   // BL wind-sea (wind_d) is DELIBERATELY EXCLUDED from the Entry total (2 Jul 2026):
