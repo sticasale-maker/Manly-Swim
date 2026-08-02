@@ -5689,10 +5689,17 @@ function calcScore(d, modelOverride) {
   // starts at >90°, smoothstep ramp to full at 135°, flat beyond. Wind chop is
   // never tide-amplified — only swell + wind-wave, each gated by its own direction.
   // tideDir is signed: tide_d = tideGain × (tideM − tideRef) × w — adds above tideRef, credits below.
-  const tide_d = SITE.tideDir(tideM, {
+  let tide_d = SITE.tideDir(tideM, {
     s1_d, s1Dir: swell1Dir,
     ww_d, wwDir: windWaveDir || windDir,
   }, 'tideGate');
+  // WW-PATH TIDE = the OLD one-sided formula (2026-08-03, per user): clamp off the
+  // below-neutral CREDIT so on WW tide can only ADD demerits (tideM ≤ tideRef → 0),
+  // exactly like the pre-17-Jul `max(0,…)` behaviour. Above tideRef is identical to
+  // the signed form, so this only removes the low-tide credit. The NS path keeps the
+  // signed `tideDir` byte-for-byte — this is gated on useWWInputs, which is FALSE for
+  // every NS-fed hour once DEFAULT_SRC flips back to 'ns', so the NS model is untouched.
+  if (useWWInputs) tide_d = Math.max(0, tide_d);
   const total  = o + tide_d;
 
   // CHOP crossfade (single source of truth): BL wind-sea ↔ BL wind-wave handover
