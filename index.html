@@ -5634,14 +5634,27 @@ function calcScore(d, modelOverride) {
     // wrong for a beach at the north end of a south-facing embayment. Since the
     // fallback runs precisely when the weather is bad, that error ran the wrong
     // way. lk.sea / lk.rif are no longer read by any live scoring path.
-    const wwP       = windWaveP || 5;
-    const wwArrival = Math.max(0, gemLookup(windWaveDir || windDir, wwP));
+    // WIND-WAVE (sea) — WW gives no sea partition, so while NS is down we take it
+    // from Open-Meteo Marine (stashed on `_omSea` by mergeOMarine*) and route it
+    // through the SAME gem table as the swell. Falls back to the (usually 0) WW slot
+    // when OM has nothing this hour, in which case the Entry wind term stays the pure
+    // wind-fetch ws_d below (crossfade weight forced to 0). (2026-08-03)
+    const omSea     = src._omSea || null;
+    const seaH      = (omSea && omSea.h > 0)    ? omSea.h   : (windWaveH || 0);
+    const wwP       = (omSea && omSea.p > 0)    ? omSea.p   : (windWaveP || 5);
+    const seaDir    = (omSea && omSea.dir != null) ? omSea.dir : (windWaveDir || windDir);
+    const wwArrival = Math.max(0, gemLookup(seaDir, wwP));
     const wwTx      = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
     const s1Tx      = Math.max(0, gemLookup(swell1Dir, swell1P));
 
-    ww_d  = swellPower(windWaveH || 0, wwP)        * wwTx * wwSens;
+    ww_d  = swellPower(seaH, wwP)                  * wwTx * wwSens;
     s1_d  = swellPower(swell1H, swell1P)           * s1Tx * SITE.swellSens;
     rif_d = 0; // absorbed into gemLookup
+    // Activate the Entry wind crossfade (windEntry = ws_d·(1−w) + ww_d·w, w below)
+    // ONLY when we actually have a forecast sea: trust the OM sea via the gem arc
+    // where it transmits into the entry, else fall back to the wind-fetch ws_d. No
+    // sea → w=0 → windEntry = ws_d, i.e. the pre-OM behaviour is unchanged.
+    wwTxForChop = (seaH > 0) ? Math.max(0, Math.min(1, wwTx)) : 0;
 
     // ── ENTRY wind-sea: SS-point straight-line fetch (mirrors the NS branch) ──
     // Without this the WW/gem Entry was built from swell + tide ALONE (WW's own
@@ -6366,10 +6379,12 @@ async function fetchOMarine() {
 function mergeOMarine(data, omData) {
   if (!omData?.current) return data;
   const c = omData.current;
-  // Swell + sea are NS-ONLY. Open-Meteo no longer seeds wind-wave (sea slot) or
-  // swell2 — those come from NS (hs_sea/dp_sea) or stay 0. OM contributes sea
-  // temperature only.
-  return { ...data, seaTemp: c.seaTemp ?? null };
+  // Sea temp + — while NS is down — the OM wind-wave (sea) partition WW never
+  // provides, stashed on `_omSea` (see mergeOMarineMatrix for the full rationale).
+  const out = { ...data, seaTemp: c.seaTemp ?? null };
+  if (c.windWaveH != null && c.windWaveH > 0)
+    out._omSea = { h: c.windWaveH, p: (c.windWaveP || 5), dir: (c.windWaveDir ?? 0) };
+  return out;
 }
 
 function mergeOMarineMatrix(matrix, omData) {
@@ -6395,11 +6410,21 @@ function mergeOMarineMatrix(matrix, omData) {
     }
     return bestDiff <= 90*60*1000 ? best : null;
   }
-  // Swell + sea are NS-ONLY — OM contributes sea temperature only, no waves.
+  // OM contributes sea-surface temperature AND — while NS is down — the wind-wave
+  // (sea) partition WW itself never provides. Stashed on `_omSea`, deliberately NOT
+  // on the NS sea slot `windWaveH` and NOT on `_ww`: that keeps it out of the NS
+  // score AND out of the additive Chop slap (ww_d_BL_raw), where a modelled OM
+  // wind-sea would double-count against the wind-fetch chop. Only the WW-path Entry
+  // reads it, routed through the SAME gem table as the swell. Re-enabled 2026-08-03
+  // (previously discarded to seaTemp-only when the app went NS-only for swell/sea).
   return matrix.map(row => {
     const om = nearest(row.dateTime);
     if (!om) return row;
-    return { ...row, seaTemp: om.sea_surface_temperature ?? null };
+    const wh = om.wind_wave_height;
+    const patch = { seaTemp: om.sea_surface_temperature ?? null };
+    if (wh != null && wh > 0)
+      patch._omSea = { h: wh, p: (om.wind_wave_period || 5), dir: (om.wind_wave_direction ?? 0) };
+    return { ...row, ...patch };
   });
 }
 
