@@ -5481,6 +5481,47 @@ function blSwimWater(d, chop) {
            parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 
+// ── WW-NATIVE SURGE — reinstated 2026-08-02 (the retired pre-NS Bower Lane path) ──
+// The BL dispersion table (blDispLookup, in blSwimWater) is NS-tuned and CANNOT
+// process WW swell direction/period — so on the WW feed Surge is scored here instead,
+// through the CTB "Bower" directional tables (SITE.bowerLookup, anchored on the tab-1
+// D4 Bower-Lane point / Q4 South-Steyne entry geometry) which were built for WW input.
+// Uses its own bowerSwellSens / bowerSpm / bowerTideGain. Chop is EXCLUDED by
+// construction (the slap lives in the standalone Chop metric), matching the original.
+// bowerSurgeParts physics is byte-faithful to commit 9e353be; only the return envelope
+// is mapped to the current water.{raw,parts} shape, and the band edges are pinned to the
+// ORIGINAL score-convention thresholds {50,30,10} — SITE.surgeThresholds was repurposed
+// to NS demerit edges after the switch, so reading it here would misclassify. The NS
+// path (blSwimWater/blDispLookup) is left completely untouched.
+function bowerSurgeParts(d) {
+  const { swell1H, swell1Dir, swell1P, swell2H, swell2Dir, swell2P, tideM } = d;
+  const bl   = SITE.bowerLookup;
+  const sens = SITE.bowerSwellSens, spm = SITE.bowerSpm;
+  const s1p  = swellPower(swell1H || 0, swell1P || 8);
+  const s2p  = swellPower(swell2H || 0, swell2P || 8);
+  // per-train demerit = swell energy through Bower sea-hit + that train's refraction
+  const s1_d = s1p * (Math.max(0, dirLookup(bl.sea, swell1Dir || 0)) / 100) * sens
+             + (dirLookup(bl.rif, swell1Dir || 0) * s1p * spm) / 1000;
+  const s2_d = s2p * (Math.max(0, dirLookup(bl.sea, swell2Dir || 0)) / 100) * sens
+             + (dirLookup(bl.rif, swell2Dir || 0) * s2p * spm) / 1000;
+  const tmult  = Math.max(0, (tideM != null ? tideM : 1.0) - 0.2);
+  const tide_d = (SITE.bowerTideGain ?? 0.35) * tmult * (s1_d + s2_d);
+  return { s1_d, s2_d, tide_d, raw: s1_d + s2_d + tide_d };
+}
+function bowerSurgeWater(d) {
+  const p  = bowerSurgeParts(d);
+  const v6 = Math.max(0, Math.round(60 - p.raw));
+  const t  = { steady: 50, drifty: 30, surgy: 10 };   // ORIGINAL score-convention edges (pre-NS); NOT SITE.surgeThresholds
+  const z  = v6 >  t.steady ? ['Steady', 'green']
+           : v6 >  t.drifty ? ['Drifty', 'amber']
+           : v6 >= t.surgy  ? ['Surgy',  'yellow']
+           :                  ['Washy',  'red'];
+  // Envelope mapped to the live water shape so the Surge popup + calibration loggers
+  // keep reading .raw / .parts. No wind-wave heave on the Bower path (chop excluded).
+  return { label: z[0], cls: z[1], score: v6, raw: p.raw,
+           parts: { swell1: p.s1_d + p.s2_d, windWave: 0, tide: p.tide_d, chop: 0, raw: p.raw } };
+}
+
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
@@ -5725,7 +5766,7 @@ function calcScore(d, modelOverride) {
     // Metric 3: SWIM (renamed from Surge, 2 Jul 2026) — swell+sea across the bay
     //   at the BL point via the BL dispersion table (New NS V10:AL28) × bl_wave_sens.
     //   Absorbs the old Surge; chop stays a separate metric. Rail inverted (60−rawBL).
-    water: blSwimWater(d, chopQ7),
+    water: useWWInputs ? bowerSurgeWater(src) : blSwimWater(d, chopQ7),   // WW feed → Bower path (BL table can't take WW); NS → blSwimWater untouched
   };
 }
 
