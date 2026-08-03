@@ -49,7 +49,7 @@ bands, across ~7 days (yesterday + today + 5), with a "now" marker. Each plotted
 (conservative). Two things are worth recording because they *look* like model changes but are not:
 (a) the **curve is drawn from the UNCAPPED position** (`bbfRawPos`, the pre-seasonal-cap `pos`
 maths) so its *shape* shows the real wind dynamics through the day; (b) the **seasonal cap is drawn
-as a dashed "seasonal cap" line with a muted zone above it**, and the CLASSIFICATION / verdict
+as a dashed "seasonal cap" line** over the full-brightness bands, and the CLASSIFICATION / verdict
 (the tap-through modal, the aria label, `bbfDayBand`) **remains the capped, daily-validated band**.
 So the chart shows finer *shape* while the *verdict* keeps the validated daily grain and the cap.
 Nothing in the fit, thresholds, multipliers, or `BBF_SEASON_CAP` changed.
