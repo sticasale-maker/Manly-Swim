@@ -14,8 +14,8 @@ governed by onshore wind, not by waves or water temperature. The card:
 1. projects the forecast wind onto the bay's shoreline orientation (`BBF_ASPECT = 82°`, ENE),
    keeping only the onshore component (`max(0, cos(windFrom − 82°)) × speed`);
 2. averages that onshore component over the 3 hours up to the selected time;
-3. maps the result to a four-band scale (Low / Building / Elevated / High) via thresholds
-   `[2, 6, 12] km/h`;
+3. maps the result to a four-band scale — displayed **Low / Moderate / High / Extreme**
+   (internal keys `low/building/elevated/high` unchanged) — via thresholds `[4, 6, 12] km/h`;
 4. caps the band in the cooler months, when few bluebottles are offshore to arrive.
 
 It reports **relative risk** (how a day compares with an average day), not an absolute probability.
@@ -31,6 +31,16 @@ maximum then answers "do conditions favour arrival at any point today?" while th
 fluke from turning a whole day red. This aggregation changes no threshold, multiplier, or cap; it
 only summarises the per-hour output to a day. A day past the wind-forecast horizon (the wind feed is
 shorter than the swell outlook) shows a neutral "no reading", never a green Low.
+
+**Display changes (2026-08-03).** Two presentation-only edits, neither touching the fitted
+coefficients, relative risks, or the seasonal cap: (a) the first warm band's entry threshold was
+raised from **2 → 4 km/h** mean onshore. At 2 km/h the band fired on near-calm days (observed live:
+a 2.1 km/h day) with no bluebottles, which eroded credibility; 4 km/h clears those to Low while
+keeping genuine onshore days warm. This is display conservatism layered on top of the fit, not a
+re-estimation. (b) The four display labels were renamed to a fire-danger-style escalating scale
+(**Low / Moderate / High / Extreme**, was Low / Building / Elevated / High) so the current band's
+place in the full spectrum is self-evident. The internal band **keys** (`low/building/elevated/high`)
+— and every reference to them in §4 below — are unchanged.
 
 ## 2. Source data
 
