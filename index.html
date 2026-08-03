@@ -2809,7 +2809,7 @@
           <div class="t" id="tideNowState">—</div>
         </div>
       </div>
-      <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 150" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
+      <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 105" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
     </div>
 
     <!-- Best swim window — 3-line day chart (Entry / Chop / Surge), updates with the selected day -->
@@ -2845,7 +2845,7 @@
     <div class="forecast-values">
       <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
         <span class="fv-head-txt">
-          <span class="fv-toggle-label">Forecast data for Manly</span>
+          <span class="fv-toggle-label">Forecast</span>
         </span>
         <span class="fv-toggle-chevron">▾</span>
       </button>
@@ -6981,6 +6981,11 @@ function setSlotHeader(dt) {
   const wEl = document.getElementById('swellWhen');   // day/time under the Swell + Wind title
   if (wEl) wEl.textContent = dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'})
     + ' · ' + dt.toLocaleTimeString('en-AU',{hour:'2-digit',minute:'2-digit'});
+  // Forecast-data panel title reflects the selected day/time
+  const fvLbl = document.querySelector('.fv-toggle-label');
+  if (fvLbl) fvLbl.textContent = 'Forecast for '
+    + dt.toLocaleDateString('en-AU',{weekday:'short', day:'numeric', month:'short'})
+    + ', ' + dt.toLocaleTimeString('en-AU',{hour:'numeric', minute:'2-digit'});
   fitSliderDate();
 }
 
@@ -7957,7 +7962,7 @@ function renderTideGraph() {
 
   // No tide data (fetch failed / past edge) → show a gentle empty state
   if (!_tidePts.length) {
-    svg.innerHTML = '<text x="180" y="78" text-anchor="middle" class="ext-lbl" fill="var(--dim)">Tide data unavailable</text>';
+    svg.innerHTML = '<text x="180" y="55" text-anchor="middle" class="ext-lbl" fill="var(--dim)">Tide data unavailable</text>';
     if (nowHEl)  nowHEl.textContent  = '—';
     if (nowStEl) nowStEl.textContent = '—';
     return;
@@ -7972,8 +7977,8 @@ function renderTideGraph() {
   const curTs  = curRow ? new Date(curRow.dateTime.replace(' ','T')).getTime() : dayStart;
 
   // ── SVG geometry ──
-  const VB_W = 360, VB_H = 150;
-  const PAD_L = 8, PAD_R = 8, PAD_T = 26, PAD_B = 22;
+  const VB_W = 360, VB_H = 105;   // ~30% thinner (was 150) to sit closer to the bluebottle chart height
+  const PAD_L = 8, PAD_R = 8, PAD_T = 18, PAD_B = 16;
   const plotW = VB_W - PAD_L - PAD_R;
   const plotH = VB_H - PAD_T - PAD_B;
 
