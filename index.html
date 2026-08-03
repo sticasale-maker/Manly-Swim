@@ -869,6 +869,12 @@
     text-align: right; line-height: 1.25;
   }
   .wa2-svg { width: 100%; height: auto; display: block; }
+  /* 7-day metric trend rows (Entry / Chop / Surge) */
+  .wa2-trend-row { margin-bottom: 9px; }
+  .wa2-trend-row:last-child { margin-bottom: 0; }
+  .wa2-trend-h { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
+  .wa2-trend-h i { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+  .wa2-trend-h b { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 1px; text-transform: uppercase; color: #c8bda0; }
   .wa2-empty {
     display: block; font-family: 'Inter', sans-serif;
     font-size: clamp(10px,2.8vw,12px); color: rgba(200,189,160,0.65); padding: 8px 0;
@@ -2834,7 +2840,7 @@
     <button class="wa2-head" id="wa2-toggle" type="button" onclick="toggleWeekAhead()" aria-expanded="false" aria-controls="weekAheadDays">
       <span class="wa2-head-txt">
         <span class="wa2-title">The Week Ahead</span>
-        <span class="wa2-sub">Best window boxed &middot; one row per upcoming day</span>
+        <span class="wa2-sub">7-day trend &middot; Entry &middot; Chop &middot; Surge</span>
       </span>
       <span class="wa2-chevron">&#9662;</span>
     </button>
@@ -8261,40 +8267,70 @@ function toggleWeekAhead(){
   btn.setAttribute('aria-expanded', String(open));
 }
 
+// The Week Ahead = a 7-day TREND of Entry / Chop / Surge, stacked. Each metric is
+// mapped onto a shared calm→rough 0-100 scale via its OWN band edges, then drawn as a
+// slim area chart riding the softened bluebottle-style bands (bottom = calmest tier,
+// top = roughest). Replaces the old per-day best-window ribbons (wgDayRibbon, now
+// unused). Display-only; the day-picker above still handles selecting a day.
 function renderWeekAhead(matrix){
   var host = document.getElementById('weekAheadDays');
   if (!host || !matrix || !matrix.length) return;
 
-  // Local "today" (not UTC) — avoids a Sydney-timezone off-by-one.
   var _n = new Date();
-  var todayStr = _n.getFullYear() + '-' + String(_n.getMonth()+1).padStart(2,'0') + '-' + String(_n.getDate()).padStart(2,'0');
+  var pad = function(n){ return String(n).padStart(2,'0'); };
+  var todayStr = _n.getFullYear() + '-' + pad(_n.getMonth()+1) + '-' + pad(_n.getDate());
+  var tsOf = function(s){ return new Date(String(s).replace(' ','T')).getTime(); };
+  var startMs = tsOf(todayStr + ' 00:00:00'), endMs = startMs + 7*86400000;   // today → +7 days
 
-  var days = [];
+  var eT = SITE.entryThresholds, sT = SITE.swimThresholds, uT = SITE.surgeThresholds;
+  if (!eT || !sT || !uT){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
+  var edgesE = [0, eT.easy, eT.doable, eT.caution, eT.scaleMax];
+  var edgesS = [0, sT.glassy, sT.ripply, sT.choppy, sT.scaleMax];
+  var edgesU = [0, uT.steady, uT.drifty, uT.surgy, uT.scaleMax];
+  function posOf(v, edges){ if (!(v > 0)) return 0; for (var i=1;i<edges.length;i++){ if (v <= edges[i]){ var f=(v-edges[i-1])/Math.max(0.0001, edges[i]-edges[i-1]); return (i-1)*25 + f*25; } } return 100; }
+
+  var BIN = 4*3600*1000, bE = {}, bS = {}, bU = {};
+  function put(map, b, p, ts){ var c = map[b]; if (!c || p > c.pos) map[b] = { pos:p, t:ts }; }   // worst-in-bin
   matrix.forEach(function(r){
-    var d = r.dateTime.substring(0, 10);
-    if (d > todayStr && days.indexOf(d) === -1) days.push(d);
+    var ts = tsOf(r.dateTime); if (!isFinite(ts) || ts < startMs || ts >= endMs) return;
+    var res; try { res = calcScore(r); } catch(e){ return; }
+    var b = Math.floor(ts/BIN)*BIN;
+    put(bE, b, posOf(res.entry.raw, edgesE), ts);
+    put(bS, b, posOf(res.swim.raw,  edgesS), ts);
+    put(bU, b, posOf(res.water.raw, edgesU), ts);
   });
+  function arr(map){ return Object.keys(map).map(function(k){ return [map[k].t, map[k].pos]; }).sort(function(a,b){ return a[0]-b[0]; }); }
+  var E = arr(bE), C = arr(bS), U = arr(bU);
+  if (E.length < 2){ host.innerHTML = '<div class="wa2-empty">No forecast beyond today yet.</div>'; return; }
 
-  if (!days.length){ host.innerHTML = '<div class="wa2-empty">No forecast beyond today yet.</div>'; return; }
+  var allT = E.concat(C).concat(U).map(function(p){ return p[0]; });
+  var t0 = Math.min.apply(null, allT), t1 = Math.max.apply(null, allT);
+  host.innerHTML =
+    wgTrendRow('Entry', '#16324a', 'Easy',   'Danger', E, t0, t1, false) +
+    wgTrendRow('Surge', '#0e6b60', 'Steady', 'Washy',  U, t0, t1, false) +
+    wgTrendRow('Chop',  '#9c2c8f', 'Smooth', 'Messy',  C, t0, t1, true);
+}
 
-  var html = '';
-  days.forEach(function(day){
-    var built = wgDayRibbon(day);
-    var dObj  = new Date(day + 'T00:00');
-    var name  = dObj.toLocaleDateString('en-AU', { weekday: 'short' });
-    var num   = dObj.getDate();
-    var mon   = dObj.toLocaleDateString('en-AU', { month: 'short' });
-    html += '<button class="wa2-day" type="button" onclick="selectDay(\'' + day + '\'); window.scrollTo({top:0,behavior:\'smooth\'});" aria-label="Load ' + name + ' ' + num + ' ' + mon + '">'
-          +   '<span class="wa2-day-head">'
-          +     '<span class="wa2-day-name">' + name + ' <b>' + num + '</b> ' + mon + '</span>'
-          +     '<span class="wa2-day-best">' + built.bandTxt + '</span>'
-          +   '</span>'
-          +   (built.empty
-                ? '<span class="wa2-empty">' + built.empty + '</span>'
-                : '<svg class="wa2-svg" viewBox="' + built.viewBox + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' + built.inner + '</svg>')
-          + '</button>';
-  });
-  host.innerHTML = html;
+// One slim band-chart for a metric's calm→rough trend (used by renderWeekAhead).
+function wgTrendRow(name, color, calmLbl, roughLbl, data, t0, t1, showDays){
+  var W = 360, x0 = 8, x1 = W-8, yTop = 3, bandsH = 48, bh = bandsH/4;
+  var H = yTop + bandsH + (showDays ? 15 : 4);
+  var span = Math.max(1, t1 - t0);
+  var xAt = function(t){ return x0 + (t-t0)/span * (x1-x0); };
+  var yAt = function(p){ return yTop + (1 - Math.max(0, Math.min(100, p))/100) * bandsH; };
+  var cols = ['#c07a70','#d8a274','#cdc77e','#82b487'];   // rough..calm, top->bottom
+  var s = ''; for (var i=0;i<4;i++) s += '<rect x="0" y="'+(yTop+i*bh).toFixed(1)+'" width="'+W+'" height="'+bh.toFixed(1)+'" fill="'+cols[i]+'"/>';
+  var grid = '', labels = '', dayMs = 86400000, sm = new Date(t0); sm.setHours(0,0,0,0);
+  for (var m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
+    if (m > t0 && m < t1){ var gx = xAt(m); grid += '<line x1="'+gx.toFixed(1)+'" y1="'+yTop+'" x2="'+gx.toFixed(1)+'" y2="'+(yTop+bandsH)+'" stroke="rgba(0,0,0,.16)" stroke-width="1"/>'; }
+    if (showDays && m + dayMs > t0 && m < t1){ var cx = Math.max(x0+2, Math.min(x1-2, (xAt(Math.max(m,t0)) + xAt(Math.min(m+dayMs,t1)))/2)); var dd = new Date(m); labels += '<text x="'+cx.toFixed(1)+'" y="'+(yTop+bandsH+13)+'" font-size="8.5" text-anchor="middle" fill="rgba(200,189,160,0.9)">'+dd.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()+'</text>'; }
+  }
+  var tier = '<text x="3" y="'+(yTop+8)+'" font-size="7" fill="rgba(255,255,255,.95)">'+roughLbl+'</text><text x="3" y="'+(yTop+bandsH-2)+'" font-size="7" fill="rgba(255,255,255,.95)">'+calmLbl+'</text>';
+  var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; });
+  var line = bbfSmoothPath(pts);
+  var area = line + ' L'+pts[pts.length-1][0].toFixed(1)+','+(yTop+bandsH)+' L'+pts[0][0].toFixed(1)+','+(yTop+bandsH)+' Z';
+  var svg = '<svg class="wa2-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" aria-hidden="true">'+s+grid+'<path d="'+area+'" fill="rgba(16,32,50,0.22)"/><path d="'+line+'" fill="none" stroke="'+color+'" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'+tier+labels+'</svg>';
+  return '<div class="wa2-trend-row"><div class="wa2-trend-h"><i style="background:'+color+'"></i><b>'+name+'</b></div>'+svg+'</div>';
 }
 
 // Compact ribbon for one day — the drawing core of renderDayWindow, returned as
