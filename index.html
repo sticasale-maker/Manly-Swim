@@ -4049,10 +4049,11 @@ const FORCE_FRESH = location.search.includes('fresh=1'); // ?fresh=1 → bypass 
 // Independently of this flag, any single hour NS does not cover still auto-falls back
 // to WW/gem per-row (see calcScore) — this flag forces WW even when NS is healthy.
 const FORCE_WW = (() => {
-  // NS feed is DOWN — drive the live display from the WW/gem path until it restarts.
-  // This is the site-wide default only; NS scoring code is untouched. To go back the
-  // moment NS returns, set DEFAULT_SRC back to 'ns' (or open with ?src=ns to test).
-  const DEFAULT_SRC = 'ww';
+  // NS feed is BACK (2026-08-03) — default flipped to 'ns' so the live display scores
+  // through the NS nearshore path again. The WW/gem path stays intact as the per-row
+  // fallback (any hour lacking NS coverage still scores WW) and behind ?src=ww. To
+  // force WW site-wide again if NS drops, set DEFAULT_SRC back to 'ww'.
+  const DEFAULT_SRC = 'ns';
   const m = (location.search.match(/[?&]src=(ww|ns)/) || [])[1];
   if (m) { try { localStorage.setItem('swim_forecast_src', m); } catch (e) {} }
   let latched = null; try { latched = localStorage.getItem('swim_forecast_src'); } catch (e) {}
