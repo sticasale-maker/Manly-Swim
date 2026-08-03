@@ -808,13 +808,13 @@
      boxed window read the same here as in the main day chart. Built by
      renderWeekAhead(); each day tile is tappable and loads that day above. */
   .wa2-card {
-    background: rgba(30,64,84,0.78);
+    background: var(--card);
     backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(120,190,220,0.22);
+    border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: clamp(12px,4vw,16px);
     margin-bottom: 12px;
-    box-shadow: inset 3px 0 0 var(--ocean), 0 4px 24px rgba(74,143,173,0.16);
+    box-shadow: 0 4px 24px rgba(74,143,173,0.10);
   }
   .wa2-head {
     display: flex; flex-direction: column; align-items: stretch; gap: 0;
@@ -830,18 +830,18 @@
   .wa2-head[aria-expanded="true"] .wa2-mini { display: none; }
   .wa2-head-txt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; flex: 0 1 auto; }
   .wa2-chevron {
-    font-size: 26px; color: #6fc0dd; line-height: 1; flex: none;
+    font-size: 26px; color: var(--ocean); line-height: 1; flex: none;
     transition: transform 0.3s ease;
   }
   .wa2-head[aria-expanded="true"] .wa2-chevron { transform: rotate(180deg); }
   .wa2-title {
     display: block; font-family: 'Bebas Neue', sans-serif;
     letter-spacing: 1.5px; font-size: clamp(16px,4.8vw,20px);
-    color: #c8bda0; text-transform: uppercase; line-height: 1.05;
+    color: var(--deep); text-transform: uppercase; line-height: 1.05;
   }
   .wa2-sub {
     display: block; font-family: 'Inter', sans-serif;
-    font-size: clamp(9px,2.5vw,10px); color: rgba(200,189,160,0.65);
+    font-size: clamp(9px,2.5vw,10px); color: var(--dim);
     letter-spacing: 0.3px; margin-top: 2px;
   }
   .wa2-days {
@@ -879,7 +879,7 @@
   .wa2-trend-row:last-child { margin-bottom: 0; }
   .wa2-trend-h { display: flex; align-items: center; gap: 7px; margin-bottom: 3px; }
   .wa2-trend-h i { width: 14px; height: 3px; border-radius: 2px; flex: none; }
-  .wa2-trend-h b { font-family: 'Bebas Neue', sans-serif; font-size: 19px; letter-spacing: 1px; text-transform: uppercase; color: #c8bda0; }
+  .wa2-trend-h b { font-family: 'Bebas Neue', sans-serif; font-size: 19px; letter-spacing: 1px; text-transform: uppercase; color: var(--deep); }
   .wa2-empty {
     display: block; font-family: 'Inter', sans-serif;
     font-size: clamp(10px,2.8vw,12px); color: rgba(200,189,160,0.65); padding: 8px 0;
@@ -8448,7 +8448,7 @@ function renderWeekAhead(matrix){
 // Compact 3-line mini for the collapsed Week Ahead header (Entry/Surge/Chop over the
 // shared calm→rough bands). Reuses bbfSmoothPath; no labels — just a colourful hint.
 function wgMiniSVG(E, U, C, t0, t1){
-  var W = 120, H = 38, x0 = 4, x1 = W - 4, top = 3, plot = H - 6, bh = plot / 4;
+  var W = 120, H = 27, x0 = 4, x1 = W - 4, top = 2, plot = H - 4, bh = plot / 4;   // ~30% shorter
   var span = Math.max(1, t1 - t0);
   var xAt = function(t){ return x0 + (t - t0) / span * (x1 - x0); };
   var yAt = function(p){ return top + (1 - Math.max(0, Math.min(100, p)) / 100) * plot; };
@@ -8470,7 +8470,7 @@ function wgTrendRow(name, color, calmLbl, roughLbl, data, t0, t1, showDays){
   var grid = '', labels = '', dayMs = 86400000, sm = new Date(t0); sm.setHours(0,0,0,0);
   for (var m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
     if (m > t0 && m < t1){ var gx = xAt(m); grid += '<line x1="'+gx.toFixed(1)+'" y1="'+yTop+'" x2="'+gx.toFixed(1)+'" y2="'+(yTop+bandsH)+'" stroke="rgba(0,0,0,.16)" stroke-width="1"/>'; }
-    if (showDays && m + dayMs > t0 && m < t1){ var cx = Math.max(x0+2, Math.min(x1-2, (xAt(Math.max(m,t0)) + xAt(Math.min(m+dayMs,t1)))/2)); var dd = new Date(m); labels += '<text x="'+cx.toFixed(1)+'" y="'+(yTop+bandsH+13)+'" font-size="8.5" text-anchor="middle" fill="rgba(200,189,160,0.9)">'+dd.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()+'</text>'; }
+    if (showDays && m + dayMs > t0 && m < t1){ var cx = Math.max(x0+2, Math.min(x1-2, (xAt(Math.max(m,t0)) + xAt(Math.min(m+dayMs,t1)))/2)); var dd = new Date(m); labels += '<text x="'+cx.toFixed(1)+'" y="'+(yTop+bandsH+13)+'" font-size="8.5" text-anchor="middle" fill="rgba(17,53,65,0.8)">'+dd.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase()+'</text>'; }
   }
   var tier = '<text x="3" y="'+(yTop+8)+'" font-size="7" fill="rgba(255,255,255,.95)">'+roughLbl+'</text><text x="3" y="'+(yTop+bandsH-2)+'" font-size="7" fill="rgba(255,255,255,.95)">'+calmLbl+'</text>';
   var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; });
