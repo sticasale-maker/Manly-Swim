@@ -1496,7 +1496,8 @@
   #timeRoller { display:none; }
   body.timesel-brass #timeRoller { display:block; margin:4px 0 2px; }
   #timeRoller .tr-read { text-align:center; margin-bottom:6px; }
-  #timeRoller .tr-read span { font-family:'Bebas Neue',sans-serif; font-size:19px; letter-spacing:1px; color:var(--deep); }
+  #timeRoller .tr-read { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#8ea6b3; }
+  #timeRoller .tr-read span { display:block; font-family:'Bebas Neue',sans-serif; font-size:23px; letter-spacing:1px; color:#eef3f6; text-transform:none; margin-top:1px; }
   .tr-cyl { position:relative; height:82px; border-radius:12px; overflow:hidden; cursor:grab; touch-action:pan-y; user-select:none;
             box-shadow: inset 0 2px 4px rgba(255,255,255,.22), inset 0 -3px 6px rgba(0,0,0,.5), 0 3px 10px rgba(0,0,0,.3); }
   .tr-cyl:active { cursor:grabbing; }
@@ -7913,7 +7914,7 @@ function initTimeRoller(){
   if (!host || host._built) return;
   host._built = true;
   host.innerHTML =
-    '<div class="tr-read"><span id="tr-val">—</span></div>' +
+    '<div class="tr-read">Selected time<span id="tr-val">—</span></div>' +
     '<div class="tr-cyl" id="tr-cyl">' +
       '<div class="tr-lay tr-surface"></div>' +
       '<div class="tr-lay tr-knurl"></div>' +
@@ -7931,7 +7932,9 @@ function initTimeRoller(){
     var g = geom();
     els.forEach(function(e, i){
       var th = (i - pos) * AP, c = Math.cos(th);
-      if (c <= 0.09){ e.style.display = 'none'; return; }
+      // Linear drum (NOT a full loop): hide anything past ~87° so wrap-around hours
+      // (15 × 24° = 360°) never bleed in at the ends.
+      if (Math.abs(th) >= 1.52 || c <= 0.06){ e.style.display = 'none'; return; }
       e.style.display = '';
       e.style.left = (g.cx + g.R * Math.sin(th)) + 'px';
       e.style.opacity = Math.pow(Math.max(0, c), 0.85);
