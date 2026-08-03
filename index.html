@@ -8783,6 +8783,10 @@ async function loadAndRender(forceRefresh = false) {
         renderDayPicker(_matrix);
         renderSlider(_matrix);
         renderTimeline(_matrix, _wxMatrix);
+        // The backfilled history carries YESTERDAY's wind, so the bluebottle strip must
+        // redraw to add its yesterday tile — the earlier renderSnapshot ran before this
+        // data arrived. (Without this the strip stays at today+forward only.)
+        try { renderBluebottleForecast(_matrix[_sliderIdx]); } catch (e) { /* non-fatal */ }
       }
     } catch(secErr) {
       console.warn('Secondary data merge failed (forecast still shown):', secErr);
