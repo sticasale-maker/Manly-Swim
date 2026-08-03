@@ -417,6 +417,15 @@
   /* Off-season cap held this day down: a small ° after the label, and a dimmer
      fill, so a low colour on a windy day is explained rather than puzzling. */
   .bbf-day.bbf-capped { filter:saturate(0.7) brightness(0.96); }
+  /* TODAY shows a compact arc-needle gauge (Low->Extreme) instead of a flat colour, so
+     its band reads against the whole spectrum. Same tile width (flex:1) so it never
+     sticks out; the row just grows a few px. The tile keeps its neutral tan fill (the
+     rail colour is skipped for today) so the arc colours stay legible. */
+  .bbf-day-gauge .bbf-gauge-svg { display:block; width:46px; max-width:100%; height:auto; margin:2px auto 0; }
+  .bbf-day-gauge .bbf-day-band { margin-top:2px; }
+  /* Keep the reference spectrum true even when the season cap holds today down — the
+     "°" on the label carries the capped signal, no need to dim the colour scale. */
+  .bbf-day.bbf-day-gauge.bbf-capped { filter:none; }
   /* A live photo sighting outranks the wind forecast: the whole strip steps back
      and a note points down to the reports. */
   .bbf-row.bbf-subordinate .bbf-strip { opacity:0.6; }
@@ -7124,6 +7133,23 @@ function bbfDayLabel(dateStr){
 // the main view is on — used only to ring the matching day, so the strip and the
 // day-picker read as one calendar.
 // Called on every render; cheap (a handful of bbfDayBand passes over _matrix).
+// Compact arc-needle gauge for TODAY's tile — 4 colour segments (Low/Moderate/High/
+// Extreme, left->right) with a white needle at the current band's centre, so today
+// shows its place in the full spectrum without widening the tile. bi = 0..3 band index.
+// Decorative: the tile's aria-label already states the band, so this is aria-hidden.
+function bbfGaugeSVG(bi){
+  const ang = ([157.5, 112.5, 67.5, 22.5][Math.max(0, Math.min(3, bi|0))]) * Math.PI / 180;
+  const cx = 23, cy = 25, r = 14;
+  const nx = (cx + r * Math.cos(ang)).toFixed(1), ny = (cy - r * Math.sin(ang)).toFixed(1);
+  return '<svg class="bbf-gauge-svg" viewBox="0 0 46 28" aria-hidden="true">' +
+    '<path d="M5,25 A18,18 0 0 1 10.27,12.27" fill="none" stroke="#4caf50" stroke-width="5"/>' +
+    '<path d="M10.27,12.27 A18,18 0 0 1 23,7" fill="none" stroke="#c9c246" stroke-width="5"/>' +
+    '<path d="M23,7 A18,18 0 0 1 35.73,12.27" fill="none" stroke="#e08a3c" stroke-width="5"/>' +
+    '<path d="M35.73,12.27 A18,18 0 0 1 41,25" fill="none" stroke="#b0392f" stroke-width="5"/>' +
+    '<line x1="23" y1="25" x2="' + nx + '" y2="' + ny + '" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>' +
+    '<circle cx="23" cy="25" r="2.4" fill="#fff"/></svg>';
+}
+
 function renderBluebottleForecast(h){
   const strip = document.getElementById('bbfStrip');
   const row   = document.getElementById('bbfRow');
@@ -7162,13 +7188,21 @@ function renderBluebottleForecast(h){
       + (banded ? ' has-band' : ' bbf-day-none')
       + (banded && db.capped ? ' bbf-capped' : '')
       + (date === selDay ? ' bbf-day-sel' : '');
-    if (banded) btn.style.background = `var(${BBF_RAIL[db.key]})`;
+    const isToday = date === todayStr;
+    // TODAY gets the compact arc-needle gauge (see bbfGaugeSVG): its band shown against
+    // the whole Low->Extreme spectrum, while the other days stay flat colour tiles. The
+    // rail colour is skipped for today so the tan tile backs the gauge; other days fill.
+    if (banded && !isToday) btn.style.background = `var(${BBF_RAIL[db.key]})`;
+    if (isToday && banded) btn.classList.add('bbf-day-gauge');
 
     const label = banded ? (db.label + (db.capped ? '°' : '')) : '—';
     btn.innerHTML =
-      `<span class="bbf-day-name">${date === todayStr ? 'Today' : d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
+      `<span class="bbf-day-name">${isToday ? 'Today' : d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
       `<span class="bbf-day-num">${d.getDate()}</span>` +
-      `<span class="bbf-day-band">${label}</span>`;
+      ((isToday && banded)
+        ? bbfGaugeSVG(BBF_BANDS.findIndex(x => x.key === db.key)) +
+          `<span class="bbf-day-band bbf-gauge-lbl">${label}</span>`
+        : `<span class="bbf-day-band">${label}</span>`);
     btn.setAttribute('aria-label', 'Bluebottle risk ' + bbfDayLabel(date) + ': ' + (banded ? db.label : 'no reading'));
     // Tapping a day opens the explainer FOR THAT DAY: stash its band as _bbfLast so
     // the sheet header names the same day and band the tile shows.
