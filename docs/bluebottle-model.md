@@ -42,6 +42,18 @@ re-estimation. (b) The four display labels were renamed to a fire-danger-style e
 place in the full spectrum is self-evident. The internal band **keys** (`low/building/elevated/high`)
 — and every reference to them in §4 below — are unchanged.
 
+**Display changes (2026-08-04) — the card became a continuous chart.** The per-day tiles were
+replaced by a single **4-hourly area chart** of the risk position riding the Low→Extreme colour
+bands, across ~7 days (yesterday + today + 5), with a "now" marker. Each plotted point is the
+**worst (max) risk in its 4-hour bin**, so a short onshore peak is never smoothed away
+(conservative). Two things are worth recording because they *look* like model changes but are not:
+(a) the **curve is drawn from the UNCAPPED position** (`bbfRawPos`, the pre-seasonal-cap `pos`
+maths) so its *shape* shows the real wind dynamics through the day; (b) the **seasonal cap is drawn
+as a dashed "seasonal cap" line with a muted zone above it**, and the CLASSIFICATION / verdict
+(the tap-through modal, the aria label, `bbfDayBand`) **remains the capped, daily-validated band**.
+So the chart shows finer *shape* while the *verdict* keeps the validated daily grain and the cap.
+Nothing in the fit, thresholds, multipliers, or `BBF_SEASON_CAP` changed.
+
 ## 2. Source data
 
 - **Sightings:** iNaturalist, genus *Physalia*, queried by taxon within a Sydney bounding box

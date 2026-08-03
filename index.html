@@ -416,15 +416,12 @@
   /* Off-season cap held this day down: a small ° after the label, and a dimmer
      fill, so a low colour on a windy day is explained rather than puzzling. */
   .bbf-day.bbf-capped { filter:saturate(0.7) brightness(0.96); }
-  /* Every day shows a compact shallow arc-needle dial (Low->Extreme) instead of a flat
-     colour, so each band reads against the whole spectrum. Tiles keep their neutral tan
-     fill (no rail colour) so the arc colours stay legible; the wide shallow arc keeps a
-     4-tile row thin. */
-  .bbf-day-gauge .bbf-gauge-svg { display:block; width:100%; max-width:70px; height:auto; margin:2px auto 0; }
-  .bbf-day-gauge .bbf-day-band { margin-top:1px; }
-  /* Day + date on one compact line (was two rows) to keep the all-dial row short. */
-  .bbf-dh { font-family:'Bebas Neue',sans-serif; font-size:12px; letter-spacing:0.5px; text-transform:uppercase; opacity:0.92; line-height:1.05; white-space:nowrap; }
-  .bbf-dh b { font-size:15px; margin-left:3px; -webkit-text-stroke:0.3px currentColor; }
+  /* Continuous 4-hourly risk AREA chart (replaces the per-day tiles): one tappable
+     panel, the SVG scales to full width, riding the Low->Extreme colour bands. */
+  .bbf-chartbtn { flex:1 1 100%; min-width:0; display:block; width:100%; border:none; background:transparent; padding:0; cursor:pointer; border-radius:12px; overflow:hidden; }
+  .bbf-chartbtn:active { transform:scale(0.997); }
+  .bbf-chart-svg { display:block; width:100%; height:auto; border-radius:10px; }
+  .bbf-chart-empty { flex:1; padding:14px; text-align:center; font-size:12px; color:var(--dim); background:rgba(74,143,173,0.10); border-radius:12px; }
   /* Keep the reference spectrum true even when the season cap holds today down — the
      "°" on the label carries the capped signal, no need to dim the colour scale. */
   .bbf-day.bbf-day-gauge.bbf-capped { filter:none; }
@@ -7135,21 +7132,88 @@ function bbfDayLabel(dateStr){
 // the main view is on — used only to ring the matching day, so the strip and the
 // day-picker read as one calendar.
 // Called on every render; cheap (a handful of bbfDayBand passes over _matrix).
-// Compact SHALLOW arc-needle dial for a day tile — 4 colour segments (Low/Moderate/
-// High/Extreme, left->right) with a white needle at the current band's centre, so each
-// day shows its place in the full spectrum. Wide + flat (a ~120° speedometer arc) so a
-// 4-tile row stays thin; the needle pivot sits just below the viewBox (no hub drawn).
-// bi = 0..3 band index. Decorative: the tile's aria-label already states the band.
-function bbfGaugeSVG(bi){
-  const ang = ([135, 105, 75, 45][Math.max(0, Math.min(3, bi|0))]) * Math.PI / 180;
-  const cx = 36, cy = 44, r = 28;
-  const nx = (cx + r * Math.cos(ang)).toFixed(1), ny = (cy - r * Math.sin(ang)).toFixed(1);
-  return '<svg class="bbf-gauge-svg" viewBox="0 0 72 30" aria-hidden="true">' +
-    '<path d="M6.56,27 A34,34 0 0 1 19,14.56" fill="none" stroke="#4caf50" stroke-width="4.5"/>' +
-    '<path d="M19,14.56 A34,34 0 0 1 36,10" fill="none" stroke="#c9c246" stroke-width="4.5"/>' +
-    '<path d="M36,10 A34,34 0 0 1 53,14.56" fill="none" stroke="#e08a3c" stroke-width="4.5"/>' +
-    '<path d="M53,14.56 A34,34 0 0 1 65.44,27" fill="none" stroke="#b0392f" stroke-width="4.5"/>' +
-    '<line x1="36" y1="44" x2="' + nx + '" y2="' + ny + '" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>';
+// UNCAPPED risk position (6..94) straight from the onshore component — mirrors
+// bbfBandForOnshore's `pos` maths but WITHOUT the seasonal cap, so the chart curve
+// shows the real wind-driven shape (the cap is drawn separately as a ceiling line).
+function bbfRawPos(onshore){
+  if (!Number.isFinite(onshore)) return null;
+  let bi = 0; while (bi < BBF_THRESHOLDS.length && onshore > BBF_THRESHOLDS[bi]) bi++;
+  const lo = bi === 0 ? 0 : BBF_THRESHOLDS[bi-1];
+  const hi = bi < BBF_THRESHOLDS.length ? BBF_THRESHOLDS[bi] : lo + 8;
+  const frac = Math.max(0, Math.min(1, (onshore - lo) / (hi - lo)));
+  const zoneW = 100 / BBF_BANDS.length;
+  return Math.max(6, Math.min(94, bi * zoneW + frac * zoneW));
+}
+
+// Cardinal-spline smoothing → an SVG path `d` through `pts` ([[x,y],...]).
+function bbfSmoothPath(pts){
+  if (!pts.length) return '';
+  if (pts.length < 2) return `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++){
+    const p0 = pts[i-1] || pts[i], p1 = pts[i], p2 = pts[i+1], p3 = pts[i+2] || p2;
+    const c1x = p1[0] + (p2[0]-p0[0])/6, c1y = p1[1] + (p2[1]-p0[1])/6;
+    const c2x = p2[0] - (p3[0]-p1[0])/6, c2y = p2[1] - (p3[1]-p1[1])/6;
+    d += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+// Continuous 4-hourly bluebottle RISK area chart — a smooth curve riding the Low->
+// Extreme colour bands across the forecast window, instead of one tile per day. Each
+// point is a 4-hour bin's WORST risk position (max), so a short onshore peak is never
+// smoothed away — conservative, never under-calls. samples = [{t:ms, pos:6..94}] sorted
+// ascending; nowMs draws the live "now" marker. The band CLASSIFICATION stays daily
+// (validated grain); only the chart shape shows the finer intraday signal.
+function bbfRiskChartSVG(samples, nowMs, ceilingPos){
+  const W = 360, yTop = 6, bandsH = 104, bh = bandsH/4, H = yTop + bandsH + 22;
+  const x0 = 28, x1 = W - 8;
+  const t0 = samples[0].t, t1 = samples[samples.length-1].t, span = Math.max(1, t1 - t0);
+  const xAt = t => x0 + (t - t0)/span * (x1 - x0);
+  const yAt = pos => yTop + (1 - Math.max(0, Math.min(100, pos))/100) * bandsH;
+  const cols = ['#b0392f','#e08a3c','#c9c246','#4caf50'];   // Extreme..Low, top->bottom
+  let bands = '';
+  for (let i = 0; i < 4; i++) bands += `<rect x="0" y="${(yTop+i*bh).toFixed(1)}" width="${W}" height="${bh.toFixed(1)}" fill="${cols[i]}"/>`;
+  const nm = ['Extreme','High','Mod','Low']; let yax = '';
+  for (let i = 0; i < 4; i++) yax += `<text x="3" y="${(yTop+i*bh+bh/2+3).toFixed(1)}" font-size="7.5" fill="rgba(255,255,255,.92)">${nm[i]}</text>`;
+  // Day gridlines (at each local midnight) + day labels
+  const dayMs = 86400000;
+  const sm = new Date(t0); sm.setHours(0,0,0,0);
+  const tdMid = (() => { const d = new Date(nowMs); d.setHours(0,0,0,0); return d.getTime(); })();
+  let grid = '', labels = '';
+  for (let m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
+    if (m > t0 && m < t1){ const gx = xAt(m); grid += `<line x1="${gx.toFixed(1)}" y1="${yTop}" x2="${gx.toFixed(1)}" y2="${yTop+bandsH}" stroke="rgba(0,0,0,.16)" stroke-width="1"/>`; }
+    if (m + dayMs > t0 && m < t1){
+      const cx = Math.max(x0+2, Math.min(x1-2, (xAt(Math.max(m,t0)) + xAt(Math.min(m+dayMs,t1)))/2));
+      const isToday = m === tdMid, dd = new Date(m);
+      const lab = isToday ? 'TODAY' : dd.toLocaleDateString('en-AU',{weekday:'short'}).toUpperCase();
+      labels += `<text x="${cx.toFixed(1)}" y="${yTop+bandsH+15}" font-size="8.5" text-anchor="middle" fill="${isToday?'var(--text-primary)':'var(--text-muted)'}" font-weight="${isToday?'700':'400'}">${lab}</text>`;
+    }
+  }
+  const pts = samples.map(s => [xAt(s.t), yAt(s.pos)]);
+  const line = bbfSmoothPath(pts);
+  const area = line + ` L${pts[pts.length-1][0].toFixed(1)},${yTop+bandsH} L${pts[0][0].toFixed(1)},${yTop+bandsH} Z`;
+  // Seasonal cap: a muted scrim + dashed line at the cap boundary, so the raw curve's
+  // shape is visible above it but it's clear the model holds the VERDICT at the cap.
+  let scrim = '', capLine = '';
+  if (ceilingPos && ceilingPos > 0 && ceilingPos < 100){
+    const cy = yAt(ceilingPos);
+    scrim = `<rect x="0" y="${yTop}" width="${W}" height="${(cy-yTop).toFixed(1)}" fill="rgba(18,28,42,0.34)"/>`;
+    capLine = `<line x1="${x0}" y1="${cy.toFixed(1)}" x2="${x1}" y2="${cy.toFixed(1)}" stroke="#fff" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.92"/>` +
+              `<text x="${x1}" y="${(cy-3).toFixed(1)}" font-size="7.5" text-anchor="end" fill="#fff" opacity="0.95">seasonal cap</text>`;
+  }
+  let nowMark = '';
+  if (nowMs >= t0 && nowMs <= t1){
+    const nx = xAt(nowMs); let np = samples[0].pos;
+    for (let i = 0; i < samples.length-1; i++){ if (nowMs >= samples[i].t && nowMs <= samples[i+1].t){ const f = (nowMs - samples[i].t)/Math.max(1, samples[i+1].t - samples[i].t); np = samples[i].pos + f*(samples[i+1].pos - samples[i].pos); break; } }
+    nowMark = `<line x1="${nx.toFixed(1)}" y1="${yTop}" x2="${nx.toFixed(1)}" y2="${yTop+bandsH}" stroke="#0e2740" stroke-width="1.5" stroke-dasharray="3 3" opacity="0.7"/>` +
+              `<circle cx="${nx.toFixed(1)}" cy="${yAt(np).toFixed(1)}" r="4" fill="#fff" stroke="#0e2740" stroke-width="2"/>`;
+  }
+  return `<svg class="bbf-chart-svg" viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
+    bands + scrim + grid +
+    `<path d="${area}" fill="rgba(14,39,64,0.26)"/>` +
+    `<path d="${line}" fill="none" stroke="#0e2740" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>` +
+    capLine + nowMark + yax + labels + `</svg>`;
 }
 
 function renderBluebottleForecast(h){
@@ -7163,58 +7227,56 @@ function renderBluebottleForecast(h){
   const y = new Date(now.getTime() - 24 * 3600 * 1000);
   const yesterdayStr = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
   const allDays = [...new Set(_matrix.map(r => String(r.dateTime).substring(0,10)))];
-  // Today + the next 2 forecast days, then prepend yesterday only if its history
-  // rows are actually in the matrix — so the strip is a tight 4-tile window
-  // (yesterday + today + 2), each an all-dial cell, and yesterday is a genuine
-  // reading, never an empty "—" placeholder.
-  const forward = allDays.filter(d => d >= todayStr).sort().slice(0, 3);
-  const days = allDays.includes(yesterdayStr) ? [yesterdayStr, ...forward] : forward;
-  const selDay = h && h.dateTime ? String(h.dateTime).substring(0,10) : null;
-
   // SAFETY / integration rule: a WIND FORECAST must never outrank an observed photo
   // sighting. When one is live, the whole strip steps back and points to the reports.
   const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
   if (row) row.classList.toggle('bbf-subordinate', sightingLive);
   if (note) note.textContent = sightingLive ? 'Reported sightings below take precedence' : '';
 
-  strip.innerHTML = '';
-  let todayBand = null;
-  days.forEach(date => {
-    const db = bbfDayBand(date);
-    const d  = new Date(date + 'T00:00');
-    const banded = db && !db.noReading;
-    if (date === todayStr) todayBand = db;
+  // ── Continuous 4-hourly risk series ──────────────────────────────────────────
+  // Window: yesterday (if its history is in the matrix) through the wind-forecast
+  // horizon, capped at today + SPAN_FWD days. Bin the per-row hourly risk into 4h bins
+  // keeping the WORST (max) position per bin, so a short onshore peak is never lost.
+  // bbfScore already applies the seasonal cap, so the curve matches the daily verdict.
+  const tsOf = s => new Date(String(s).replace(' ', 'T')).getTime();
+  const SPAN_FWD = 5, BIN = 4 * 3600 * 1000;
+  const startDay = allDays.includes(yesterdayStr) ? yesterdayStr : todayStr;
+  const startMs  = tsOf(startDay + ' 00:00:00');
+  const endMs    = tsOf(todayStr + ' 00:00:00') + (SPAN_FWD + 1) * 86400000;
+  const bins = new Map();
+  for (const r of _matrix){
+    const ts = tsOf(r.dateTime);
+    if (!Number.isFinite(ts) || ts < startMs || ts >= endMs) continue;
+    const rp = bbfRawPos(bbfOnshore(bbfLast3hWind(r.dateTime)));   // UNCAPPED: the curve shows the real wind-driven shape
+    if (rp == null) continue;
+    const b = Math.floor(ts / BIN) * BIN;
+    const cur = bins.get(b);
+    if (!cur || rp > cur.pos) bins.set(b, { pos: rp, t: ts });     // keep the peak's REAL timestamp so the x-axis never drifts before the window
+  }
+  const samples = [...bins.values()].map(v => ({ t: v.t, pos: v.pos })).sort((a, b) => a.t - b.t);
+  const todayBand = bbfDayBand(todayStr);                          // the VERDICT (modal, aria) stays capped/validated
+  // Seasonal cap ceiling for the chart — only drawn in the months where the cap bites
+  // (cap band below Extreme). ceiling = the boundary just above the capped band.
+  const capIdx = BBF_SEASON_CAP[bbfLocalMonth(todayStr + ' 12:00:00')];
+  const ceilingPos = (capIdx != null && capIdx < BBF_BANDS.length - 1) ? (capIdx + 1) * (100 / BBF_BANDS.length) : 0;
 
+  strip.innerHTML = '';
+  if (samples.length >= 2){
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'bbf-day'
-      + (banded ? ' has-band' : ' bbf-day-none')
-      + (banded && db.capped ? ' bbf-capped' : '')
-      + (date === selDay ? ' bbf-day-sel' : '');
-    const isToday = date === todayStr;
-    // EVERY day shows the compact shallow dial (see bbfGaugeSVG) — its band against the
-    // whole Low->Extreme spectrum — instead of a flat colour fill. No rail-colour tile
-    // background; the neutral tan backs the arc. Day + date share one line to keep the
-    // row thin. Non-banded days (past the wind horizon) keep the neutral "—".
-    if (banded) btn.classList.add('bbf-day-gauge');
-
-    const label = banded ? (db.label + (db.capped ? '°' : '')) : '—';
-    const nameStr = isToday ? 'Today' : d.toLocaleDateString('en-AU',{weekday:'short'});
-    btn.innerHTML =
-      `<span class="bbf-dh">${nameStr}<b>${d.getDate()}</b></span>` +
-      (banded
-        ? bbfGaugeSVG(BBF_BANDS.findIndex(x => x.key === db.key)) +
-          `<span class="bbf-day-band bbf-gauge-lbl">${label}</span>`
-        : `<span class="bbf-day-band">${label}</span>`);
-    btn.setAttribute('aria-label', 'Bluebottle risk ' + bbfDayLabel(date) + ': ' + (banded ? db.label : 'no reading'));
-    // Tapping a day opens the explainer FOR THAT DAY: stash its band as _bbfLast so
-    // the sheet header names the same day and band the tile shows.
+    btn.className = 'bbf-chartbtn';
+    const tdLab = (todayBand && !todayBand.noReading) ? todayBand.label : 'no reading';
+    btn.setAttribute('aria-label', 'Bluebottle risk trend across the week — today: ' + tdLab + '. Tap for details.');
+    btn.innerHTML = bbfRiskChartSVG(samples, now.getTime(), ceilingPos);
     btn.onclick = () => {
-      _bbfLast = db ? Object.assign({}, db, { dayLabel: bbfDayLabel(date) }) : { noReading:true, dayLabel: bbfDayLabel(date) };
+      _bbfLast = todayBand ? Object.assign({}, todayBand, { dayLabel: bbfDayLabel(todayStr) })
+                           : { noReading:true, dayLabel: bbfDayLabel(todayStr) };
       openMetricModal('bluebottles');
     };
     strip.appendChild(btn);
-  });
+  } else {
+    strip.innerHTML = '<div class="bbf-chart-empty">Bluebottle wind forecast unavailable</div>';
+  }
 
   // While the sheet is open it is pinned to whichever day was tapped — a background
   // re-render (slider move, data refresh) must not yank it back to today. Only seed
