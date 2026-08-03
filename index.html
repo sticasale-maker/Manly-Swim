@@ -7027,7 +7027,12 @@ const BBF_BANDS = [
   { key:'low', label:'Low', rr:0.4 }, { key:'building', label:'Moderate', rr:1.3 },
   { key:'elevated', label:'High', rr:2.3 }, { key:'high', label:'Extreme', rr:3.3 }
 ];
-const BBF_SEASON_CAP = [3,3,3,2,1,1,1,1,2,3,3,3];  // Jan..Dec: max band index (abundance gate)
+const BBF_SEASON_CAP = [3,3,3,2,1,1,1,1,2,3,3,3];  // Jan..Dec: max band index — SUPERSEDED by BBF_SEASON_MULT (kept for reference)
+// Monthly abundance factor (0..1), Jan..Dec — the MULTIPLICATIVE season term (user,
+// 2026-08-04): likelihood = wind_effect × BBF_SEASON_MULT[month], replacing the old hard
+// cap. ≈1 in summer, near-zero deep winter (few bluebottles out there to blow in). A single
+// continuous likelihood, no clipping. Same seasonal shape as the cap it replaces.
+const BBF_SEASON_MULT = [1.0, 1.0, 0.9, 0.6, 0.35, 0.2, 0.15, 0.2, 0.45, 0.75, 0.95, 1.0];
 
 // wind3h: ~3 hourly readings UP TO the selected time, each {speedKmh, fromDeg}.
 //   Source = the WILLYWEATHER WIND feed (windKmh/windDir) — NOT wind-wave
@@ -7050,16 +7055,17 @@ function bbfOnshore(wind3h){
 // cap so dot and label agree, with headroom both ends so it never reads 0% or 100%
 // (this is relative risk, not a probability).
 function bbfBandForOnshore(onshore, monthLocal){
-  if(!Number.isFinite(onshore)) return null;
-  let bi = 0; while(bi < BBF_THRESHOLDS.length && onshore > BBF_THRESHOLDS[bi]) bi++;
-  const cap = BBF_SEASON_CAP[monthLocal]; const capped = bi > cap; if(capped) bi = cap;
-  const lo = bi === 0 ? 0 : BBF_THRESHOLDS[bi-1];
-  const hi = bi < BBF_THRESHOLDS.length ? BBF_THRESHOLDS[bi] : lo + 8;   // soft top for open High band
-  const frac = Math.max(0, Math.min(1, (onshore - lo) / (hi - lo)));
+  const windPos = bbfRawPos(onshore);              // uncapped wind position (0..100 on the Low->Extreme scale)
+  if (windPos == null) return null;
   const zoneW = 100 / BBF_BANDS.length;
-  const pos = Math.max(6, Math.min(94, bi*zoneW + frac*zoneW));
-  const b = BBF_BANDS[bi];
-  return { onshore, key:b.key, label:b.label, rr:b.rr, pos, capped, month:monthLocal };
+  // MULTIPLICATIVE season (user, 2026-08-04): scale the wind likelihood by the monthly
+  // abundance factor instead of hard-capping the band. One continuous likelihood, no clip;
+  // winter windy days ease DOWN smoothly rather than plateauing at a ceiling.
+  const sm  = (BBF_SEASON_MULT[monthLocal] != null) ? BBF_SEASON_MULT[monthLocal] : 1;
+  const pos = Math.max(6, Math.min(94, windPos * sm));
+  const bi  = Math.max(0, Math.min(BBF_BANDS.length - 1, Math.floor(pos / zoneW)));
+  const b   = BBF_BANDS[bi];
+  return { onshore, key:b.key, label:b.label, rr:b.rr, pos, capped:false, seasonMult:sm, month:monthLocal };
 }
 
 // Per-hour band: mean prior-3h onshore -> band. This is the calibrated unit the
@@ -7181,7 +7187,7 @@ function bbfSmoothPath(pts){
 // smoothed away — conservative, never under-calls. samples = [{t:ms, pos:6..94}] sorted
 // ascending; nowMs draws the live "now" marker. The band CLASSIFICATION stays daily
 // (validated grain); only the chart shape shows the finer intraday signal.
-function bbfRiskChartSVG(samples, nowMs, ceilingPos){
+function bbfRiskChartSVG(samples, nowMs){
   const W = 360, yTop = 6, bandsH = 104, bh = bandsH/4, H = yTop + bandsH + 22;
   const x0 = 28, x1 = W - 8;
   const t0 = samples[0].t, t1 = samples[samples.length-1].t, span = Math.max(1, t1 - t0);
@@ -7209,15 +7215,8 @@ function bbfRiskChartSVG(samples, nowMs, ceilingPos){
   const pts = samples.map(s => [xAt(s.t), yAt(s.pos)]);
   const line = bbfSmoothPath(pts);
   const area = line + ` L${pts[pts.length-1][0].toFixed(1)},${yTop+bandsH} L${pts[0][0].toFixed(1)},${yTop+bandsH} Z`;
-  // Seasonal cap: JUST a dashed line at the cap boundary over the full-brightness bands
-  // (no muting overlay) — the raw curve's shape stays visible and the cap is marked, but
-  // the colours stay vivid. The VERDICT (modal/aria) is still the capped daily band.
-  let capLine = '';
-  if (ceilingPos && ceilingPos > 0 && ceilingPos < 100){
-    const cy = yAt(ceilingPos);
-    capLine = `<line x1="${x0}" y1="${cy.toFixed(1)}" x2="${x1}" y2="${cy.toFixed(1)}" stroke="#fff" stroke-width="1.4" stroke-dasharray="5 4" opacity="0.92"/>` +
-              `<text x="${x1}" y="${(cy-3).toFixed(1)}" font-size="7.5" text-anchor="end" fill="#fff" opacity="0.95">seasonal cap</text>`;
-  }
+  // No cap line: the season is now baked into the curve (multiplicative), so there is no
+  // hard ceiling to mark — the curve simply sits lower out of season.
   let nowMark = '';
   if (nowMs >= t0 && nowMs <= t1){
     const nx = xAt(nowMs); let np = samples[0].pos;
@@ -7229,7 +7228,7 @@ function bbfRiskChartSVG(samples, nowMs, ceilingPos){
     bands + grid +
     `<path d="${area}" fill="rgba(14,39,64,0.26)"/>` +
     `<path d="${line}" fill="none" stroke="#0e2740" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>` +
-    capLine + nowMark + yax + labels + `</svg>`;
+    nowMark + yax + labels + `</svg>`;
 }
 
 function renderBluebottleForecast(h){
@@ -7263,18 +7262,14 @@ function renderBluebottleForecast(h){
   for (const r of _matrix){
     const ts = tsOf(r.dateTime);
     if (!Number.isFinite(ts) || ts < startMs || ts >= endMs) continue;
-    const rp = bbfRawPos(bbfOnshore(bbfLast3hWind(r.dateTime)));   // UNCAPPED: the curve shows the real wind-driven shape
-    if (rp == null) continue;
+    const band = bbfScore(bbfLast3hWind(r.dateTime), bbfLocalMonth(String(r.dateTime)));  // combined likelihood = wind × season multiplier (no hard cap)
+    if (!band) continue;
     const b = Math.floor(ts / BIN) * BIN;
     const cur = bins.get(b);
-    if (!cur || rp > cur.pos) bins.set(b, { pos: rp, t: ts });     // keep the peak's REAL timestamp so the x-axis never drifts before the window
+    if (!cur || band.pos > cur.pos) bins.set(b, { pos: band.pos, t: ts });   // keep the peak's REAL timestamp so the x-axis never drifts before the window
   }
   const samples = [...bins.values()].map(v => ({ t: v.t, pos: v.pos })).sort((a, b) => a.t - b.t);
-  const todayBand = bbfDayBand(todayStr);                          // the VERDICT (modal, aria) stays capped/validated
-  // Seasonal cap ceiling for the chart — only drawn in the months where the cap bites
-  // (cap band below Extreme). ceiling = the boundary just above the capped band.
-  const capIdx = BBF_SEASON_CAP[bbfLocalMonth(todayStr + ' 12:00:00')];
-  const ceilingPos = (capIdx != null && capIdx < BBF_BANDS.length - 1) ? (capIdx + 1) * (100 / BBF_BANDS.length) : 0;
+  const todayBand = bbfDayBand(todayStr);   // verdict = combined wind×season likelihood, same as the curve
 
   strip.innerHTML = '';
   if (samples.length >= 2){
@@ -7283,7 +7278,7 @@ function renderBluebottleForecast(h){
     btn.className = 'bbf-chartbtn';
     const tdLab = (todayBand && !todayBand.noReading) ? todayBand.label : 'no reading';
     btn.setAttribute('aria-label', 'Bluebottle risk trend across the week — today: ' + tdLab + '. Tap for details.');
-    btn.innerHTML = bbfRiskChartSVG(samples, now.getTime(), ceilingPos);
+    btn.innerHTML = bbfRiskChartSVG(samples, now.getTime());
     btn.onclick = () => {
       _bbfLast = todayBand ? Object.assign({}, todayBand, { dayLabel: bbfDayLabel(todayStr) })
                            : { noReading:true, dayLabel: bbfDayLabel(todayStr) };
@@ -13072,7 +13067,7 @@ function bbfModalHTML(){
   const banded = band && !band.noReading;
   const head = banded
     ? `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">${band.label} — &asymp; ${band.rr}&times; a typical day</div>` +
-      (band.capped ? `<div style="font-size:10.5px;color:var(--dim);margin-top:1px;">off-season — held down by the seasonal cap</div>` : '')
+      ((band.seasonMult != null && band.seasonMult < 0.55) ? `<div style="font-size:10.5px;color:var(--dim);margin-top:1px;">out of season — few bluebottles about, so the wind risk is scaled down</div>` : '')
     : `<div style="font-family:'Bebas Neue',sans-serif;font-size:21px;letter-spacing:1px;color:var(--deep);line-height:1.1;">No reading — beyond the wind forecast</div>`;
   // Lead-in headings rather than uppercase section labels: the copy is written as
   // full sentences, and small-caps headers over three short paragraphs was most of

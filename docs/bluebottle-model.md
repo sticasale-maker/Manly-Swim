@@ -46,13 +46,22 @@ place in the full spectrum is self-evident. The internal band **keys** (`low/bui
 replaced by a single **4-hourly area chart** of the risk position riding the Low→Extreme colour
 bands, across ~7 days (yesterday + today + 5), with a "now" marker. Each plotted point is the
 **worst (max) risk in its 4-hour bin**, so a short onshore peak is never smoothed away
-(conservative). Two things are worth recording because they *look* like model changes but are not:
-(a) the **curve is drawn from the UNCAPPED position** (`bbfRawPos`, the pre-seasonal-cap `pos`
-maths) so its *shape* shows the real wind dynamics through the day; (b) the **seasonal cap is drawn
-as a dashed "seasonal cap" line** over the full-brightness bands, and the CLASSIFICATION / verdict
-(the tap-through modal, the aria label, `bbfDayBand`) **remains the capped, daily-validated band**.
-So the chart shows finer *shape* while the *verdict* keeps the validated daily grain and the cap.
-Nothing in the fit, thresholds, multipliers, or `BBF_SEASON_CAP` changed.
+(conservative). Display-only, no model impact.
+
+**MODEL change (2026-08-04) — season is now MULTIPLICATIVE, not a hard cap.** Step 4 used to
+**clip** the wind band to a monthly ceiling (`bi = min(bi, BBF_SEASON_CAP[m])`), which produced a
+flat plateau on windy out-of-season days. It now **multiplies** instead: `pos = windPos ×
+BBF_SEASON_MULT[m]`, a single continuous likelihood (wind effect × monthly abundance factor),
+`BBF_SEASON_MULT = [1.0,1.0,0.9,0.6,0.35,0.2,0.15,0.2,0.45,0.75,0.95,1.0]` (Jan→Dec). So a windy
+July day (that would read Extreme in January) eases smoothly down to Low instead of hitting a
+ceiling. This **changes the verdict**, not just the chart: deep-winter windy days that the cap
+floored at "Moderate" now read Low — arguably more honest (winter is near-zero). The wind
+thresholds `[4,6,12]` and the relative-risk multipliers are **unchanged**; only the wind↔season
+*combination* changed (clip → multiply). `BBF_SEASON_CAP` is retained in code for reference but no
+longer read. The `BBF_SEASON_MULT` values share the cap's validated seasonal shape (Bourg et al.
+2022: ~50% summer, near-zero winter) but are an approximate envelope — retune against the monthly
+abundance in `data/obs_sydney.csv` if a precise fit is wanted. The dashed "seasonal cap" chart line
+was removed (there is no hard cap to mark).
 
 ## 2. Source data
 
