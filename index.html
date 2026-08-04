@@ -3104,18 +3104,12 @@
       #featureCard .fr-react--reply{margin-top:7px;gap:4px;}
       #featureCard .fr-react--reply .fr-rx{padding:3px 7px;font-size:11px;}
       #featureCard .fr-react--reply .fr-rx .fr-rx-e{font-size:13px;}
-      #featureCard .bd-status{margin-left:auto;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1px;padding:4px 9px;border-radius:6px;text-transform:uppercase;}
-      #featureCard .bd-status--open{color:var(--dim);background:rgba(17,53,65,0.07);}
-      #featureCard .bd-status--answered{color:#fff;background:var(--ocean);}
-      #featureCard .bd-status--shipped{color:#fff;background:var(--deep);}
       #featureCard .bd-admin{margin-top:12px;padding-top:12px;border-top:1px dashed rgba(17,53,65,0.18);display:flex;flex-direction:column;gap:8px;}
       #featureCard .bd-admin textarea{background:#fff;color:var(--text);border:1px solid rgba(17,53,65,0.18);border-radius:10px;padding:10px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;width:100%;min-height:56px;resize:vertical;}
       #featureCard .bd-admin-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
       #featureCard .bd-abtn{flex:none;padding:6px 11px;border-radius:8px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .bd-abtn--send{background:var(--ocean);color:#fff;}
-      #featureCard .bd-abtn--on{background:var(--deep);color:#fff;border-color:var(--deep);}
       #featureCard .bd-abtn--danger{border-color:var(--red);color:var(--red);}
-      #featureCard .bd-alabel{font-family:'Inter',sans-serif;font-size:11px;color:var(--dim);letter-spacing:.5px;margin-right:2px;}
       /* User replies: softer left border + plain name, so Marco's ocean-blue reply stays visually distinct */
       #featureCard .bd-reply--user{border-left-color:rgba(17,53,65,0.18);}
       #featureCard .bd-uname{font-weight:700;color:var(--deep);font-size:13px;}
@@ -11999,8 +11993,8 @@ function submitFeedback(e) {
 
 // ============================================================
 // THE BOARD - public Q&A. Submit + upvote (unchanged Supabase RPCs) plus a
-// PostgREST embed that carries the new columns (name/status/pinned) and Marco's
-// threaded replies. Admin mode (?board=1) posts replies / sets status / pins /
+// PostgREST embed that carries the extra columns (name/pinned) and Marco's
+// threaded replies. Admin mode (?board=1) posts replies / pins /
 // hides / trashes replies through the Worker, gated by a session-only passphrase.
 // Never throws into the UI - failures surface as a small inline message.
 // ============================================================
@@ -12125,7 +12119,7 @@ function submitFeedback(e) {
       });
       return {
         id: p.id, name: p.name, body: p.body, image_url: p.image_url || null,
-        status: (p.status || 'open'), pinned: !!p.pinned, hidden: !!p.hidden,
+        pinned: !!p.pinned, hidden: !!p.hidden,
         created_at: p.created_at,
         votes: (vm.votes != null ? vm.votes : 0), voted: !!vm.voted,
         reactions: (vm.reactions && typeof vm.reactions === 'object') ? vm.reactions : null,   // null until the reactions migration is live
@@ -12371,11 +12365,6 @@ function submitFeedback(e) {
     return arr;
   }
 
-  function statusTag(st){
-    var s = (st === 'answered' || st === 'shipped') ? st : 'open';
-    return '<span class="bd-status bd-status--' + s + '">' + s.toUpperCase() + '</span>';
-  }
-
   function replyReactHTML(r){
     var rx = r.reactions || {};
     return '<div class="fr-react fr-react--reply" data-reply="' + esc(r.id) + '">' + REACTIONS.map(function(x){
@@ -12420,10 +12409,6 @@ function submitFeedback(e) {
   }
 
   function adminHTML(p){
-    var statusBtns = ['open','answered','shipped'].map(function(s){
-      var on = (p.status || 'open') === s ? ' bd-abtn--on' : '';
-      return '<button type="button" class="bd-abtn' + on + '" data-status="' + s + '" data-id="' + esc(p.id) + '">' + s.toUpperCase() + '</button>';
-    }).join('');
     var hideBtn = p.hidden
       ? '<button type="button" class="bd-abtn" data-unhide="' + esc(p.id) + '">RESTORE</button>'
       : '<button type="button" class="bd-abtn bd-abtn--danger" data-hide="' + esc(p.id) + '">HIDE</button>';
@@ -12434,7 +12419,6 @@ function submitFeedback(e) {
         '<button type="button" class="bd-abtn" data-pin="' + esc(p.id) + '">' + (p.pinned ? 'UNPIN' : 'PIN') + '</button>' +
         hideBtn +
       '</div>' +
-      '<div class="bd-admin-row"><span class="bd-alabel">STATUS</span>' + statusBtns + '</div>' +
     '</div>';
   }
 
@@ -12492,7 +12476,7 @@ function submitFeedback(e) {
         '<span class="bd-time">' + esc(relTime(p.created_at)) + '</span>' +
       '</div>' +
       '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + photo +
-      '<div class="bd-foot">' + vote + statusTag(p.status) + '</div>' +   // post reactions sit directly under the post, above any replies
+      '<div class="bd-foot">' + vote + '</div>' +   // post reactions sit directly under the post, above any replies
       replies + replyUI +
       (adminOn ? adminHTML(p) : '') +
     '</div>';
@@ -12692,8 +12676,6 @@ function submitFeedback(e) {
     if (hideb){ doStatus(parseInt(hideb.getAttribute('data-hide'), 10), { hidden: true }); return; }
     var unhideb = t.closest('[data-unhide]');
     if (unhideb){ doStatus(parseInt(unhideb.getAttribute('data-unhide'), 10), { hidden: false }); return; }
-    var stat = t.closest('[data-status]');
-    if (stat){ doStatus(parseInt(stat.getAttribute('data-id'), 10), { status: stat.getAttribute('data-status') }); return; }
     var del = t.closest('[data-del]');
     if (del){ doTrash(parseInt(del.getAttribute('data-post'), 10), parseInt(del.getAttribute('data-del'), 10)); return; }
   }
