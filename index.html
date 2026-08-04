@@ -15733,19 +15733,22 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var HILITE_COLORS = ['#fff2a8', '#c9ecff', '#ffd6d6', '#d8f5df'];
 
     // Native pickers / the size box steal focus and collapse the editor's
-    // selection, so we snapshot the last in-editor range and restore it before
-    // applying. Toolbar buttons/swatches keep focus via preventDefault instead.
+    // selection. Snapshotting on the control's mousedown is unreliable (the
+    // browser can clear the selection first), so instead track the editor's
+    // live selection CONTINUOUSLY via selectionchange and restore it on apply.
     var savedRange = null;
-    function saveSel(){
+    document.addEventListener('selectionchange', function () {
+      var ed = $('annEdBody'); if (!ed) return;
       var s = window.getSelection();
-      if (s && s.rangeCount && $('annEdBody').contains(s.anchorNode)) savedRange = s.getRangeAt(0).cloneRange();
-    }
+      if (s && s.rangeCount && ed.contains(s.anchorNode) && ed.contains(s.focusNode)) {
+        savedRange = s.getRangeAt(0).cloneRange();
+      }
+    });
     function restoreSel(){
       $('annEdBody').focus();
       if (!savedRange) return;
       var s = window.getSelection(); s.removeAllRanges(); s.addRange(savedRange);
     }
-    ['keyup', 'mouseup', 'input'].forEach(function (ev) { $('annEdBody').addEventListener(ev, saveSel); });
 
     function runCmd(cmd, val){
       $('annEdBody').focus();
@@ -15767,14 +15770,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     function applyFontSize(px){
       px = Math.max(8, Math.min(72, px | 0)); if (!px) return;
       restoreSel();
+      var sel = window.getSelection();
+      if (!sel || !sel.rangeCount || sel.isCollapsed) return;   // nothing selected → nothing to size
       try { document.execCommand('styleWithCSS', false, false); } catch (e) {}   // want <font size=7>, not a keyword
       document.execCommand('fontSize', false, '7');
-      Array.prototype.forEach.call($('annEdBody').querySelectorAll('font[size="7"]'), function (f) {
+      var ed = $('annEdBody');
+      // Chrome/WebKit emit <font size="7">; some browsers emit a keyword span.
+      var marks = ed.querySelectorAll('font[size="7"], span[style*="xx-large"]');
+      Array.prototype.forEach.call(marks, function (f) {
         var sp = document.createElement('span'); sp.style.fontSize = px + 'px';
         while (f.firstChild) sp.appendChild(f.firstChild);
         f.parentNode.replaceChild(sp, f);
       });
-      saveSel(); saveDraft();
+      saveDraft();
     }
 
     Array.prototype.forEach.call(ov.querySelectorAll('.aa-tbbtn'), function (btn) {
@@ -15794,17 +15802,17 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         host.appendChild(sw);
       });
     });
-    // Free colour pickers (text + highlight).
+    // Free colour pickers (text + highlight). The live selectionchange tracker
+    // already holds the editor range, so no per-control snapshot is needed.
     [['annForePick', 'foreColor'], ['annHilitePick', 'hiliteColor']].forEach(function (p) {
       var el = $(p[0]); if (!el) return;
-      el.addEventListener('mousedown', saveSel);   // grab the range before the OS dialog steals focus
-      el.addEventListener('change', function () { applyColor(p[1], el.value); });
+      el.addEventListener('input', function () { applyColor(p[1], el.value); });
     });
-    // Custom font size box.
+    // Custom font size box: apply on Enter or when it loses focus.
     var szEl = $('annSize');
     if (szEl) {
-      szEl.addEventListener('mousedown', saveSel);
       szEl.addEventListener('change', function () { applyFontSize(+szEl.value); szEl.value = ''; });
+      szEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); applyFontSize(+szEl.value); szEl.value = ''; } });
     }
     // Paste: route clipboard HTML through the SAME sanitizer, so formatted text
     // pasted from Docs/Word/web keeps only our curated set — nothing unsafe.
