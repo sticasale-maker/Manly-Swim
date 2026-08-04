@@ -15344,6 +15344,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var _imgUrl = '';     // admin: image url currently in the form
   var _app    = 'swim'; // admin: which app the form publishes to
   var _quiet  = false;  // admin: quiet = pill+dot only (no popup); default mandatory
+  var _showOnce = false;// admin: show-once = never re-arms; dismissed = gone for good on that device
   var _rows   = [];     // admin: last loaded list (for edit)
   var _shownKind = null; // which set the popup is showing: 'loud' (forced) | 'all' (voluntary pill open)
 
@@ -15446,6 +15447,23 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function _markSeen(key, list){ try { localStorage.setItem(key, annDay() + '@' + seenSig(list)); } catch (e) {} }
   function loudOnes(){  return _active.filter(function (a) { return !a.quiet; }); }
   function quietOnes(){ return _active.filter(function (a) { return  a.quiet; }); }
+
+  /* Show-once posts don't re-arm daily — once dismissed on a device they're gone
+     for good. We track their exact signature (id|updated_at) so an EDIT that bumps
+     updated_at counts as a new post and shows again. */
+  var SEEN_ONCE_KEY = 'swim_ann_once';
+  function sigOf(a){ return a.id + '|' + (a.updated_at || ''); }
+  function _onceList(){ try { return (localStorage.getItem(SEEN_ONCE_KEY) || '').split(';').filter(Boolean); } catch (e) { return []; } }
+  function onceDismissed(a){ return !!a.show_once && _onceList().indexOf(sigOf(a)) !== -1; }
+  function markOnceDismissed(list){
+    try {
+      var s = _onceList();
+      (list || []).forEach(function (a) { if (a.show_once && s.indexOf(sigOf(a)) === -1) s.push(sigOf(a)); });
+      localStorage.setItem(SEEN_ONCE_KEY, s.join(';'));
+    } catch (e) {}
+  }
+  // Loud posts that still need showing: drops show-once posts already dismissed here.
+  function loudPending(){ return loudOnes().filter(function (a) { return !onceDismissed(a); }); }
 
   /* ---- popup + pill -------------------------------------------------------- */
   function buildPopup(){
@@ -15555,6 +15573,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // Mark seen only what was actually shown: a forced (loud) popup leaves the quiet
     // daily line untouched; a voluntary pill open showed everything, so mark both.
     _markSeen(SEEN_KEY, loudOnes());
+    markOnceDismissed(loudOnes());   // show-once loud posts: never surface again on this device
     if (_shownKind !== 'loud') _markSeen(SEEN_KEY_Q, quietOnes());
     _shownKind = null;
     refreshPill();
@@ -15573,7 +15592,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var b = ensurePill();
     if (!_active.length) { b.classList.remove('show', 'unseen'); return; }
     b.classList.add('show');
-    var loud = loudOnes(), quiet = quietOnes();
+    var loud = loudPending(), quiet = quietOnes();
     var unseen = (loud.length && !_isSeen(SEEN_KEY, loud)) || (quiet.length && !_isSeen(SEEN_KEY_Q, quiet));
     b.classList.toggle('unseen', unseen);
   }
@@ -15586,7 +15605,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       // Only MANDATORY posts force the popup, and the forced popup shows ONLY them —
       // a quiet daily line that happens to be live at the same time is never dragged
       // in. Quiet rows light the pill dot but never auto-open the modal.
-      var loud = loudOnes();
+      var loud = loudPending();
       if (loud.length && !_isSeen(SEEN_KEY, loud) && !ADMIN_MODE) { _shownKind = 'loud'; showPopup(loud); }
       refreshPill();
     } catch (e) {}
@@ -15765,6 +15784,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         '<div class="aa-seg" id="annQuietSeg">' +
           '<button type="button" class="aa-segbtn on" data-quiet="0">Mandatory</button>' +
           '<button type="button" class="aa-segbtn" data-quiet="1">Quiet</button>' +
+        '</div>' +
+        '<label class="aa-lbl">How often</label>' +
+        '<div class="aa-seg" id="annOnceSeg">' +
+          '<button type="button" class="aa-segbtn on" data-once="0">Once a day</button>' +
+          '<button type="button" class="aa-segbtn" data-once="1">Once only</button>' +
         '</div>' +
         '<label class="aa-lbl">Title (optional)</label>' +
         '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
@@ -15967,6 +15991,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     Array.prototype.forEach.call(ov.querySelectorAll('#annQuietSeg .aa-segbtn'), function (btn) {
       btn.addEventListener('click', function () { setQuiet(btn.getAttribute('data-quiet') === '1'); saveDraft(); });
     });
+    Array.prototype.forEach.call(ov.querySelectorAll('#annOnceSeg .aa-segbtn'), function (btn) {
+      btn.addEventListener('click', function () { setShowOnce(btn.getAttribute('data-once') === '1'); saveDraft(); });
+    });
     // start a fresh post (clears the draft)
     $('annNewBtn').addEventListener('click', function () { resetForm(); clearDraft(); $('annPubMsg').textContent = ''; if ($('annInTitle')) $('annInTitle').focus(); });
 
@@ -15991,12 +16018,18 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       btn.classList.toggle('on', (btn.getAttribute('data-quiet') === '1') === _quiet);
     });
   }
+  function setShowOnce(v){
+    _showOnce = !!v;
+    Array.prototype.forEach.call(document.querySelectorAll('#annOnceSeg .aa-segbtn'), function (btn) {
+      btn.classList.toggle('on', (btn.getAttribute('data-once') === '1') === _showOnce);
+    });
+  }
 
   /* ---- draft persistence (survives reload / session switch) --------------- */
   function saveDraft(){
     try {
       var d = {
-        editId: _editId, app: _app, quiet: _quiet, imgUrl: _imgUrl,
+        editId: _editId, app: _app, quiet: _quiet, showOnce: _showOnce, imgUrl: _imgUrl,
         title: $('annInTitle') ? $('annInTitle').value : '',
         body:  $('annEdBody')  ? $('annEdBody').innerHTML : '',
         start: $('annInStart') ? $('annInStart').value : '',
@@ -16017,6 +16050,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     _imgUrl = d.imgUrl || '';
     setApp(d.app || 'swim');
     setQuiet(!!d.quiet);
+    setShowOnce(!!d.showOnce);
     if ($('annInTitle')) $('annInTitle').value = d.title || '';
     if ($('annEdBody'))  $('annEdBody').innerHTML = clean(d.body || '');
     if ($('annInStart')) $('annInStart').value = d.start || '';
@@ -16045,6 +16079,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
     setApp('swim');
     setQuiet(false);
+    setShowOnce(false);
   }
 
   async function publish(){
@@ -16059,11 +16094,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (new Date(ends) <= new Date(starts)) { $('annPubMsg').textContent = 'End must be after start.'; return; }
     $('annPubMsg').textContent = 'Publishing\u2026';
     try {
-      var r = await fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({
-        p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: _app, p_quiet: _quiet
-      }) });
+      var base = { p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: _app, p_quiet: _quiet };
+      function save(body){ return fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify(body) }); }
+      var withOnce = {}; for (var kk in base) withOnce[kk] = base[kk]; withOnce.p_show_once = _showOnce;
+      var r = await save(withOnce), onceDropped = false;
+      // PGRST202 (404): the RPC hasn't been given a p_show_once param yet — retry
+      // without it so publishing still works. Run the DB migration to persist it.
+      if (r.status === 404) { r = await save(base); onceDropped = r.ok && _showOnce; }
       if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
-      $('annPubMsg').textContent = _editId ? 'Updated.' : 'Published to ' + (APP_LABEL[_app] || _app) + '.';
+      $('annPubMsg').textContent = (_editId ? 'Updated.' : 'Published to ' + (APP_LABEL[_app] || _app) + '.') + (onceDropped ? ' (Show-once not saved — DB migration needed.)' : '');
       resetForm();
       clearDraft();
       loadAdminList();
@@ -16169,6 +16208,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; } else { $('annImgWrap').style.display = 'none'; }
     setApp(appOf(x));
     setQuiet(!!x.quiet);
+    setShowOnce(!!x.show_once);
     $('annFormTitle').textContent = 'Edit announcement';
     $('annPubBtn').textContent = 'Save changes';
     $('annPubMsg').textContent = '';
