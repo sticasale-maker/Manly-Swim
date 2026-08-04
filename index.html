@@ -3101,6 +3101,9 @@
       #featureCard .fr-rx{display:inline-flex;align-items:center;gap:3px;padding:4px 8px;border-radius:999px;border:1px solid rgba(74,143,173,.35);background:#fff;color:var(--deep);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .fr-rx .fr-rx-e{font-size:15px;line-height:1;}
       #featureCard .fr-rx--on{background:rgba(74,143,173,.14);border-color:var(--ocean);}
+      #featureCard .fr-react--reply{margin-top:7px;gap:4px;}
+      #featureCard .fr-react--reply .fr-rx{padding:3px 7px;font-size:11px;}
+      #featureCard .fr-react--reply .fr-rx .fr-rx-e{font-size:13px;}
       #featureCard .bd-status{margin-left:auto;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;letter-spacing:1px;padding:4px 9px;border-radius:6px;text-transform:uppercase;}
       #featureCard .bd-status--open{color:var(--dim);background:rgba(17,53,65,0.07);}
       #featureCard .bd-status--answered{color:#fff;background:var(--ocean);}
@@ -12088,6 +12091,7 @@ function submitFeedback(e) {
   // embed adds the new columns and the threaded replies in one call. Merge by id.
   async function boardFetch(){
     var votesP = rpc('list_feature_requests', { p_device: frDevice() }).catch(function(){ return []; });
+    var rreactP = rpc('list_feature_reply_reactions', { p_device: frDevice() }).catch(function(){ return []; });   // per-reply reactions
     function embedFetch(replyCols){
       var url = sbURL() + '/rest/v1/feature_requests' +
         '?select=*,feature_replies(' + replyCols + ')' +
@@ -12102,14 +12106,23 @@ function submitFeedback(e) {
     var embedP = embedFetch('id,body,created_at,author_role,name,image_url')
       .catch(function(){ return embedFetch('id,body,created_at,author_role,name'); });
 
-    var res = await Promise.all([embedP, votesP]);
+    var res = await Promise.all([embedP, votesP, rreactP]);
     var posts = Array.isArray(res[0]) ? res[0] : [];
     var vmap = {};
     (Array.isArray(res[1]) ? res[1] : []).forEach(function(v){ vmap[v.id] = v; });
+    var rmap = {};
+    (Array.isArray(res[2]) ? res[2] : []).forEach(function(x){ rmap[x.reply_id] = x; });   // reply_id -> {reactions, my_reaction}
     return posts.map(function(p){
       var vm = vmap[p.id] || {};
       var replies = Array.isArray(p.feature_replies) ? p.feature_replies.slice() : [];
       replies.sort(function(a,b){ return Date.parse(a.created_at) - Date.parse(b.created_at); });
+      replies = replies.map(function(rr){
+        var rm = rmap[rr.id] || {};
+        return Object.assign({}, rr, {
+          reactions: (rm.reactions && typeof rm.reactions === 'object') ? rm.reactions : null,
+          my_reaction: rm.my_reaction || null
+        });
+      });
       return {
         id: p.id, name: p.name, body: p.body, image_url: p.image_url || null,
         status: (p.status || 'open'), pinned: !!p.pinned, hidden: !!p.hidden,
@@ -12251,6 +12264,7 @@ function submitFeedback(e) {
   // again = remove), switches, or inserts, so the client always sends the tapped one.
   var REACTIONS = [ {k:'like',e:'👍'}, {k:'love',e:'❤️'}, {k:'laugh',e:'😂'}, {k:'wow',e:'😮'}, {k:'sad',e:'😢'} ];
   async function featureReact(id, rx){ return rpc('vote_feature_request', { p_request_id: id, p_device: frDevice(), p_reaction: rx }); }
+  async function featureReplyReact(id, rx){ return rpc('vote_feature_reply', { p_reply_id: id, p_device: frDevice(), p_reaction: rx }); }
 
   // ---- WRITE: user reply (anon RPC; author_role stamped 'user' server-side) --
   async function featureReply(postId, body, name, imageUrl){
@@ -12337,6 +12351,7 @@ function submitFeedback(e) {
   // ---- UI ----------------------------------------------------------------
   var _cache = [];
   function findPost(id){ for (var i=0;i<_cache.length;i++){ if (_cache[i].id === id) return _cache[i]; } return null; }
+  function findReply(id){ for (var i=0;i<_cache.length;i++){ var rs=_cache[i].replies||[]; for (var j=0;j<rs.length;j++){ if (String(rs[j].id) === String(id)) return rs[j]; } } return null; }
   function setMsg(t){ var m = $('frMsg'); if (m) { m.textContent = t || ''; m.style.display = t ? 'block' : 'none'; } }
 
   function updateCounter(){
@@ -12361,6 +12376,19 @@ function submitFeedback(e) {
     return '<span class="bd-status bd-status--' + s + '">' + s.toUpperCase() + '</span>';
   }
 
+  function replyReactHTML(r){
+    var rx = r.reactions || {};
+    return '<div class="fr-react fr-react--reply" data-reply="' + esc(r.id) + '">' + REACTIONS.map(function(x){
+      var n = rx[x.k] ? rx[x.k] : 0;
+      var on = (r.my_reaction === x.k) ? ' fr-rx--on' : '';
+      return '<button type="button" class="fr-rx' + on + '" data-rx="' + x.k + '" data-reply="' + esc(r.id) + '" ' +
+          'aria-pressed="' + (r.my_reaction === x.k ? 'true' : 'false') + '" aria-label="' + x.k + '">' +
+          '<span class="fr-rx-e" aria-hidden="true">' + x.e + '</span>' +
+          (n > 0 ? '<span class="fr-rx-n">' + esc(n) + '</span>' : '') +
+        '</button>';
+    }).join('') + '</div>';
+  }
+
   function replyHTML(r, postId, adminOn){
     var trash = adminOn
       ? '<button type="button" class="bd-reply-trash" data-post="' + esc(postId) + '" data-del="' + esc(r.id) + '" aria-label="Delete reply">\u{1F5D1}</button>'
@@ -12377,7 +12405,7 @@ function submitFeedback(e) {
           '<span class="bd-uname">' + un + '</span>' +
           '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
         '</div>' +
-        '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' + rphoto +
+        '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' + rphoto + replyReactHTML(r) +
       '</div>';
     }
     return '<div class="bd-reply">' +
@@ -12387,7 +12415,7 @@ function submitFeedback(e) {
         '<span class="bd-viz">VIZ</span>' +
         '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
       '</div>' +
-      '<div class="bd-reply-body">' + esc(r.body) + '</div>' + rphoto +
+      '<div class="bd-reply-body">' + esc(r.body) + '</div>' + rphoto + replyReactHTML(r) +
     '</div>';
   }
 
@@ -12563,6 +12591,17 @@ function submitFeedback(e) {
     catch (e) { setMsg('Couldn’t register your reaction.'); await refresh(); }
   }
 
+  async function doReplyReact(id, rx){
+    var reply = findReply(id); if (!reply) return;
+    if (!reply.reactions) reply.reactions = {};
+    var prev = reply.my_reaction;
+    if (prev === rx){ reply.reactions[rx] = Math.max(0,(reply.reactions[rx]||0)-1); reply.my_reaction = null; }
+    else { if (prev) reply.reactions[prev] = Math.max(0,(reply.reactions[prev]||0)-1); reply.reactions[rx] = (reply.reactions[rx]||0)+1; reply.my_reaction = rx; }
+    renderList();                                        // optimistic
+    try { await featureReplyReact(id, rx); }
+    catch (e) { setMsg('Couldn’t register your reaction.'); await refresh(); }
+  }
+
   // Public reply (any visitor). Body/name read from the card's own composer.
   async function doUserReply(id){
     if (isNaN(id)) return;
@@ -12623,7 +12662,12 @@ function submitFeedback(e) {
   function onListClick(e){
     var t = e.target; if (!t || !t.closest) return;
     var rx = t.closest('.fr-rx');
-    if (rx){ var rid = parseInt(rx.getAttribute('data-id'), 10); var kind = rx.getAttribute('data-rx'); if (!isNaN(rid) && kind) doReact(rid, kind); return; }
+    if (rx){
+      var replyId = rx.getAttribute('data-reply');
+      var kind = rx.getAttribute('data-rx');
+      if (replyId != null && kind){ var rrid = parseInt(replyId, 10); if (!isNaN(rrid)) doReplyReact(rrid, kind); return; }
+      var rid = parseInt(rx.getAttribute('data-id'), 10); if (!isNaN(rid) && kind) doReact(rid, kind); return;
+    }
     var pill = t.closest('.fr-pill');
     if (pill){ var vid = parseInt(pill.getAttribute('data-id'), 10); if (!isNaN(vid)) doVote(vid); return; }
     // --- public reply controls (available to every visitor) ---
