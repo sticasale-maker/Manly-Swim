@@ -12290,10 +12290,13 @@ function submitFeedback(e) {
     if (frFoul(b)) return Promise.reject(new Error('foul'));
     var nm = (name == null ? '' : String(name)).trim().slice(0, 24) || pseudoName(frDevice());
     var noImg = { p_post_id: postId, p_body: b, p_device: frDevice(), p_name: nm };
-    // Forward-compatible: prefer the photo-aware RPC; if the backend lacks
-    // p_image_url it 404s (PGRST202) and we fall back so replying still works.
+    // ALWAYS send p_image_url (null when no photo). Two submit_feature_reply
+    // overloads exist in the DB — a 4-arg one and a 5-arg one with p_image_url —
+    // so a 4-arg call is ambiguous (PGRST203, HTTP 300) and every no-photo reply
+    // failed. Naming all 5 params resolves uniquely to the 5-arg function.
+    // Fallback: an older backend without the 5-arg overload 404s → retry 4-arg.
     try {
-      return await rpc('submit_feature_reply', imageUrl ? Object.assign({ p_image_url: imageUrl }, noImg) : noImg);
+      return await rpc('submit_feature_reply', Object.assign({ p_image_url: (imageUrl || null) }, noImg));
     } catch (e) {
       if (e && e.status === 404) return rpc('submit_feature_reply', noImg);
       throw e;
