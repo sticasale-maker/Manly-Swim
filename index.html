@@ -8440,7 +8440,30 @@ function renderWeekAhead(matrix){
   // there's a week's worth of trend inside (and reads as tappable, not dead space).
   var mini = document.getElementById('waMini');
   if (mini) mini.innerHTML = wgMiniSVG(E, U, C, t0, t1);
+
+  // Deep-link: ?week=1 auto-opens the card and scrolls to it, so an announcement
+  // link can drop a user straight on the trend. Runs once per load. The page keeps
+  // growing as maps/tide canvases load in, so a single scroll fires too early and
+  // the target drifts out of view — we re-scroll a few times over ~2.5s to hold it.
+  if (!_weekDeepLinkDone && /[?&]week=1(\b|&|$)/.test(location.search)){
+    _weekDeepLinkDone = true;
+    var wBody = document.getElementById('weekAheadDays');
+    var wBtn  = document.getElementById('wa2-toggle');
+    if (wBody && !wBody.classList.contains('wa2-open')){
+      wBody.classList.add('wa2-open');
+      if (wBtn) wBtn.setAttribute('aria-expanded','true');
+    }
+    var card = host.closest('.wa2-card');
+    if (card){
+      [120, 500, 1000, 1800, 2600].forEach(function(ms){
+        setTimeout(function(){
+          try { card.scrollIntoView({ behavior:(ms < 500 ? 'auto' : 'smooth'), block:'start' }); } catch(e){}
+        }, ms);
+      });
+    }
+  }
 }
+var _weekDeepLinkDone = false;
 
 // Compact 3-line mini for the collapsed Week Ahead header (Entry/Surge/Chop over the
 // shared calm→rough bands). Reuses bbfSmoothPath; no labels — just a colourful hint.
@@ -15448,6 +15471,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       /* Text-bearing cards get a solid, readable background; picture-only cards keep the popup's frosted transparency. */
       ".ann-card.ann-solid{background:#fff;border-radius:12px;padding:13px 14px;border-top:none;-webkit-backdrop-filter:none;backdrop-filter:none;}" +
       ".ann-card.ann-img{background:transparent;}" +
+      /* Picture-only post (e.g. a transparent GIF): drop the frosted panel to fully
+         transparent so the image's see-through pixels reveal the overlay behind it,
+         not a white frosted backing. Text posts keep the readable frosted panel. */
+      "#annPopup.ann-pic-only{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;}" +
       ".ann-card .ann-c-img{width:100%;height:auto;display:block;border-radius:10px;margin-bottom:11px;}" +
       ".ann-card .ann-c-time{font-size:11px;color:var(--dim,#4a5f6e);margin:-2px 0 9px;letter-spacing:.3px;}" +
       ".ann-card .ann-c-kicker{display:inline-flex;align-items:center;gap:5px;font-family:'Inter',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ocean,#4a8fad);background:rgba(74,143,173,.12);border-radius:999px;padding:3px 10px;margin-bottom:9px;}" +
@@ -15494,6 +15521,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annImg')) { $('annImg').style.display = 'none'; $('annImg').removeAttribute('src'); }
     if ($('annBody')) $('annBody').style.display = 'none';
     var sc = $('annScroll'); sc.style.display = '';
+    var anyText = false;   // any card carrying a title/body → keep the frosted panel
     sc.innerHTML = list.map(function (a) {
       var ttl = (a.title || '').trim();
       var bodyHtml = clean(a.body_html || '');
@@ -15508,8 +15536,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       // Text-bearing cards get a solid readable background; picture-only cards
       // keep the popup's frosted transparency.
       var solid  = !!(ttl || bodyHtml);
+      if (solid) anyText = true;
       return '<div class="ann-card ' + (solid ? 'ann-solid' : 'ann-img') + '">' + kicker + img + title + text + foot + '</div>';
     }).join('');
+    // Picture-only set (no text on any card) → strip the frosted panel so a
+    // transparent GIF/PNG shows the overlay through its clear pixels.
+    if ($('annPopup')) $('annPopup').classList.toggle('ann-pic-only', !anyText);
     // [[STORM_STATS]] token → live-computed Storm Watch dashboard (module above).
     if (window.stormStatsInject) window.stormStatsInject(sc);
     sc.scrollTop = 0;
@@ -15568,26 +15600,64 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  /* ---- image upload (downscale to 1280px, JPEG) ---------------------------- */
-  async function uploadImage(file){
-    var blob = await new Promise(function (resolve, reject) {
+  /* ---- background removal (border flood-fill → transparency) ---------------- */
+  // Samples the four corners for the background colour, then clears every pixel
+  // that is BOTH within a colour tolerance of it AND connected to the border.
+  // Connectivity is the safeguard: a colour matching the background deep inside
+  // the subject is left opaque, so we lift the surround without punching holes.
+  // JPEG can't hold alpha, so callers must encode the result as PNG.
+  function removeBorderBackground(ctx, w, h){
+    var id = ctx.getImageData(0, 0, w, h), d = id.data, n = w * h;
+    function corner(x, y){ var i = (y * w + x) * 4; return [d[i], d[i + 1], d[i + 2]]; }
+    var cs = [corner(0, 0), corner(w - 1, 0), corner(0, h - 1), corner(w - 1, h - 1)];
+    var br = 0, bg = 0, bb = 0;
+    for (var k = 0; k < 4; k++){ br += cs[k][0]; bg += cs[k][1]; bb += cs[k][2]; }
+    br /= 4; bg /= 4; bb /= 4;
+    var TOL = 50, tol2 = TOL * TOL;                 // squared RGB distance threshold
+    function near(p){ var i = p * 4; var dr = d[i] - br, dg = d[i + 1] - bg, db = d[i + 2] - bb; return (dr * dr + dg * dg + db * db) <= tol2; }
+    var seen = new Uint8Array(n), stack = new Int32Array(n), sp = 0;
+    function seed(p){ if (!seen[p] && near(p)){ seen[p] = 1; stack[sp++] = p; } }
+    for (var x = 0; x < w; x++){ seed(x); seed((h - 1) * w + x); }
+    for (var y = 0; y < h; y++){ seed(y * w); seed(y * w + (w - 1)); }
+    while (sp > 0){
+      var p = stack[--sp];
+      d[p * 4 + 3] = 0;                             // clear alpha
+      var cx = p % w, cy = (p - cx) / w;
+      if (cx > 0)     seed(p - 1);
+      if (cx < w - 1) seed(p + 1);
+      if (cy > 0)     seed(p - w);
+      if (cy < h - 1) seed(p + w);
+    }
+    ctx.putImageData(id, 0, 0);
+  }
+
+  /* ---- image upload (downscale to 1280px; JPEG, or transparent PNG) --------- */
+  async function uploadImage(file, opts){
+    var removeBg = !!(opts && opts.removeBg);
+    var out = await new Promise(function (resolve, reject) {
       var img = new Image(), url = URL.createObjectURL(file);
       img.onload = function () {
         var MAX = 1280, sc = Math.min(1, MAX / Math.max(img.width, img.height));
         var cw = Math.round(img.width * sc), chh = Math.round(img.height * sc);
         var cv = document.createElement('canvas'); cv.width = cw; cv.height = chh;
-        cv.getContext('2d').drawImage(img, 0, 0, cw, chh);
+        var ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0, cw, chh);
         URL.revokeObjectURL(url);
-        cv.toBlob(function (b) { b ? resolve(b) : reject(new Error('encode failed')); }, 'image/jpeg', 0.85);
+        if (removeBg) {
+          try { removeBorderBackground(ctx, cw, chh); } catch (e) {}
+          cv.toBlob(function (b) { b ? resolve({ blob: b, ext: 'png', type: 'image/png' }) : reject(new Error('encode failed')); }, 'image/png');
+        } else {
+          cv.toBlob(function (b) { b ? resolve({ blob: b, ext: 'jpg', type: 'image/jpeg' }) : reject(new Error('encode failed')); }, 'image/jpeg', 0.85);
+        }
       };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
       img.src = url;
     });
-    var nm = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))) + '.jpg';
+    var nm = ((window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))) + '.' + out.ext;
     var res = await fetch(SB + '/storage/v1/object/announce-images/' + nm, {
       method: 'POST',
-      headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' },
-      body: blob
+      headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': out.type, 'x-upsert': 'false' },
+      body: out.blob
     });
     if (!res.ok) throw new Error('image upload failed (' + res.status + ')');
     return SB + '/storage/v1/object/public/announce-images/' + nm;
@@ -15632,8 +15702,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".aa-sec{background:#eef6f9;color:var(--deep,#113541);width:100%;}" +
       ".aa-listrow{display:flex;align-items:center;gap:9px;padding:9px 10px;background:#c8bda0;border-radius:9px;margin-bottom:6px;font-size:13px;}" +
       ".aa-close{float:right;font-size:24px;color:var(--dim,#4a5f6e);background:none;border:none;cursor:pointer;line-height:1;}" +
-      ".aa-imgwrap{margin-top:8px;position:relative;display:none;}.aa-imgwrap img{width:100%;border-radius:10px;max-height:160px;object-fit:cover;display:block;}" +
+      /* Checkerboard behind the preview so removed (transparent) areas read as clear, not white. */
+      ".aa-imgwrap{margin-top:8px;position:relative;display:none;border-radius:10px;background-color:#e7edf1;background-image:linear-gradient(45deg,#cbd6dd 25%,transparent 25%,transparent 75%,#cbd6dd 75%),linear-gradient(45deg,#cbd6dd 25%,transparent 25%,transparent 75%,#cbd6dd 75%);background-size:16px 16px;background-position:0 0,8px 8px;}.aa-imgwrap img{width:100%;border-radius:10px;max-height:160px;object-fit:contain;display:block;}" +
       ".aa-imgrm{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:999px;width:26px;height:26px;cursor:pointer;}" +
+      ".aa-chk{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:13px;color:var(--text,#113541);cursor:pointer;}.aa-chk input{width:16px;height:16px;}" +
+      ".aa-chk-hint{color:var(--dim,#4a5f6e);font-size:11.5px;}" +
       ".aa-seg{display:flex;gap:6px;}" +
       ".aa-segbtn{flex:1;border:1px solid rgba(74,143,173,.35);background:#fff;color:var(--deep,#113541);border-radius:9px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;}" +
       ".aa-segbtn.on{background:var(--ocean,#4a8fad);color:#fff;border-color:var(--ocean,#4a8fad);}" +
@@ -15711,6 +15784,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         '<label class="aa-lbl">Picture (optional)</label>' +
         '<button type="button" class="aa-btn aa-sec" id="annImgBtn">Upload picture</button>' +
         '<input type="file" id="annImgInput" accept="image/*" style="display:none;">' +
+        '<label class="aa-chk"><input type="checkbox" id="annRemoveBg"> Remove background <span class="aa-chk-hint">(lift the border colour to transparent)</span></label>' +
         '<div class="aa-imgwrap" id="annImgWrap"><img id="annImgPrev" alt=""><button type="button" class="aa-imgrm" id="annImgRm" aria-label="Remove picture">\u00d7</button></div>' +
         '<div class="aa-row">' +
           '<div><label class="aa-lbl">Starts</label><input class="aa-in" id="annInStart" type="datetime-local"></div>' +
@@ -15840,12 +15914,18 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var o = $('annOverlay'); if (o) o.style.zIndex = '99998';   // above the admin overlay (99996)
     });
     $('annImgBtn').addEventListener('click', function () { $('annImgInput').click(); });
-    $('annImgInput').addEventListener('change', async function () {
+    // Process + upload the currently-picked file, honouring the Remove-background
+    // toggle. Shared by the file picker and the toggle, so flipping the box after
+    // choosing a file re-runs against the same file (input.files survives).
+    async function processPickedImage(){
       var f = $('annImgInput').files && $('annImgInput').files[0]; if (!f) return;
-      $('annPubMsg').textContent = 'Uploading picture\u2026';
-      try { _imgUrl = await uploadImage(f); $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; $('annPubMsg').textContent = ''; saveDraft(); }
+      var rmbg = !!($('annRemoveBg') && $('annRemoveBg').checked);
+      $('annPubMsg').textContent = rmbg ? 'Removing background\u2026' : 'Uploading picture\u2026';
+      try { _imgUrl = await uploadImage(f, { removeBg: rmbg }); $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; $('annPubMsg').textContent = ''; saveDraft(); }
       catch (e) { $('annPubMsg').textContent = 'Picture upload failed.'; }
-    });
+    }
+    $('annImgInput').addEventListener('change', processPickedImage);
+    if ($('annRemoveBg')) $('annRemoveBg').addEventListener('change', processPickedImage);
     $('annImgRm').addEventListener('click', function () { _imgUrl = ''; $('annImgWrap').style.display = 'none'; $('annImgPrev').removeAttribute('src'); saveDraft(); });
     $('annPubBtn').addEventListener('click', publish);
 
