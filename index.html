@@ -15329,7 +15329,41 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function escText(s){ return (s == null ? '' : String(s)).replace(/[&<>"]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
 
   /* ---- rich-text sanitizer: rebuild a clean tree from an allowlist --------- */
-  var ALLOW = { B:1, STRONG:1, I:1, EM:1, U:1, UL:1, OL:1, LI:1, A:1, BR:1, P:1, DIV:1, SPAN:1 };
+  var ALLOW = { B:1, STRONG:1, I:1, EM:1, U:1, UL:1, OL:1, LI:1, A:1, BR:1, P:1, DIV:1, SPAN:1,
+                H1:1, H2:1, H3:1, H4:1, H5:1, H6:1, BLOCKQUOTE:1, HR:1 };
+  // Pasted / editor markup is normalised to a small on-brand set: outsized headings
+  // collapse to our two steps so nothing towers over the popup.
+  var TAGMAP = { H1:'H2', H4:'H3', H5:'H3', H6:'H3' };
+  // Curated inline-style policy. Colours are inert so any valid hex/rgb is safe to
+  // keep (aids paste fidelity); every other property is snapped to a fixed set of
+  // safe values. Anything not listed here is dropped — no arbitrary CSS survives.
+  function isColor(v){
+    return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v) ||
+           /^rgba?\(\s*[\d.,\s%]+\)$/i.test(v);
+  }
+  function isSize(v){ var m = /^(\d+(?:\.\d+)?)px$/i.exec(v); return !!m && +m[1] >= 8 && +m[1] <= 72; }
+  var STYLE_OK = {
+    'color': isColor,
+    'background-color': isColor,
+    'text-align': /^(left|right|center|justify)$/i,
+    'font-weight': /^(bold|bolder|[5-9]00)$/i,
+    'font-style': /^italic$/i,
+    'text-decoration': /(underline|line-through)/i,
+    'font-size': isSize
+  };
+  function filterStyle(style){
+    var keep = [];
+    String(style || '').split(';').forEach(function (decl) {
+      var i = decl.indexOf(':'); if (i < 0) return;
+      var prop = decl.slice(0, i).trim().toLowerCase();
+      var val  = decl.slice(i + 1).trim();
+      if (!val) return;
+      var test = STYLE_OK[prop]; if (!test) return;
+      var ok = (typeof test === 'function') ? test(val) : test.test(val);
+      if (ok) keep.push(prop + ':' + val);
+    });
+    return keep.join(';');
+  }
   function clean(src){
     var tmp = document.createElement('div'); tmp.innerHTML = (src == null ? '' : String(src));
     var out = document.createElement('div');
@@ -15339,9 +15373,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         if (ch.nodeType !== 1) return;                       // drop comments / others
         var tag = ch.tagName;
         if (tag === 'SCRIPT' || tag === 'STYLE') return;     // drop entirely
-        if (ALLOW[tag]) {
-          var el = document.createElement(tag.toLowerCase());
-          if (tag === 'A') {
+        var mapped = TAGMAP[tag] || tag;
+        if (ALLOW[mapped]) {
+          var el = document.createElement(mapped.toLowerCase());
+          if (mapped === 'A') {
             var href = ch.getAttribute('href') || '';
             if (/^(https?:|mailto:)/i.test(href)) {
               el.setAttribute('href', href);
@@ -15349,7 +15384,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
               el.setAttribute('rel', 'noopener noreferrer');
             }
           }
-          copy(ch, el);
+          var sty = filterStyle(ch.getAttribute && ch.getAttribute('style'));
+          if (sty) el.setAttribute('style', sty);
+          if (mapped !== 'HR') copy(ch, el);                 // HR is void
           dest.appendChild(el);
         } else {
           copy(ch, dest);                                    // unwrap: keep contents
@@ -15420,6 +15457,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".ann-card .ann-c-text a{color:var(--ocean,#4a8fad);}" +
       ".ann-card .ann-c-text ul,.ann-card .ann-c-text ol{margin:7px 0;padding-left:20px;}.ann-card .ann-c-text li{margin-bottom:3px;}" +
       ".ann-card .ann-c-text p{margin:0 0 7px;}" +
+      ".ann-card .ann-c-text h1,.ann-card .ann-c-text h2,.ann-card .ann-c-text h3{font-family:'Bebas Neue',sans-serif;letter-spacing:.5px;line-height:1.1;margin:11px 0 6px;color:var(--deep,#113541);}" +
+      ".ann-card .ann-c-text h1:first-child,.ann-card .ann-c-text h2:first-child,.ann-card .ann-c-text h3:first-child{margin-top:0;}" +
+      ".ann-card .ann-c-text h1,.ann-card .ann-c-text h2{font-size:22px;}.ann-card .ann-c-text h3{font-size:18px;}" +
+      ".ann-card .ann-c-text blockquote{margin:9px 0;padding:6px 12px;border-left:3px solid var(--ocean,#4a8fad);color:var(--dim,#4a5f6e);font-style:italic;}" +
+      ".ann-card .ann-c-text hr{border:none;border-top:1px solid rgba(74,143,173,.28);margin:12px 0;}" +
       "#annWhatsNew{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
       "#annWhatsNew.show{display:inline-flex;}" +
       "#annWhatsNew .ann-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red,#c0392b);}" +
@@ -15563,11 +15605,27 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".aa-h{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:22px;color:var(--deep,#113541);}" +
       ".aa-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim,#4a5f6e);margin:12px 0 5px;display:block;}" +
       ".aa-in{width:100%;border:1px solid rgba(74,143,173,.25);border-radius:10px;padding:9px 10px;font-size:14px;color:var(--text,#113541);background:#fff;font-family:inherit;}" +
-      ".aa-tb{display:flex;gap:6px;}" +
-      ".aa-tbbtn{width:36px;height:34px;border:1px solid rgba(74,143,173,.25);background:#c8bda0;border-radius:8px;color:var(--deep,#113541);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;}" +
+      ".aa-tb{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}" +
+      ".aa-tb2{margin-top:6px;}" +
+      ".aa-tbbtn{min-width:34px;height:34px;padding:0 6px;border:1px solid rgba(74,143,173,.25);background:#c8bda0;border-radius:8px;color:var(--deep,#113541);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;}" +
       ".aa-tbbtn:active{transform:scale(.95);}" +
-      "#annEdBody{border:1px solid rgba(74,143,173,.25);border-radius:0 0 10px 10px;border-top:none;min-height:90px;padding:10px 11px;font-size:14px;line-height:1.5;color:var(--text,#113541);outline:none;}" +
+      ".aa-tbsep{width:1px;height:22px;background:rgba(74,143,173,.3);margin:0 2px;}" +
+      ".aa-swatches{display:inline-flex;gap:4px;align-items:center;}" +
+      ".aa-sw{width:20px;height:20px;border-radius:50%;border:1px solid rgba(0,0,0,.18);cursor:pointer;padding:0;}" +
+      ".aa-sw:active{transform:scale(.9);}" +
+      ".aa-hilite .aa-sw{border-radius:5px;}" +
+      ".aa-size{width:52px;height:34px;border:1px solid rgba(74,143,173,.25);border-radius:8px;padding:0 8px;font-size:13px;color:var(--text,#113541);background:#fff;}" +
+      ".aa-cp{width:30px;height:30px;padding:0;border:1px solid rgba(74,143,173,.3);border-radius:6px;background:#fff;cursor:pointer;}" +
+      ".aa-cp::-webkit-color-swatch{border:none;border-radius:4px;}.aa-cp::-webkit-color-swatch-wrapper{padding:2px;}" +
+      ".aa-clbl{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim,#4a5f6e);}" +
+      "#annEdBody{border:1px solid rgba(74,143,173,.25);border-radius:10px;margin-top:8px;min-height:90px;padding:10px 11px;font-size:14px;line-height:1.5;color:var(--text,#113541);outline:none;}" +
       "#annEdBody:empty:before{content:attr(data-ph);color:var(--dim,#4a5f6e);}" +
+      "#annEdBody h1,#annEdBody h2,#annEdBody h3{font-family:'Bebas Neue',sans-serif;letter-spacing:.5px;line-height:1.1;margin:8px 0 5px;color:var(--deep,#113541);}" +
+      "#annEdBody h1:first-child,#annEdBody h2:first-child,#annEdBody h3:first-child{margin-top:0;}" +
+      "#annEdBody h1,#annEdBody h2{font-size:22px;}#annEdBody h3{font-size:18px;}" +
+      "#annEdBody blockquote{margin:8px 0;padding:5px 11px;border-left:3px solid var(--ocean,#4a8fad);color:var(--dim,#4a5f6e);font-style:italic;}" +
+      "#annEdBody hr{border:none;border-top:1px solid rgba(74,143,173,.35);margin:10px 0;}" +
+      "#annEdBody a{color:var(--ocean,#4a8fad);}" +
       ".aa-row{display:flex;gap:10px;}.aa-row>div{flex:1;}" +
       ".aa-btn{border:none;border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer;}" +
       ".aa-pub{background:var(--ocean,#4a8fad);color:#fff;width:100%;margin-top:14px;}" +
@@ -15620,10 +15678,34 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
         '<label class="aa-lbl">Message</label>' +
         '<div class="aa-tb">' +
+          '<button type="button" class="aa-tbbtn" data-cmd="formatBlock" data-val="H2" aria-label="Big heading" style="font-family:\'Bebas Neue\',sans-serif;">H1</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="formatBlock" data-val="H3" aria-label="Small heading" style="font-family:\'Bebas Neue\',sans-serif;font-size:12px;">H2</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="formatBlock" data-val="P" aria-label="Normal text" style="font-size:11px;">\u00b6</button>' +
+          '<span class="aa-tbsep"></span>' +
           '<button type="button" class="aa-tbbtn" data-cmd="bold" aria-label="Bold"><b>B</b></button>' +
           '<button type="button" class="aa-tbbtn" data-cmd="italic" aria-label="Italic"><i>I</i></button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="underline" aria-label="Underline"><u>U</u></button>' +
           '<button type="button" class="aa-tbbtn" data-cmd="insertUnorderedList" aria-label="Bullet list">\u2022</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="insertOrderedList" aria-label="Numbered list">1.</button>' +
           '<button type="button" class="aa-tbbtn" data-cmd="createLink" aria-label="Link">\u{1F517}</button>' +
+        '</div>' +
+        '<div class="aa-tb aa-tb2">' +
+          '<button type="button" class="aa-tbbtn" data-cmd="justifyLeft" aria-label="Align left">\u2630</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="justifyCenter" aria-label="Align centre">\u2637</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="justifyRight" aria-label="Align right">\u2630</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="formatBlock" data-val="BLOCKQUOTE" aria-label="Quote">\u201d</button>' +
+          '<button type="button" class="aa-tbbtn" data-cmd="insertHorizontalRule" aria-label="Divider">\u2014</button>' +
+          '<span class="aa-tbsep"></span>' +
+          '<input type="number" class="aa-size" id="annSize" min="8" max="72" placeholder="px" aria-label="Font size">' +
+        '</div>' +
+        '<div class="aa-tb aa-tb3">' +
+          '<span class="aa-clbl">Text</span>' +
+          '<span class="aa-swatches" id="annFore" data-cmd="foreColor" title="Text colour"></span>' +
+          '<input type="color" class="aa-cp" id="annForePick" value="#113541" aria-label="Custom text colour">' +
+          '<span class="aa-tbsep"></span>' +
+          '<span class="aa-clbl">Mark</span>' +
+          '<span class="aa-swatches aa-hilite" id="annHilite" data-cmd="hiliteColor" title="Highlight"></span>' +
+          '<input type="color" class="aa-cp" id="annHilitePick" value="#fff2a8" aria-label="Custom highlight colour">' +
         '</div>' +
         '<div id="annEdBody" contenteditable="true" data-ph="Write the announcement\u2026"></div>' +
         '<label class="aa-lbl">Picture (optional)</label>' +
@@ -15645,14 +15727,96 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     $('annAdminClose').addEventListener('click', closeAnnounceAdmin);
     ov.addEventListener('click', function (e) { if (e.target === ov) closeAnnounceAdmin(); });
 
+    // Preset swatches (quick picks) — every value passes the clean() colour test.
+    // The native colour inputs beside them give a fully free picker.
+    var FORE_COLORS   = ['#113541', '#4a8fad', '#c0392b', '#1f8a5b', '#d98a1f', '#6d4aad'];
+    var HILITE_COLORS = ['#fff2a8', '#c9ecff', '#ffd6d6', '#d8f5df'];
+
+    // Native pickers / the size box steal focus and collapse the editor's
+    // selection, so we snapshot the last in-editor range and restore it before
+    // applying. Toolbar buttons/swatches keep focus via preventDefault instead.
+    var savedRange = null;
+    function saveSel(){
+      var s = window.getSelection();
+      if (s && s.rangeCount && $('annEdBody').contains(s.anchorNode)) savedRange = s.getRangeAt(0).cloneRange();
+    }
+    function restoreSel(){
+      $('annEdBody').focus();
+      if (!savedRange) return;
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(savedRange);
+    }
+    ['keyup', 'mouseup', 'input'].forEach(function (ev) { $('annEdBody').addEventListener(ev, saveSel); });
+
+    function runCmd(cmd, val){
+      $('annEdBody').focus();
+      try { document.execCommand('styleWithCSS', false, true); } catch (e) {}   // emit CSS, not <font>
+      if (cmd === 'createLink') { var u = window.prompt('Link URL', 'https://'); if (u) document.execCommand('createLink', false, u); }
+      else if (cmd === 'formatBlock') { document.execCommand('formatBlock', false, val); }
+      else document.execCommand(cmd, false, null);
+      saveDraft();
+    }
+    function applyColor(cmd, val){
+      restoreSel();
+      try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+      if (cmd === 'hiliteColor') { if (!document.execCommand('hiliteColor', false, val)) document.execCommand('backColor', false, val); }
+      else document.execCommand(cmd, false, val);
+      saveDraft();
+    }
+    // Custom font size: execCommand('fontSize') only takes 1–7, so we tag the
+    // selection with size 7 then rewrite those wrappers to a real px span.
+    function applyFontSize(px){
+      px = Math.max(8, Math.min(72, px | 0)); if (!px) return;
+      restoreSel();
+      try { document.execCommand('styleWithCSS', false, false); } catch (e) {}   // want <font size=7>, not a keyword
+      document.execCommand('fontSize', false, '7');
+      Array.prototype.forEach.call($('annEdBody').querySelectorAll('font[size="7"]'), function (f) {
+        var sp = document.createElement('span'); sp.style.fontSize = px + 'px';
+        while (f.firstChild) sp.appendChild(f.firstChild);
+        f.parentNode.replaceChild(sp, f);
+      });
+      saveSel(); saveDraft();
+    }
+
     Array.prototype.forEach.call(ov.querySelectorAll('.aa-tbbtn'), function (btn) {
       btn.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep editor focus
-      btn.addEventListener('click', function () {
-        var cmd = btn.getAttribute('data-cmd');
-        $('annEdBody').focus();
-        if (cmd === 'createLink') { var u = window.prompt('Link URL', 'https://'); if (u) document.execCommand('createLink', false, u); }
-        else document.execCommand(cmd, false, null);
+      btn.addEventListener('click', function () { runCmd(btn.getAttribute('data-cmd'), btn.getAttribute('data-val')); });
+    });
+    // Preset swatch rows.
+    [['annFore', FORE_COLORS], ['annHilite', HILITE_COLORS]].forEach(function (pair) {
+      var host = $(pair[0]); if (!host) return;
+      var cmd = host.getAttribute('data-cmd');
+      pair[1].forEach(function (c) {
+        var sw = document.createElement('button');
+        sw.type = 'button'; sw.className = 'aa-sw'; sw.style.background = c;
+        sw.setAttribute('aria-label', c);
+        sw.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        sw.addEventListener('click', function () { applyColor(cmd, c); });
+        host.appendChild(sw);
       });
+    });
+    // Free colour pickers (text + highlight).
+    [['annForePick', 'foreColor'], ['annHilitePick', 'hiliteColor']].forEach(function (p) {
+      var el = $(p[0]); if (!el) return;
+      el.addEventListener('mousedown', saveSel);   // grab the range before the OS dialog steals focus
+      el.addEventListener('change', function () { applyColor(p[1], el.value); });
+    });
+    // Custom font size box.
+    var szEl = $('annSize');
+    if (szEl) {
+      szEl.addEventListener('mousedown', saveSel);
+      szEl.addEventListener('change', function () { applyFontSize(+szEl.value); szEl.value = ''; });
+    }
+    // Paste: route clipboard HTML through the SAME sanitizer, so formatted text
+    // pasted from Docs/Word/web keeps only our curated set — nothing unsafe.
+    $('annEdBody').addEventListener('paste', function (e) {
+      e.preventDefault();
+      var cb = e.clipboardData || window.clipboardData;
+      var html = cb ? cb.getData('text/html') : '';
+      var frag;
+      if (html) frag = clean(html);
+      else { var t = cb ? cb.getData('text/plain') : ''; frag = escText(t).replace(/\r?\n/g, '<br>'); }
+      document.execCommand('insertHTML', false, frag);
+      saveDraft();
     });
     $('annPrevBtn').addEventListener('click', function () {
       // Render the CURRENT (unsaved) draft through the exact same popup pipeline
