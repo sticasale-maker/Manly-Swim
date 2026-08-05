@@ -885,7 +885,8 @@
     font-size: clamp(10px,2.8vw,12px); color: rgba(200,189,160,0.65); padding: 8px 0;
   }
   /* ── Unified Week Ahead chart + draggable time scrubber ── */
-  .wa2-uni-svg { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; -webkit-tap-highlight-color: transparent; }
+  /* Bleed the chart out to the card's inner edges (cancel the card's side padding) so it uses the full width. */
+  .wa2-uni-svg { width: calc(100% + 2 * clamp(12px,4vw,16px)); margin-left: calc(-1 * clamp(12px,4vw,16px)); margin-right: calc(-1 * clamp(12px,4vw,16px)); height: auto; display: block; touch-action: none; cursor: crosshair; -webkit-tap-highlight-color: transparent; }
   .wa2-uni-svg:focus { outline: none; }
   .wa2-scrub-read {
     display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
@@ -8481,8 +8482,8 @@ var _weekDeepLinkDone = false;
 // scrubber (a vertical line + a dot on each trend) that initWeekScrubber drives; the
 // element ids below are the handles it moves. Replaces the three stacked wgTrendRows.
 function wgUnifiedChart(E, U, C, t0, t1){
-  var W = 360, x0 = 8, x1 = W - 8, yTop = 4, bandsH = 122, bh = bandsH / 4;
-  var H = yTop + bandsH + 16;
+  var W = 360, x0 = 3, x1 = W - 3, yTop = 4, bandsH = 122, bh = bandsH / 4;
+  var H = yTop + bandsH + 19;
   var span = Math.max(1, t1 - t0);
   var xAt = function(t){ return x0 + (t - t0) / span * (x1 - x0); };
   var yAt = function(p){ return yTop + (1 - Math.max(0, Math.min(100, p)) / 100) * bandsH; };
@@ -8494,7 +8495,7 @@ function wgUnifiedChart(E, U, C, t0, t1){
   var grid = '', labels = '', dayMs = 86400000, sm = new Date(t0); sm.setHours(0, 0, 0, 0);
   for (var m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
     if (m > t0 && m < t1){ var gx = xAt(m); grid += '<line x1="' + gx.toFixed(1) + '" y1="' + yTop + '" x2="' + gx.toFixed(1) + '" y2="' + (yTop + bandsH) + '" stroke="rgba(0,0,0,.16)" stroke-width="1"/>'; }
-    if (m + dayMs > t0 && m < t1){ var cx = Math.max(x0 + 2, Math.min(x1 - 2, (xAt(Math.max(m, t0)) + xAt(Math.min(m + dayMs, t1))) / 2)); var dd = new Date(m); labels += '<text x="' + cx.toFixed(1) + '" y="' + (yTop + bandsH + 13) + '" font-size="8.5" text-anchor="middle" fill="rgba(17,53,65,0.8)">' + dd.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase() + '</text>'; }
+    if (m + dayMs > t0 && m < t1){ var cx = Math.max(x0 + 2, Math.min(x1 - 2, (xAt(Math.max(m, t0)) + xAt(Math.min(m + dayMs, t1))) / 2)); var dd = new Date(m); labels += '<text x="' + cx.toFixed(1) + '" y="' + (yTop + bandsH + 15) + '" font-size="12" font-weight="600" text-anchor="middle" fill="rgba(17,53,65,0.85)">' + dd.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase() + '</text>'; }
   }
   var tier = '<text x="3" y="' + (yTop + 8) + '" font-size="7" fill="rgba(17,53,65,.62)">Rough</text><text x="3" y="' + (yTop + bandsH - 2) + '" font-size="7" fill="rgba(17,53,65,.62)">Calm</text>';
   function lineOf(data, color){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + color + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'; }
@@ -8507,7 +8508,7 @@ function wgUnifiedChart(E, U, C, t0, t1){
     + '<circle id="waDotC" r="3.6" fill="#d21f8a" stroke="#fff" stroke-width="1.3"/>'
     + '</g>';
   var svg = '<svg id="waUniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="Week ahead — drag to read any time" aria-valuemin="0" aria-valuemax="100">'
-    + s + grid + tier + lines + scr + labels + '</svg>';
+    + s + grid + lines + scr + labels + tier + '</svg>';
   var readout = '<div class="wa2-scrub-read" id="waScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
   return '<div class="wa2-uni">' + svg + readout + '</div>';
 }
