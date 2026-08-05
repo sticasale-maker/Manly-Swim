@@ -8494,14 +8494,8 @@ function wgUnifiedChart(E, U, C, t0, t1){
     if (m + dayMs > t0 && m < t1){ var cx = Math.max(x0 + 2, Math.min(x1 - 2, (xAt(Math.max(m, t0)) + xAt(Math.min(m + dayMs, t1))) / 2)); var dd = new Date(m); labels += '<text x="' + cx.toFixed(1) + '" y="' + (yTop + bandsH + 13) + '" font-size="8.5" text-anchor="middle" fill="rgba(17,53,65,0.8)">' + dd.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase() + '</text>'; }
   }
   var tier = '<text x="3" y="' + (yTop + 8) + '" font-size="7" fill="rgba(255,255,255,.9)">Rough</text><text x="3" y="' + (yTop + bandsH - 2) + '" font-size="7" fill="rgba(255,255,255,.9)">Calm</text>';
-  // White halo under each coloured line so it stays legible over the bands. ALL
-  // halos are drawn first, then ALL coloured lines on top, so a halo never paints
-  // over another line where two trends cross.
-  function pathD(data){ return (!data || data.length < 2) ? '' : bbfSmoothPath(data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; })); }
-  function haloOf(d){ return d ? '<path d="' + d + '" fill="none" stroke="#fff" stroke-width="4.6" stroke-opacity="0.85" stroke-linecap="round" stroke-linejoin="round"/>' : ''; }
-  function lineOf(d, color){ return d ? '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>' : ''; }
-  var dU = pathD(U), dE = pathD(E), dC = pathD(C);
-  var lines = haloOf(dU) + haloOf(dE) + haloOf(dC) + lineOf(dU, '#0e6b60') + lineOf(dE, '#16324a') + lineOf(dC, '#9c2c8f');
+  function lineOf(data, color){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + color + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'; }
+  var lines = lineOf(U, '#0e6b60') + lineOf(E, '#16324a') + lineOf(C, '#9c2c8f');
   var scr = '<g id="waScrubG" style="visibility:hidden">'
     + '<line id="waScrubHalo" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#0a2230" stroke-width="3.6" stroke-opacity="0.35"/>'
     + '<line id="waScrubLine" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#ffffff" stroke-width="1.6"/>'
