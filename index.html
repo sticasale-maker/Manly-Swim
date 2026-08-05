@@ -887,13 +887,11 @@
   /* ── Unified Week Ahead chart + draggable time scrubber ── */
   .wa2-uni-svg { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; -webkit-tap-highlight-color: transparent; }
   .wa2-uni-svg:focus { outline: none; }
-  .wa2-uni-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 7px; }
-  .wa2-lg { display: inline-flex; align-items: center; gap: 5px; font-family: 'Inter', sans-serif; font-size: 11px; color: var(--dim); }
-  .wa2-lg i { width: 16px; height: 4px; border-radius: 2px; }
   .wa2-scrub-read {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
     margin-top: 9px; min-height: 22px;
   }
+  .wa2-scrub-mrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
   .wa2-scrub-hint { font-family: 'Inter', sans-serif; font-size: 11px; color: var(--dim); font-style: italic; }
   .wa2-scrub-t { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; font-size: 19px; color: var(--deep); white-space: nowrap; }
   .wa2-scrub-m { display: inline-flex; align-items: center; gap: 5px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; color: var(--deep); white-space: nowrap; }
@@ -8507,13 +8505,8 @@ function wgUnifiedChart(E, U, C, t0, t1){
     + '</g>';
   var svg = '<svg id="waUniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="Week ahead — drag to read any time" aria-valuemin="0" aria-valuemax="100">'
     + s + grid + tier + lines + scr + labels + '</svg>';
-  var legend = '<div class="wa2-uni-legend">'
-    + '<span class="wa2-lg"><i style="background:#16324a"></i>Entry</span>'
-    + '<span class="wa2-lg"><i style="background:#0e6b60"></i>Surge</span>'
-    + '<span class="wa2-lg"><i style="background:#9c2c8f"></i>Chop</span>'
-    + '</div>';
   var readout = '<div class="wa2-scrub-read" id="waScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
-  return '<div class="wa2-uni">' + legend + svg + readout + '</div>';
+  return '<div class="wa2-uni">' + svg + readout + '</div>';
 }
 
 // Drives the unified chart's time scrubber: tap or drag anywhere on the chart to
@@ -8556,10 +8549,12 @@ function initWeekScrubber(E, U, C, t0, t1){
     if (dE){ dE.setAttribute('cx', xx); dE.setAttribute('cy', yAt(pe).toFixed(1)); }
     if (dC){ dC.setAttribute('cx', xx); dC.setAttribute('cy', yAt(pc).toFixed(1)); }
     if (read){
-      read.innerHTML = '<span class="wa2-scrub-t">' + fmtTime(t) + '</span>'
+      read.innerHTML = '<div class="wa2-scrub-t">' + fmtTime(t) + '</div>'
+        + '<div class="wa2-scrub-mrow">'
         + '<span class="wa2-scrub-m"><i style="background:#16324a"></i><b>ENTRY:</b> ' + tierOf(LBL_E, pe) + '</span>'
         + '<span class="wa2-scrub-m"><i style="background:#0e6b60"></i><b>SURGE:</b> ' + tierOf(LBL_U, pu) + '</span>'
-        + '<span class="wa2-scrub-m"><i style="background:#9c2c8f"></i><b>CHOP:</b> ' + tierOf(LBL_C, pc) + '</span>';
+        + '<span class="wa2-scrub-m"><i style="background:#9c2c8f"></i><b>CHOP:</b> ' + tierOf(LBL_C, pc) + '</span>'
+        + '</div>';
     }
     svg.setAttribute('aria-valuenow', Math.round(frac * 100));
     svg.setAttribute('aria-valuetext', fmtTime(t));
