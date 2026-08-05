@@ -884,6 +884,20 @@
     display: block; font-family: 'Inter', sans-serif;
     font-size: clamp(10px,2.8vw,12px); color: rgba(200,189,160,0.65); padding: 8px 0;
   }
+  /* ── Unified Week Ahead chart + draggable time scrubber ── */
+  .wa2-uni-svg { width: 100%; height: auto; display: block; touch-action: none; cursor: crosshair; -webkit-tap-highlight-color: transparent; }
+  .wa2-uni-svg:focus { outline: none; }
+  .wa2-uni-legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 7px; }
+  .wa2-lg { display: inline-flex; align-items: center; gap: 5px; font-family: 'Inter', sans-serif; font-size: 11px; color: var(--dim); }
+  .wa2-lg i { width: 16px; height: 4px; border-radius: 2px; }
+  .wa2-scrub-read {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    margin-top: 9px; min-height: 22px;
+  }
+  .wa2-scrub-hint { font-family: 'Inter', sans-serif; font-size: 11px; color: var(--dim); font-style: italic; }
+  .wa2-scrub-t { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; font-size: 19px; color: var(--deep); white-space: nowrap; }
+  .wa2-scrub-m { display: inline-flex; align-items: center; gap: 5px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; color: var(--deep); white-space: nowrap; }
+  .wa2-scrub-m i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
   /* ── Timeline back button ── */
   .timeline-back-btn {
@@ -8431,10 +8445,8 @@ function renderWeekAhead(matrix){
 
   var allT = E.concat(C).concat(U).map(function(p){ return p[0]; });
   var t0 = Math.min.apply(null, allT), t1 = Math.max.apply(null, allT);
-  host.innerHTML =
-    wgTrendRow('Entry', '#16324a', 'Easy',   'Danger', E, t0, t1, false) +
-    wgTrendRow('Surge', '#0e6b60', 'Steady', 'Washy',  U, t0, t1, false) +
-    wgTrendRow('Chop',  '#9c2c8f', 'Smooth', 'Messy',  C, t0, t1, true);
+  host.innerHTML = wgUnifiedChart(E, U, C, t0, t1);
+  try { initWeekScrubber(E, U, C, t0, t1); } catch (e) {}
 
   // Collapsed teaser: a thin combined mini of the three trends, so the shut card shows
   // there's a week's worth of trend inside (and reads as tappable, not dead space).
@@ -8464,6 +8476,113 @@ function renderWeekAhead(matrix){
   }
 }
 var _weekDeepLinkDone = false;
+
+// Unified Week Ahead chart — Entry/Surge/Chop drawn as three smoothed lines over ONE
+// shared calm→rough band background (each metric is pre-mapped to its own 0-100 tier
+// scale, so a single 4-tier background is meaningful for all three). Carries a time
+// scrubber (a vertical line + a dot on each trend) that initWeekScrubber drives; the
+// element ids below are the handles it moves. Replaces the three stacked wgTrendRows.
+function wgUnifiedChart(E, U, C, t0, t1){
+  var W = 360, x0 = 8, x1 = W - 8, yTop = 4, bandsH = 122, bh = bandsH / 4;
+  var H = yTop + bandsH + 16;
+  var span = Math.max(1, t1 - t0);
+  var xAt = function(t){ return x0 + (t - t0) / span * (x1 - x0); };
+  var yAt = function(p){ return yTop + (1 - Math.max(0, Math.min(100, p)) / 100) * bandsH; };
+  var cols = ['#b0392f','#e08a3c','#c9c246','#4caf50'];   // rough..calm top→bottom (metric rail ramp)
+  var s = ''; for (var i = 0; i < 4; i++) s += '<rect x="0" y="' + (yTop + i * bh).toFixed(1) + '" width="' + W + '" height="' + bh.toFixed(1) + '" fill="' + cols[i] + '"/>';
+  var grid = '', labels = '', dayMs = 86400000, sm = new Date(t0); sm.setHours(0, 0, 0, 0);
+  for (var m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
+    if (m > t0 && m < t1){ var gx = xAt(m); grid += '<line x1="' + gx.toFixed(1) + '" y1="' + yTop + '" x2="' + gx.toFixed(1) + '" y2="' + (yTop + bandsH) + '" stroke="rgba(0,0,0,.16)" stroke-width="1"/>'; }
+    if (m + dayMs > t0 && m < t1){ var cx = Math.max(x0 + 2, Math.min(x1 - 2, (xAt(Math.max(m, t0)) + xAt(Math.min(m + dayMs, t1))) / 2)); var dd = new Date(m); labels += '<text x="' + cx.toFixed(1) + '" y="' + (yTop + bandsH + 13) + '" font-size="8.5" text-anchor="middle" fill="rgba(17,53,65,0.8)">' + dd.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase() + '</text>'; }
+  }
+  var tier = '<text x="3" y="' + (yTop + 8) + '" font-size="7" fill="rgba(255,255,255,.9)">Rough</text><text x="3" y="' + (yTop + bandsH - 2) + '" font-size="7" fill="rgba(255,255,255,.9)">Calm</text>';
+  function lineOf(data, color){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + color + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'; }
+  var lines = lineOf(U, '#0e6b60') + lineOf(E, '#16324a') + lineOf(C, '#9c2c8f');
+  var scr = '<g id="waScrubG" style="visibility:hidden">'
+    + '<line id="waScrubHalo" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#0a2230" stroke-width="3.6" stroke-opacity="0.35"/>'
+    + '<line id="waScrubLine" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#ffffff" stroke-width="1.6"/>'
+    + '<circle id="waDotU" r="3.6" fill="#0e6b60" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="waDotE" r="3.6" fill="#16324a" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="waDotC" r="3.6" fill="#9c2c8f" stroke="#fff" stroke-width="1.3"/>'
+    + '</g>';
+  var svg = '<svg id="waUniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="Week ahead — drag to read any time" aria-valuemin="0" aria-valuemax="100">'
+    + s + grid + tier + lines + scr + labels + '</svg>';
+  var legend = '<div class="wa2-uni-legend">'
+    + '<span class="wa2-lg"><i style="background:#16324a"></i>Entry</span>'
+    + '<span class="wa2-lg"><i style="background:#0e6b60"></i>Surge</span>'
+    + '<span class="wa2-lg"><i style="background:#9c2c8f"></i>Chop</span>'
+    + '</div>';
+  var readout = '<div class="wa2-scrub-read" id="waScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
+  return '<div class="wa2-uni">' + legend + svg + readout + '</div>';
+}
+
+// Drives the unified chart's time scrubber: tap or drag anywhere on the chart to
+// place a vertical line, which reads out the time + each metric's tier at that
+// moment. Position persists (module-scoped _waScrubFrac) across the periodic
+// re-renders so the scrubber stays put; first placement defaults to "now".
+var _waScrubFrac = null;
+function initWeekScrubber(E, U, C, t0, t1){
+  var svg = document.getElementById('waUniSvg'); if (!svg) return;
+  var W = 360, x0 = 8, x1 = W - 8, yTop = 4, bandsH = 122;
+  var span = Math.max(1, t1 - t0);
+  var g = document.getElementById('waScrubG');
+  var halo = document.getElementById('waScrubHalo'), line = document.getElementById('waScrubLine');
+  var dU = document.getElementById('waDotU'), dE = document.getElementById('waDotE'), dC = document.getElementById('waDotC');
+  var read = document.getElementById('waScrubRead');
+  var LBL_E = ['Easy','Doable','Caution','Danger'], LBL_U = ['Steady','Drifty','Surgy','Washy'], LBL_C = ['Smooth','Ripply','Choppy','Messy'];
+  function xAt(t){ return x0 + (t - t0) / span * (x1 - x0); }
+  function yAt(p){ return yTop + (1 - Math.max(0, Math.min(100, p)) / 100) * bandsH; }
+  function interp(data, t){
+    if (!data || !data.length) return 0;
+    if (t <= data[0][0]) return data[0][1];
+    if (t >= data[data.length - 1][0]) return data[data.length - 1][1];
+    for (var i = 1; i < data.length; i++){ if (t <= data[i][0]){ var a = data[i - 1], b = data[i]; return a[1] + (b[1] - a[1]) * (t - a[0]) / Math.max(1, b[0] - a[0]); } }
+    return data[data.length - 1][1];
+  }
+  function tierOf(labels, p){ return labels[Math.max(0, Math.min(3, Math.floor(p / 25)))]; }
+  function fmtTime(t){
+    var d = new Date(t), wd = d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase();
+    var h = d.getHours(), ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12, mm = d.getMinutes();
+    return wd + ' ' + h12 + (mm >= 30 ? ':30' : '') + ap;
+  }
+  function place(frac){
+    frac = Math.max(0, Math.min(1, frac)); _waScrubFrac = frac;
+    var t = t0 + frac * (t1 - t0), xx = xAt(t).toFixed(1);
+    if (g) g.style.visibility = 'visible';
+    if (halo){ halo.setAttribute('x1', xx); halo.setAttribute('x2', xx); }
+    if (line){ line.setAttribute('x1', xx); line.setAttribute('x2', xx); }
+    var pu = interp(U, t), pe = interp(E, t), pc = interp(C, t);
+    if (dU){ dU.setAttribute('cx', xx); dU.setAttribute('cy', yAt(pu).toFixed(1)); }
+    if (dE){ dE.setAttribute('cx', xx); dE.setAttribute('cy', yAt(pe).toFixed(1)); }
+    if (dC){ dC.setAttribute('cx', xx); dC.setAttribute('cy', yAt(pc).toFixed(1)); }
+    if (read){
+      read.innerHTML = '<span class="wa2-scrub-t">' + fmtTime(t) + '</span>'
+        + '<span class="wa2-scrub-m"><i style="background:#16324a"></i>' + tierOf(LBL_E, pe) + '</span>'
+        + '<span class="wa2-scrub-m"><i style="background:#0e6b60"></i>' + tierOf(LBL_U, pu) + '</span>'
+        + '<span class="wa2-scrub-m"><i style="background:#9c2c8f"></i>' + tierOf(LBL_C, pc) + '</span>';
+    }
+    svg.setAttribute('aria-valuenow', Math.round(frac * 100));
+    svg.setAttribute('aria-valuetext', fmtTime(t));
+  }
+  function fracFromX(clientX){
+    var rect = svg.getBoundingClientRect(); if (!rect.width) return _waScrubFrac || 0;
+    return ((clientX - rect.left) / rect.width * W - x0) / (x1 - x0);
+  }
+  var dragging = false;
+  svg.addEventListener('pointerdown', function(e){ dragging = true; try { svg.setPointerCapture(e.pointerId); } catch (_) {} place(fracFromX(e.clientX)); e.preventDefault(); });
+  svg.addEventListener('pointermove', function(e){ if (dragging){ place(fracFromX(e.clientX)); e.preventDefault(); } });
+  function end(e){ dragging = false; try { svg.releasePointerCapture(e.pointerId); } catch (_) {} }
+  svg.addEventListener('pointerup', end);
+  svg.addEventListener('pointercancel', end);
+  svg.addEventListener('keydown', function(e){
+    var step = 1 / Math.max(1, E.length - 1), cur = (_waScrubFrac == null ? 0.5 : _waScrubFrac);
+    if (e.key === 'ArrowLeft'){ place(cur - step); e.preventDefault(); }
+    else if (e.key === 'ArrowRight'){ place(cur + step); e.preventDefault(); }
+  });
+  var frac = _waScrubFrac;
+  if (frac == null){ var now = Date.now(); frac = (now >= t0 && now <= t1) ? (now - t0) / (t1 - t0) : 0; }
+  place(frac);
+}
 
 // Compact 3-line mini for the collapsed Week Ahead header (Entry/Surge/Chop over the
 // shared calm→rough bands). Reuses bbfSmoothPath; no labels — just a colourful hint.
