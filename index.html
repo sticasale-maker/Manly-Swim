@@ -3274,6 +3274,26 @@
         </button>
       </div>
 
+      <div class="ind-head">Pictogram character</div>
+      <div class="ind-choice" id="charChoice" role="group" aria-label="Pictogram character">
+        <button type="button" class="ind-opt" data-char="" aria-pressed="true">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/entry-easy.png" alt=""></div>
+          <div class="ind-label">Human</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="seadragon" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/seadragon/entry-easy.png" alt=""></div>
+          <div class="ind-label">Sea dragon</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="cat" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/cat/entry-easy.png" alt=""></div>
+          <div class="ind-label">Cat</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="dog" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/dog/entry-easy.png" alt=""></div>
+          <div class="ind-label">Dog</div>
+        </button>
+      </div>
+
       <button type="button" id="customSave" class="custom-save">Save</button>
     </div>
 
@@ -4187,6 +4207,27 @@ const _ICON_WORD = {
 // Image filename prefix per metric. Internal key stays 'swim' (DOM ids, modal,
 // thresholds all keyed on it) but the on-disk pictograms are named chop-*.png.
 const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'surge' };
+// Pictogram character theme (chosen in the Custom panel). '' = the default human
+// set in images/; a theme name loads images/<theme>/ instead. Persisted like the
+// other display preferences. Scoring and thresholds are untouched.
+var ICON_THEME_KEY = 'swim_icon_theme';
+function _iconThemeGet(){ try { return (window.persistGet ? window.persistGet(ICON_THEME_KEY) : localStorage.getItem(ICON_THEME_KEY)); } catch (e) { return null; } }
+function _iconThemeSet(v){ try { if (window.persistSet) window.persistSet(ICON_THEME_KEY, v); else localStorage.setItem(ICON_THEME_KEY, v); } catch (e) {} }
+function getIconTheme(){ var v = _iconThemeGet(); return (v === 'seadragon' || v === 'cat' || v === 'dog') ? v : ''; }
+function iconDir(){ var t = getIconTheme(); return t ? ('images/' + t + '/') : 'images/'; }
+function applyIconTheme(v){
+  var ch = document.getElementById('charChoice');
+  if (ch) ch.querySelectorAll('.ind-opt').forEach(function (o) {
+    o.setAttribute('aria-pressed', (o.getAttribute('data-char') || '') === v ? 'true' : 'false');
+  });
+  var dir = v ? ('images/' + v + '/') : 'images/';
+  document.querySelectorAll('img.metric-icon-img').forEach(function (im) {
+    var base = (im.getAttribute('src') || '').split('/').pop();
+    if (base) im.setAttribute('src', dir + base);
+  });
+}
+function setIconTheme(v){ v = (v === 'seadragon' || v === 'cat' || v === 'dog') ? v : ''; _iconThemeSet(v); applyIconTheme(v); }
+window.setIconTheme = setIconTheme; window.getIconTheme = getIconTheme;
 function renderMetricIcon(blockId, cls, cap) {
   const host = document.getElementById(blockId + 'Icon');
   if (!host) return;
@@ -4201,7 +4242,7 @@ function renderMetricIcon(blockId, cls, cap) {
   fig.className = 'metric-icon-fig';
   const img = document.createElement('img');
   img.className = 'metric-icon-img';
-  img.src = 'images/' + prefix + '-' + words[i] + '.png';
+  img.src = iconDir() + prefix + '-' + words[i] + '.png';
   img.alt = ''; img.loading = 'lazy';
   fig.appendChild(img);
   if (cap) {
@@ -14354,6 +14395,9 @@ if ('serviceWorker' in navigator) {
     if (tch) tch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setTimeStyle(o.getAttribute('data-time')); });
     try { if (typeof initTimeRoller === 'function') initTimeRoller(); } catch (e) {}
     applyTimeStyle(getTimeStyle());        // slider / tap-buttons / brass roller, applies in every mode
+    var cch = document.getElementById('charChoice');
+    if (cch) cch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o && typeof setIconTheme === 'function') setIconTheme(o.getAttribute('data-char') || ''); });
+    try { if (typeof applyIconTheme === 'function') applyIconTheme(getIconTheme()); } catch (e) {}   // pictogram character, applies in every mode
     var _m = getMode();
     // Report both preferences once per session, BEFORE the _pSet re-stamp below,
     // so the dashboard sees the whole population and not just the minority who
