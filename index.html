@@ -3641,6 +3641,10 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       // svg is forced to 70vh and the wrapper grows with it.
       ".st-ywrap{position:relative;padding-left:30px;}" +
       ".st-ylab{position:absolute;left:0;width:26px;text-align:right;transform:translateY(-50%);font-size:9px;line-height:1;color:var(--dim,#4a5f6e);font-variant-numeric:tabular-nums;}" +
+      // Second gutter for the daily-new scale. Coloured like the bars it belongs to,
+      // so which axis reads which series needs no explaining.
+      ".st-ywrap-r{padding-right:34px;}" +
+      ".st-ylab-r{left:auto;right:0;width:30px;text-align:left;padding-left:5px;color:var(--ocean,#4a8fad);}" +
       ".st-cardwrap{position:relative;}" +
       ".st-expand{position:absolute;top:6px;right:6px;z-index:3;width:26px;height:26px;padding:0;border-radius:7px;border:1px solid var(--border,#cfe3ea);background:rgba(255,255,255,.92);color:var(--deep,#113541);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}" +
       "#stFs{position:fixed;inset:0;z-index:100004;display:none;background:var(--foam,#c8bda0);overflow:auto;padding:14px;}" +
@@ -3902,22 +3906,45 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var pts = s.map(function (p, i) { return X(i).toFixed(1) + ',' + Y(p.total).toFixed(1); });
     var area = '<path d="M' + X(0).toFixed(1) + ',' + H + ' L' + pts.join(' L') + ' L' + X(n - 1).toFixed(1) + ',' + H + ' Z" fill="var(--ocean,#4a8fad)" opacity="0.16"/>';
     var line = '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--deep,#113541)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-    // Daily additions as faint columns behind the curve: shows WHERE the growth
-    // came from (an ad spike vs a steady trickle), which the smooth total hides.
+
+    /* Daily additions as faint columns behind the curve: shows WHERE the growth came
+       from (an ad spike vs a steady trickle), which the smooth total hides.
+
+       THEY ARE NOT ON THE LEFT AXIS. Daily new (tens) and the running total
+       (thousands) differ by two orders of magnitude — put the bars on the left scale
+       and every bar after the launch week is a one-pixel smudge. So they keep their
+       own scale, compressed into the bottom BAND of the plot, and get their own
+       labelled axis on the RIGHT. Before that axis existed the tallest bar sat at 42%
+       of a 5000-device scale and read as "2080" on a day that actually added 750 —
+       a number no series in the chart ever held. Two scales need two axes. */
+    var BAND = 0.42;                                  // fraction of plot height the bars may use
     var addMax = s.reduce(function (m, p) { return Math.max(m, p.added); }, 1);
+    var stepB = niceStep(addMax, 2);
+    var topB = Math.max(stepB, Math.ceil(addMax / stepB) * stepB);
+    function YB(v) { return H - (v / topB) * (H * BAND); }
     var bw = Math.max(0.8, (W / n) * 0.6);
     var cols = s.map(function (p, i) {
       if (!p.added) return '';
-      var h = (p.added / addMax) * (H * 0.42);
-      return '<rect x="' + (X(i) - bw / 2).toFixed(1) + '" y="' + (H - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.45"/>';
+      var y = YB(p.added);
+      return '<rect x="' + (X(i) - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (H - y).toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.45"/>';
     }).join('');
-    return '<div class="st-ywrap">' +
+    // Right axis: labels only, no gridlines — a second set of lines across the same
+    // plot is what makes dual-scale charts unreadable. Tick marks carry it instead.
+    var rlabs = '', rticks = '';
+    for (var b = stepB; b <= topB + 1e-9; b += stepB) {
+      var by = YB(b);
+      rticks += '<line x1="' + (W - 4) + '" x2="' + W + '" y1="' + by.toFixed(1) + '" y2="' + by.toFixed(1) +
+                '" stroke="var(--ocean,#4a8fad)" stroke-opacity="0.55" stroke-width="1"/>';
+      rlabs += '<div class="st-ylab st-ylab-r" style="top:' + ((by / H) * 100).toFixed(2) + '%">' + Math.round(b) + '</div>';
+    }
+    return '<div class="st-ywrap st-ywrap-r">' +
            '<svg id="stCumulSvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' +
-             grid + area + cols + line +
-           '</svg>' + ylabs +
+             grid + area + cols + rticks + line +
+           '</svg>' + ylabs + rlabs +
            '</div>' +
-           '<div class="st-axis" style="padding-left:30px"><span>' + esc(s[0].day) + '</span>' +
-           '<span><span style="color:var(--deep,#113541);">—</span> total · <span style="color:var(--ocean,#4a8fad);">▮</span> new that day</span>' +
+           '<div class="st-axis" style="padding:0 34px 0 30px"><span>' + esc(s[0].day) + '</span>' +
+           '<span><span style="color:var(--deep,#113541);">—</span> total <i style="font-style:normal;opacity:.6">(left)</i> · ' +
+           '<span style="color:var(--ocean,#4a8fad);">▮</span> new that day <i style="font-style:normal;opacity:.6">(right)</i></span>' +
            '<span>' + esc(s[n - 1].day) + ' · ' + max + '</span></div>' +
            '<div class="st-dread" id="stCumulRead">&nbsp;</div>';
   }
@@ -14272,22 +14299,22 @@ if ('serviceWorker' in navigator) {
    ════════════════════════════════════════════════════════════════════════════ */
 (function () {
   var SECTIONS = [
-    { key:'verdict', label:"Overall verdict + news", sel:'#verdictBar', complete:1, core:1 },
-    { key:'metrics', label:"Metrics (Entry/Swim/Surge)", sel:'.metrics-panel', complete:1, core:1 },
-    { key:'wxbar', label:"Weather bar (sky + feels)", sel:'#wxBar', complete:1 },
-    { key:'slider', label:"Time slider", sel:'.slider-wrap', complete:1, core:1 },
-    { key:'quality', label:"Sea temp + Pollution", sel:'.quality-row-slim', complete:1 },
+    { key:'verdict', label:"Overall verdict + news", sel:'#verdictBar', complete:1, custom:1, core:1 },
+    { key:'metrics', label:"Metrics (Entry/Swim/Surge)", sel:'.metrics-panel', complete:1, custom:1, core:1 },
+    { key:'wxbar', label:"Weather bar (sky + feels)", sel:'#wxBar', complete:1, custom:1 },
+    { key:'slider', label:"Time slider", sel:'.slider-wrap', complete:1, custom:1, core:1 },
+    { key:'quality', label:"Sea temp + Pollution", sel:'.quality-row-slim', complete:1, custom:1 },
     // The wind-driven 5-day forecast strip, NOT the community reports (those ride
     // in 'swimmers' below). Listed here so the panel order matches the page order.
-    { key:'bluebottleforecast', label:"Bluebottles forecast (risk strip)", sel:'.bbf-row', complete:1 },
-    { key:'swimmers', label:"Swimmers' Corner (visibility, sightings, bluebottle reports, hellos)", sel:'.community-group', complete:1 },
-    { key:'daywindow', label:"Best swim window (day chart)", sel:'#dayWindowWrap', complete:1 },
-    { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1 },
-    { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1 },
-    { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1 },
-    { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1 },
-    { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1 },
-    { key:'featurerequests', label:"Bay Talk", sel:'#featureCard', complete:1 }
+    { key:'bluebottleforecast', label:"Bluebottles forecast (risk strip)", sel:'.bbf-row', complete:1, custom:1 },
+    { key:'swimmers', label:"Swimmers' Corner (visibility, sightings, bluebottle reports, hellos)", sel:'.community-group', complete:1, custom:1 },
+    { key:'daywindow', label:"Best swim window (day chart)", sel:'#dayWindowWrap', complete:1, custom:1 },
+    { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
+    { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
+    { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
+    { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1, custom:1 },
+    { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 },
+    { key:'featurerequests', label:"Bay Talk", sel:'#featureCard', complete:1, custom:1 }
   ];
   var MODE_KEY = 'swim_app_mode';            // 'complete' | 'custom'
   // MODE_KEY is re-stamped on every load to refresh its 400-day cookie clock, so
@@ -14316,19 +14343,23 @@ if ('serviceWorker' in navigator) {
   function getCustom(){
     var map = {};
     try { var raw = _pGet(CUSTOM_KEY); if (raw) map = JSON.parse(raw) || {}; } catch (e) { map = {}; }
-    SECTIONS.forEach(function (s) { if (!(s.key in map)) map[s.key] = effFlags(s).complete; });   // seed first-time Custom from Complete
+    SECTIONS.forEach(function (s) { if (!(s.key in map)) map[s.key] = effFlags(s).custom; });   // seed first-time Custom from the Custom column
     return map;
   }
   function saveCustom(map){ _pSet(CUSTOM_KEY, JSON.stringify(map)); }
 
   // Admin edits to the two presets — stored per device, used to preview live before publishing to code.
-  var ADMIN_KEY = 'swim_admin_sections';   // JSON { key: { complete:0|1 } }
+  var ADMIN_KEY = 'swim_admin_sections';   // JSON { key: { complete:0|1, custom:0|1 } }
   function getAdmin(){ try { var r = localStorage.getItem(ADMIN_KEY); return r ? (JSON.parse(r) || {}) : {}; } catch (e) { return {}; } }
   function saveAdmin(m){ try { localStorage.setItem(ADMIN_KEY, JSON.stringify(m)); } catch (e) {} }
   // A device that used the old editor may still hold an `essential` key here; it is
   // simply never read, so there is nothing to clean up.
+  // `custom` falls back to `complete` for any section coded before the column existed,
+  // so a missing flag keeps the old behaviour (Custom seeded from Complete).
   function effFlags(s){ var a = getAdmin()[s.key] || {};
-    return { complete: ('complete' in a) ? a.complete : s.complete }; }
+    var cmp = ('complete' in a) ? a.complete : s.complete;
+    return { complete: cmp,
+             custom: ('custom' in a) ? a.custom : (('custom' in s) ? s.custom : cmp) }; }
 
   function visibleIn(sct, mode, custom){
     if (sct.core) return 1;                                  // core sections always shown
@@ -14436,7 +14467,7 @@ if ('serviceWorker' in navigator) {
     var lines = SECTIONS.map(function (s) {
       var f = effFlags(s), core = s.core ? ', core:1' : '';
       return "    { key:'" + s.key + "', label:" + JSON.stringify(s.label) + ", sel:'" + s.sel +
-             "', complete:" + (f.complete ? 1 : 0) + core + " },";
+             "', complete:" + (f.complete ? 1 : 0) + ", custom:" + (f.custom ? 1 : 0) + core + " },";
     });
     lines[lines.length - 1] = lines[lines.length - 1].replace(/,\s*$/, '');
     return "var SECTIONS = [\n" + lines.join("\n") + "\n  ];";
@@ -14447,7 +14478,9 @@ if ('serviceWorker' in navigator) {
       if (s.core) return;
       var f = effFlags(s);
       var e2 = ov.querySelector('input[data-k="' + s.key + '"][data-c="complete"]');
+      var e3 = ov.querySelector('input[data-k="' + s.key + '"][data-c="custom"]');
       if (e2) e2.checked = !!f.complete;
+      if (e3) e3.checked = !!f.custom;
     });
   }
   function buildAdmin(){
@@ -14479,18 +14512,20 @@ if ('serviceWorker' in navigator) {
 
     var rows = SECTIONS.map(function (s) {
       var f = effFlags(s), lock = s.core ? ' locked' : '';
-      var c = s.core ? ' disabled checked' : (f.complete  ? ' checked' : '');
+      var c = s.core ? ' disabled checked' : (f.complete ? ' checked' : '');
+      var u = s.core ? ' disabled checked' : (f.custom   ? ' checked' : '');
       var tag = s.core ? ' <span style="font-size:10px;color:var(--dim)">(always)</span>' : '';
       return '<div class="admin-row' + lock + '"><div class="al">' + s.label + tag + '</div>' +
-             '<div class="ac"><input type="checkbox" data-k="' + s.key + '" data-c="complete"' + c + '></div></div>';
+             '<div class="ac"><input type="checkbox" data-k="' + s.key + '" data-c="complete"' + c + '></div>' +
+             '<div class="ac"><input type="checkbox" data-k="' + s.key + '" data-c="custom"' + u + '></div></div>';
     }).join('');
 
     var ov = document.createElement('div'); ov.id = 'adminOverlay'; ov.className = 'admin-overlay';
     ov.innerHTML =
       '<div class="admin-modal">' +
       '<div class="admin-head"><h3>Section presets &mdash; admin</h3><button class="admin-x" id="adminX" aria-label="Close">&#10005;</button></div>' +
-      '<p class="admin-note">Tick which sections appear in each version. Edits preview live <b>on this device</b>. Press <b>Copy config</b> and paste the result over the <code>SECTIONS</code> array in the code to publish for everyone. Metrics &amp; slider are always shown.</p>' +
-      '<div class="admin-grid"><div class="admin-ghead"><span class="gl">Section</span><span class="gc">Complete</span></div>' + rows + '</div>' +
+      '<p class="admin-note">Tick which sections appear in each version. Edits preview live <b>on this device</b>. Press <b>Copy config</b> and paste the result over the <code>SECTIONS</code> array in the code to publish for everyone. Metrics &amp; slider are always shown.<br><b>Custom</b> is the <i>starting</i> tick-list a swimmer sees the first time they open the Custom panel &mdash; it does not move anyone already on Custom, whose picks were frozen the moment they chose it.</p>' +
+      '<div class="admin-grid"><div class="admin-ghead"><span class="gl">Section</span><span class="gc">Complete</span><span class="gc">Custom<br><i style="font-style:normal;text-transform:none;letter-spacing:0">default</i></span></div>' + rows + '</div>' +
       '<div class="admin-actions"><button id="adminCopy">Copy config</button><button id="adminReset">Reset to coded</button><button id="adminClose">Done</button></div>' +
       '<div class="admin-msg" id="adminMsg"></div>' +
       '<textarea class="admin-out" id="adminOut" readonly></textarea></div>';
