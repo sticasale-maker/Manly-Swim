@@ -3668,10 +3668,13 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  </div>' +
       '  <div class="st-tiles" id="stTiles"></div>' +
       '  <div class="st-stick" id="stStick"></div>' +
+      '  <div class="st-sec">Active devices — daily and rolling 7-day</div>' +
+      '  <div class="st-card" id="stActive"></div>' +
       '  <div class="st-sec">New vs returning · accesses, by day</div>' +
       '  <div class="st-card" id="stDaily"></div>' +
-      '  <div class="st-sec">Total devices — cumulative, since launch</div>' +
+      '  <div class="st-sec">Reach — every device that has ever opened it</div>' +
       '  <div class="st-card" id="stCumul"></div>' +
+      '  <div class="st-stick" id="stReachCap" style="text-align:left;margin:6px 2px 0;line-height:1.45;"></div>' +
       '  <div class="st-sec">Accesses by weekday — week over week</div>' +
       '  <div class="st-card" id="stWeekday"></div>' +
       '  <div class="st-sec">Accesses by hour — last 7 days</div>' +
@@ -3795,6 +3798,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       renderSummary(data);
       loadPrefs(days);          // separate RPC: distinct-device split, not an event count
       loadHourly();             // separate RPC: accesses by hour, last 7 days (fixed window)
+      loadActive(days);         // separate RPC: DAU + rolling WAU — the trustworthy counts
+      loadQuality();            // separate RPC: installed / returning tiles + the reach caveat
       // Cumulative devices always spans the whole history. When the selected range
       // already IS the whole history (30/90 clamp to daysSinceLaunch) we hand the
       // rows we just fetched straight over instead of asking for them twice.
@@ -3812,6 +3817,97 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     } catch (e) {
       box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>';
     }
+  }
+
+  /* ACTIVE DEVICES — the counts that churn cannot inflate.
+     Both series are devices, so they share one axis honestly. Needs
+     migrations/analytics_active_daily.sql; until that is run the card says so
+     rather than rendering an empty chart, the same way the hourly one does. */
+  async function loadActive(days) {
+    var box = el('stActive'); if (!box) return;
+    box.innerHTML = '<div class="st-empty">Loading…</div>';
+    try {
+      var rows = await rpc('analytics_active_daily', { p_token: tok(), p_days: clampDays(days) });
+      if (!Array.isArray(rows) || !rows.length) throw new Error('no rows');
+      box.innerHTML = activeChart(rows);
+      wireActiveChart(rows);
+    } catch (e) {
+      box.innerHTML = '<div class="st-empty">Run migrations/analytics_active_daily.sql to enable this chart.</div>';
+    }
+  }
+
+  function activeChart(rows) {
+    var W = 480, H = 140, n = rows.length;
+    var max = rows.reduce(function (m, r) { return Math.max(m, r.wau || 0, r.dau || 0); }, 1);
+    var step = niceStep(max, 4);
+    var top = Math.max(step, Math.ceil(max / step) * step);
+    function X(i) { return n === 1 ? W / 2 : (i / (n - 1)) * W; }
+    function Y(v) { return H - (v / top) * H; }
+    var grid = '', ylabs = '';
+    for (var g = 0; g <= top + 1e-9; g += step) {
+      var gy = Y(g), isBase = (g === 0), isTop = (g + step > top + 1e-9);
+      grid += '<line x1="0" x2="' + W + '" y1="' + gy.toFixed(1) + '" y2="' + gy.toFixed(1) +
+              '" stroke="var(--deep,#113541)" stroke-opacity="' + (isBase ? '0.28' : '0.10') + '" stroke-width="1"/>';
+      ylabs += '<div class="st-ylab" style="top:' + ((gy / H) * 100).toFixed(2) + '%;transform:translateY(' +
+               (isBase ? '-100%' : isTop ? '0%' : '-50%') + ')">' + Math.round(g) + '</div>';
+    }
+    function poly(key, col, wdt) {
+      return '<polyline points="' + rows.map(function (r, i) { return X(i).toFixed(1) + ',' + Y(r[key] || 0).toFixed(1); }).join(' ') +
+             '" fill="none" stroke="' + col + '" stroke-width="' + wdt + '" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    return '<div class="st-ywrap">' +
+           '<svg id="stActiveSvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' +
+             grid + poly('dau', 'var(--ocean,#4a8fad)', '1.4') + poly('wau', 'var(--deep,#113541)', '2') +
+           '</svg>' + ylabs +
+           '</div>' +
+           '<div class="st-axis" style="padding-left:30px"><span>' + esc(rows[0].day) + '</span>' +
+           '<span><span style="color:var(--deep,#113541);">—</span> weekly · <span style="color:var(--ocean,#4a8fad);">—</span> daily</span>' +
+           '<span>' + esc(rows[n - 1].day) + '</span></div>' +
+           '<div class="st-dread" id="stActiveRead">&nbsp;</div>';
+  }
+
+  function wireActiveChart(rows) {
+    var svg = el('stActiveSvg'), out = el('stActiveRead');
+    if (!svg || !out || !rows.length) return;
+    function show(i) {
+      var r = rows[Math.max(0, Math.min(rows.length - 1, i))]; if (!r) return;
+      out.innerHTML = '<b>' + esc(r.day) + '</b> · <span style="color:var(--deep,#113541)">' + (r.wau || 0) +
+        ' in the week</span> · <span style="color:var(--ocean,#4a8fad)">' + (r.dau || 0) + ' that day</span>';
+    }
+    function at(ev) {
+      var b = svg.getBoundingClientRect(); if (!b.width) return;
+      var cx = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX);
+      show(Math.floor(((cx - b.left) / b.width) * rows.length));
+    }
+    svg.addEventListener('mousemove', at);
+    svg.addEventListener('touchstart', at, { passive: true });
+    svg.addEventListener('touchmove', at, { passive: true });
+    svg.addEventListener('mouseleave', function () { show(rows.length - 1); });
+    show(rows.length - 1);
+  }
+
+  /* INSTALLED / RETURNING tiles + the caveat under Reach. Uses
+     analytics_device_quality — the same function that established the device count
+     is inflated. Silent no-op if it has not been installed: the tiles keep their
+     em dash, which reads as "not measured" rather than as a zero. */
+  async function loadQuality() {
+    try {
+      var q = await rpc('analytics_device_quality', { p_token: tok(), p_days: 400 });
+      if (!q || !q.devices) return;
+      var inst = 0, oneday = 0;
+      (q.by_install || []).forEach(function (g) { if (g.group_name === 'installed (pwa)') inst = g.devices || 0; });
+      (q.lifespan || []).forEach(function (b) { if (b.bucket === 'a: same day only') oneday = b.devices || 0; });
+      var ret = Math.max(0, (q.devices || 0) - oneday);
+      var ti = el('stTInst'), tr = el('stTRet');
+      if (ti) ti.textContent = inst;
+      if (tr) tr.textContent = ret;
+      var cap = el('stReachCap');
+      if (cap) {
+        cap.innerHTML = '<b>' + (q.oneday_share == null ? '—' : q.oneday_share) + '%</b> of these opened it on one day only and never came back. ' +
+          'Reach is a ceiling on people, not a count of them: the device id lives in localStorage, which Safari clears after 7 idle days, ' +
+          'so one swimmer returning later is counted again here — and once counted, never removed.';
+      }
+    } catch (e) { /* not installed / not authorised — tiles stay as em dashes */ }
   }
 
   /* CUMULATIVE DEVICES — the install-base curve.
@@ -4046,16 +4142,34 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     return '<div class="st-tile"><div class="st-tval">' + esc(val) + '</div><div class="st-tlab">' + esc(label) + '</div></div>';
   }
 
+  /* TILE ORDER IS THE ARGUMENT.
+     The device id lives only in localStorage, which Safari evicts after 7 days of
+     non-use, so one swimmer can come back as a new id. Splitting takes 7 idle days,
+     which means it cannot happen within a single day and would have to swallow a
+     whole 7-day window \u2014 so WAU is near-immune to it, while the cumulative device
+     total keeps every re-birth forever.
+
+     So the panel leads with weekly actives and the installed base (installed apps
+     keep their storage), and the all-time count sits last, labelled Reach, because
+     that is what it honestly is: phones that have opened the app at least once,
+     most of them for a single look. It is not an audience and must never be quoted
+     as swimmers. See migrations/analytics_device_quality.sql for the measurement. */
   function renderSummary(d) {
     var t = d.totals || {}, s = d.stickiness || {};
     var ratio = (s.mau ? Math.round(100 * (s.dau || 0) / s.mau) : 0);
     el('stTiles').innerHTML =
-      tile('Devices', t.devices || 0) + tile('Sessions', t.sessions || 0) +
-      tile('Events', t.events || 0) + tile('New', t.new_devices || 0) +
-      tile('Sticky', ratio + '%');
-    el('stStick').innerHTML = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU)' +
+      tile('Weekly active', s.wau || 0) +
+      // Filled by loadQuality() \u2014 a second RPC, so they start as an em dash rather
+      // than a 0, which would read as "nobody" instead of "not counted yet".
+      '<div class="st-tile"><div class="st-tval" id="stTInst">\u2014</div><div class="st-tlab">Installed</div></div>' +
+      '<div class="st-tile"><div class="st-tval" id="stTRet">\u2014</div><div class="st-tlab">Returning</div></div>' +
+      tile('Reach', t.devices || 0) + tile('Opens', t.sessions || 0);
+    el('stStick').innerHTML = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU ' + ratio + '%)' +
       '<div style="font-size:11px;color:#6b8a97;margin-top:5px;line-height:1.45;">' +
-      '<b>Events</b> = individual tracked actions, one row each (metric opened, mode switch, guide open, share, feedback, session start\u2026), so this far exceeds device/session counts.</div>';
+      '<b>Weekly active</b> is the number to quote \u2014 it cannot be inflated by a device losing its id. ' +
+      '<b>Reach</b> is every phone that ever opened the app, one-off looks included, and is an upper bound rather than a count of people. ' +
+      '<b>Returning</b> = seen on two or more separate days. ' +
+      '<b>Opens</b> ' + (t.sessions || 0) + ' \u00b7 <b>events</b> ' + (t.events || 0) + ' \u00b7 <b>new this window</b> ' + (t.new_devices || 0) + '.</div>';
     el('stDaily').innerHTML = dailyChart(d.daily || []);
     wireDailyChart(d.daily || []);      // must follow the innerHTML — it binds to #stDailySvg
     el('stWeekday').innerHTML = weekdayChart(d.daily || []);
