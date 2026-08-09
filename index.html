@@ -3851,18 +3851,35 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       ylabs += '<div class="st-ylab" style="top:' + ((gy / H) * 100).toFixed(2) + '%;transform:translateY(' +
                (isBase ? '-100%' : isTop ? '0%' : '-50%') + ')">' + Math.round(g) + '</div>';
     }
-    function poly(key, col, wdt) {
-      return '<polyline points="' + rows.map(function (r, i) { return X(i).toFixed(1) + ',' + Y(r[key] || 0).toFixed(1); }).join(' ') +
+    // `drop` trims the final point so the dashed today-segment is not drawn on top
+    // of a solid one, which would just look solid.
+    function poly(key, col, wdt, drop) {
+      var pts = rows.slice(0, drop ? -1 : undefined).map(function (r, i) { return X(i).toFixed(1) + ',' + Y(r[key] || 0).toFixed(1); });
+      if (pts.length < 2) return '';
+      return '<polyline points="' + pts.join(' ') +
              '" fill="none" stroke="' + col + '" stroke-width="' + wdt + '" stroke-linejoin="round" stroke-linecap="round"/>';
     }
+    /* THE LAST POINT IS TODAY, AND TODAY IS NOT OVER.
+       The RPC's series always ends on the current Sydney date, so the final DAU is
+       however much of today has happened — read at 9am it is a third of a day. It
+       droops every single time, and a drooping last point on a usage chart reads as
+       "we are losing people" rather than "it is still morning". Mark it: the last
+       segment is dashed, the point is hollow, and the caption says so. */
+    var lx = X(n - 1), ly = Y(rows[n - 1].dau || 0);
+    var partial = n > 1
+      ? '<line x1="' + X(n - 2).toFixed(1) + '" y1="' + Y(rows[n - 2].dau || 0).toFixed(1) +
+        '" x2="' + lx.toFixed(1) + '" y2="' + ly.toFixed(1) +
+        '" stroke="var(--ocean,#4a8fad)" stroke-width="1.4" stroke-dasharray="3 3"/>'
+      : '';
     return '<div class="st-ywrap">' +
            '<svg id="stActiveSvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' +
-             grid + poly('dau', 'var(--ocean,#4a8fad)', '1.4') + poly('wau', 'var(--deep,#113541)', '2') +
+             grid + poly('dau', 'var(--ocean,#4a8fad)', '1.4', true) + poly('wau', 'var(--deep,#113541)', '2') + partial +
            '</svg>' + ylabs +
            '</div>' +
            '<div class="st-axis" style="padding-left:30px"><span>' + esc(rows[0].day) + '</span>' +
            '<span><span style="color:var(--deep,#113541);">—</span> weekly · <span style="color:var(--ocean,#4a8fad);">—</span> daily</span>' +
            '<span>' + esc(rows[n - 1].day) + '</span></div>' +
+           '<div class="st-axis" style="padding-left:30px"><span>Last point is today so far — it is always low until the day is over.</span><span></span></div>' +
            '<div class="st-dread" id="stActiveRead">&nbsp;</div>';
   }
 
@@ -3870,9 +3887,12 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var svg = el('stActiveSvg'), out = el('stActiveRead');
     if (!svg || !out || !rows.length) return;
     function show(i) {
-      var r = rows[Math.max(0, Math.min(rows.length - 1, i))]; if (!r) return;
+      var k = Math.max(0, Math.min(rows.length - 1, i)), r = rows[k]; if (!r) return;
       out.innerHTML = '<b>' + esc(r.day) + '</b> · <span style="color:var(--deep,#113541)">' + (r.wau || 0) +
-        ' in the week</span> · <span style="color:var(--ocean,#4a8fad)">' + (r.dau || 0) + ' that day</span>';
+        ' in the week</span> · <span style="color:var(--ocean,#4a8fad)">' + (r.dau || 0) + ' that day</span>' +
+        // Both figures are short on the final row, not just the daily one: today's
+        // remaining hours are missing from the rolling week too.
+        (k === rows.length - 1 ? ' <span style="opacity:.6">(today so far)</span>' : '');
     }
     function at(ev) {
       var b = svg.getBoundingClientRect(); if (!b.width) return;
