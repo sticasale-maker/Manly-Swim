@@ -3666,6 +3666,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  <div class="st-stick" id="stStick"></div>' +
       '  <div class="st-sec">New vs returning · accesses, by day</div>' +
       '  <div class="st-card" id="stDaily"></div>' +
+      '  <div class="st-sec">Total devices — cumulative, since launch</div>' +
+      '  <div class="st-card" id="stCumul"></div>' +
       '  <div class="st-sec">Accesses by weekday — week over week</div>' +
       '  <div class="st-card" id="stWeekday"></div>' +
       '  <div class="st-sec">Accesses by hour — last 7 days</div>' +
@@ -3789,6 +3791,10 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       renderSummary(data);
       loadPrefs(days);          // separate RPC: distinct-device split, not an event count
       loadHourly();             // separate RPC: accesses by hour, last 7 days (fixed window)
+      // Cumulative devices always spans the whole history. When the selected range
+      // already IS the whole history (30/90 clamp to daysSinceLaunch) we hand the
+      // rows we just fetched straight over instead of asking for them twice.
+      loadCumulative(days >= daysSinceLaunch() ? (data.daily || []) : null);
     } catch (e) { setStatus('Could not load (' + ((e && e.message) || e) + ')'); }
   }
 
@@ -3802,6 +3808,106 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     } catch (e) {
       box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>';
     }
+  }
+
+  /* CUMULATIVE DEVICES — the install-base curve.
+     A device is counted in `new_devices` exactly once, on the day of its first ever
+     event, so a running sum of that column is the number of distinct devices that
+     have ever opened the app up to that day.
+
+     This one deliberately ignores the 7/30/90 buttons and always draws the whole
+     since-launch window. On a short window the running sum would restart at zero
+     mid-history, and a curve climbing from 0 to "devices added this week" reads as
+     a total, not as growth — the wrong number stated confidently. Cached: the
+     window is fixed, so it is fetched at most once per page load. */
+  var _cumulRows = null;
+  async function loadCumulative(fullRows) {
+    var box = el('stCumul'); if (!box) return;
+    if (fullRows && fullRows.length) _cumulRows = fullRows;
+    if (!_cumulRows) box.innerHTML = '<div class="st-empty">Loading…</div>';
+    try {
+      if (!_cumulRows) {
+        var d = await rpc('analytics_summary', { p_token: tok(), p_days: daysSinceLaunch() });
+        _cumulRows = (d && d.daily) || [];
+      }
+      box.innerHTML = cumulChart(_cumulRows);
+      wireCumulChart(_cumulRows);     // must follow the innerHTML — it binds to #stCumulSvg
+    } catch (e) { box.innerHTML = '<div class="st-empty">—</div>'; }
+  }
+
+  /* Days with no activity at all are absent from `daily`, not zero-filled. Left as
+     gaps the curve would slope straight through them and imply steady sign-ups on
+     a dead day; filled, it goes flat, which is what actually happened. */
+  function cumulSeries(rows) {
+    function parse(s) { var p = String(s).split('-'); return Date.UTC(+p[0], (+p[1] || 1) - 1, +p[2] || 1); }
+    var byDay = {};
+    rows.forEach(function (r) { if (r && r.day) byDay[r.day] = r; });
+    var keys = Object.keys(byDay).sort();
+    if (!keys.length) return [];
+    var t = parse(keys[0]), end = parse(keys[keys.length - 1]);
+    if (isNaN(t) || isNaN(end)) return [];
+    var out = [], run = 0;
+    for (; t <= end; t += 864e5) {
+      var k = new Date(t).toISOString().slice(0, 10), r = byDay[k] || {};
+      run += (r.new_devices || 0);
+      out.push({ day: k, total: run, added: (r.new_devices || 0), active: (r.devices || 0) });
+    }
+    return out;
+  }
+
+  function cumulChart(rows) {
+    var s = cumulSeries(rows);
+    if (!s.length) return '<div class="st-empty">No data yet.</div>';
+    var W = 480, H = 140, n = s.length;
+    var max = s[n - 1].total || 1;
+    function X(i) { return n === 1 ? W / 2 : (i / (n - 1)) * W; }
+    function Y(v) { return H - (v / max) * H; }
+    var pts = s.map(function (p, i) { return X(i).toFixed(1) + ',' + Y(p.total).toFixed(1); });
+    var area = '<path d="M' + X(0).toFixed(1) + ',' + H + ' L' + pts.join(' L') + ' L' + X(n - 1).toFixed(1) + ',' + H + ' Z" fill="var(--ocean,#4a8fad)" opacity="0.16"/>';
+    var line = '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--deep,#113541)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+    // Daily additions as faint columns behind the curve: shows WHERE the growth
+    // came from (an ad spike vs a steady trickle), which the smooth total hides.
+    var addMax = s.reduce(function (m, p) { return Math.max(m, p.added); }, 1);
+    var bw = Math.max(0.8, (W / n) * 0.6);
+    var cols = s.map(function (p, i) {
+      if (!p.added) return '';
+      var h = (p.added / addMax) * (H * 0.42);
+      return '<rect x="' + (X(i) - bw / 2).toFixed(1) + '" y="' + (H - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.45"/>';
+    }).join('');
+    return '<svg id="stCumulSvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' +
+             area + cols + line +
+           '</svg>' +
+           '<div class="st-axis"><span>' + esc(s[0].day) + '</span>' +
+           '<span><span style="color:var(--deep,#113541);">—</span> total · <span style="color:var(--ocean,#4a8fad);">▮</span> new that day</span>' +
+           '<span>' + esc(s[n - 1].day) + ' · ' + max + '</span></div>' +
+           '<div class="st-dread" id="stCumulRead">&nbsp;</div>';
+  }
+
+  // Same hit-testing trick as the daily chart: evenly spaced samples in a stretched
+  // SVG, so the index is just the x fraction.
+  function wireCumulChart(rows) {
+    var svg = el('stCumulSvg'), out = el('stCumulRead');
+    if (!svg || !out) return;
+    var s = cumulSeries(rows);
+    if (!s.length) return;
+    function show(i) {
+      var p = s[Math.max(0, Math.min(s.length - 1, i))];
+      if (!p) return;
+      out.innerHTML = '<b>' + esc(p.day) + '</b> · ' + p.total + ' device' + (p.total === 1 ? '' : 's') + ' total' +
+        ' <span style="color:var(--ocean,#4a8fad)">+' + p.added + ' new</span>' +
+        ' <span style="opacity:.6">(' + p.active + ' active that day)</span>';
+    }
+    function at(ev) {
+      var b = svg.getBoundingClientRect();
+      if (!b.width) return;
+      var cx = (ev.touches && ev.touches[0] ? ev.touches[0].clientX : ev.clientX);
+      show(Math.floor(((cx - b.left) / b.width) * s.length));
+    }
+    svg.addEventListener('mousemove', at);
+    svg.addEventListener('touchstart', at, { passive: true });
+    svg.addEventListener('touchmove', at, { passive: true });
+    svg.addEventListener('mouseleave', function () { show(s.length - 1); });
+    show(s.length - 1);               // start on today's total, not blank
   }
 
   /* PREFERENCES vs ACTIVITY.
