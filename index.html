@@ -3641,10 +3641,6 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       // svg is forced to 70vh and the wrapper grows with it.
       ".st-ywrap{position:relative;padding-left:30px;}" +
       ".st-ylab{position:absolute;left:0;width:26px;text-align:right;transform:translateY(-50%);font-size:9px;line-height:1;color:var(--dim,#4a5f6e);font-variant-numeric:tabular-nums;}" +
-      // Second gutter for the daily-new scale. Coloured like the bars it belongs to,
-      // so which axis reads which series needs no explaining.
-      ".st-ywrap-r{padding-right:34px;}" +
-      ".st-ylab-r{left:auto;right:0;width:30px;text-align:left;padding-left:5px;color:var(--ocean,#4a8fad);}" +
       ".st-cardwrap{position:relative;}" +
       ".st-expand{position:absolute;top:6px;right:6px;z-index:3;width:26px;height:26px;padding:0;border-radius:7px;border:1px solid var(--border,#cfe3ea);background:rgba(255,255,255,.92);color:var(--deep,#113541);font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}" +
       "#stFs{position:fixed;inset:0;z-index:100004;display:none;background:var(--foam,#c8bda0);overflow:auto;padding:14px;}" +
@@ -3907,44 +3903,29 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     var area = '<path d="M' + X(0).toFixed(1) + ',' + H + ' L' + pts.join(' L') + ' L' + X(n - 1).toFixed(1) + ',' + H + ' Z" fill="var(--ocean,#4a8fad)" opacity="0.16"/>';
     var line = '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--deep,#113541)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
 
-    /* Daily additions as faint columns behind the curve: shows WHERE the growth came
-       from (an ad spike vs a steady trickle), which the smooth total hides.
+    /* Daily additions as faint columns behind the curve — drawn on THE SAME SCALE as
+       the total, against the one y-axis. One chart, one scale: a bar's height is
+       readable straight off the same numbers as the line, and the day-one bar tops
+       out exactly where the curve starts.
 
-       THEY ARE NOT ON THE LEFT AXIS. Daily new (tens) and the running total
-       (thousands) differ by two orders of magnitude — put the bars on the left scale
-       and every bar after the launch week is a one-pixel smudge. So they keep their
-       own scale, compressed into the bottom BAND of the plot, and get their own
-       labelled axis on the RIGHT. Before that axis existed the tallest bar sat at 42%
-       of a 5000-device scale and read as "2080" on a day that actually added 750 —
-       a number no series in the chart ever held. Two scales need two axes. */
-    var BAND = 0.42;                                  // fraction of plot height the bars may use
-    var addMax = s.reduce(function (m, p) { return Math.max(m, p.added); }, 1);
-    var stepB = niceStep(addMax, 2);
-    var topB = Math.max(stepB, Math.ceil(addMax / stepB) * stepB);
-    function YB(v) { return H - (v / topB) * (H * BAND); }
+       The cost is honest rather than hidden: once the base is in the thousands, a
+       30-device day is a hairline. That is the true proportion — those days really
+       did add almost nothing to the total. Exact per-day figures are in the hover
+       readout, and the day-by-day view lives in the "New vs returning" chart above,
+       where the scale suits it. */
     var bw = Math.max(0.8, (W / n) * 0.6);
     var cols = s.map(function (p, i) {
       if (!p.added) return '';
-      var y = YB(p.added);
+      var y = Y(p.added);
       return '<rect x="' + (X(i) - bw / 2).toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (H - y).toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.45"/>';
     }).join('');
-    // Right axis: labels only, no gridlines — a second set of lines across the same
-    // plot is what makes dual-scale charts unreadable. Tick marks carry it instead.
-    var rlabs = '', rticks = '';
-    for (var b = stepB; b <= topB + 1e-9; b += stepB) {
-      var by = YB(b);
-      rticks += '<line x1="' + (W - 4) + '" x2="' + W + '" y1="' + by.toFixed(1) + '" y2="' + by.toFixed(1) +
-                '" stroke="var(--ocean,#4a8fad)" stroke-opacity="0.55" stroke-width="1"/>';
-      rlabs += '<div class="st-ylab st-ylab-r" style="top:' + ((by / H) * 100).toFixed(2) + '%">' + Math.round(b) + '</div>';
-    }
-    return '<div class="st-ywrap st-ywrap-r">' +
+    return '<div class="st-ywrap">' +
            '<svg id="stCumulSvg" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;touch-action:none;" preserveAspectRatio="none">' +
-             grid + area + cols + rticks + line +
-           '</svg>' + ylabs + rlabs +
+             grid + area + cols + line +
+           '</svg>' + ylabs +
            '</div>' +
-           '<div class="st-axis" style="padding:0 34px 0 30px"><span>' + esc(s[0].day) + '</span>' +
-           '<span><span style="color:var(--deep,#113541);">—</span> total <i style="font-style:normal;opacity:.6">(left)</i> · ' +
-           '<span style="color:var(--ocean,#4a8fad);">▮</span> new that day <i style="font-style:normal;opacity:.6">(right)</i></span>' +
+           '<div class="st-axis" style="padding-left:30px"><span>' + esc(s[0].day) + '</span>' +
+           '<span><span style="color:var(--deep,#113541);">—</span> total · <span style="color:var(--ocean,#4a8fad);">▮</span> new that day</span>' +
            '<span>' + esc(s[n - 1].day) + ' · ' + max + '</span></div>' +
            '<div class="st-dread" id="stCumulRead">&nbsp;</div>';
   }
