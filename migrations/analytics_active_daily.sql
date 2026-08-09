@@ -21,9 +21,21 @@
 -- Read-only. Admin-gated via intro_is_admin, same as the other analytics RPCs.
 --
 -- HOW TO RUN
---   Paste this whole file into the Supabase SQL editor and Run.
---   "Success. No rows returned" means the function was installed. The stats panel
---   picks it up on the next open; until then that card shows a prompt to run this.
+--   1. Paste this whole file into the Supabase SQL editor and Run.
+--      "Success. No rows returned" means the function was installed. That is the
+--      create step — it is not the result, and it has to happen before step 2 or
+--      you get "function ... does not exist".
+--   2. Check it, with the same token you use for ?stats=1&token=… :
+--
+--        select * from public.analytics_active_daily('YOUR_ADMIN_TOKEN', 30);
+--
+--      NOTE the plain select. This function returns a TABLE of rows, unlike
+--      analytics_device_quality and analytics_device_gaps which return jsonb —
+--      wrapping this one in jsonb_pretty() fails on a type mismatch.
+--      Expect one row per day: day | dau | wau.
+--
+--   The stats panel picks the function up on the next open; until then the
+--   "Active devices" card shows a prompt to run this file.
 -- ============================================================================
 
 create or replace function public.analytics_active_daily(p_token text, p_days int default 60)
