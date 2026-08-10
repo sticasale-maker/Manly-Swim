@@ -1341,10 +1341,16 @@
     padding:8px 10px;
     margin-bottom:10px;
     display:grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* 5 slots: temp · cloud · rain · tide · sun (wind moved out to the Oceanside card) */
+    grid-template-columns: repeat(5, 1fr);
     gap:2px;
   }
   .wx-item { text-align:center; padding:4px 2px; }
+  /* Sun column — two stacked times, sized to sit on the same baseline block as
+     the numeric wx-val readouts either side of it. */
+  .wx-sun { display:flex; flex-direction:column; gap:2px; align-items:center; line-height:1.1; }
+  .wx-sun span { font-size:11px; color:var(--dim); white-space:nowrap; }
+  .wx-sun strong { color:var(--ocean); font-weight:600; }
   .wx-icon { font-size:22px; margin-bottom:2px; }
   .wx-val  { font-family:'Bebas Neue',sans-serif; font-size:clamp(20px, 6vw, 26px); color:var(--deep); line-height:1; }
   .wx-unit { font-size:10px; color:var(--dim); letter-spacing:0.5px; text-transform:uppercase; margin-top:2px; }
@@ -2280,11 +2286,12 @@
      5 equal columns can be tight; allow slight font shrink at very small.
      ═══════════════════════════════════════════════════════════════ */
   @media (max-width: 340px) {
-    .weather-strip { grid-template-columns: repeat(4, 1fr); gap: 1px; padding: 6px 6px; }
+    .weather-strip { grid-template-columns: repeat(5, 1fr); gap: 1px; padding: 6px 6px; }
     .wx-bar { padding: 6px 10px; }
     .wx-val  { font-size: 18px; }
     .wx-icon { font-size: 16px; }
     .wx-unit, .wx-label { font-size: 8px; letter-spacing: 0; }
+    .wx-sun span { font-size: 9px; }
 
     /* Conditions bar: allow wrap so wide values don't clip */
     .conditions-bar { gap: 6px; }
@@ -2953,6 +2960,20 @@
           <div class="wx-val" id="wxRain">—</div>
           <div class="wx-unit">% rain</div>
         </div>
+        <!-- Tide + sun times sit on this row (with FEELS/cloud/rain) rather than in
+             their own bar below the three forecast sections. -->
+        <div class="wx-item">
+          <div class="wx-icon">🌊</div>
+          <div class="wx-val" id="sTide">—</div>
+          <div class="wx-unit">m tide</div>
+        </div>
+        <div class="wx-item">
+          <div class="wx-icon">☀️</div>
+          <div class="wx-sun" id="sunInfo">
+            <span>🌅 <strong id="sunriseTime">—</strong></span>
+            <span>🌇 <strong id="sunsetTime">—</strong></span>
+          </div>
+        </div>
       </div>
 
       <!-- 1 · OCEANSIDE — open-coast wind + swell, straight from WillyWeather. -->
@@ -3019,27 +3040,12 @@
         <div class="cond-card">
           <div class="cond-label">Chop</div>
           <div class="cond-value" id="sChop">—</div>
-          <div class="cond-unit">cm · steep face</div>
+          <div class="cond-unit">metres · steep face</div>
         </div>
       </div>
       </div>
 
-      <!-- Tide — moved below Nearshore; extra gap between the tide value and the sun times. -->
-      <div class="conditions-bar">
-        <div class="cond-card" style="flex:1; min-width:0;">
-          <div class="cond-label">Tide</div>
-          <div style="display:flex; align-items:center; gap:22px;">
-            <div>
-              <div class="cond-value" id="sTide" style="font-size:22px;">—</div>
-              <div class="cond-unit">metres</div>
-            </div>
-            <div style="font-size:11px; color:var(--dim); line-height:1.8; white-space:nowrap;" id="sunInfo">
-              <div><span style="font-size:14px;">🌅</span> <strong style="color:var(--ocean);" id="sunriseTime">—</strong></div>
-              <div><span style="font-size:14px;">🌇</span> <strong style="color:var(--ocean);" id="sunsetTime">—</strong></div>
-            </div>
-          </div>
-        </div>
-      </div>
+<!-- Tide + sun now live in the weather strip at the top of this panel. -->
 
       </div><!-- /fv-body -->
     </div>
@@ -8147,10 +8153,11 @@ function renderSnapshot(h, wx) {
     // Bare numbers — the cards carry their own "metres" unit line, same as sections 1-2.
     set('sSwell1Ramp', residH(s && s.nsDisp, nsDispLookup).toFixed(1));
     set('sSwell1Bay',  residH(s && s.blDisp, blDispLookup).toFixed(1));
-    // Chop — the same steep-face height (cm) the Chop classification prints,
-    // straight off result.swim.raw so the two can never disagree.
+    // Chop — the same steep-face height the Chop classification prints, straight off
+    // result.swim.raw so the two can never disagree. That raw is in CENTIMETRES;
+    // shown here in metres to match the ramp/Bower cards beside it.
     const chopRaw = result && result.swim && result.swim.raw;
-    set('sChop', (chopRaw != null) ? String(Math.round(chopRaw * 10) / 10) : '—');
+    set('sChop', (chopRaw != null) ? (chopRaw / 100).toFixed(2) : '—');
 
     const rampEl = document.getElementById('sSwell1Ramp');
     const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
