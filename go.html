@@ -86,10 +86,15 @@
 
 <div id="card">
   <h1 id="hd">Open this in your browser</h1>
-  <p id="sub">Facebook opens links in its own browser, and it can’t add apps to your home screen. Two taps fixes it.</p>
+  <p id="sub">Facebook opens links in its own browser, which can’t add apps to your home screen.</p>
+  <!-- BOTH stages, spelled out here. Once they leave this browser we cannot reach
+       them again, so "the steps will appear there" is a promise this page has no way
+       to keep. The menu wording is what the iOS Facebook app actually shows in 2026
+       — "Open in external browser", not "Open in Safari". -->
   <ol id="steps">
     <li>Tap the <b>•••</b> menu, top right.</li>
-    <li>Choose <b>Open in Safari</b> (or Open in Chrome).</li>
+    <li>Choose <b>Open in external browser</b>.</li>
+    <li>There, tap <b>Share</b> <span aria-hidden="true">⬆</span> then <b>Add to Home Screen</b>.</li>
   </ol>
   <button class="btn" id="primary" type="button">Copy the link instead</button>
   <div class="ok" id="ok"></div>
@@ -111,6 +116,16 @@
   var inapp   = /FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(ua);
   var isIOS   = /iPhone|iPad|iPod/.test(ua);
   var isDroid = /Android/.test(ua);
+
+  /* Everyone reaching this page came from the install campaign, so on a phone the
+     app should offer the steps straight away instead of waiting for its usual
+     engagement gate. install=1 says so. Not added on desktop, where there is
+     nothing to install, and not needed when already running standalone. */
+  function withInstall(u) {
+    if (!(isIOS || isDroid)) return u;
+    try { if (window.navigator.standalone === true) return u; } catch (e) {}
+    return u + (u.indexOf('?') === -1 ? '?' : '&') + 'install=1';
+  }
 
   function uuid() {
     try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
@@ -152,7 +167,7 @@
   // ---- Not in Facebook's browser: straight through, nothing rendered. --------
   if (!inapp) {
     log('passthrough');
-    location.replace(target);
+    location.replace(withInstall(target));
     return;
   }
 
@@ -162,9 +177,10 @@
   // ---- Android: hand off to Chrome. ----------------------------------------
   if (isDroid) {
     log('intent');
-    var intentUrl = 'intent://' + target.replace(/^https?:\/\//, '') +
+    var droidTarget = withInstall(target);
+    var intentUrl = 'intent://' + droidTarget.replace(/^https?:\/\//, '') +
                     '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' +
-                    encodeURIComponent(target) + ';end';
+                    encodeURIComponent(droidTarget) + ';end';
     try { location.href = intentUrl; } catch (e) {}
     // If the hand-off silently fails we are still here a moment later — show the
     // manual route rather than leaving a blank page.
@@ -181,18 +197,22 @@
 
   // ---- iOS: no way out in code. Make the manual way as short as possible. ----
   log(isIOS ? 'ios_help' : 'help');
-  document.getElementById('url').textContent = target;
+  // Displayed and copied URL are the same string — the fallback path copies what is
+  // on screen, so they must not diverge. install=1 means that whichever way they
+  // get to Safari, the app opens with the Add to Home Screen steps already up.
+  var copyUrl = withInstall(target);
+  document.getElementById('url').textContent = copyUrl;
   showCard();
 
   var btn = document.getElementById('primary'), ok = document.getElementById('ok');
   btn.addEventListener('click', function () {
     function done() {
-      ok.textContent = 'Copied. Open Safari and paste it in the address bar.';
+      ok.textContent = 'Copied. Open Safari, paste it in the address bar, then Share ⬆ → Add to Home Screen.';
       log('copied');
     }
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(target).then(done, fallbackCopy);
+        navigator.clipboard.writeText(copyUrl).then(done, fallbackCopy);
       } else fallbackCopy();
     } catch (e) { fallbackCopy(); }
     function fallbackCopy() {

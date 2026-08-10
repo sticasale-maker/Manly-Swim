@@ -17585,11 +17585,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 <!-- Facebook/Instagram in-app browser: installing is impossible here, so the only
      useful instruction is how to get out. Shown INSTEAD of the banners above. -->
 <div id="a2hsInApp" class="a2hs-banner" role="dialog" aria-label="Open in browser to install" hidden>
+  <!-- The whole recipe, both stages, given here — once they leave this browser we
+       cannot reach them again, and "the steps will appear there" was a promise that
+       depended on them waiting. Wording matches what the iOS Facebook app actually
+       shows in 2026: "Open in external browser", not "Open in Safari". -->
   <span class="a2hs-banner-txt"><strong>&#128241; Open in your browser first</strong>A tile can&rsquo;t be added from inside Facebook:
     <ol class="a2hs-steps">
       <li>Tap the <b>&hellip;</b> (three dots) in the corner.</li>
-      <li>Choose &lsquo;<b>Open in browser</b>&rsquo; (or &lsquo;Open in Safari&rsquo; / &lsquo;Open in Chrome&rsquo;).</li>
-      <li>The install steps will appear there.</li>
+      <li>Choose &lsquo;<b>Open in external browser</b>&rsquo;.</li>
+      <li>There, tap <b>Share</b> <span aria-hidden="true">&#8679;</span> then <b>Add to Home Screen</b>.</li>
     </ol>
   </span>
   <button id="a2hsInAppClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
@@ -17641,6 +17645,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     for (var i = 0; i < q.length; i++) { try { q[i](); } catch (e) {} }
   }
   function whenEngaged(fn) { if (gateOpen) { try { fn(); } catch (e) {} } else waiting.push(fn); }
+  /* ?install=1 — they arrived via go.html, the Facebook-post landing page, having
+     just gone out of their way to reach a browser that CAN install. Making them
+     scroll or wait 25s for the steps is the one case where the gate is actively
+     wrong: the in-app card promised the instructions would be here. */
+  try { if (/[?&]install=1(\b|&|$)/.test(location.search)) openGate(); } catch (e) {}
+
   (function armGate() {
     var t = setTimeout(openGate, GATE_MS);
     function act() { clearTimeout(t); openGate(); }
