@@ -5847,8 +5847,16 @@ function chopExposure(deg){const a=((deg%360)+360)%360,P=CHOP_EXPO;for(let i=1;i
 const CHOP_FETCH_M = [
   1766, 2766, 5936, 5890, 5456, 4445, 3599, 2572, 1622,  800,  257,  232,
    171,  127,  109,   94,   72,   57,   50,   46,   46,   47,   52,   60,
-    70,   82,  105,  144,  192,  238,  412,  624,  789, 1022, 1273, 1530
+    70,   74,   87,  115,  159,  214,  412,  624,  789, 1022, 1273, 1530
 ]; // metres over-water fetch, index = bearing/10 (wind FROM), 0 = N
+// W LOBE RE-CUT (11 Aug 2026, per user): 250–290° pulled down so a 35 km/h westerly
+// lands at ~4 cm — Smooth, matching what the water actually looks like — instead of
+// 4.5. 270° went 144 → 115 m (the value that solves for 4.0 cm with the lee factor
+// applied; the U·√F law predicts 114, so the table and the physics agree). The cut is
+// tapered — cosine weight peaking at 270° and back to 1.0 by 240°/300° — so the lobe
+// stays monotone (70, 74, 87, 115, 159, 214, 412) with no kink at the edges. The
+// 300°+ bearings are untouched: that ray escapes north-west past the headland and is
+// genuinely open water.
 
 function chopFetchFor(windFromDeg){
   const d = ((windFromDeg % 360) + 360) % 360;
