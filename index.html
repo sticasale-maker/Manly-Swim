@@ -4824,6 +4824,15 @@ const SITE_DEFAULTS = {
   // single reference fetch; direction from CHOP_EXPO and nowhere else. No geography,
   // no duration, no sector boundaries, no blend widths.
   chopRefFetchM: 5000,  // effective fetch (m) for locally-generated chop — THE wind knob
+  // ── Lee shelter for CHOP through the land arc (11 Aug 2026) ─────────────────────
+  // Wind from S→W crosses the land and the buildings on the west side of the swim
+  // patch before it reaches the water, so it grows less sea than its raw speed says.
+  // Applied as a wind-speed multiplier on the CHOP fetch sea only (hs ∝ U·√F, so 0.75
+  // here ≈ scaling the fetch by 0.56). Entry and Surge are untouched.
+  chopLeeFactor: 0.75,  // 1 = off. Start point, not a measurement — tune it against real W mornings.
+  chopLeeFrom:   180,   // core arc start (deg, wind FROM)
+  chopLeeTo:     280,   // core arc end
+  chopLeeTaper:  20,    // taper width (deg) outside each edge, back to no shelter
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
   // the ~6 km approach. Once its period lengthens (strong/sustained wind), its wavelength
@@ -5848,6 +5857,27 @@ function chopFetchFor(windFromDeg){
   return a + (b - a) * f;
 }
 
+// Wind-speed multiplier for the CHOP fetch sea through the sheltered land arc
+// (default 180–280°): full shelter across the core, cosine-tapered back to 1 over
+// chopLeeTaper degrees outside each edge so there is no cliff at the boundary.
+// 1.0 = no shelter anywhere. Used ONLY by the chop fetch sea — see the call site.
+function chopLeeFactor(windFromDeg) {
+  const f  = (SITE.chopLeeFactor != null) ? SITE.chopLeeFactor : 1;
+  if (f >= 1) return 1;
+  const lo = (SITE.chopLeeFrom  != null) ? SITE.chopLeeFrom  : 180;
+  const hi = (SITE.chopLeeTo    != null) ? SITE.chopLeeTo    : 280;
+  const tp = (SITE.chopLeeTaper != null) ? SITE.chopLeeTaper : 20;
+  const d  = ((windFromDeg % 360) + 360) % 360;
+  // Signed angular distance OUTSIDE the [lo,hi] core, in degrees (0 = inside).
+  const out = (d >= lo && d <= hi) ? 0
+            : Math.min(Math.abs(((d - lo + 540) % 360) - 180),
+                       Math.abs(((d - hi + 540) % 360) - 180));
+  if (!tp) return out === 0 ? f : 1;
+  if (out >= tp) return 1;
+  const w = Math.cos((out / tp) * Math.PI / 2);   // 1 in the core, 0 at the taper edge
+  return 1 - (1 - f) * w;
+}
+
 function chopTransmit(deg) {
   return openWeight(SITE.fetchMaskBL, deg);
 }
@@ -6310,7 +6340,16 @@ function calcScore(d, modelOverride) {
   // energy-additive (quadrature). A short steep fetch sea has near-zero H²·P energy but a
   // real steep face, which the old q7 energy path discarded — this is the fix. No gain knob:
   // chopCm is a physical height; tune the cm band edges (swimThresholds), not a sens.
-  const _chopU    = (windKmh || 0) / 3.6;
+  // LEE SHELTER (11 Aug 2026, per user): through the S→W arc the wind arrives over
+  // the land, and the line of buildings on the west side of the swim patch knocks the
+  // speed down before it ever touches water. The fetch table already gives this arc
+  // 46–192 m, but at 144 m (270°) a 35 km/h westerly still grew a 6 cm face — mid-Ripply
+  // on a morning the water is visibly glassy. So the WIND is reduced, not the fetch:
+  // that is what the buildings physically do, and it is the same lever anyway — in the
+  // fetch-limited SPM branch hs ∝ U·√F, so a 0.75 wind factor is identical to scaling
+  // fetch by 0.56. CHOP ONLY: the Entry wind-sea is grown at the SS corner, which these
+  // buildings do not shelter, and Surge never reads wind.
+  const _chopU    = (windKmh || 0) / 3.6 * chopLeeFactor(windDir);
   const _chopRes  = spmGrowth(_chopU, chopFetchFor(windDir));                              // sea over the directional fetch
   const _hWsFace  = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                // fetch wind-sea steep face (m)
   const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;   // wind-wave steep face (m)
@@ -10861,6 +10900,10 @@ const TUNE_PARAMS = [
   { key:'ssWaveSens', label:'SS wave sensitivity (ss_wave_sens)', min:0, max:10, step:0.05, hint:'New NS C2 — COPY tuned value here. Scales swell1 + wind-wave demerits (energy = H²·P × transmit × this).' },
   { key:'windSeaSens', label:'Wind-sea sensitivity (wind_sens)', min:0, max:3, step:0.05, hint:'New NS C3 — COPY tuned value here. Scales the SS ENTRY wind-sea ONLY; does NOT affect CHOP (CHOP is set by Chop strength / chop_ref_fetch_m). Higher = wind builds more ENTRY score.' },
   { key:'chopRefFetchM', label:'CHOP · Chop strength (chop_ref_fetch_m)', min:500, max:12000, step:100, hint:'New NS C4 — COPY tuned value here. Effective wind fetch (m) over the bay = THE Chop gain (feeds chopCm). Higher = bigger chop. (The old bl_chop_impact only scaled a readout, never a score.) Default 5000.' },
+  // Lee shelter (11 Aug 2026). LOCAL — no sheet cell; SITE is the only home.
+  { key:'chopLeeFactor', label:'CHOP · Lee shelter, S→W wind (×)', min:0.3, max:1, step:0.05, hint:'LOCAL — no sheet cell. Wind-speed multiplier for chop when the wind comes over the land/buildings arc. 1 = off (old behaviour), 0.75 = quarter off the speed. hs ∝ U·√F, so 0.75 ≈ scaling the fetch by 0.56. CHOP ONLY — Entry and Surge unaffected.' },
+  { key:'chopLeeFrom',   label:'CHOP · Lee arc from (deg)',        min:90,  max:270, step:5, hint:'LOCAL — start of the sheltered arc (wind FROM). Default 180.' },
+  { key:'chopLeeTo',     label:'CHOP · Lee arc to (deg)',          min:180, max:359, step:5, hint:'LOCAL — end of the sheltered arc. Default 280. Beyond it the wind is coming down the beach/off the water and the shelter should not apply.' },
   { key:'swimThresholds.glassy', label:'CHOP · Smooth edge (cm)', min:0, max:30, step:0.5, hint:'New NS AQ6 — COPY here (ALL of AQ6:AQ9 must be filled or CHOP reverts to default). Steep-face height (cm) below this = Smooth.' },
   { key:'swimThresholds.ripply', label:'CHOP · Ripply edge (cm)', min:0, max:45, step:0.5, hint:'New NS AQ7 — COPY here. Face height (cm) ≤ this = Ripply.' },
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge (cm)', min:0, max:60, step:0.5, hint:'New NS AQ8 — COPY here. Face height (cm) ≤ this = Choppy, else Messy.' },
@@ -10983,6 +11026,9 @@ const TW_GROUPS = [
   { cls:'chop', badge:'CHOP', feeds:'surface roughness mid-bay',
     knobs:[
       { key:'chopRefFetchM', name:'Chop strength', tag:'LIVE', desc:'Wind’s runway over the bay — higher = bigger chop. The real Chop gain (feeds chopCm).', cell:'chop_ref_fetch_m · C4', prov:'wired', provTxt:'STEP A · wired · C4' },
+      { key:'chopLeeFactor', name:'Lee shelter (S→W)', tag:'LIVE', desc:'Wind off the land and the buildings west of the swim patch grows less sea than its raw speed. Multiplies the wind for the <b>chop fetch sea only</b>. 1 = off.', cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
+      { key:'chopLeeFrom',   name:'Lee arc from (°)',              desc:'Start of the sheltered arc (wind FROM).',                                                                                                                       cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
+      { key:'chopLeeTo',     name:'Lee arc to (°)',                desc:'End of the arc. Cosine-tapers back to no shelter over 20° outside each edge.',                                                                                   cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
     ],
     bands:{ label:'Bands — face height (cm)', edges:'AQ6:AQ9', items:[
       { key:'swimThresholds.glassy', lab:'Smooth <' },
