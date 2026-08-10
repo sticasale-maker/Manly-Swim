@@ -4799,6 +4799,20 @@ const SITE_DEFAULTS = {
   fetchMaskSS: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1],
   fetchMaskBL: [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1],
   windSeaSens:   1.3,   // scales the SS entry wind-sea demerit (tuned 2 Jul 2026)
+  // ── Offshore (westerly) swell-flattening credit — ENTRY ONLY ────────────────────
+  // A strong westerly blows straight off the land and out over the entry: it holds the
+  // swell face up, grooms the shore break and makes getting in EASIER, which the demerit
+  // stack (built from swell + onshore-fetch wind-sea + tide) has no term for. So the
+  // credit is subtracted from the Entry demerit total: 10 Entry points at 30 km/h from
+  // due W, scaled linearly with speed and tapered by bearing across the ±30° arc.
+  // Bounded twice — never more than offshoreMaxPts, and never more than the swell/wind
+  // demerits actually present (o), so it can only flatten what's there, not invent calm.
+  // CHOP and SURGE are untouched: an offshore wind still ruffles the bay surface.
+  offshoreDir:     270,  // bearing (deg, wind FROM) of maximum flattening — due W
+  offshoreArc:     30,   // half-width (deg): full weight at 270, zero at 240/300
+  offshoreRefKmh:  30,   // reference wind speed for the quoted credit
+  offshorePts:     10,   // Entry points credited at offshoreRefKmh from offshoreDir
+  offshoreMaxPts:  20,   // hard ceiling on the credit (reached ~60 km/h due W)
   // ── Locally-generated bay chop (SIMPLIFIED, 11 Jul 2026) ────────────────────────
   // The three-zone geographic fetch model (fetchGeoBL / windSeaGeo / durEquivFetch)
   // is GONE. It computed, badly, a sea the forecast already gives us: windWaveH/P/Dir
@@ -6232,7 +6246,29 @@ function calcScore(d, modelOverride) {
   // signed `tideDir` byte-for-byte — this is gated on useWWInputs, which is FALSE for
   // every NS-fed hour once DEFAULT_SRC flips back to 'ns', so the NS model is untouched.
   if (useWWInputs) tide_d = Math.max(0, tide_d);
-  const total  = o + tide_d;
+
+  // ── Offshore (W) flattening credit — subtracted from the ENTRY total only ───
+  // Weight is 1 at offshoreDir and cosine-tapers to 0 at ±offshoreArc, so a SW or NW
+  // wind gets a fraction and anything outside the arc gets nothing. Speed scales
+  // linearly off the reference (10 pts @ 30 km/h W), capped by offshoreMaxPts and by
+  // the swell+wind demerits present. Applies on both the NS and WW paths — both
+  // arrive here with the same windKmh/windDir.
+  const offshore_c = (() => {
+    const dir0 = (SITE.offshoreDir    != null) ? SITE.offshoreDir    : 270;
+    const arc  = (SITE.offshoreArc    != null) ? SITE.offshoreArc    : 30;
+    const ref  = (SITE.offshoreRefKmh != null) ? SITE.offshoreRefKmh : 30;
+    const pts  = (SITE.offshorePts    != null) ? SITE.offshorePts    : 10;
+    const cap  = (SITE.offshoreMaxPts != null) ? SITE.offshoreMaxPts : 20;
+    const u    = windKmh || 0;
+    if (!u || !arc || !ref) return 0;
+    let d = Math.abs(((windDir || 0) - dir0 + 540) % 360 - 180);  // 0-180 off the axis
+    if (d >= arc) return 0;
+    const w = Math.cos((d / arc) * Math.PI / 2);                  // 1 at 270, 0 at the edge
+    return Math.min(cap, pts * (u / ref) * w);
+  })();
+  // Can only flatten energy that exists: never credit more than the swell + wind stack.
+  const offshoreCredit = Math.min(offshore_c, Math.max(0, o));
+  const total  = Math.max(0, o + tide_d - offshoreCredit);
 
   // CHOP crossfade (single source of truth): BL wind-sea ↔ BL wind-wave handover
   // at the BL arc weight. Both terms are now BL-point (Option A). Used by the CHOP
@@ -6298,6 +6334,8 @@ function calcScore(d, modelOverride) {
       chop:     Math.round(chopQ7  * 10) / 10,
       swell1:   Math.round(s1_d   * 10) / 10,
       refrac:   Math.round(rif_d  * 10) / 10,
+      // NEGATIVE by convention — a credit, not a demerit (offshore W wind flattening).
+      offshore: -Math.round(offshoreCredit * 10) / 10,
     },
     // ── Three swimmer metrics ──────────────────────────────────────────────
     // Metric 1: Entry — classified on `total` demerits (LOWER = better), edges from sheet col AK rows 5–8.
@@ -13581,6 +13619,8 @@ async function freezeCalibration() {
     d_swell2:  r.demerits?.swell2  ?? null,
     d_refrac:  r.demerits?.refrac  ?? null,
     d_tide:    r.demerits?.tide    ?? null,
+    // d_offshore intentionally NOT logged — the calibration table has no such column
+    // and Supabase rejects the whole insert on an unknown key. Add the column first.
 
     // Forecast input vector
     wind_kmh:    h.windKmh    ?? null,
@@ -13960,6 +14000,10 @@ function metricBreakdownHTML(key) {
       // wind-wave. The old note said "only swell from >90°", which named the
       // wrong angle and the wrong set of terms.
       row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 70°, full at 90°)`) +
+      // Credit, so it prints negative — an offshore westerly flattens the swell face
+      // at the entry. Only shown when it actually bites.
+      (Math.abs(dm.offshore || 0) > 0.05
+        ? row('Offshore wind credit', f(dm.offshore), '(W ±30°, flattening — 10 pts @ 30 km/h due W)') : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Total demerits', f(r.entry.raw)) +
       row('Entry score (60 = best)', r.entry.score + ' · ' + r.entry.label)
