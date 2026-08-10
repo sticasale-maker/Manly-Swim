@@ -1409,6 +1409,13 @@
   .nearshore-bar   { margin-bottom:10px; }
   .nearshore-card  { padding:9px 12px; }
   .ns-cols         { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; align-items:start; }
+  .ns-cols-2       { grid-template-columns:repeat(2,1fr); }
+  /* Section heading for the three forecast blocks: oceanside → bay entrance → inside the bay. */
+  .fv-sec {
+    font-size:10px; letter-spacing:2px; text-transform:uppercase;
+    color:var(--deep); opacity:0.75; font-weight:600;
+    margin:0 0 5px 2px;
+  }
   .ns-col          { text-align:center; min-width:0; }
   .ns-h            { display:block; font-family:inherit; font-weight:700; font-size:12px; color:var(--deep); line-height:1.25; }
   .ns-loc          { display:block; font-size:9px; color:var(--dim); text-transform:uppercase; letter-spacing:0.5px; margin-top:3px; }
@@ -2931,7 +2938,8 @@
         </div>
       </div>
 
-      <!-- Conditions bar -->
+      <!-- 1 · OCEANSIDE — open-coast wind + swell, straight from WillyWeather. -->
+      <div class="fv-sec">Oceanside</div>
       <div class="conditions-bar">
         <div class="cond-card">
           <div class="cond-label">Wind</div>
@@ -2950,21 +2958,32 @@
           <div class="cond-unit" id="sSwell2D">—</div>
           <div class="cond-sub" id="sSwell2P">—</div>
         </div>
+      </div>
+
+      <!-- 2 · BAY ENTRANCE — the NSW Nearshore feed at bay-mouth node 103218, split
+           into its two partitions: swell (hs_swl) and sea (hs_sea). -->
+      <div class="fv-sec">Bay entrance</div>
+      <div class="conditions-bar">
+        <div class="cond-card">
+          <div class="cond-label">Swell</div>
+          <div class="cond-value" id="sSwell1EntryH">—</div>
+          <div class="cond-unit" id="sSwell1EntryD">—</div>
+          <div class="cond-sub" id="sSwell1EntryP">—</div>
+        </div>
         <div class="cond-card" id="sWindWaveCard" style="display:none">
-          <div class="cond-label">Wind Wave</div>
+          <div class="cond-label">Sea</div>
           <div class="cond-value" id="sWindWaveH">—</div>
           <div class="cond-unit" id="sWindWaveD">—</div>
           <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
         </div>
       </div>
 
-      <!-- Nearshore — the offshore swell knocked down by the headland: raw bay-mouth NS
-           feed (bay entrance) and its sheltered residuals at the ramp (SS) and Bower Ln (BL). -->
+      <!-- 3 · INSIDE THE BAY — the bay-entrance swell knocked down by the headland:
+           sheltered residuals at the ramp (SS table) and Bower Ln (BL table). -->
+      <div class="fv-sec">Inside the bay</div>
       <div class="nearshore-bar">
         <div class="cond-card nearshore-card">
-          <div class="cond-label">Nearshore</div>
-          <div class="ns-cols">
-            <div class="ns-col"><span class="ns-h" id="sSwell1Entry">—</span><span class="ns-loc">bay entrance</span></div>
+          <div class="ns-cols ns-cols-2">
             <div class="ns-col"><span class="ns-h" id="sSwell1Ramp">—</span><span class="ns-loc">at the ramp</span></div>
             <div class="ns-col"><span class="ns-h" id="sSwell1Bay">—</span><span class="ns-loc">at Bower Ln</span></div>
           </div>
@@ -8085,9 +8104,12 @@ function renderSnapshot(h, wx) {
     set('sSwell1OceanH', oH.toFixed(1));
     set('sSwell1OceanD', `m · ${bearingName(oDir)} (${Math.round(oDir)}°)`);
     set('sSwell1OceanP', `${Math.round(oP)}s period`);
-    // Row 2 — bay entrance: raw NS nearshore feed, its NS direction + period.
-    set('sSwell1Entry', `${Hm.toFixed(1)} m, ${bearingName(h.swell1Dir)} ${Math.round(h.swell1Dir)}°, ${Math.round(h.swell1P)}s`);
-    // Rows 3 & 4 — sheltered NS residuals, height only (refracted direction not
+    // Section 2 — bay entrance: raw NS nearshore feed (swell partition), its NS
+    // direction + period. The sea partition is rendered from h.windWaveH below.
+    set('sSwell1EntryH', Hm.toFixed(1));
+    set('sSwell1EntryD', `m · ${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`);
+    set('sSwell1EntryP', `${Math.round(h.swell1P)}s period`);
+    // Section 3 — sheltered NS residuals, height only (refracted direction not
     // modelled; period is conserved so it is omitted here per the layout).
     set('sSwell1Ramp', `${residH(s && s.nsDisp, nsDispLookup).toFixed(1)} m`);
     set('sSwell1Bay',  `${residH(s && s.blDisp, blDispLookup).toFixed(1)} m`);
