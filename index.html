@@ -3564,7 +3564,15 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
 
   try { window.addEventListener('appinstalled', function () { track('install_pwa', {}); }); } catch (e) {}
 
-  function open() { track('app_open', {}); }
+  /* Facebook and Instagram open links in their own in-app browser, where installing
+     a home-screen tile is IMPOSSIBLE — iOS omits "Add to Home Screen" from that
+     share sheet and Android never fires beforeinstallprompt. Since the app is shared
+     mostly on the Manly swim Facebook page, that is a hard ceiling on the install
+     rate, and an invisible one until it is counted. One boolean, computed on the
+     device: the user agent itself is never sent, so this adds no identifying data. */
+  var INAPP = false;
+  try { INAPP = /FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(navigator.userAgent || ''); } catch (e) {}
+  function open() { track('app_open', { inapp: INAPP }); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', open);
   else open();
 })();
@@ -3679,6 +3687,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  <div class="st-card" id="stWeekday"></div>' +
       '  <div class="st-sec">Accesses by hour — last 7 days</div>' +
       '  <div class="st-card" id="stHourly"></div>' +
+      '  <div class="st-sec">Install funnel — home-screen tile</div>' +
+      '  <div class="st-card" id="stFunnel"></div>' +
       '  <div class="st-sec">Retention after a date (cohort first seen that week)</div>' +
       '  <div class="st-card">' +
       '    <div class="st-ret"><input type="date" id="stRetDate"><button id="stRetRun">Run</button></div>' +
@@ -3800,6 +3810,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       loadHourly();             // separate RPC: accesses by hour, last 7 days (fixed window)
       loadActive(days);         // separate RPC: DAU + rolling WAU — the trustworthy counts
       loadQuality();            // separate RPC: installed / returning tiles + the reach caveat
+      loadFunnel(days);         // separate RPC: install funnel + the in-app-browser ceiling
       // Cumulative devices always spans the whole history. When the selected range
       // already IS the whole history (30/90 clamp to daysSinceLaunch) we hand the
       // rows we just fetched straight over instead of asking for them twice.
@@ -3816,6 +3827,46 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       wireHourlyChart(rows);      // hover readout: day + hour + accesses
     } catch (e) {
       box.innerHTML = '<div class="st-empty">Run migrations/analytics_hourly.sql to enable this chart.</div>';
+    }
+  }
+
+  /* INSTALL FUNNEL — where the home-screen tile is won and lost.
+     Needs migrations/analytics_install_funnel.sql, and the a2hs_* events that
+     index.html only started emitting when that migration was written — so the
+     numbers begin at zero and fill in from the day it shipped, rather than being
+     backdated. The in-app row is the one to read first: those devices CANNOT
+     install, so they cap the rate no matter how good the prompt is. */
+  async function loadFunnel(days) {
+    var box = el('stFunnel'); if (!box) return;
+    box.innerHTML = '<div class="st-empty">Loading…</div>';
+    try {
+      var f = await rpc('analytics_install_funnel', { p_token: tok(), p_days: clampDays(days) });
+      if (!f || f.devices == null) throw new Error('no data');
+      function row(label, n, extra) {
+        return '<div class="st-lr"><span>' + esc(label) + '</span><b>' + n +
+               (extra ? ' <span style="font-weight:400;opacity:.65">' + esc(extra) + '</span>' : '') + '</b></div>';
+      }
+      var html =
+        row('Devices in this window', f.devices, '') +
+        row('In Facebook/Instagram browser — cannot install at all', f.cannot_install, (f.cannot_install_pct || 0) + '%') +
+        row('Shown an install prompt', f.saw_prompt, '') +
+        row('Tapped install', f.tapped, '') +
+        row('Dismissed it', f.dismissed, '') +
+        row('Running from the home screen', f.installed, (f.install_pct || 0) + '%');
+      var bv = (f.by_variant || []).filter(function (v) { return v.shown; });
+      if (bv.length) {
+        html += '<div class="st-axis" style="margin-top:8px"><span>by prompt type — shown · tapped · dismissed</span><span></span></div>' +
+          bv.map(function (v) {
+            return '<div class="st-lr"><span>' + esc(v.variant) + '</span><b>' + (v.shown || 0) + ' · ' +
+                   (v.tapped || 0) + ' · ' + (v.dismissed || 0) + '</b></div>';
+          }).join('');
+      }
+      if (!f.saw_prompt) {
+        html += '<div class="st-axis" style="margin-top:8px"><span>No prompt events yet — they only start counting from the build that added them.</span><span></span></div>';
+      }
+      box.innerHTML = html;
+    } catch (e) {
+      box.innerHTML = '<div class="st-empty">Run migrations/analytics_install_funnel.sql to enable this.</div>';
     }
   }
 
@@ -17572,6 +17623,61 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return !(until && Date.now() < until);
   }
   function snooze() { lsSet('a2hs_snooze_until', String(Date.now() + REMIND_MS)); }
+  function fire(ev, props) { try { if (window.track) window.track(ev, props || {}); } catch (e) {} }
+
+  /* WHEN TO ASK — after the value, not before it.
+     This used to show the iOS banner at load and the Android pill 3.5s in, so the
+     first thing a swimmer arriving from a Facebook link met was an install nag,
+     before a single forecast number had rendered. Three quarters of arrivals never
+     come back, so that was the only impression most of them would ever give.
+     Now the offer waits for a sign the app is actually being used: a real scroll, a
+     tap on a control, or simply still being here after GATE_MS. */
+  var GATE_MS = 25000;
+  var gateOpen = false, waiting = [];
+  function openGate() {
+    if (gateOpen) return;
+    gateOpen = true;
+    var q = waiting.splice(0);
+    for (var i = 0; i < q.length; i++) { try { q[i](); } catch (e) {} }
+  }
+  function whenEngaged(fn) { if (gateOpen) { try { fn(); } catch (e) {} } else waiting.push(fn); }
+  (function armGate() {
+    var t = setTimeout(openGate, GATE_MS);
+    function act() { clearTimeout(t); openGate(); }
+    try {
+      window.addEventListener('scroll', function () { if ((window.scrollY || 0) > 120) act(); }, { passive: true });
+      document.addEventListener('pointerup', function (e) {
+        var n = (e && e.target && e.target.closest) ? e.target.closest('button,a,input,.slider-wrap,.metrics-panel') : null;
+        if (n && !n.closest('.a2hs-banner')) act();      // taps inside a banner are not "engagement"
+      }, { passive: true });
+    } catch (e) {}
+  })();
+
+  /* WHAT COUNTS AS AN IMPRESSION.
+     snooze() used to run the moment a banner was un-hidden. But .a2hs-banner sits at
+     z-index 9998, under the splash (10000) and the announcement popup (99995) — so
+     anyone who left during the splash, or who had an announcement live that day,
+     spent their whole two-day cadence on something they never saw. The cadence is
+     now consumed only when the banner has really been on screen for SEEN_MS, or the
+     moment the swimmer acts on it. */
+  var SEEN_MS = 12000;
+  function show(el, variant, closeId) {
+    if (!el || !remindDue()) return;                     // re-check: the gate delay is long
+    // Already up. On Android the fallback and a late beforeinstallprompt can both
+    // reach here for the same pill; without this it would double-count the
+    // impression and stack a second close handler on the same button.
+    if (!el.hidden) return;
+    el.hidden = false;
+    fire('a2hs_shown', { variant: variant });
+    var seen = setTimeout(function () { if (!el.hidden) snooze(); }, SEEN_MS);
+    var x = closeId && byId(closeId);
+    if (x) x.addEventListener('click', function () {
+      clearTimeout(seen);
+      el.hidden = true;
+      snooze();
+      fire('a2hs_dismissed', { variant: variant });
+    });
+  }
 
   // ---- 0) In-app browsers (Facebook, Instagram) CANNOT install a tile at all:
   // iOS gives them no "Add to Home Screen" in the share sheet, and Android never
@@ -17581,43 +17687,48 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   // nothing else.
   var uaEarly = navigator.userAgent || '';
   if (/FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(uaEarly)) {
-    var iab = byId('a2hsInApp');
-    if (iab && remindDue()) {
-      iab.hidden = false; snooze();
-      var iabClose = byId('a2hsInAppClose');
-      if (iabClose) iabClose.addEventListener('click', function () { iab.hidden = true; });
-    }
+    whenEngaged(function () { show(byId('a2hsInApp'), 'inapp', 'a2hsInAppClose'); });
     return;
   }
 
   // ---- A) Android / Chromium: capture the native prompt, offer an install pill.
   var deferredPrompt = null;
   window.addEventListener('beforeinstallprompt', function (e) {
+    // Capture immediately — the browser offers this event once — but hold the pill
+    // back until the engagement gate opens.
     e.preventDefault();
     if (!remindDue()) return;
     deferredPrompt = e;
-    if (hint) hint.hidden = true;                       // native prompt beats the manual hint
-    if (pill) { pill.hidden = false; snooze(); }        // shown → don't re-offer for ~2 days
+    whenEngaged(function () {
+      if (hint) hint.hidden = true;                     // native prompt beats the manual hint
+      show(pill, 'android', 'a2hsClose');
+    });
   });
   if (pill) {
     var installBtn = byId('a2hsInstall');
-    var closeBtn = byId('a2hsClose');
     if (installBtn) installBtn.addEventListener('click', function () {
+      // Acting on it settles the question either way, so the cadence is spent here.
+      snooze();
+      fire('a2hs_cta', { variant: 'android', native: !!deferredPrompt });
       if (deferredPrompt) {
         deferredPrompt.prompt();
-        if (deferredPrompt.userChoice) deferredPrompt.userChoice.then(function () { deferredPrompt = null; });
+        if (deferredPrompt.userChoice) deferredPrompt.userChoice.then(function (c) {
+          fire('a2hs_choice', { outcome: (c && c.outcome) || 'unknown' });
+          deferredPrompt = null;
+        });
         pill.hidden = true;
       } else {
         // Chrome never fired the native event → show the manual ⋮ steps instead.
         pill.hidden = true;
-        if (hint) hint.hidden = false;
+        if (hint) { hint.hidden = false; fire('a2hs_shown', { variant: 'android_manual' }); }
       }
     });
-    if (closeBtn) closeBtn.addEventListener('click', function () { pill.hidden = true; snooze(); });   // remind again in ~2 days
   }
   if (hint) {
     var hintClose = byId('a2hsHintClose');
-    if (hintClose) hintClose.addEventListener('click', function () { hint.hidden = true; snooze(); });
+    if (hintClose) hintClose.addEventListener('click', function () {
+      hint.hidden = true; snooze(); fire('a2hs_dismissed', { variant: 'android_manual' });
+    });
   }
   window.addEventListener('appinstalled', function () {
     if (pill) pill.hidden = true;
@@ -17634,11 +17745,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var isAndroid = /Android/.test(ua);
   var isFirefox = /Firefox/.test(ua);   // Firefox Android has no beforeinstallprompt and its own install UI
   if (isAndroid && !isFirefox && remindDue()) {
-    setTimeout(function () {
-      if (!deferredPrompt && pill && pill.hidden && (!hint || hint.hidden) && remindDue()) {
-        pill.hidden = false; snooze();
+    whenEngaged(function () {
+      if (!deferredPrompt && pill && pill.hidden && (!hint || hint.hidden)) {
+        show(pill, 'android_fallback', 'a2hsClose');
       }
-    }, 3500);
+    });
   }
 
   // ---- B) iOS (all browsers): Share → "Add to Home Screen" hint. iOS has no
@@ -17649,12 +17760,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var isIOS = /iPhone|iPad|iPod/.test(ua) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // iPadOS 13+ reports as Mac
   if (isIOS && !window.navigator.standalone && remindDue()) {
-    var ban = byId('a2hsIos');
-    if (ban) {
-      ban.hidden = false; snooze();
-      var iosClose = byId('a2hsIosClose');
-      if (iosClose) iosClose.addEventListener('click', function () { ban.hidden = true; });
-    }
+    whenEngaged(function () { show(byId('a2hsIos'), 'ios', 'a2hsIosClose'); });
   }
 })();
 </script>
