@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Swim Manly</title>
+<meta name="robots" content="noindex">
+<!-- Facebook scrapes the POSTED url for its preview card, so this page needs the
+     same card the app has. Without these the post would render as a bare link and
+     lose more clicks than the page saves installs. og:url deliberately points at
+     the app, not at go.html: the preview should read as the app, and this page is
+     plumbing. The scraper is not a browser — it never runs the script below, so it
+     is never counted as a landing. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swim Manly">
+<meta property="og:title" content="Swim Manly — Ocean swim forecast">
+<meta property="og:description" content="Ocean swim conditions for South Steyne ↔ Shelly Beach, Manly.">
+<meta property="og:url" content="https://app.viz.net.au/Manly-Swim/">
+<meta property="og:image" content="https://app.viz.net.au/Manly-Swim/images/logos/og-image.png?v=3">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Swim Manly — ocean swim forecast">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Swim Manly — Ocean swim forecast">
+<meta name="description" content="Ocean swim conditions for South Steyne ↔ Shelly Beach, Manly.">
+<!--
+  ============================================================================
+  go.html — the link to put in Facebook posts.
+  ============================================================================
+  WHY THIS EXISTS
+    Facebook and Instagram open links in their own in-app browser, where adding a
+    home-screen tile is IMPOSSIBLE: iOS omits "Add to Home Screen" from that share
+    sheet, and Android never fires beforeinstallprompt. Since the app is shared
+    mostly on the Manly swim Facebook page, a large share of arrivals may be landing
+    somewhere they physically cannot install from — and installed devices are the
+    ones that stay (median 7 sessions against 1 for browser devices).
+
+    Nothing in a URL can force Facebook to use the real browser. What a page CAN do
+    is bounce out on Android, and shorten the manual escape on iOS.
+
+  WHAT IT DOES
+    Normal browser  → replaces itself with the app immediately. No visible hop, no
+                      cost to desktop visitors or anyone arriving from elsewhere.
+    In-app, Android → hands off to Chrome via an intent: URI, with a fallback URL in
+                      case Chrome is absent. Then beforeinstallprompt works and the
+                      app's own install pill takes over.
+    In-app, iOS     → there is no programmatic escape. Shows the two-tap route out
+                      plus a one-tap Copy link, rather than making people hunt.
+
+  IT ALSO MEASURES THE PROBLEM
+    The `land` event is sent at the point of ARRIVAL, before anyone escapes — so it
+    counts in-app arrivals even though the whole point of the page is to stop them
+    being in-app by the time the app loads. The app's own `inapp` flag can only ever
+    see the survivors. This is the honest denominator.
+
+    It reuses swim_device_id from localStorage (same origin as the app), so a landing
+    and the session that follows are the same device, and adds no new identifier.
+    The user agent is read on the device and never sent.
+  ============================================================================
+-->
+<style>
+  :root { --deep:#113541; --ocean:#4a8fad; --foam:#f7f3e8; --dim:#4a5f6e; }
+  html,body { margin:0; padding:0; background:var(--foam); color:var(--deep);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif; }
+  /* Hidden until we know what to do — a pass-through must not flash a card. */
+  #card { display:none; max-width:460px; margin:0 auto; padding:26px 20px 40px; }
+  #card.show { display:block; }
+  h1 { font-size:23px; line-height:1.25; margin:0 0 10px; }
+  p  { font-size:15.5px; line-height:1.5; color:var(--dim); margin:0 0 16px; }
+  ol { font-size:16px; line-height:1.6; margin:0 0 20px; padding-left:22px; }
+  li { margin:6px 0; }
+  b  { color:var(--deep); }
+  .btn { display:block; width:100%; box-sizing:border-box; text-align:center;
+    background:var(--ocean); color:#fff; border:none; border-radius:12px;
+    font:inherit; font-size:16.5px; font-weight:600; padding:15px 18px; margin:0 0 11px;
+    cursor:pointer; text-decoration:none; -webkit-tap-highlight-color:transparent; }
+  .btn.alt { background:#fff; color:var(--deep); border:1.5px solid #d8d2c2; font-weight:500; }
+  .ok { font-size:14px; color:#2b7a4b; min-height:19px; margin:0 0 10px; }
+  .url { font-size:13px; color:var(--dim); word-break:break-all; background:#fff;
+    border:1px solid #e4dfd0; border-radius:9px; padding:10px 11px; margin:0 0 16px; }
+</style>
+</head>
+<body>
+<noscript><meta http-equiv="refresh" content="0;url=./index.html"></noscript>
+
+<div id="card">
+  <h1 id="hd">Open this in your browser</h1>
+  <p id="sub">Facebook opens links in its own browser, and it can’t add apps to your home screen. Two taps fixes it.</p>
+  <ol id="steps">
+    <li>Tap the <b>•••</b> menu, top right.</li>
+    <li>Choose <b>Open in Safari</b> (or Open in Chrome).</li>
+  </ol>
+  <button class="btn" id="primary" type="button">Copy the link instead</button>
+  <div class="ok" id="ok"></div>
+  <div class="url" id="url"></div>
+  <a class="btn alt" id="anyway" href="./index.html">Continue without installing</a>
+</div>
+
+<script>
+(function () {
+  var LOG_URL = 'https://bold-rain-6ded.sticasale.workers.dev/log';
+
+  // Directory root + whatever query the Facebook post carried (utm_* etc.), so
+  // attribution survives the hop.
+  var base   = location.href.split('#')[0].split('?')[0].replace(/go\.html$/i, '');
+  var target = base + (location.search || '');
+
+  var ua = '';
+  try { ua = navigator.userAgent || ''; } catch (e) {}
+  var inapp   = /FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(ua);
+  var isIOS   = /iPhone|iPad|iPod/.test(ua);
+  var isDroid = /Android/.test(ua);
+
+  function uuid() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  // Same key the app uses, same origin — so the landing and the session that
+  // follows are one device rather than two.
+  function deviceId() {
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) { id = uuid(); localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return uuid(); }
+  }
+
+  /* sendBeacon survives the navigation that follows on its heels — a fetch would
+     be cancelled by location.replace and the pass-through case, which is most of
+     the traffic, would never be counted. */
+  function log(action) {
+    try {
+      var payload = JSON.stringify({ events: [{
+        device_id: deviceId(),
+        session_id: uuid(),
+        event: 'land',
+        props: { inapp: inapp, platform: isIOS ? 'ios' : isDroid ? 'android' : 'other', action: action },
+        referrer: (function () { try { return document.referrer || ''; } catch (e) { return ''; } })(),
+        utm: {},
+        app_build: null,
+        pwa: false
+      }] });
+      if (navigator.sendBeacon) navigator.sendBeacon(LOG_URL, new Blob([payload], { type: 'text/plain' }));
+      else fetch(LOG_URL, { method: 'POST', body: payload, headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // ---- Not in Facebook's browser: straight through, nothing rendered. --------
+  if (!inapp) {
+    log('passthrough');
+    location.replace(target);
+    return;
+  }
+
+  var card = document.getElementById('card');
+  function showCard() { if (card) card.classList.add('show'); }
+
+  // ---- Android: hand off to Chrome. ----------------------------------------
+  if (isDroid) {
+    log('intent');
+    var intentUrl = 'intent://' + target.replace(/^https?:\/\//, '') +
+                    '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' +
+                    encodeURIComponent(target) + ';end';
+    try { location.href = intentUrl; } catch (e) {}
+    // If the hand-off silently fails we are still here a moment later — show the
+    // manual route rather than leaving a blank page.
+    setTimeout(function () {
+      document.getElementById('hd').textContent = 'Open this in Chrome';
+      document.getElementById('sub').textContent =
+        'Facebook’s browser can’t add apps to your home screen. Chrome can.';
+      document.getElementById('steps').innerHTML =
+        '<li>Tap the <b>⋮</b> menu, top right.</li><li>Choose <b>Open in Chrome</b>.</li>';
+      showCard();
+    }, 1200);
+    return;
+  }
+
+  // ---- iOS: no way out in code. Make the manual way as short as possible. ----
+  log(isIOS ? 'ios_help' : 'help');
+  document.getElementById('url').textContent = target;
+  showCard();
+
+  var btn = document.getElementById('primary'), ok = document.getElementById('ok');
+  btn.addEventListener('click', function () {
+    function done() {
+      ok.textContent = 'Copied. Open Safari and paste it in the address bar.';
+      log('copied');
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(target).then(done, fallbackCopy);
+      } else fallbackCopy();
+    } catch (e) { fallbackCopy(); }
+    function fallbackCopy() {
+      // Older in-app webviews have no clipboard API; select the text so a
+      // long-press copy is one gesture instead of a hunt.
+      try {
+        var el = document.getElementById('url'), r = document.createRange();
+        r.selectNodeContents(el);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        if (document.execCommand && document.execCommand('copy')) { done(); return; }
+        ok.textContent = 'Press and hold the link above, then Copy.';
+      } catch (e2) { ok.textContent = 'Press and hold the link above, then Copy.'; }
+    }
+  });
+  document.getElementById('anyway').setAttribute('href', target);
+  document.getElementById('anyway').addEventListener('click', function () { log('continued_inapp'); });
+})();
+</script>
+</body>
+</html>
