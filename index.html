@@ -1410,11 +1410,31 @@
   .nearshore-card  { padding:9px 12px; }
   .ns-cols         { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; align-items:start; }
   .ns-cols-2       { grid-template-columns:repeat(2,1fr); }
-  /* Section heading for the three forecast blocks: oceanside → bay entrance → inside the bay. */
+  /* ── The three forecast blocks: oceanside → bay entrance → inside the bay ──
+     Each block is a heading + one conditions-bar. Blocks 2 and 3 carry a hairline
+     separator above them so the journey outside → mouth → inside reads as steps.
+     All three use the SAME card typography (.cond-value / .cond-unit) — the only
+     thing that changes between them is the heading. */
+  /* Hairline in --deep, not var(--border): the shared border token is a pale blue
+     that all but disappears against the sand panel. */
+  .fv-block + .fv-block { border-top:1px solid rgba(17,53,65,0.16); padding-top:11px; }
   .fv-sec {
+    display:flex; align-items:center; gap:7px;
     font-size:10px; letter-spacing:2px; text-transform:uppercase;
-    color:var(--deep); opacity:0.75; font-weight:600;
-    margin:0 0 5px 2px;
+    color:var(--deep); font-weight:600;
+    margin:0 0 7px 2px;
+  }
+  /* Step number badge — the visual anchor that tells the three blocks apart. */
+  .fv-sec-n {
+    flex:none; width:15px; height:15px; border-radius:50%;
+    background:var(--deep); color:var(--sand, #cdc0a8);
+    font-size:9px; letter-spacing:0; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  /* Source tag (willyweather / nsw nearshore / sheltered), right-aligned and dimmed. */
+  .fv-sec-src {
+    margin-left:auto; font-size:9px; letter-spacing:1px;
+    color:var(--dim); font-weight:500;
   }
   .ns-col          { text-align:center; min-width:0; }
   .ns-h            { display:block; font-family:inherit; font-weight:700; font-size:12px; color:var(--deep); line-height:1.25; }
@@ -2939,7 +2959,8 @@
       </div>
 
       <!-- 1 · OCEANSIDE — open-coast wind + swell, straight from WillyWeather. -->
-      <div class="fv-sec">Oceanside</div>
+      <div class="fv-block">
+      <div class="fv-sec"><span class="fv-sec-n">1</span>Oceanside<span class="fv-sec-src">willyweather</span></div>
       <div class="conditions-bar">
         <div class="cond-card">
           <div class="cond-label">Wind</div>
@@ -2959,10 +2980,12 @@
           <div class="cond-sub" id="sSwell2P">—</div>
         </div>
       </div>
+      </div>
 
       <!-- 2 · BAY ENTRANCE — the NSW Nearshore feed at bay-mouth node 103218, split
            into its two partitions: swell (hs_swl) and sea (hs_sea). -->
-      <div class="fv-sec">Bay entrance</div>
+      <div class="fv-block">
+      <div class="fv-sec"><span class="fv-sec-n">2</span>Bay entrance<span class="fv-sec-src">nsw nearshore</span></div>
       <div class="conditions-bar">
         <div class="cond-card">
           <div class="cond-label">Swell</div>
@@ -2977,17 +3000,25 @@
           <div class="cond-sub" id="sWindWaveP" style="display:none">—</div>
         </div>
       </div>
+      </div>
 
       <!-- 3 · INSIDE THE BAY — the bay-entrance swell knocked down by the headland:
-           sheltered residuals at the ramp (SS table) and Bower Ln (BL table). -->
-      <div class="fv-sec">Inside the bay</div>
-      <div class="nearshore-bar">
-        <div class="cond-card nearshore-card">
-          <div class="ns-cols ns-cols-2">
-            <div class="ns-col"><span class="ns-h" id="sSwell1Ramp">—</span><span class="ns-loc">at the ramp</span></div>
-            <div class="ns-col"><span class="ns-h" id="sSwell1Bay">—</span><span class="ns-loc">at Bower Ln</span></div>
-          </div>
+           sheltered residuals at the ramp (SS table) and Bower Ln (BL table).
+           Same card typography as sections 1 and 2 so the three read as one scale. -->
+      <div class="fv-block">
+      <div class="fv-sec"><span class="fv-sec-n">3</span>Inside the bay<span class="fv-sec-src">sheltered</span></div>
+      <div class="conditions-bar">
+        <div class="cond-card">
+          <div class="cond-label">At the ramp</div>
+          <div class="cond-value" id="sSwell1Ramp">—</div>
+          <div class="cond-unit">metres</div>
         </div>
+        <div class="cond-card">
+          <div class="cond-label">At Bower Ln</div>
+          <div class="cond-value" id="sSwell1Bay">—</div>
+          <div class="cond-unit">metres</div>
+        </div>
+      </div>
       </div>
 
       <!-- Tide — moved below Nearshore; extra gap between the tide value and the sun times. -->
@@ -8111,8 +8142,9 @@ function renderSnapshot(h, wx) {
     set('sSwell1EntryP', `${Math.round(h.swell1P)}s period`);
     // Section 3 — sheltered NS residuals, height only (refracted direction not
     // modelled; period is conserved so it is omitted here per the layout).
-    set('sSwell1Ramp', `${residH(s && s.nsDisp, nsDispLookup).toFixed(1)} m`);
-    set('sSwell1Bay',  `${residH(s && s.blDisp, blDispLookup).toFixed(1)} m`);
+    // Bare numbers — the cards carry their own "metres" unit line, same as sections 1-2.
+    set('sSwell1Ramp', residH(s && s.nsDisp, nsDispLookup).toFixed(1));
+    set('sSwell1Bay',  residH(s && s.blDisp, blDispLookup).toFixed(1));
 
     const rampEl = document.getElementById('sSwell1Ramp');
     const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
