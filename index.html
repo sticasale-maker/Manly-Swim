@@ -6068,6 +6068,26 @@ function bowerSurgeWater(d) {
            parts: { swell1: p.s1_d + p.s2_d, windWave: 0, tide: p.tide_d, chop: 0, raw: p.raw } };
 }
 
+// ── Offshore (westerly) flattening credit — the RAW, unbounded-by-energy value ──
+// Single source of truth for the rule, so the ?tune=1 readout and the score can
+// never drift apart: calcScore calls this, then clamps the result to the swell+wind
+// subtotal before subtracting it from the ENTRY total. All five inputs are live SITE
+// knobs, so a tune-panel slider move re-scores immediately with no other wiring.
+// Returns Entry points (>= 0). Reads nothing but its two arguments and SITE.
+function offshoreFlatten(windKmh, windDir) {
+  const dir0 = (SITE.offshoreDir    != null) ? SITE.offshoreDir    : 270;
+  const arc  = (SITE.offshoreArc    != null) ? SITE.offshoreArc    : 30;
+  const ref  = (SITE.offshoreRefKmh != null) ? SITE.offshoreRefKmh : 30;
+  const pts  = (SITE.offshorePts    != null) ? SITE.offshorePts    : 10;
+  const cap  = (SITE.offshoreMaxPts != null) ? SITE.offshoreMaxPts : 20;
+  const u    = windKmh || 0;
+  if (!u || !arc || !ref) return 0;
+  const off = Math.abs(((windDir || 0) - dir0 + 540) % 360 - 180);  // 0-180 off the axis
+  if (off >= arc) return 0;
+  const w = Math.cos((off / arc) * Math.PI / 2);                    // 1 on-axis, 0 at the edge
+  return Math.min(cap, pts * (u / ref) * w);
+}
+
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
@@ -6253,19 +6273,7 @@ function calcScore(d, modelOverride) {
   // linearly off the reference (10 pts @ 30 km/h W), capped by offshoreMaxPts and by
   // the swell+wind demerits present. Applies on both the NS and WW paths — both
   // arrive here with the same windKmh/windDir.
-  const offshore_c = (() => {
-    const dir0 = (SITE.offshoreDir    != null) ? SITE.offshoreDir    : 270;
-    const arc  = (SITE.offshoreArc    != null) ? SITE.offshoreArc    : 30;
-    const ref  = (SITE.offshoreRefKmh != null) ? SITE.offshoreRefKmh : 30;
-    const pts  = (SITE.offshorePts    != null) ? SITE.offshorePts    : 10;
-    const cap  = (SITE.offshoreMaxPts != null) ? SITE.offshoreMaxPts : 20;
-    const u    = windKmh || 0;
-    if (!u || !arc || !ref) return 0;
-    let d = Math.abs(((windDir || 0) - dir0 + 540) % 360 - 180);  // 0-180 off the axis
-    if (d >= arc) return 0;
-    const w = Math.cos((d / arc) * Math.PI / 2);                  // 1 at 270, 0 at the edge
-    return Math.min(cap, pts * (u / ref) * w);
-  })();
+  const offshore_c = offshoreFlatten(windKmh, windDir);
   // Can only flatten energy that exists: never credit more than the swell + wind stack.
   const offshoreCredit = Math.min(offshore_c, Math.max(0, o));
   const total  = Math.max(0, o + tide_d - offshoreCredit);
@@ -10875,6 +10883,12 @@ const TUNE_PARAMS = [
   { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'New NS AQ2 — COPY here (ALL of AQ2:AQ5 must be filled or ENTRY reverts to default). total ≤ this = Easy.' },
   { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'New NS AQ3 — COPY here. total ≤ this = Doable.' },
   { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'New NS AQ4 — COPY here. total ≤ this = Caution, else Dangerous.' },
+  // Offshore westerly credit (11 Aug 2026). LOCAL RULE — no sheet cell exists for these;
+  // they live only in SITE, so the panel is the only place to turn them. Slider moves
+  // re-score live through offshoreFlatten(), which reads SITE on every call.
+  { key:'offshorePts', label:'ENTRY · Offshore W credit (pts @ 30 km/h)', min:0, max:25, step:0.5, hint:'LOCAL — no sheet cell. Entry points SUBTRACTED from the demerit total for a due-W wind at 30 km/h (scales linearly with speed). 0 disables the rule. Higher = a westerly makes entry look easier.' },
+  { key:'offshoreArc', label:'ENTRY · Offshore arc (± deg)',              min:0, max:90, step:5,   hint:'LOCAL — no sheet cell. Half-width of the flattening sector about 270°. Full credit on-axis, cosine-taper to zero at the edge. 30 = 240–300° counts; 0 disables the rule.' },
+  { key:'offshoreMaxPts', label:'ENTRY · Offshore credit ceiling (pts)',  min:0, max:40, step:1,   hint:'LOCAL — no sheet cell. Hard cap on the credit however hard it blows (default 20, reached ~60 km/h due W). The credit is ALSO capped at the swell+wind subtotal, so it can never invent calm on a flat day.' },
   { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
@@ -10922,6 +10936,25 @@ function updateTuneInputs(h) {
   g('tw-in-ww').innerHTML    = (h.windWaveH != null ? Number(h.windWaveH).toFixed(1) : '—') + ' <small>m' + dir(h.windWaveDir) + (h.windWaveP != null ? ' · ' + Math.round(h.windWaveP) + 's' : '') + '</small>';
   const sst = (h.seaTemp != null) ? h.seaTemp : null;
   g('tw-in-sst').innerHTML   = (sst != null ? Number(sst).toFixed(1) : '—') + ' <small>°C</small>';
+  // Offshore westerly credit for THIS slot, from the same helper the scorer uses.
+  // Shown RAW (before the swell+wind clamp) with the applied figure beside it when
+  // the clamp bites — otherwise you'd move the slider, watch this climb, and see the
+  // Entry score not budge, with nothing on screen explaining why.
+  const offEl = g('tw-out-offshore');
+  if (offEl) {
+    const raw = offshoreFlatten(h.windKmh, h.windDir);
+    let applied = null;
+    try {
+      const res = calcScore(h);
+      if (res && res.demerits && res.demerits.offshore != null) applied = -res.demerits.offshore;
+    } catch (e) { /* readout only — never let it break the panel */ }
+    const clamped = (applied != null && raw - applied > 0.05);
+    offEl.innerHTML = raw < 0.05
+      ? '—<small> no W wind</small>'
+      : '−' + (Math.round(raw * 10) / 10) + ' <small>pts' +
+        (clamped ? ' · capped to −' + (Math.round(applied * 10) / 10) + ' by available energy' : '') + '</small>';
+    offEl.style.color = raw < 0.05 ? '' : '#2f7a33';
+  }
   const srcEl = g('tw-in-src');
   if (srcEl) { srcEl.textContent = h._nsFeed ? 'NS live' : 'backup'; srcEl.style.color = h._nsFeed ? '#2f7a33' : '#a95e1e'; }
 }
@@ -10936,6 +10969,11 @@ const TW_GROUPS = [
     knobs:[
       { key:'ssWaveSens',  name:'SS wave sensitivity', desc:'Weight of swell &amp; wind-wave at entry.',                cell:'ss_wave_sens · C2', prov:'sheet', provTxt:'SHEET · copy to C2' },
       { key:'windSeaSens', name:'Wind-sea sensitivity', desc:'<b>Entry only</b> — not Chop.',                            cell:'wind_sens · C3',   prov:'sheet', provTxt:'SHEET · copy to C3' },
+      // prov:'wired' — these have no sheet cell at all; SITE is the only home, so the
+      // panel is authoritative rather than a copy-to-cell staging area.
+      { key:'offshorePts',    name:'Offshore W credit', tag:'LIVE', desc:'A westerly blows off the land and flattens the swell face, so it <b>subtracts</b> from Entry. Points at 30 km/h from due W, linear in speed. <b>Entry only</b> — Chop and Surge untouched.', cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
+      { key:'offshoreArc',    name:'Offshore arc (±°)',             desc:'Half-width of the sector about 270°. Full on-axis, cosine-taper to nil at the edge. 0 turns the rule off.',                                                                              cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
+      { key:'offshoreMaxPts', name:'Offshore ceiling',              desc:'Cap on the credit in a gale. Also capped at the swell+wind subtotal — it can only flatten what is there.',                                                                              cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
     ],
     bands:{ label:'Bands', edges:'AQ2:AQ5', items:[
       { key:'entryThresholds.easy',    lab:'Easy ≤' },
@@ -11046,6 +11084,7 @@ function buildTunePanel() {
                   <div class="tw-in tw-out"><div class="lbl">Ramp wave</div><div class="val" id="tw-out-ramp">—</div></div>
                   <div class="tw-in tw-out"><div class="lbl">Chop</div><div class="val" id="tw-out-chop">—</div></div>
                   <div class="tw-in tw-out"><div class="lbl">In the bay</div><div class="val" id="tw-out-bay">—</div></div>
+                  <div class="tw-in tw-out"><div class="lbl">W flattening</div><div class="val" id="tw-out-offshore">—</div></div>
                   <div class="tw-in"><div class="lbl">Source</div><div class="val" id="tw-in-src" style="font-size:12px;">—</div></div>
                 </div>
               </div>
