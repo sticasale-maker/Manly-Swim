@@ -2941,11 +2941,8 @@
           <div class="wx-val" id="wxTemp">—</div>
           <div class="wx-unit">°C · FEELS <span id="wxFeels">—</span>°</div>
         </div>
-        <div class="wx-item">
-          <div class="wx-icon" id="wxWindIcon">💨</div>
-          <div class="wx-val" id="wxWind">—</div>
-          <div class="wx-unit">km/h · <span id="wxWindDir">—</span></div>
-        </div>
+<!-- Wind lived here; removed — it read a different source from the Oceanside
+             wind card below and the two disagreed on screen. -->
         <div class="wx-item">
           <div class="wx-icon" id="wxSkyIcon">☁️</div>
           <div class="wx-val" id="wxCloud">—</div>
@@ -2982,10 +2979,10 @@
       </div>
       </div>
 
-      <!-- 2 · BAY ENTRANCE — the NSW Nearshore feed at bay-mouth node 103218, split
+      <!-- 2 · NEARSHORE — the NSW Nearshore feed at bay-mouth node 103218, split
            into its two partitions: swell (hs_swl) and sea (hs_sea). -->
       <div class="fv-block">
-      <div class="fv-sec"><span class="fv-sec-n">2</span>Bay entrance<span class="fv-sec-src">nsw nearshore</span></div>
+      <div class="fv-sec"><span class="fv-sec-n">2</span>Nearshore<span class="fv-sec-src">nsw nearshore</span></div>
       <div class="conditions-bar">
         <div class="cond-card">
           <div class="cond-label">Swell</div>
@@ -3002,11 +2999,12 @@
       </div>
       </div>
 
-      <!-- 3 · INSIDE THE BAY — the bay-entrance swell knocked down by the headland:
-           sheltered residuals at the ramp (SS table) and Bower Ln (BL table).
+      <!-- 3 · SWIMMING PATH — the nearshore swell knocked down by the headland:
+           sheltered residuals at the ramp (SS table) and Bower Ln (BL table), plus
+           the mid-bay chop (result.swim.raw, the steep-face height in cm).
            Same card typography as sections 1 and 2 so the three read as one scale. -->
       <div class="fv-block">
-      <div class="fv-sec"><span class="fv-sec-n">3</span>Inside the bay<span class="fv-sec-src">sheltered</span></div>
+      <div class="fv-sec"><span class="fv-sec-n">3</span>Swimming path<span class="fv-sec-src">sheltered</span></div>
       <div class="conditions-bar">
         <div class="cond-card">
           <div class="cond-label">At the ramp</div>
@@ -3017,6 +3015,11 @@
           <div class="cond-label">At Bower Ln</div>
           <div class="cond-value" id="sSwell1Bay">—</div>
           <div class="cond-unit">metres</div>
+        </div>
+        <div class="cond-card">
+          <div class="cond-label">Chop</div>
+          <div class="cond-value" id="sChop">—</div>
+          <div class="cond-unit">cm · steep face</div>
         </div>
       </div>
       </div>
@@ -8076,8 +8079,7 @@ function renderSnapshot(h, wx) {
     const wxInfo = wxCodeInfo(wx.wxCode ?? 0, _night);
     document.getElementById('wxTemp').textContent    = wx.temp != null ? Math.round(wx.temp) : '—';
     document.getElementById('wxFeels').textContent   = wx.feelsLike != null ? Math.round(wx.feelsLike) : '—';
-    document.getElementById('wxWind').textContent    = wx.windKmh != null ? Math.round(wx.windKmh) : '—';
-    document.getElementById('wxWindDir').textContent = wx.windDir != null ? bearingName(wx.windDir) : '—';
+    // (wind removed from the strip — the Oceanside card is the single wind readout)
     document.getElementById('wxCloud').textContent   = wx.cloud != null ? Math.round(wx.cloud) : '—';
     document.getElementById('wxRain').textContent    = wx.rainProb != null ? Math.round(wx.rainProb) : '—';
     document.getElementById('wxSkyIcon').textContent = wxInfo.icon;
@@ -8145,6 +8147,10 @@ function renderSnapshot(h, wx) {
     // Bare numbers — the cards carry their own "metres" unit line, same as sections 1-2.
     set('sSwell1Ramp', residH(s && s.nsDisp, nsDispLookup).toFixed(1));
     set('sSwell1Bay',  residH(s && s.blDisp, blDispLookup).toFixed(1));
+    // Chop — the same steep-face height (cm) the Chop classification prints,
+    // straight off result.swim.raw so the two can never disagree.
+    const chopRaw = result && result.swim && result.swim.raw;
+    set('sChop', (chopRaw != null) ? String(Math.round(chopRaw * 10) / 10) : '—');
 
     const rampEl = document.getElementById('sSwell1Ramp');
     const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
