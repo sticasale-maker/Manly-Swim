@@ -1,93 +1,114 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// /tune route for the bold-rain-6ded Worker — paste into the DASHBOARD editor.
+// /tune route for the bold-rain-6ded Worker.
 //
-// WHY THE DASHBOARD, NOT WRANGLER: this Worker is dashboard-managed. Deploying it
-// from a local copy has previously stripped the KV binding and the two cron
-// triggers silently. Editing in the dashboard touches only the script and leaves
-// bindings and schedules alone.
+// Written against the ACTUAL deployed source (worker.patched.js), so the names
+// below are the real ones, not guesses:
+//   • KV binding      → env.RATE          (same namespace as ns:session, rate caps)
+//   • auth            → isAuthed(request, url, env) → env.ADMIN_PASSPHRASE
+//                       It already accepts the X-Admin-Token header the tune panel
+//                       sends, so this is the same passphrase as /board-status.
+//   • helpers         → CORS, JSONH(), errJSON() already exist in the file.
 //
-// WHAT IT DOES
-//   GET  /tune  → { values:{...}, savedAt, by }  (public, cacheable, no auth)
-//   POST /tune  → stores { values } in KV        (requires X-Admin-Token)
-// The app reads GET at boot and applies the values under each device's own
-// slider overrides. Only the six LOCAL scoring knobs are accepted; anything else
-// in the payload is dropped, so a stray or malicious key can never reach SITE.
+// PASTE IN THE DASHBOARD EDITOR, NOT WRANGLER: this Worker is dashboard-managed;
+// deploying from a local copy has stripped its KV binding and cron triggers before.
 //
-// ── HOW TO INSTALL ──────────────────────────────────────────────────────────
-// 1. Dashboard → Workers → bold-rain-6ded → Edit code.
-// 2. Paste the ALLOWED/handleTune block below near the top of the module.
-// 3. Inside the existing fetch handler, before the final 404, add:
-//        if (url.pathname === '/tune') return handleTune(request, env, url);
-// 4. Check the KV binding name at Settings → Variables → KV Namespace Bindings
-//    and set KV_BINDING below to match (the code guesses common names but do not
-//    rely on that — a wrong name means every push silently 500s).
-// 5. Confirm the admin token variable name matches the one /board-status already
-//    uses (ADMIN_TOKEN below) — reusing it is the point, no new secret.
-// 6. Save & Deploy. Then in the app: ?tune=1 → move a LOCAL slider → Push.
-//
-// VERIFY:  curl https://bold-rain-6ded.sticasale.workers.dev/tune
-//          → {"values":{},...} once deployed;  404 means step 3 was missed.
+// ── BLOCK 1 of 2 ────────────────────────────────────────────────────────────
+// Paste this anywhere at top level — e.g. directly ABOVE the line
+//     var worker_patched_default = {
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Whitelist — MUST match TUNE_LIVE_KEYS in index.html. Each entry carries the
-// range the app's own slider allows, and values outside it are rejected: the
-// Worker is the last line of defence between a typo and everyone's forecast.
-const TUNE_ALLOWED = {
-  offshorePts:    [0, 25],
-  offshoreArc:    [0, 90],
-  offshoreMaxPts: [0, 40],
-  chopLeeFactor:  [0.3, 1],
-  chopLeeFrom:    [90, 270],
-  chopLeeTo:      [180, 359],
+// Whitelist. Keys MUST match TUNE_LIVE_KEYS in index.html, and each range MUST
+// match that knob's slider min/max. This is the last line of defence between a
+// fat-fingered value and every swimmer's forecast, so it revalidates server-side
+// rather than trusting the panel that sent it. Anything not listed is dropped.
+var TUNE_ALLOWED = {
+  offshorePts:    [0, 25],    // Entry points credited at 30 km/h due W
+  offshoreArc:    [0, 90],    // half-width of the flattening sector
+  offshoreMaxPts: [0, 40],    // ceiling on that credit
+  chopLeeFactor:  [0.3, 1],   // wind multiplier through the sheltered land arc
+  chopLeeFrom:    [90, 270],  // arc start
+  chopLeeTo:      [180, 359], // arc end
 };
+var TUNE_KV_KEY = "tune-overrides-v1";
 
-const KV_KEY = 'tune-overrides-v1';
+async function handleTune(request, env, url, ctx) {
+  if (!env.RATE) return errJSON("KV binding RATE missing", 500);
 
-async function handleTune(request, env, url) {
-  // Match your actual binding name here (Settings → Variables → KV bindings).
-  const KV = env.SWIM_KV || env.KV || env.CACHE;
-  const CORS = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  };
-  const json = (obj, status) => new Response(JSON.stringify(obj), {
-    status: status || 200,
-    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS },
-  });
-
-  if (request.method === 'OPTIONS') return new Response(null, { headers: CORS });
-  if (!KV) return json({ error: 'kv-binding-missing' }, 500);
-
-  if (request.method === 'GET') {
-    const raw = await KV.get(KV_KEY);
-    return json(raw ? JSON.parse(raw) : { values: {}, savedAt: null });
+  // GET is public and unauthenticated ON PURPOSE — every swimmer's app reads it
+  // at boot. It exposes six scoring constants, nothing personal. Short cache so
+  // a push propagates within the hour without hammering KV.
+  if (request.method === "GET") {
+    let raw = null;
+    try { raw = await env.RATE.get(TUNE_KV_KEY, { cacheTtl: 300 }); } catch (_) {}
+    const body = raw ? raw : JSON.stringify({ values: {}, savedAt: null });
+    return new Response(body, {
+      status: 200,
+      headers: JSONH({ "Cache-Control": "public, max-age=300, s-maxage=300" })
+    });
   }
 
-  if (request.method === 'POST') {
-    const token = request.headers.get('X-Admin-Token') || '';
-    // Same secret /board-status checks — rename if yours differs.
-    if (!env.ADMIN_TOKEN || token !== env.ADMIN_TOKEN) return json({ error: 'unauthorised' }, 401);
+  if (request.method === "POST") {
+    if (!isAuthed(request, url, env)) return errJSON("Unauthorised", 401);
 
-    let body;
-    try { body = await request.json(); } catch (e) { return json({ error: 'bad-json' }, 400); }
-    const incoming = (body && body.values) || {};
+    let payload;
+    try { payload = JSON.parse(await request.text()); } catch (_) { return errJSON("Bad JSON", 400); }
+    const incoming = payload && payload.values || {};
 
     const values = {};
     const rejected = [];
     for (const k of Object.keys(TUNE_ALLOWED)) {
-      const v = Number(incoming[k]);
       if (incoming[k] == null) continue;
-      const [lo, hi] = TUNE_ALLOWED[k];
-      if (!isFinite(v) || v < lo || v > hi) { rejected.push(k); continue; }
+      const v = Number(incoming[k]);
+      const lo = TUNE_ALLOWED[k][0], hi = TUNE_ALLOWED[k][1];
+      if (!Number.isFinite(v) || v < lo || v > hi) { rejected.push(k); continue; }
       values[k] = v;
     }
-    if (!Object.keys(values).length) return json({ error: 'no-valid-values', rejected }, 400);
+    if (!Object.keys(values).length) return errJSON("No valid values (rejected: " + rejected.join(",") + ")", 400);
 
-    const record = { values, savedAt: new Date().toISOString(), by: 'tune-panel' };
-    await KV.put(KV_KEY, JSON.stringify(record));
-    return json({ ok: true, ...record, rejected });
+    // Merge onto what is already stored, so a partial push cannot silently reset
+    // the knobs it did not mention back to their coded defaults.
+    let prev = {};
+    try {
+      const raw = await env.RATE.get(TUNE_KV_KEY);
+      if (raw) prev = JSON.parse(raw).values || {};
+    } catch (_) {}
+
+    const record = {
+      values: { ...prev, ...values },
+      savedAt: new Date().toISOString(),
+      by: "tune-panel"
+    };
+    // No expirationTtl — these are settings, not a cache. A TTL would silently
+    // revert everyone to coded defaults weeks later with no one touching a thing.
+    try { await env.RATE.put(TUNE_KV_KEY, JSON.stringify(record)); }
+    catch (err) { return errJSON("KV write failed: " + (err && err.message || err), 502); }
+
+    return new Response(JSON.stringify({ ok: true, ...record, rejected }), {
+      status: 200,
+      headers: JSONH({ "Cache-Control": "no-store" })
+    });
   }
 
-  return json({ error: 'method-not-allowed' }, 405);
+  return errJSON("Method not allowed", 405);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ── BLOCK 2 of 2 ────────────────────────────────────────────────────────────
+// Inside the fetch handler, paste the ONE line below immediately ABOVE:
+//
+//     if (url.pathname !== "/forecast") {
+//       return new Response("Not found", { status: 404, headers: CORS });
+//     }
+//
+// (It must come before that 404 fallback, or /tune will 404 forever. OPTIONS is
+// already handled at the very top of fetch, so CORS preflight needs nothing here.)
+//
+//     if (url.pathname === "/tune") return handleTune(request, env, url, ctx);
+//
+// ── VERIFY AFTER DEPLOY ─────────────────────────────────────────────────────
+//   curl https://bold-rain-6ded.sticasale.workers.dev/tune
+//     → {"values":{},"savedAt":null}   route is live
+//     → Not found                       Block 2 line is missing or below the 404
+//   Then: app ?tune=1 → move a LOCAL slider → "Push LOCAL knobs to live"
+//         → re-run the curl and the values should be there.
+// ─────────────────────────────────────────────────────────────────────────────
