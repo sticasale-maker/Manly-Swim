@@ -185,6 +185,10 @@
   #tune-panel .tw-prov{ display:inline-block; font-family:'Bebas Neue',sans-serif; font-size:8.5px; letter-spacing:.5px; padding:1px 6px; border-radius:4px; margin-left:6px; vertical-align:1px; }
   #tune-panel .tw-prov.sheet{ background:#2f7a33; color:#eaffea; }
   #tune-panel .tw-prov.wired{ background:#2f6f8f; color:#eaf3f7; }
+  /* LOCAL = no sheet cell exists; this panel is the only home, and "Push to live"
+     is the only way the value reaches anyone else. Amber so it reads as distinct
+     from the two green/blue sheet-backed provenances at a glance. */
+  #tune-panel .tw-prov.local{ background:#a95e1e; color:#fff3e8; }
 
   #tune-panel .tw-knob input[type=range],
   #tune-panel .tw-band input[type=range]{
@@ -10943,6 +10947,47 @@ const TUNE_PARAMS = [
   { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
+// ── LIVE (global) tune values ────────────────────────────────────────────────
+// Only these keys can be pushed to everyone, because only these have no sheet
+// cell behind them — SITE is their sole home, so without this they could never
+// leave the tuner's own browser. Sheet-backed knobs are deliberately NOT here:
+// the spreadsheet stays their single source of truth, and a KV copy would just
+// be a second one that silently disagrees on the next sheet load.
+const TUNE_LIVE_KEYS = [
+  'offshorePts', 'offshoreArc', 'offshoreMaxPts',
+  'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo',
+];
+const TUNE_LIVE_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/tune';
+const TUNE_LIVE_CACHE = 'swim_tune_live_v1';   // last-known live values, so a cold/offline boot still scores right
+
+function loadLiveTune() {
+  try { const o = JSON.parse(localStorage.getItem(TUNE_LIVE_CACHE) || 'null'); return (o && o.values) ? o : null; }
+  catch(e) { return null; }
+}
+// Apply the cached live values to SITE. Called BEFORE applyTuneOverrides() so the
+// precedence is: coded default < live (everyone) < this device's slider. That order
+// matters — otherwise pushing to live would yank the sliders out from under whoever
+// is mid-tune on their own machine.
+function applyLiveTune() {
+  const live = loadLiveTune();
+  if (!live) return;
+  TUNE_LIVE_KEYS.forEach(k => {
+    if (live.values[k] != null && isFinite(live.values[k])) tuneSet(k, live.values[k]);
+  });
+}
+// Refresh the cache from the Worker. Fire-and-forget by design: a value pushed now
+// lands on the next app open rather than yanking scores mid-session. Never throws.
+async function refreshLiveTune() {
+  try {
+    const r = await fetchWithTimeout(TUNE_LIVE_URL + '?t=' + Date.now(), 6000);
+    if (!r.ok) return null;                       // 404 = Worker route not deployed yet; stay on cache
+    const j = await r.json();
+    if (!j || !j.values) return null;
+    localStorage.setItem(TUNE_LIVE_CACHE, JSON.stringify(j));
+    return j;
+  } catch (e) { return null; }
+}
+
 function loadTuneOverrides() {
   try { return JSON.parse(localStorage.getItem(TUNE_KEY) || '{}') || {}; } catch(e) { return {}; }
 }
@@ -11022,9 +11067,9 @@ const TW_GROUPS = [
       { key:'windSeaSens', name:'Wind-sea sensitivity', desc:'<b>Entry only</b> — not Chop.',                            cell:'wind_sens · C3',   prov:'sheet', provTxt:'SHEET · copy to C3' },
       // prov:'wired' — these have no sheet cell at all; SITE is the only home, so the
       // panel is authoritative rather than a copy-to-cell staging area.
-      { key:'offshorePts',    name:'Offshore W credit', tag:'LIVE', desc:'A westerly blows off the land and flattens the swell face, so it <b>subtracts</b> from Entry. Points at 30 km/h from due W, linear in speed. <b>Entry only</b> — Chop and Surge untouched.', cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
-      { key:'offshoreArc',    name:'Offshore arc (±°)',             desc:'Half-width of the sector about 270°. Full on-axis, cosine-taper to nil at the edge. 0 turns the rule off.',                                                                              cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
-      { key:'offshoreMaxPts', name:'Offshore ceiling',              desc:'Cap on the credit in a gale. Also capped at the swell+wind subtotal — it can only flatten what is there.',                                                                              cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
+      { key:'offshorePts',    name:'Offshore W credit', tag:'LIVE', desc:'A westerly blows off the land and flattens the swell face, so it <b>subtracts</b> from Entry. Points at 30 km/h from due W, linear in speed. <b>Entry only</b> — Chop and Surge untouched.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'offshoreArc',    name:'Offshore arc (±°)',             desc:'Half-width of the sector about 270°. Full on-axis, cosine-taper to nil at the edge. 0 turns the rule off.',                                                                              cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'offshoreMaxPts', name:'Offshore ceiling',              desc:'Cap on the credit in a gale. Also capped at the swell+wind subtotal — it can only flatten what is there.',                                                                              cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
     bands:{ label:'Bands', edges:'AQ2:AQ5', items:[
       { key:'entryThresholds.easy',    lab:'Easy ≤' },
@@ -11034,9 +11079,9 @@ const TW_GROUPS = [
   { cls:'chop', badge:'CHOP', feeds:'surface roughness mid-bay',
     knobs:[
       { key:'chopRefFetchM', name:'Chop strength', tag:'LIVE', desc:'Wind’s runway over the bay — higher = bigger chop. The real Chop gain (feeds chopCm).', cell:'chop_ref_fetch_m · C4', prov:'wired', provTxt:'STEP A · wired · C4' },
-      { key:'chopLeeFactor', name:'Lee shelter (S→W)', tag:'LIVE', desc:'Wind off the land and the buildings west of the swim patch grows less sea than its raw speed. Multiplies the wind for the <b>chop fetch sea only</b>. 1 = off.', cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
-      { key:'chopLeeFrom',   name:'Lee arc from (°)',              desc:'Start of the sheltered arc (wind FROM).',                                                                                                                       cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
-      { key:'chopLeeTo',     name:'Lee arc to (°)',                desc:'End of the arc. Cosine-tapers back to no shelter over 20° outside each edge.',                                                                                   cell:'local · no sheet cell', prov:'wired', provTxt:'LOCAL · wired · SITE' },
+      { key:'chopLeeFactor', name:'Lee shelter (S→W)', tag:'LIVE', desc:'Wind off the land and the buildings west of the swim patch grows less sea than its raw speed. Multiplies the wind for the <b>chop fetch sea only</b>. 1 = off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'chopLeeFrom',   name:'Lee arc from (°)',              desc:'Start of the sheltered arc (wind FROM).',                                                                                                                       cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'chopLeeTo',     name:'Lee arc to (°)',                desc:'End of the arc. Cosine-tapers back to no shelter over 20° outside each edge.',                                                                                   cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
     bands:{ label:'Bands — face height (cm)', edges:'AQ6:AQ9', items:[
       { key:'swimThresholds.glassy', lab:'Smooth <' },
@@ -11076,7 +11121,7 @@ function buildTunePanel() {
       <div class="tw-knob">
         <div class="tw-knob-top">
           <span class="tw-knob-name">${k.name}${k.tag ? `<span class="tw-knob-tag">${k.tag}</span>` : ''}</span>
-          <span class="tw-knob-val"><b data-tune-val="${k.key}">${fmt(cur)}</b><span class="tw-flag" data-tune-flag="${k.key}" style="color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : 'sheet'}</span></span>
+          <span class="tw-knob-val"><b data-tune-val="${k.key}">${fmt(cur)}</b><span class="tw-flag" data-tune-flag="${k.key}" style="color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : (k.prov === 'local' ? 'live' : 'sheet')}</span></span>
         </div>
         <div class="tw-knob-desc">${k.desc} <span class="tw-cell">${k.cell}</span> <span class="tw-prov ${k.prov}">${k.provTxt}</span></div>
         <input type="range" data-tune-input="${k.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}">
@@ -11119,6 +11164,11 @@ function buildTunePanel() {
         <div class="tw-legend">
           <span class="tw-prov sheet">SHEET</span> tune here, then copy the value into the named New NS cell to go global.
           &nbsp;<span class="tw-prov wired">STEP A</span> already sheet-wired — the live gain flows straight from its cell.
+          <br><span class="tw-prov local">LOCAL</span> <b>no sheet cell exists</b> — this panel is the only home. Use
+          <b>Push to live</b> to send these to every swimmer; nothing else will.
+          <br><span style="opacity:.85;">Every slider previews on <b>this device</b> instantly. What makes it global differs by badge:
+          <span class="tw-prov sheet">SHEET</span>/<span class="tw-prov wired">STEP A</span> → the spreadsheet cell.
+          <span class="tw-prov local">LOCAL</span> → the Push to live button.</span>
         </div>
         <div id="tune-body">
           <div class="tw-cols">
@@ -11155,6 +11205,8 @@ function buildTunePanel() {
                 <button id="tune-import">Paste values</button>
                 <button id="tune-reset">Reset</button>
               </div>
+              <button id="tune-push" style="background:#a95e1e;color:#fff3e8;border-color:#a95e1e;width:100%;margin-top:6px;">Push LOCAL knobs to live</button>
+              <div class="tw-hint" id="tune-push-hint">Sends the six <span class="tw-prov local">LOCAL</span> knobs to every swimmer (asks for the admin passphrase). Sheet-backed knobs are <b>not</b> included — those still go through their cell.</div>
               <button id="tune-reload">Reload from sheet</button>
               <div class="tw-hint">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches.</div>
               <div id="tune-msg"></div>
@@ -11200,7 +11252,11 @@ function buildTunePanel() {
     const valEl  = panel.querySelector(`[data-tune-val="${key}"]`);
     const flagEl = panel.querySelector(`[data-tune-flag="${key}"]`);
     if (valEl)  valEl.textContent = fmt(tuneGet(key));
-    if (flagEl) { flagEl.textContent = overridden ? 'SET' : 'sheet'; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
+    // Resting word must match the knob's provenance — a LOCAL knob has no sheet
+    // cell to fall back to, so calling it "sheet" would point you at a cell that
+    // does not exist. TUNE_LIVE_KEYS is the same whitelist the push button sends.
+    const rest = TUNE_LIVE_KEYS.indexOf(key) >= 0 ? 'live' : 'sheet';
+    if (flagEl) { flagEl.textContent = overridden ? 'SET' : rest; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
   };
   const refreshAll = () => TUNE_PARAMS.forEach(p => {
     refreshRow(p.key);
@@ -11262,6 +11318,39 @@ function buildTunePanel() {
       saveTuneOverrides(ov); applyAndRender(); refreshAll();
       msg('Imported ✓');
     } catch(e) { msg('Could not parse — check the JSON'); }
+  });
+
+  // ── PUSH TO LIVE — the LOCAL knobs only ────────────────────────────────────
+  // Sends whatever the six LOCAL sliders currently read to the Worker, which
+  // stores them in KV; every swimmer picks them up on their next app open. The
+  // passphrase is the same board admin token, held in sessionStorage so it is
+  // asked once per session and never written to disk. A 401 clears it and asks
+  // again; a 404 means the Worker route is not deployed yet and says so plainly
+  // rather than reporting a success that did not happen.
+  panel.querySelector('#tune-push').addEventListener('click', async () => {
+    const values = {};
+    TUNE_LIVE_KEYS.forEach(k => { const v = tuneGet(k); if (v != null && isFinite(v)) values[k] = v; });
+    const summary = TUNE_LIVE_KEYS.map(k => k + ' = ' + values[k]).join('\n');
+    if (!confirm('Push these to EVERY swimmer?\n\n' + summary + '\n\nThey take effect on each person’s next app open.')) return;
+    let pass = '';
+    try { pass = sessionStorage.getItem('swim_tune_pass') || ''; } catch(e) {}
+    if (!pass) { pass = (prompt('Admin passphrase:') || '').trim(); if (!pass) return; }
+    msg('Pushing…');
+    try {
+      const r = await fetch(TUNE_LIVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': pass },
+        body: JSON.stringify({ values })
+      });
+      if (r.status === 401) { try { sessionStorage.removeItem('swim_tune_pass'); } catch(e) {} msg('Passphrase rejected — press Push again.'); return; }
+      if (r.status === 404) { msg('Worker route /tune not deployed yet — values NOT pushed.'); return; }
+      if (!r.ok) { msg('Push failed — HTTP ' + r.status + '. Values NOT live.'); return; }
+      try { sessionStorage.setItem('swim_tune_pass', pass); } catch(e) {}
+      // Mirror into our own cache so this device agrees with what everyone else
+      // will get, and so a Reset here doesn't silently fall back to coded values.
+      try { localStorage.setItem(TUNE_LIVE_CACHE, JSON.stringify({ values, savedAt: new Date().toISOString() })); } catch(e) {}
+      msg('Pushed to live ✓ — everyone gets these on their next open.');
+    } catch (e) { msg('Push failed (network) — values NOT live.'); }
   });
 
   panel.querySelector('#tune-reset').addEventListener('click', () => {
@@ -11422,7 +11511,13 @@ async function nuovoPreflight() {
   diag('startup (protocol=' + location.protocol + ', online=' + navigator.onLine + ')');
   // Apply any saved manual tuning first — it's a local read, no network, so it
   // can safely precede the forecast paint and keeps the first render correct.
+  // Live (global) values go on FIRST, then this device's sliders on top — see
+  // applyLiveTune for why that order matters. Both are localStorage reads; the
+  // network refresh is deferred past paint so a push lands on the NEXT open
+  // rather than moving scores under someone mid-session.
+  try { applyLiveTune(); }      catch(e) { console.warn('applyLiveTune failed:', e); }
   try { applyTuneOverrides(); } catch(e) { console.warn('applyTuneOverrides failed:', e); }
+  setTimeout(() => { refreshLiveTune(); }, 3000);
   try { renderSourceStrip(); } catch(e) {}   // grey dots until each fetch reports in
 
   // ── Failover gate — BEFORE first paint ───────────────────────────────────────
