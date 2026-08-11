@@ -17,7 +17,12 @@
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'DM Mono',monospace;color:var(--foam);
     background:radial-gradient(1200px 600px at 18% -8%,rgba(10,126,164,0.2),transparent 60%),linear-gradient(180deg,#04364d,#03293b 60%,#021e2c);}
-  .workbench{display:grid;grid-template-columns:2.1fr 1fr 1.1fr;align-items:stretch;min-height:100vh}
+  .workbench{display:grid;grid-template-columns:2.1fr 1fr 1.1fr;align-items:stretch;min-height:100vh;position:relative}
+  /* Column dividers. Absolutely positioned over the grid boundary rather than
+     occupying tracks of their own, so the responsive rules below still apply. */
+  .col-resize{position:absolute;top:0;bottom:0;width:7px;cursor:col-resize;z-index:40;background:transparent}
+  .col-resize:hover,.col-resize:active{background:rgba(79,209,230,0.35)}
+  @media (max-width:1240px){.col-resize{display:none!important}}
   .col{height:100vh;overflow:auto;padding:16px 16px 40px;min-width:0}
   .col-map{border-right:1px solid var(--line)}
   .col-bench{border-right:1px solid var(--line)}
@@ -161,6 +166,23 @@
         <button id="blPush">Push to sheet</button>
         <button id="blConn">Sheet connection…</button>
       </div>
+
+      <!-- Two-anchor period interpolation. Shape the lobe at a short period and at a
+           long one, then fill everything between by blending the two anchor columns.
+           Cuts a 36x16 table from 576 hand-set cells to 72. -->
+      <div class="grp-t" style="margin-top:8px">Interpolate periods</div>
+      <div class="ctl p"><label>Anchor A</label><input type="range" id="interpA" min="2" max="17" step="1" value="5"><div class="val"><input id="interpA_n"> <span class="unit">s</span></div></div>
+      <div class="ctl p"><label>Anchor B</label><input type="range" id="interpB" min="2" max="17" step="1" value="15"><div class="val"><input id="interpB_n"> <span class="unit">s</span></div></div>
+      <div class="rowflex">
+        <label style="margin-right:8px">Blend</label>
+        <select id="interpMode" style="background:#08202c;color:#cfe9f3;border:1px solid #2a5568;border-radius:6px;padding:3px 6px;font-family:'DM Mono',monospace;font-size:11px">
+          <option value="linear">Linear in period</option>
+          <option value="smooth">Smoothstep (eased ends)</option>
+        </select>
+      </div>
+      <div class="rowflex"><input type="checkbox" id="interpEnds"> Also extend beyond A and B (flat hold)</div>
+      <div class="btns"><button id="interpRun">Interpolate A &rarr; B</button></div>
+      <div class="note" id="interpNote">Sets every period column strictly between the two anchors, for all 36 bearings, on the <b>target</b> table. Anchors themselves are never touched. Undo with Revert edits.</div>
       <!-- Replaces the old one-shot prompt() pair. Those only fired when a value
            was MISSING, so a typo could never be corrected from the UI, and there
            was no way to see what was stored. -->
@@ -199,7 +221,6 @@
     <div class="panel">
       <h2>On the map <small>drag ○ pivot · drag ◑ handles to set direction</small></h2>
       <div class="rowflex"><span class="swatch" style="background:var(--s1)"></span> Primary swell — drag its handle or use the bench slider</div>
-      <div class="rowflex" id="s2hint" style="display:none"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
       <div class="rowflex"><span class="swatch" style="background:#38e0ff"></span> Entry &nbsp;<span class="swatch" style="background:#ffd23f"></span> Chop &nbsp;<span class="swatch" style="background:#ff3df0"></span> NS node 103218</div>
       <div class="grp-t">Display</div>
       <div class="rowflex"><input type="checkbox" id="crests" checked> Wave crests (front)</div>
@@ -257,11 +278,6 @@
       <div class="ctl"><label>Direction</label><input type="range" id="s1D" min="0" max="360" step="1"><div class="val"><input id="s1D_n"> <span class="unit">°</span></div></div>
       <div class="ctl"><label>Period</label><input type="range" id="s1P" min="4" max="20" step="0.5"><div class="val"><input id="s1P_n"> <span class="unit">s</span></div></div>
 
-      <div class="rowflex"><input type="checkbox" id="s2on"><span class="swatch" style="background:var(--s2)"></span> Secondary swell</div>
-      <div id="s2box" style="display:none">
-        <div class="ctl"><label>Height</label><input type="range" id="s2H" min="0" max="3" step="0.1"><div class="val"><input id="s2H_n"> <span class="unit">m</span></div></div>
-        <div class="ctl"><label>Direction</label><input type="range" id="s2D" min="0" max="360" step="1"><div class="val"><input id="s2D_n"> <span class="unit">°</span></div></div>
-        <div class="ctl"><label>Period</label><input type="range" id="s2P" min="4" max="20" step="0.5"><div class="val"><input id="s2P_n"> <span class="unit">s</span></div></div>
       </div>
 
       <div class="grp-t">Wind</div>
@@ -326,6 +342,23 @@ const NS_DISP_ROWS = 36;
 const WINDSEA_BLOCKED_FETCH_M = 300;
 const WINDSEA_G = 9.81;
 const CHOP_SMAX_EPS = 0.045; // corner-rounding on the open/bay fetch crossover (metres; 4.5 cm). eps=0 → exact max()
+/* Directional over-water fetch at the BL chop point — COPIED VERBATIM from
+   index.html. The bench carried the retired construction (open reference fetch
+   x chopExposure, floored by a 300 m bay residual), which disagreed with the app
+   by up to 13 cm — several whole bands. Tuning chop against that was tuning the
+   wrong model. If the app's table changes, re-copy it here. */
+const CHOP_FETCH_M = [
+  1766, 2766, 5936, 5890, 5456, 4445, 3599, 2572, 1622,  800,  257,  232,
+   171,  127,  109,   94,   72,   57,   50,   46,   46,   47,   52,   60,
+    70,   74,   87,  115,  159,  214,  412,  624,  789, 1022, 1273, 1530
+];
+function chopFetchFor(windFromDeg){
+  const d = ((windFromDeg % 360) + 360) % 360;
+  const i = Math.floor(d / 10), f = (d - i*10) / 10;
+  const a = CHOP_FETCH_M[i], b = CHOP_FETCH_M[(i+1) % 36];
+  return a + (b - a) * f;
+}
+
 const chopSmax = (a, b, eps) => 0.5 * (a + b + Math.sqrt((a - b) * (a - b) + eps * eps));
 /* ===== PORTED FROM newindex.html (APP_BUILD 20260704-110547) — verbatim app model ===== */
 /* Workbench globals to satisfy calcScore's app-path branches */
@@ -343,7 +376,7 @@ const SITE_DEFAULTS = {
   periodExp:      1.15,   // sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.35,   // sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d+s2_d), clamped below
+  tideGain:       0.35,   // sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × s1_d, clamped below
   tideRef:        1.0,    // neutral tide height (m, WW datum): tideM>ref amplifies swell, tideM<ref credits (reduces) it. Bidirectional pivot.
   tideCreditClamp:0.4,    // max fraction of swell demerits the low-tide credit may remove (0.4 = −40% floor; big swell at dead-low is reduced, never erased)
   // SWIM metric band edges on q7 (= wind_d + ww_d demerit) — sheet col AK, rows 9–12:
@@ -355,6 +388,10 @@ const SITE_DEFAULTS = {
   // SWIM — q7 = wind_d + ww_d (LOWER = better) — col AK rows 9–12:
   //   glassy = q7 < AK9, ripply ≤ AK10, choppy ≤ AK11, else messy. AK12 = scaleMax (rail end + score cap).
   swimThresholds: { glassy: 4, ripply: 8, choppy: 12, scaleMax: 20 },
+  // Offshore westerly credit (ENTRY) + lee shelter (CHOP) — mirrors index.html.
+  // offshorePts/Arc were tuned live to 11/35 on 11 Aug 2026; keep in step.
+  offshoreDir: 270, offshoreArc: 35, offshoreRefKmh: 30, offshorePts: 11, offshoreMaxPts: 20,
+  chopLeeFactor: 0.75, chopLeeFrom: 180, chopLeeTo: 280, chopLeeTaper: 20,
   // ENTRY — `total` demerits (LOWER = better) — col AK rows 5–8:
   //   easy = total ≤ AK5, doable ≤ AK6, caution ≤ AK7, else dangerous. AK8 = scaleMax (rail end).
   entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
@@ -701,6 +738,39 @@ function spmGrowth(U, F) {
 // the forecast wind-wave. Both model the same sea. The forecast one is produced by a
 // real spectral model; ours was a hand-rolled SPM curve over a three-plateau fetch
 // table whose 67° boundary stepped 220 demerits per degree at 40 km/h held 24 h.
+// ── Offshore westerly credit + lee shelter — COPIED VERBATIM from index.html ──
+// A bench that scores differently from the thing it is tuning is worse than no
+// bench. If you change one, change both.
+function offshoreFlatten(windKmh, windDir) {
+  const dir0 = (SITE.offshoreDir    != null) ? SITE.offshoreDir    : 270;
+  const arc  = (SITE.offshoreArc    != null) ? SITE.offshoreArc    : 30;
+  const ref  = (SITE.offshoreRefKmh != null) ? SITE.offshoreRefKmh : 30;
+  const pts  = (SITE.offshorePts    != null) ? SITE.offshorePts    : 10;
+  const cap  = (SITE.offshoreMaxPts != null) ? SITE.offshoreMaxPts : 20;
+  const u    = windKmh || 0;
+  if (!u || !arc || !ref) return 0;
+  const off = Math.abs(((windDir || 0) - dir0 + 540) % 360 - 180);  // 0-180 off the axis
+  if (off >= arc) return 0;
+  const w = Math.cos((off / arc) * Math.PI / 2);                    // 1 on-axis, 0 at the edge
+  return Math.min(cap, pts * (u / ref) * w);
+}
+function chopLeeFactor(windFromDeg) {
+  const f  = (SITE.chopLeeFactor != null) ? SITE.chopLeeFactor : 1;
+  if (f >= 1) return 1;
+  const lo = (SITE.chopLeeFrom  != null) ? SITE.chopLeeFrom  : 180;
+  const hi = (SITE.chopLeeTo    != null) ? SITE.chopLeeTo    : 280;
+  const tp = (SITE.chopLeeTaper != null) ? SITE.chopLeeTaper : 20;
+  const d  = ((windFromDeg % 360) + 360) % 360;
+  // Signed angular distance OUTSIDE the [lo,hi] core, in degrees (0 = inside).
+  const out = (d >= lo && d <= hi) ? 0
+            : Math.min(Math.abs(((d - lo + 540) % 360) - 180),
+                       Math.abs(((d - hi + 540) % 360) - 180));
+  if (!tp) return out === 0 ? f : 1;
+  if (out >= tp) return 1;
+  const w = Math.cos((out / tp) * Math.PI / 2);   // 1 in the core, 0 at the taper edge
+  return 1 - (1 - f) * w;
+}
+
 function windSeaAt(mask, windKmh, deg, durHrs) {
   const U = (windKmh || 0) / 3.6;
   const w = openWeight(mask, deg);
@@ -823,7 +893,7 @@ function calcScore(d, modelOverride) {
   const useGem = modelOverride ? (modelOverride === 'gem') : GEM_MODEL;
   const lk = SITE.lookup;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
-          swell2H, swell2Dir, swell2P, windWaveH, windWaveDir, windWaveP, tideM } = d;
+          windWaveH, windWaveDir, windWaveP, tideM } = d;
   const windDurHrs = (d.windDurHrs != null) ? d.windDurHrs : 6;
 
   // ── CHOP term: BL-point wind-sea (straight-line fetch, duration-limited) ──────
@@ -851,7 +921,7 @@ function calcScore(d, modelOverride) {
   const wwSens  = (SITE.wwSens != null) ? SITE.wwSens : SITE.swellSens;
   const wwRoute = Math.max(0, dirLookup(lk.wind, windWaveDir || windDir)) / 100;
 
-  let ww_d, s1_d, s2_d, rif_d, ws_d = 0, wwTxForChop = 0;
+  let ww_d, s1_d, rif_d, ws_d = 0, wwTxForChop = 0;
 
   if (useGem) {
     // ── NS DISPERSION model ─────────────────────────────────────────────────
@@ -870,11 +940,9 @@ function calcScore(d, modelOverride) {
     const wwTx = Math.max(0, nsDispLookup(windWaveDir || windDir, wwP));
     wwTxForChop = Math.max(0, Math.min(1, wwTx)); // handover weight for CHOP crossfade
     const s1Tx = Math.max(0, nsDispLookup(swell1Dir, swell1P));
-    const s2Tx = Math.max(0, nsDispLookup(swell2Dir || 0, swell2P || 8));
 
     ww_d  = nrg(windWaveH || 0, wwP)          * wwTx * ess;
     s1_d  = nrg(swell1H, swell1P)             * s1Tx * ess;
-    s2_d  = nrg(swell2H || 0, swell2P || 8)   * s2Tx * ess;
     rif_d = 0; // refraction absorbed into the dispersion table
 
     // ── ENTRY wind-sea: SS-point straight-line fetch ─────────────────────────
@@ -890,19 +958,15 @@ function calcScore(d, modelOverride) {
   } else {
     // ── Original model ────────────────────────────────────────────────────
     const s1p      = swellPower(swell1H, swell1P);
-    const s2p      = swellPower(swell2H || 0, swell2P || 8);
 
     const wwArrival = Math.max(0, dirLookup(lk.sea, windWaveDir || windDir)) / 100;
     const wwTx     = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
     const s1sea    = Math.max(0, dirLookup(lk.sea, swell1Dir));
     const s1rif    =             dirLookup(lk.rif, swell1Dir);
-    const s2sea    = Math.max(0, dirLookup(lk.sea, swell2Dir || 0));
-    const s2rif    =             dirLookup(lk.rif, swell2Dir || 0);
 
     ww_d  = swellPower(windWaveH || 0, 5) * wwTx * wwSens;
     s1_d  = s1p * (s1sea / 100) * SITE.swellSens;
-    s2_d  = s2p * (s2sea / 100) * SITE.swellSens;
-    rif_d = (s1rif * s1p * SITE.spm + s2rif * s2p * SITE.spm) / 1000;
+    rif_d = (s1rif * s1p * SITE.spm) / 1000;   // secondary term dropped 11 Aug 2026 — its height was always 0
   }
 
   // BL wind-sea (wind_d) is DELIBERATELY EXCLUDED from the Entry total (2 Jul 2026):
@@ -917,7 +981,7 @@ function calcScore(d, modelOverride) {
   // where w = wwTxForChop (wind-wave's SS-dispersion arc). Entry = swell + windEntry + tide.
   const wEntry   = wwTxForChop;
   const windEntry = ws_d * (1 - wEntry) + ww_d * wEntry;
-  const o      = windEntry + s1_d + s2_d + rif_d;
+  const o      = windEntry + s1_d + rif_d;
 
   // ── Tide effect — headland protection model ──────────────────────────────
   // The Shelly headland shelters the bay, and how much depends on water level.
@@ -926,10 +990,12 @@ function calcScore(d, modelOverride) {
   // never tide-amplified — only swell + wind-wave, each gated by its own direction.
   const tide_d = SITE.tideDir(tideM, {
     s1_d, s1Dir: swell1Dir,
-    s2_d, s2Dir: swell2Dir || 0,
     ww_d, wwDir: windWaveDir || windDir,
   }, 'tideGate');
-  const total  = o + tide_d;
+  // Offshore westerly credit — same clamp as index.html: never more than the
+  // swell+wind energy actually present, and the total never goes negative.
+  const offshoreCredit = Math.min(offshoreFlatten(windKmh, windDir), Math.max(0, o));
+  const total  = Math.max(0, o + tide_d - offshoreCredit);
 
   // CHOP crossfade (single source of truth): BL wind-sea ↔ BL wind-wave handover
   // at the BL arc weight. Both terms are now BL-point (Option A). Used by the CHOP
@@ -956,19 +1022,20 @@ function calcScore(d, modelOverride) {
   // A short steep fetch sea has near-zero H²·P energy but a real steep face, which the
   // old q7 energy path discarded — this is the fix. No gain knob: chopCm is physical
   // height; tune the cm band edges (swimThresholds) or CHOP_EXPO, not a sensitivity.
-  const _chopU    = (windKmh || 0) / 3.6;
-  const _chopOS   = spmGrowth(_chopU, SITE.chopRefFetchM ?? 5000);  // reference fetch, dir-independent
-  const _chopExpo = chopExposure(windDir);
-  const _chopRes  = spmGrowth(_chopU, SITE.fetchBayM ?? 300);       // local bay residual
-  const _hWsOpen  = _chopOS.hs * chopSlapWeight(_chopOS.hs, _chopOS.tp) * _chopExpo;         // open ocean survived into BL
-  const _hWsBay   = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                  // 300m bay floor
-  const _hWsFace  = chopSmax(_hWsOpen, _hWsBay, CHOP_SMAX_EPS);                              // fetch wind-sea steep face (m), corner-rounded
+  // Direction enters ONCE, through the fetch itself (see CHOP_FETCH_M above) — the
+  // old chopExposure x open-fetch x bay-floor construction carried it twice and
+  // needed the floor to patch its own knife-edges. Matches index.html exactly.
+  // Lee shelter: wind off the land/buildings arrives slower than forecast.
+  const _chopU    = (windKmh || 0) / 3.6 * chopLeeFactor(windDir);
+  const _chopRes  = spmGrowth(_chopU, chopFetchFor(windDir));                                // sea over the directional fetch
+  const _hWsFace  = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                  // fetch wind-sea steep face (m)
   const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;    // wind-wave steep face (m)
   const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);             // quadrature, cm
 
   return {
     score: Math.max(0, Math.round(60 - total)),
     demerits: {
+      offshore: -Math.round(offshoreCredit * 10) / 10,   // negative: a credit
       tide:     Math.round(tide_d  * 10) / 10,
       wind:     Math.round(wind_d  * 10) / 10,
       windWave: Math.round(ww_d    * 10) / 10,
@@ -976,7 +1043,6 @@ function calcScore(d, modelOverride) {
       windEntry: Math.round(windEntry * 10) / 10,
       chop:     Math.round(chopQ7  * 10) / 10,
       swell1:   Math.round(s1_d   * 10) / 10,
-      swell2:   Math.round(s2_d   * 10) / 10,
       refrac:   Math.round(rif_d  * 10) / 10,
     },
     // ── Three swimmer metrics ──────────────────────────────────────────────
@@ -1016,7 +1082,9 @@ function calcScore(d, modelOverride) {
 
 /* ---- thresholds & tunable-knob refs ---- */
 const ENTRY_TH = SITE.entryThresholds, SWIM_TH = SITE.swimThresholds, SURGE_TH = SITE.surgeThresholds;
-const KNOBS = ['ssWaveSens','windSeaSens','blWaveSens','blChopImpact','tideGain'];
+const KNOBS = ['ssWaveSens','windSeaSens','blWaveSens','blChopImpact','tideGain',
+  // LOCAL knobs — no sheet cell; live values come from the Worker /tune KV.
+  'offshorePts','offshoreArc','offshoreMaxPts','chopLeeFactor','chopLeeFrom','chopLeeTo'];
 let LIVE = {}; KNOBS.forEach(k => LIVE[k] = SITE[k]);
 /* ---- sheet loader: MASTER (tideGain) + New NS tab (SS/BL dispersion, sensitivities, thresholds) ---- */
 function csvRows(text){return text.split('\n').map(line=>{const cols=[];let cur='',inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inQ=!inQ;else if(c===','&&!inQ){cols.push(cur);cur='';}else cur+=c;}cols.push(cur);return cols;});}
@@ -1074,7 +1142,7 @@ async function loadFromSheet(){
 
 
 /* ===================== SHARED STATE ===================== */
-const ST={s1H:0.6,s1D:65,s1P:12, s2H:0,s2D:135,s2P:8, s2on:false,
+const ST={s1H:0.6,s1D:65,s1P:12,
   wK:12,wD:200,wFetch:6, wwH:0.3,wwD:200,wwP:4, tide:1.0,
   pivot:{x:762,y:569}, crests:true, fan:false, rose:true, north:0,
   roseSwell:false, roseSea:false, roseWind:false, roseE:true,
@@ -1127,7 +1195,7 @@ const LOBE_R100 = 300;   // px at 100% transmit; radius IS the transmit (0% = th
 
 /* ===================== MODEL ADAPTER (workbench inputs -> app calcScore) ===================== */
 function gemTransmit(dirDeg,periodS){return nsDispLookup(dirDeg,periodS);}
-function inputObj(){return {s1H:ST.s1H,s1D:ST.s1D,s1P:ST.s1P, s2H:ST.s2on?ST.s2H:0,s2D:ST.s2D,s2P:ST.s2P, windKmh:ST.wK,windD:ST.wD,windDurHrs:ST.wFetch, wwH:ST.wwH,wwD:ST.wwD,wwP:ST.wwP, tideM:ST.tide};}
+function inputObj(){return {s1H:ST.s1H,s1D:ST.s1D,s1P:ST.s1P, windKmh:ST.wK,windD:ST.wD,windDurHrs:ST.wFetch, wwH:ST.wwH,wwD:ST.wwD,wwP:ST.wwP, tideM:ST.tide};}
 /* CHOP steep-face height bands (cm) now live in SITE.swimThresholds {glassy,ripply,choppy,scaleMax}
    — the former CHOP_FACE constant was retired 12 Jul 2026 (bands unified with the live model). */
 /* BL directional chop exposure (0..1) — fraction of the open-sea steep-face chop that
@@ -1140,7 +1208,6 @@ function calc(I){
   const dur=(I.windDurHrs!=null?I.windDurHrs:6);
   const d={windKmh:I.windKmh,windDir:I.windD,windDurHrs:dur,
     swell1H:I.s1H,swell1Dir:I.s1D,swell1P:I.s1P,
-    swell2H:I.s2H||0,swell2Dir:I.s2D||0,swell2P:I.s2P||8,
     windWaveH:I.wwH||0,windWaveDir:(I.wwD!=null?I.wwD:I.windD),windWaveP:I.wwP||5,
     tideM:I.tideM};
   const r=calcScore(d), dm=r.demerits;
@@ -1155,17 +1222,14 @@ function calc(I){
      20km/h/4h). Replaces the hard fetch sectors → smooth, sheltered through E/S/W.
      Wind-wave stays dir-gated by BL transmit. Two sources combine energy-additive. ── */
   const _wwP=I.wwP||5, _wwH=I.wwH||0;
-  const _U=(I.windKmh||0)/3.6;
-  const _oS=spmGrowth(_U, SITE.chopRefFetchM ?? 5000);   // open sea, reference fetch, direction-independent
-  const _expo=chopExposure(I.windD);
+  const _U=(I.windKmh||0)/3.6*chopLeeFactor(I.windD);   // lee shelter, as in the app
+  const _expo=chopExposure(I.windD);                     // readout only now — no longer in the face
   /* Sheltered-arc residual: even on blocked bearings the wind still whips a small local
      sea over the ~300m of bay water. Floor (not additive — same sea, two lower bounds):
      open-ocean term survives into BL via exposure and dominates the exposed arc; the 300m
      bay chop takes over through the sheltered arc where _expo→0. Reuses fetchBayM. */
-  const _res=spmGrowth(_U, SITE.fetchBayM ?? 300);   // local bay residual, dir-independent
-  const _hWsOpen = _oS.hs  * chopSlapWeight(_oS.hs,  _oS.tp)  * _expo;
-  const _hWsBay  = _res.hs * chopSlapWeight(_res.hs, _res.tp);
-  const hWs = chopSmax(_hWsOpen, _hWsBay, CHOP_SMAX_EPS);
+  const _res=spmGrowth(_U, chopFetchFor(I.windD));   // sea over the directional fetch
+  const hWs = _res.hs * chopSlapWeight(_res.hs, _res.tp);
   const _blTxWw = Math.max(0,Math.min(1, waveTxBL(I.wwD, _wwP)));   // BL = wave table; wind never indexes it
   const hWw = _wwH * chopSlapWeight(_wwH,_wwP) * _blTxWw;
   const chopCm = 100*Math.sqrt(hWs*hWs + hWw*hWw);
@@ -1177,12 +1241,11 @@ function calc(I){
   const chopScore = Math.max(0,Math.round(60 - Math.min(chopCm,_cap)*(60/_cap)));
   const swim = {label:chopLbl,cls:chopCls,score:chopScore,raw:chopCm};
   return {entry:r.entry,swim,surge,
-    wind_d,ww_d:dm.windWave,windEntry:dm.windEntry,s1_d:dm.swell1,s2_d:dm.swell2,
+    wind_d,ww_d:dm.windWave,windEntry:dm.windEntry,s1_d:dm.swell1,
     o,tide_d,total,q7,chopWW,
-    chopCm, hWsCm:100*hWs, hWwCm:100*hWw, chopExpo:_expo, chopOpenHs:_oS.hs, chopOpenTp:_oS.tp,
-    hWsOpenCm:100*_hWsOpen, hWsBayCm:100*_hWsBay, chopResHs:_res.hs, chopResTp:_res.tp,
+    chopCm, hWsCm:100*hWs, hWwCm:100*hWw, chopExpo:_expo,
+    chopFetchM:chopFetchFor(I.windD), chopLee:chopLeeFactor(I.windD), chopResHs:_res.hs, chopResTp:_res.tp,
     s1Tx:Math.max(0,nsDispLookup(I.s1D,I.s1P)),
-    s2Tx:Math.max(0,nsDispLookup(I.s2D||0,I.s2P||8)),
     wwArrival:Math.max(0,nsDispLookup((I.wwD!=null?I.wwD:I.windD),I.wwP||5)),
     blTx1:Math.max(0,blDispLookup(I.s1D,I.s1P)),
     wsHs:ws.hs,wsTp:ws.tp,wsFetch:(SITE.chopRefFetchM ?? 5000), demerits:dm};
@@ -1387,6 +1450,40 @@ function blRevert(tk){
 }
 const editsFor = tk => Object.values(BL_EDITS).filter(e=>e.tk===tk);
 
+/* ── Period interpolation ────────────────────────────────────────────
+   Shape the lobe at two anchor periods, then fill the columns between them by
+   blending the anchors bearing-by-bearing. Every write goes through blCellSet,
+   so the whole sweep lands in BL_EDITS: "Revert edits" undoes it in one go and
+   "Push to sheet" ships it like any hand edit.
+
+   Blends in PERIOD space, not column index — they coincide on this grid (1 s per
+   column), but the intent is physical and stays correct if the grid changes.
+   Anchors are left untouched: they are the data you drew. */
+function interpPeriods(tk, PA, PB, mode, extendEnds){
+  const t = tblArr(tk);
+  if(!t) return { ok:false, msg:'table not loaded' };
+  const lo = Math.min(PA,PB), hi = Math.max(PA,PB);
+  if(hi - lo < 2) return { ok:false, msg:'anchors must be at least 2 s apart \u2014 nothing sits between them' };
+  const ease = x => (mode==='smooth') ? x*x*(3-2*x) : x;
+  let cells = 0;
+  for(let d=0; d<360; d+=10){
+    const a = blCellGet(tk, d, lo), b = blCellGet(tk, d, hi);
+    if(a==null || b==null) continue;                 // ragged row: skip, don't invent
+    for(let P=lo+1; P<hi; P++){
+      blCellSet(tk, d, P, a + (b - a) * ease((P - lo) / (hi - lo)));
+      cells++;
+    }
+    if(extendEnds){
+      // Flat hold outside the anchors. Deliberately NOT extrapolation: running the
+      // A->B trend past the ends gives negative transmit at 2 s, which is not a
+      // shelter, it is a sign error with a physical-looking face.
+      for(let P=2;  P<lo;  P++){ blCellSet(tk, d, P, a); cells++; }
+      for(let P=hi+1; P<=17; P++){ blCellSet(tk, d, P, b); cells++; }
+    }
+  }
+  return { ok:true, msg:'interpolated '+cells+' cells between '+lo+'s and '+hi+'s'+(extendEnds?' (+ flat ends)':''), cells };
+}
+
 /* Vertex positions for one table at one period. Both lobes share the node as origin,
    because the chords you read them against both start there. */
 let lobeVerts = [];                                  // vertices of the EDIT TARGET only
@@ -1536,7 +1633,6 @@ function drawMap(){
   if(ST.blChord&&(ST.blRing||ST.ssRing))drawBlChord(g);
   if(ST.fan)drawFan(g);
   drawSwellLine(g,ST.s1D,ST.s1P,CSSv('--s1')||'#19b3e6',5,'s1');
-  if(ST.s2on)drawSwellLine(g,ST.s2D,ST.s2P,CSSv('--s2')||'#e0a64d',4,'s2');
   g.appendChild(el('circle',{cx:ST.pivot.x,cy:ST.pivot.y,r:11,fill:'rgba(255,255,255,0.15)',stroke:'#fff','stroke-width':2.5}));
   g.appendChild(el('circle',{cx:ST.pivot.x,cy:ST.pivot.y,r:3,fill:'#fff'}));
   drawForecastPoint(g);
@@ -1572,7 +1668,6 @@ function render(){
 
   const tx1=R.s1Tx*100;
   const rrows=[['Primary · from',Math.round(ST.s1D)+'°'],['Travels toward',Math.round((ST.s1D+180)%360)+'°'],['SS transmit (entry)',tx1.toFixed(0)+'%'],['BL transmit (swim)',(R.blTx1*100).toFixed(0)+'%']];
-  if(ST.s2on)rrows.push(['Secondary · from',Math.round(ST.s2D)+'°'],['Secondary SS transmit',(R.s2Tx*100).toFixed(0)+'%']);
   document.getElementById('readout').innerHTML=rrows.map(r=>`<div class="r"><span>${r[0]}</span><b>${r[1]}</b></div>`).join('');
   document.getElementById('rnote').innerHTML = tx1<10
     ? `<span class="warn">From ${Math.round(ST.s1D)}° at ${ST.s1P}s only ${tx1.toFixed(0)}% reaches the SS entry — the headlands shadow the bay.</span>`
@@ -1580,9 +1675,9 @@ function render(){
 
   const cards=[
     {name:'Entry',sub:'getting in',m:R.entry,rail:chipRail.entry,
-     rows:[['Wind + wind-wave',R.windEntry],['Primary swell',R.s1_d],['Secondary swell',R.s2_d],['Subtotal (before tide)',R.o,'mid'],['Tide effect',R.tide_d],['Total demerits',R.total,'tot']]},
+     rows:[['Wind + wind-wave',R.windEntry],['Primary swell',R.s1_d],['Subtotal (before tide)',R.o,'mid'],['Tide effect',R.tide_d],['Total demerits',R.total,'tot']]},
     {name:'Chop',sub:'steep-face height',m:R.swim,rail:chipRail.swim,
-     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['open '+F(R.chopOpenHs,2)+'m/'+F(R.chopOpenTp,1)+'s × expo '+Math.round(R.chopExpo*100)+'% = '+Math.round(R.hWsOpenCm)+' cm',''],['bay 300m residual '+F(R.chopResHs,2)+'m/'+F(R.chopResTp,1)+'s = '+Math.round(R.hWsBayCm)+' cm',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
+     rows:[['Fetch wind-sea',Math.round(R.hWsCm)+' cm'],['Wind-wave chop',Math.round(R.hWwCm)+' cm'],['fetch '+Math.round(R.chopFetchM)+' m'+(R.chopLee<1?' · lee ×'+F(R.chopLee,2):'')+' → '+F(R.chopResHs,2)+'m/'+F(R.chopResTp,1)+'s',''],['Steep-face height',Math.round(R.chopCm)+' cm','tot']]},
     {name:'Swim',sub:'swell + heave + tide',m:R.surge,rail:chipRail.surge,
      rows:[['Primary swell',R.surge.parts.s1_d],['Sea heave',R.surge.parts.sea_d],['Tide effect',R.surge.parts.tide_d],['Total demerits',R.surge.raw,'mid'],['Score (60=best)',R.surge.score,'tot']]},
   ];
@@ -1594,7 +1689,7 @@ function render(){
     <div class="brk">${c.rows.map(r=>`<div class="r ${r[2]==='tot'?'tot':''}" ${r[2]==='mid'?'style="color:#9fc4d4"':''}><span>${r[0]}</span><b>${r[1]===''?'':(typeof r[1]==='number'?F(r[1]):r[1])}</b></div>`).join('')}</div></div>`).join('');
 
   document.getElementById('transmit').innerHTML=[
-    ['Primary · SS transmit',(R.s1Tx*100).toFixed(0)+'%'],['Secondary · SS transmit',(R.s2Tx*100).toFixed(0)+'%'],
+    ['Primary · SS transmit',(R.s1Tx*100).toFixed(0)+'%'],
     ['Wind-wave · SS transmit',(R.wwArrival*100).toFixed(0)+'%'],['Primary · BL transmit',(R.blTx1*100).toFixed(0)+'%'],
     ['Fetch wind-sea','Hs '+F(R.wsHs,2)+'m · Tp '+F(R.wsTp,1)+'s · '+Math.round(R.wsFetch)+'m'],
     ['Chop face height',Math.round(R.chopCm)+' cm'],['Chop: fetch / wind-wave',Math.round(R.hWsCm)+' / '+Math.round(R.hWwCm)+' cm'],['(ref) old q7 energy',F(R.q7)]
@@ -1613,7 +1708,6 @@ const SWEEP_AXES=[
   {id:'wD',label:'Wind direction',min:0,max:360,set:(I,v)=>I.windD=v,cur:()=>ST.wD,unit:'°'},
   {id:'wFetch',label:'Wind fetch time',min:1,max:24,set:(I,v)=>I.windDurHrs=v,cur:()=>ST.wFetch,unit:'h'},
   {id:'wwH',label:'Wind-wave height',min:0,max:2,set:(I,v)=>I.wwH=v,cur:()=>ST.wwH,unit:'m'},
-  {id:'s2D',label:'Secondary swell direction',min:0,max:180,set:(I,v)=>I.s2D=v,cur:()=>ST.s2D,unit:'°'},
 ];
 const axSel=document.getElementById('sweepAxis');
 SWEEP_AXES.forEach((a,i)=>{const o=document.createElement('option');o.value=i;o.textContent=a.label;axSel.appendChild(o);});
@@ -1645,7 +1739,7 @@ function drawSweep(baseI){
 }
 
 /* ===================== INPUT WIRING ===================== */
-const FIELDS=[['s1H',1],['s1D',0],['s1P',1],['s2H',1],['s2D',0],['s2P',1],['wK',0],['wD',0],['wFetch',0],['wwH',2],['wwD',0],['wwP',1],['tide',2]];
+const FIELDS=[['s1H',1],['s1D',0],['s1P',1],['wK',0],['wD',0],['wFetch',0],['wwH',2],['wwD',0],['wwP',1],['tide',2]];
 function setField(key,v,dec){const r=document.getElementById(key);if(r){v=Math.max(+r.min,Math.min(+r.max,v));}ST[key]=v;syncField(key,dec);render();}
 function syncField(key,dec){const r=document.getElementById(key),n=document.getElementById(key+'_n');if(!r)return;r.value=ST[key];n.value=dec!=null?(+ST[key]).toFixed(dec):ST[key];}
 FIELDS.forEach(([key,dec])=>{const r=document.getElementById(key),n=document.getElementById(key+'_n');
@@ -1656,8 +1750,14 @@ const PARAM_DEFS=[
   {g:'Entry / Chop sensitivities'},
   {id:'ssWaveSens',label:'ss_wave_sens (entry)',min:0,max:4,step:0.05,dec:2},
   {id:'windSeaSens',label:'wind_sea_sens (entry)',min:0,max:4,step:0.05,dec:2},
+  {id:'offshorePts',label:'offshore W credit (pts @ 30 km/h)',min:0,max:25,step:0.5,dec:1},
+  {id:'offshoreArc',label:'offshore arc (\u00b1\u00b0)',min:0,max:90,step:5,dec:0},
+  {id:'offshoreMaxPts',label:'offshore ceiling (pts)',min:0,max:40,step:1,dec:0},
   {g:'Chop'},
   {id:'blChopImpact',label:'bl_chop_impact',min:0,max:4,step:0.05,dec:2},
+  {id:'chopLeeFactor',label:'lee shelter S\u2192W (\u00d7 wind)',min:0.3,max:1,step:0.05,dec:2},
+  {id:'chopLeeFrom',label:'lee arc from (\u00b0)',min:90,max:270,step:5,dec:0},
+  {id:'chopLeeTo',label:'lee arc to (\u00b0)',min:180,max:359,step:5,dec:0},
   {g:'Swim (surge)'},
   {id:'blWaveSens',label:'bl_wave_sens',min:0,max:4,step:0.05,dec:2},
   {g:'Tide'},
@@ -1692,8 +1792,76 @@ function buildParams(){
 buildParams();
 document.getElementById('resetParams').onclick=()=>{KNOBS.forEach(k=>{if(LIVE[k]!=null)SITE[k]=LIVE[k];});buildParams();render();};
 
+// ── Interpolate periods — wiring ──────────────────────────────────
+{
+  const A=document.getElementById('interpA'), An=document.getElementById('interpA_n');
+  const B=document.getElementById('interpB'), Bn=document.getElementById('interpB_n');
+  const sync=()=>{ An.value=A.value; Bn.value=B.value; };
+  A.addEventListener('input',sync); B.addEventListener('input',sync);
+  An.addEventListener('change',()=>{ A.value=Math.max(2,Math.min(17,parseInt(An.value,10)||5)); sync(); });
+  Bn.addEventListener('change',()=>{ B.value=Math.max(2,Math.min(17,parseInt(Bn.value,10)||15)); sync(); });
+  sync();
+  document.getElementById('interpRun').addEventListener('click',()=>{
+    const tk=tgt(), note=document.getElementById('interpNote');
+    // Confirm first: this is a bulk write over hand-drawn work, and the only way
+    // back is Revert edits, which also drops unrelated edits.
+    if(!confirm('Interpolate the '+tblOf(tk).name+' table between '+Math.min(+A.value,+B.value)+'s and '+Math.max(+A.value,+B.value)+'s?\n\nThis overwrites every period column in between, for all 36 bearings.'))
+      return;
+    const r=interpPeriods(tk, +A.value, +B.value,
+      document.getElementById('interpMode').value,
+      document.getElementById('interpEnds').checked);
+    note.innerHTML = r.ok
+      ? '<b style="color:#7fc8a9">'+tblOf(tk).name+': '+r.msg+'</b> \u2014 check the lobe, then Push to sheet (or Revert edits).'
+      : '<b style="color:#ff9b6b">'+r.msg+'</b>';
+    if(r.ok) render();
+  });
+}
+
+// ── Resizable columns ────────────────────────────────────────
+// Editing the dispersion lobe means dragging vertices, which wants a big canvas;
+// the rest of the time you want the map column narrow. Drag either divider to
+// retrade; widths persist so the bench opens how you left it.
+{
+  const wb=document.querySelector('.workbench');
+  const DEF=[2.1,1,1.1];
+  let fr=DEF.slice();
+  try{ const st=JSON.parse(localStorage.getItem('wb_cols')||'null');
+       if(Array.isArray(st)&&st.length===3&&st.every(n=>isFinite(n)&&n>0.2)) fr=st; }catch(e){}
+  // An inline style beats a media query, so below the 1240px breakpoint we must
+  // REMOVE it rather than write a 3-column value — otherwise the responsive
+  // collapse to 2/1 columns silently stops working on a narrow window.
+  const wide=()=>window.innerWidth>1240;
+  const apply=()=>{
+    if(!wide()){ wb.style.removeProperty('grid-template-columns'); return; }
+    wb.style.gridTemplateColumns=fr.map(n=>n.toFixed(3)+'fr').join(' ');
+    try{ localStorage.setItem('wb_cols',JSON.stringify(fr)); }catch(e){} };
+  apply();
+  [0,1].forEach(i=>{
+    const h=document.createElement('div');
+    h.className='col-resize'; h.title='Drag to resize \u00b7 double-click to reset';
+    wb.appendChild(h);
+    const place=()=>{ const cols=getComputedStyle(wb).gridTemplateColumns.split(' ').map(parseFloat);
+      if(cols.length<3||cols.some(isNaN)){ h.style.display='none'; return; }
+      h.style.display='block';
+      h.style.left=(cols.slice(0,i+1).reduce((a,b)=>a+b,0)-3)+'px'; };
+    place(); window.addEventListener('resize',()=>{ apply(); place(); });
+    h.addEventListener('dblclick',()=>{ fr=DEF.slice(); apply(); place(); });
+    h.addEventListener('pointerdown',ev=>{
+      ev.preventDefault(); h.setPointerCapture(ev.pointerId);
+      const x0=ev.clientX, total=wb.getBoundingClientRect().width;
+      const a0=fr[i], sum=fr[i]+fr[i+1], frPerPx=(fr[0]+fr[1]+fr[2])/total;
+      const move=e=>{
+        // 0.25fr floor both sides: a column dragged to zero cannot be grabbed back.
+        fr[i]=Math.max(0.25,Math.min(sum-0.25,a0+(e.clientX-x0)*frPerPx));
+        fr[i+1]=sum-fr[i]; apply(); place(); };
+      const up=()=>{ h.releasePointerCapture(ev.pointerId);
+        h.removeEventListener('pointermove',move); h.removeEventListener('pointerup',up); };
+      h.addEventListener('pointermove',move); h.addEventListener('pointerup',up);
+    });
+  });
+}
+
 // toggles
-document.getElementById('s2on').addEventListener('change',e=>{ST.s2on=e.target.checked;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';render();});
 ['crests','fan','rose','roseSwell','roseSea','roseWind','roseE','blRing','ssRing','blAll','blChord','dirTo','zoomIn','blEdit']
   .forEach(id=>{const c=document.getElementById(id);c.checked=ST[id];
     c.addEventListener('change',e=>{ST[id]=e.target.checked;render();});});
@@ -1719,17 +1887,16 @@ document.getElementById('pivBower').onclick=()=>{ST.pivot={x:663,y:793};render()
 
 // presets
 const PRESETS={
-  'S/SE now (quiet)':{s1H:0.6,s1D:160,s1P:8,s2on:false,wK:10,wD:180,wwH:0.2,wwD:180,wwP:4,tide:1.0},
-  'Classic E groundswell':{s1H:1.6,s1D:90,s1P:13,s2on:true,s2H:0.4,s2D:110,s2P:9,wK:8,wD:250,wwH:0.2,wwD:250,wwP:4,tide:1.2},
-  'NE wind swell':{s1H:1.2,s1D:55,s1P:8,s2on:false,wK:25,wD:45,wwH:0.7,wwD:45,wwP:5,tide:1.4},
-  'Big E + high tide':{s1H:2.4,s1D:95,s1P:14,s2on:true,s2H:0.6,s2D:120,s2P:10,wK:15,wD:200,wwH:0.4,wwD:200,wwP:5,tide:1.9},
-  'Onshore mess':{s1H:1.0,s1D:100,s1P:9,s2on:false,wK:32,wD:110,wwH:1.0,wwD:110,wwP:6,tide:1.3},
-  'Glass calm':{s1H:0.3,s1D:90,s1P:8,s2on:false,wK:4,wD:250,wwH:0.05,wwD:250,wwP:3,tide:1.0},
+  'S/SE now (quiet)':{s1H:0.6,s1D:160,s1P:8,wK:10,wD:180,wwH:0.2,wwD:180,wwP:4,tide:1.0},
+  'Classic E groundswell':{s1H:1.6,s1D:90,s1P:13,wK:8,wD:250,wwH:0.2,wwD:250,wwP:4,tide:1.2},
+  'NE wind swell':{s1H:1.2,s1D:55,s1P:8,wK:25,wD:45,wwH:0.7,wwD:45,wwP:5,tide:1.4},
+  'Big E + high tide':{s1H:2.4,s1D:95,s1P:14,wK:15,wD:200,wwH:0.4,wwD:200,wwP:5,tide:1.9},
+  'Onshore mess':{s1H:1.0,s1D:100,s1P:9,wK:32,wD:110,wwH:1.0,wwD:110,wwP:6,tide:1.3},
+  'Glass calm':{s1H:0.3,s1D:90,s1P:8,wK:4,wD:250,wwH:0.05,wwD:250,wwP:3,tide:1.0},
 };
 const pc=document.getElementById('presets');
 Object.keys(PRESETS).forEach(name=>{const b=document.createElement('button');b.textContent=name;
   b.onclick=()=>{const p=PRESETS[name];Object.assign(ST,p);
-    document.getElementById('s2on').checked=ST.s2on;document.getElementById('s2box').style.display=ST.s2on?'block':'none';document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';
     FIELDS.forEach(([k,d])=>syncField(k,d));render();};
   pc.appendChild(b);});
 
@@ -1766,7 +1933,7 @@ ov.addEventListener('pointermove',e=>{if(!drag)return;const p=svgPoint(e);
   }
   if(drag==='pivot'){ST.pivot={x:Math.max(0,Math.min(MW,p.x)),y:Math.max(0,Math.min(MH,p.y))};render();}
   else if(drag==='s1'){setField('s1D',bearingFromPoint(p),0);}
-  else if(drag==='s2'){setField('s2D',bearingFromPoint(p),0);}});
+});
 ov.addEventListener('pointerup',()=>drag=null);
 ov.addEventListener('pointercancel',()=>drag=null);
 
@@ -2077,7 +2244,7 @@ async function loadPast(){
   const date=pastDate.value, hour=+pastHour.value;
   setStatus('Loading '+date+' '+pad(hour)+':00 …');
   const marineQ='https://marine-api.open-meteo.com/v1/marine?latitude='+LAT+'&longitude='+LNG
-    +'&hourly=swell_wave_height,swell_wave_direction,swell_wave_period,secondary_swell_wave_height,secondary_swell_wave_direction,secondary_swell_wave_period,wind_wave_height,wind_wave_direction,wind_wave_period,sea_level_height_msl'
+    +'&hourly=swell_wave_height,swell_wave_direction,swell_wave_period,wind_wave_height,wind_wave_direction,wind_wave_period,sea_level_height_msl'
     +'&cell_selection=sea&start_date='+date+'&end_date='+date+'&timezone='+encodeURIComponent(TZ);
   try{
     const [mres,wres]=await Promise.all([
@@ -2091,14 +2258,6 @@ async function loadPast(){
     clampSet('s1H',g(mh.swell_wave_height),1);
     clampSet('s1D',Math.round(g(mh.swell_wave_direction)),0);
     clampSet('s1P',g(mh.swell_wave_period,8),1);
-    const s2h=g(mh.secondary_swell_wave_height);
-    ST.s2on = s2h>0.05;
-    document.getElementById('s2on').checked=ST.s2on;
-    document.getElementById('s2box').style.display=ST.s2on?'block':'none';
-    document.getElementById('s2hint').style.display=ST.s2on?'flex':'none';
-    clampSet('s2H',s2h,1);
-    clampSet('s2D',Math.round(g(mh.secondary_swell_wave_direction)),0);
-    clampSet('s2P',g(mh.secondary_swell_wave_period,8),1);
     clampSet('wwH',g(mh.wind_wave_height),2);
     clampSet('wwD',Math.round(g(mh.wind_wave_direction)),0);
     clampSet('wwP',g(mh.wind_wave_period,4),1);
@@ -2166,20 +2325,13 @@ async function loadPastNS(){
     clampSet('wwH', row.ns_sea_h, 2);
     clampSet('wwD', Math.round(row.ns_sea_dir ?? 0), 0);
     clampSet('wwP', row.ns_sea_p ?? 4, 1);
-    // NS reports ONE swell partition — force secondary off so it cannot linger
-    // from a previous Open-Meteo load and quietly add energy that was never there.
-    ST.s2on = false;
-    document.getElementById('s2on').checked = false;
-    document.getElementById('s2box').style.display = 'none';
-    document.getElementById('s2hint').style.display = 'none';
-    clampSet('s2H', 0, 1);
     if(row.wind_kmh != null) clampSet('wK', Math.round(row.wind_kmh), 0);
     if(row.wind_dir  != null) clampSet('wD', Math.round(row.wind_dir), 0);
     if(row.tide_m    != null) clampSet('tide', row.tide_m, 2);
     render();
     setStatus(`Loaded <b>recorded NS</b> for ${date} ${pad(hour)}:00 · swell ${F(ST.s1H)}m@${Math.round(ST.s1D)}° ${F(ST.s1P)}s`
       + ` · sea ${F(ST.wwH,2)}m@${Math.round(ST.wwD)}° ${F(ST.wwP)}s · wind ${Math.round(ST.wK)}km/h@${Math.round(ST.wD)}° · tide ${F(ST.tide,2)}m.`
-      + ` <span class="note2">These are the exact values the live score used that hour — secondary swell forced off, as the NS feed has only one swell partition.</span>`,'ok');
+      + ` <span class="note2">These are the exact values the live score used that hour.</span>`,'ok');
   }catch(err){
     setStatus('Recorded-NS load failed: '+err.message+'. The log only goes back to when the Worker cron started.','err');
   }
