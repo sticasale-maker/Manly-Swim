@@ -225,7 +225,9 @@
   }
 
   header {
-    padding:calc(env(safe-area-inset-top) + 10px) 0 10px;
+    /* Bottom padding trimmed: the Complete/Custom row sits directly beneath and
+       supplies its own spacing, so the old 10px just stacked dead height. */
+    padding:calc(env(safe-area-inset-top) + 10px) 0 4px;
     display:flex; align-items:flex-start; justify-content:space-between;
   }
   .logo {
@@ -1720,6 +1722,33 @@
   .chop-graph-now .t.sw-wind-t { font-size:clamp(8px,2.4vw,10px); }
   .chop-graph-legend .sw-wind-cap { color:#c98a2e; font-weight:600; }
   .chop-graph-canvas { width:100%; height:auto; display:block; border-radius:8px; }
+
+  /* ── Enlarge the Swell + Wind map ──────────────────────────────────────────
+     The wrap itself goes fullscreen rather than a copy of the canvas being
+     scaled up: the renderer already re-fits from a ResizeObserver on the wrap,
+     so the enlarged map is drawn at the new size instead of being an upscaled
+     (blurry) bitmap. Head and legend come along, so the readouts stay with it. */
+  .sw-zoom-btn {
+    border:1px solid var(--border); background:rgba(255,255,255,0.5); color:var(--deep);
+    border-radius:8px; cursor:pointer; padding:3px 7px; margin-left:8px; line-height:1;
+    font-size:13px; flex:none;
+  }
+  .sw-zoom-btn:hover { background:rgba(255,255,255,0.85); }
+  body.sw-zoomed { overflow:hidden; }          /* page must not scroll behind the overlay */
+  .chop-graph-wrap.sw-zoom {
+    position:fixed; inset:0; z-index:9000; margin:0; border-radius:0; border:none;
+    background:var(--bg,#eaf3f7);
+    padding:max(12px, env(safe-area-inset-top)) 12px 12px;
+    display:flex; flex-direction:column; justify-content:center; gap:6px;
+    overflow:auto; -webkit-overflow-scrolling:touch;
+  }
+  .chop-graph-wrap.sw-zoom .chop-graph-canvas { border-radius:10px; }
+  /* Portrait phones gain little from fullscreen — the card is already full width.
+     The real win is turning the phone, so say so rather than pretending. */
+  .sw-rotate-hint { display:none; font-family:'Inter',sans-serif; font-size:11px; color:var(--dim); text-align:center; }
+  @media (orientation:portrait) and (max-width:820px) {
+    .chop-graph-wrap.sw-zoom .sw-rotate-hint { display:block; }
+  }
   .chop-graph-legend {
     display:flex; align-items:center; gap:8px; margin-top:8px;
     font-family:'Inter',sans-serif; font-size:clamp(8px,2.4vw,10px); color:var(--dim);
@@ -2422,96 +2451,118 @@
         <div class="header-sub"><span id="gem-badge" style="display:none;margin-left:8px;background:var(--amber);color:#fff;font-size:9px;font-weight:700;letter-spacing:1.5px;padding:2px 6px;border-radius:4px;vertical-align:middle;">ORIGINAL MODEL</span><span id="headerVersion" style="margin-left:8px;font-size:9px;opacity:0.5;letter-spacing:0.3px;" title="Running app version"></span></div>
       </div>
     </div>
-    <a class="about-link" href="guide.html" aria-label="How to read it"
-       onclick="if(typeof markNewhereSeen==='function')markNewhereSeen();">
-      <span class="about-info-icon" aria-hidden="true">i</span>
-      <span class="about-link-text">How to read it</span>
-    </a>
+    <div class="header-right">
+      <a class="about-link" href="guide.html" aria-label="About"
+         onclick="if(typeof markNewhereSeen==='function')markNewhereSeen();">
+        <span class="about-info-icon" aria-hidden="true">i</span>
+        <span class="about-link-text">About</span>
+      </a>
+      <div class="mode-toggle-row">
+        <div class="mode-toggle" id="modeToggle" role="group" aria-label="App detail level">
+          <button type="button" data-mode="complete" aria-pressed="true">Complete</button>
+          <button type="button" data-mode="custom" aria-pressed="false">Custom</button>
+        </div>
+      </div>
+    </div>
   </header>
 
+    <!-- Detail-level toggle (Complete / Custom) + Custom panel — sits under About, per request 11 Aug 2026 -->
+    <div class="custom-panel" id="customPanel" aria-label="Choose sections">
+      <div class="custom-head"><h4>Choose what to show</h4><button type="button" id="customClose" class="custom-x" aria-label="Close">✕</button></div>
+      <div id="customList"></div>
 
-  <!-- Newcomer call-to-action → opens About (dismissible, hides after first view) -->
-  <div class="newhere-banner" id="newhereBanner" role="button" tabindex="0"
-       onclick="markNewhereSeen(); location.href='guide.html';"
-       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();markNewhereSeen();location.href='guide.html';}"
-       aria-label="How to read it — swimmer's guide">
-    <span class="newhere-icon" aria-hidden="true">&#128075;</span>
-    <span class="newhere-text">First time here? <strong>How to read it</strong></span>
-    <span class="newhere-arrow" aria-hidden="true">&rarr;</span>
-    <button class="newhere-dismiss" aria-label="Dismiss this tip"
-            onclick="event.stopPropagation(); dismissNewhere();">&#10005;</button>
-  </div>
-  <script>
-    // Inline (runs before the main bundle), so it carries its own cookie mirror.
-    function _nhCk(){ try{ var m=document.cookie.match('(?:^|;\\s*)swim_newhere_seen=([^;]*)'); return m?m[1]:null; }catch(e){ return null; } }
-    function markNewhereSeen(){
-      try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){}
-      try{ document.cookie='swim_newhere_seen=1;path=/;max-age=34560000;SameSite=Lax'; }catch(e){}
-    }
-    function dismissNewhere(){ var b=document.getElementById('newhereBanner'); if(b){ b.style.display='none'; } markNewhereSeen(); }
-    (function(){
-      var seen=null; try{ seen=localStorage.getItem('swim_newhere_seen'); }catch(e){}
-      if(!seen && _nhCk()){ seen='1'; try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){} }
-      if(seen){ var b=document.getElementById('newhereBanner'); if(b) b.style.display='none'; }
-    })();
-  </script>
-
-
-  <!-- Diver reports modal -->
-  <div id="divers-modal" class="db-modal-overlay" onclick="if(event.target===this)closeDiversModal()">
-    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="db-modal-title">
-      <div class="db-modal-head">
-        <div class="db-modal-title" id="db-modal-title">What's happening below?</div>
-        <button class="db-modal-close" onclick="closeDiversModal()" aria-label="Close">✕</button>
+      <div class="ind-group" id="indGroup">
+      <div class="ind-head">Entry / Chop / Surge indicators</div>
+      <div class="ind-choice" id="indChoice" role="group" aria-label="Indicator style">
+        <button type="button" class="ind-opt" data-ind="pic" aria-pressed="true">
+          <div class="ind-demo ind-demo-pic">
+            <img class="ind-demo-img" src="images/entry-easy.png" alt="">
+            <div class="ind-demo-track">
+              <div class="ind-demo-rail"><span style="background:var(--rail-green)"></span><span style="background:var(--rail-amber)"></span><span style="background:var(--rail-yellow)"></span><span style="background:var(--rail-red)"></span></div>
+              <i class="ind-demo-dot" style="left:18%"></i>
+            </div>
+          </div>
+          <div class="ind-label">Picture + slider</div>
+        </button>
+        <button type="button" class="ind-opt" data-ind="bar" aria-pressed="false">
+          <div class="ind-demo ind-demo-bar">
+            <div class="ind-demo-track">
+              <div class="ind-demo-rail"><span style="background:var(--rail-green)"></span><span style="background:var(--rail-amber)"></span><span style="background:var(--rail-yellow)"></span><span style="background:var(--rail-red)"></span></div>
+              <i class="ind-demo-dot" style="left:18%"></i>
+            </div>
+          </div>
+          <div class="ind-label">Slider only</div>
+        </button>
       </div>
-      <div class="db-modal-meta" id="db-modal-meta"></div>
-      <div class="db-modal-summary" id="db-modal-summary">Loading recent reports…</div>
-      <div class="db-modal-foot">Reports summarised from the VIZ diving community.</div>
-    </div>
-  </div>
 
-  <!-- The Oracle — opened from the verdict bar. #summary-body is relocated here at boot. -->
-  <div id="news-overlay" class="db-modal-overlay" onclick="if(event.target===this)closeNews()">
-    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="news-modal-title">
-      <div class="db-modal-head">
-        <div class="db-modal-title" id="news-modal-title">The Oracle</div>
-        <button class="db-modal-close" onclick="closeNews()" aria-label="Close">&#10005;</button>
+      <div class="ind-head">Pictogram character</div>
+      <div class="ind-choice" id="charChoice" role="group" aria-label="Pictogram character">
+        <button type="button" class="ind-opt" data-char="" aria-pressed="true">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/entry-easy.png" alt=""></div>
+          <div class="ind-label">Human</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="seadragon" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/seadragon/entry-easy.png" alt=""></div>
+          <div class="ind-label">Sea dragon</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="cat" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/cat/entry-easy.png" alt=""></div>
+          <div class="ind-label">Cat</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="dog" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/dog/entry-easy.png" alt=""></div>
+          <div class="ind-label">Dog</div>
+        </button>
       </div>
-      <div id="news-slot"></div>
-    </div>
-  </div>
+        <p class="ind-note" id="charNote"></p>
+      </div><!-- /ind-group -->
 
-  <!-- Metric info popup -->
-  <div id="metric-modal" class="db-modal-overlay" onclick="if(event.target===this)closeMetricModal()">
-    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="metric-modal-title">
-      <div class="db-modal-head">
-        <div class="db-modal-title" id="metric-modal-title">—</div>
-        <button class="db-modal-close" onclick="closeMetricModal()" aria-label="Close">✕</button>
+
+      <div class="ind-head">Time-of-day picker</div>
+      <div class="ind-choice" id="timeChoice" role="group" aria-label="Time picker style">
+        <button type="button" class="ind-opt" data-time="slider" aria-pressed="false">
+          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
+            <div class="tsel-demo-rail"><i class="tsel-demo-thumb"></i></div>
+          </div>
+          <div class="ind-label">Slider</div>
+        </button>
+        <button type="button" class="ind-opt" data-time="buttons" aria-pressed="true">
+          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
+            <div class="tsel-demo-pills"><span></span><span class="on"></span><span></span></div>
+          </div>
+          <div class="ind-label">Tap buttons</div>
+        </button>
+        <button type="button" class="ind-opt" data-time="brass" aria-pressed="false">
+          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
+            <div class="tsel-demo-brass"></div>
+          </div>
+          <div class="ind-label">Brass roller</div>
+        </button>
       </div>
-      <div class="db-modal-summary" id="metric-modal-summary"></div>
+
+      <button type="button" id="customSave" class="custom-save">Save</button>
     </div>
-  </div>
 
-  <div class="error-banner" id="errorBanner">
-    <strong>⚠ Could not load forecast data.</strong>
-    <br>Check your connection and try again.
-    <br><button class="retry-btn" onclick="retryLoad()">↺ Try Again</button>
-  </div>
-
-  <!-- SNAPSHOT TAB -->
   <div class="view-panel active" id="panel-snapshot">
 
     <!-- Complete / Custom detail toggle (choice persists across refresh) -->
     <style>
       .sec-hidden { display: none !important; }
-      .mode-toggle-row { display: flex; justify-content: center; margin: 2px 0 12px; }
+      /* Sits directly under the About pill in the header, right-aligned to line up
+         with it. Negative top margin pulls it into the header's bottom padding —
+         the pair reads as one block and costs almost no extra height. */
+      /* Inside the header's right column, directly under the About pill and
+         right-aligned with it. Costs no extra page height: it sits in space the
+         tall logo already occupies. */
+      .mode-toggle-row { display: flex; justify-content: flex-end; margin: 0; }
+      .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
       .mode-toggle { display: inline-flex; gap: 0; background: var(--card); border: 1px solid var(--border);
-        border-radius: 999px; padding: 3px; font-family: 'Inter', sans-serif; }
-      .mode-toggle button { border: none; background: transparent; cursor: pointer; padding: 6px 18px;
+        border-radius: 999px; padding: 2px; font-family: 'Inter', sans-serif; }
+      .mode-toggle button { border: none; background: transparent; cursor: pointer; padding: 5px 16px;
         border-radius: 999px; font: inherit; font-size: 12px; letter-spacing: .4px; color: var(--dim);
         transition: background .15s ease, color .15s ease; }
       .mode-toggle button.active { background: var(--ocean); color: #fff; }
-      .custom-panel { display: none; max-width: 420px; margin: 0 auto 14px; padding: 10px 14px;
+      .custom-panel { display: none; max-width: 420px; margin: 0 0 10px auto; padding: 10px 14px;
         background: var(--card); border: 1px solid var(--border); border-radius: 14px;
         font-family: 'Inter', sans-serif; }
       .custom-panel.show { display: block; }
@@ -2752,8 +2803,10 @@
           <div class="sw-line"><span class="h" id="swellNowDir">—</span></div>
           <div class="sw-line"><span class="h sw-wind-h" id="chopNowWind">—</span></div>
         </div>
+        <button type="button" class="sw-zoom-btn" id="swellZoom" aria-expanded="false" title="Enlarge the map" aria-label="Enlarge the swell and wind map">⤢</button>
       </div>
       <canvas class="chop-graph-canvas" id="swellCanvas" aria-label="Swell refracting around the headland into Cabbage Tree Bay, with the forecast wind direction, for the selected hour"></canvas>
+      <div class="sw-rotate-hint">Turn your phone sideways for a bigger map</div>
       <div class="chop-graph-legend">
         <span>White curved arrows = swell energy &middot; <span class="sw-wind-cap">amber arrow = wind</span>. Wind builds chop from its speed and its runway over open water &mdash; the fetch</span>
       </div>
@@ -3291,89 +3344,78 @@
 
 
 
-    <!-- Detail-level toggle (Complete / Custom) + Custom panel — moved here to the bottom -->
-    <div class="mode-toggle-row" style="margin-top:20px;">
-      <div class="mode-toggle" id="modeToggle" role="group" aria-label="App detail level">
-        <button type="button" data-mode="complete" aria-pressed="true">Complete</button>
-        <button type="button" data-mode="custom" aria-pressed="false">Custom</button>
+
+
+
+  <!-- Newcomer call-to-action → opens About (dismissible, hides after first view) -->
+  <div class="newhere-banner" id="newhereBanner" role="button" tabindex="0"
+       onclick="markNewhereSeen(); location.href='guide.html';"
+       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();markNewhereSeen();location.href='guide.html';}"
+       aria-label="About — swimmer's guide">
+    <span class="newhere-icon" aria-hidden="true">&#128075;</span>
+    <span class="newhere-text">First time here? Start with <strong>About</strong></span>
+    <span class="newhere-arrow" aria-hidden="true">&rarr;</span>
+    <button class="newhere-dismiss" aria-label="Dismiss this tip"
+            onclick="event.stopPropagation(); dismissNewhere();">&#10005;</button>
+  </div>
+  <script>
+    // Inline (runs before the main bundle), so it carries its own cookie mirror.
+    function _nhCk(){ try{ var m=document.cookie.match('(?:^|;\\s*)swim_newhere_seen=([^;]*)'); return m?m[1]:null; }catch(e){ return null; } }
+    function markNewhereSeen(){
+      try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){}
+      try{ document.cookie='swim_newhere_seen=1;path=/;max-age=34560000;SameSite=Lax'; }catch(e){}
+    }
+    function dismissNewhere(){ var b=document.getElementById('newhereBanner'); if(b){ b.style.display='none'; } markNewhereSeen(); }
+    (function(){
+      var seen=null; try{ seen=localStorage.getItem('swim_newhere_seen'); }catch(e){}
+      if(!seen && _nhCk()){ seen='1'; try{ localStorage.setItem('swim_newhere_seen','1'); }catch(e){} }
+      if(seen){ var b=document.getElementById('newhereBanner'); if(b) b.style.display='none'; }
+    })();
+  </script>
+
+
+  <!-- Diver reports modal -->
+  <div id="divers-modal" class="db-modal-overlay" onclick="if(event.target===this)closeDiversModal()">
+    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="db-modal-title">
+      <div class="db-modal-head">
+        <div class="db-modal-title" id="db-modal-title">What's happening below?</div>
+        <button class="db-modal-close" onclick="closeDiversModal()" aria-label="Close">✕</button>
       </div>
+      <div class="db-modal-meta" id="db-modal-meta"></div>
+      <div class="db-modal-summary" id="db-modal-summary">Loading recent reports…</div>
+      <div class="db-modal-foot">Reports summarised from the VIZ diving community.</div>
     </div>
-    <div class="custom-panel" id="customPanel" aria-label="Choose sections">
-      <div class="custom-head"><h4>Choose what to show</h4><button type="button" id="customClose" class="custom-x" aria-label="Close">✕</button></div>
-      <div id="customList"></div>
+  </div>
 
-      <div class="ind-group" id="indGroup">
-      <div class="ind-head">Entry / Chop / Surge indicators</div>
-      <div class="ind-choice" id="indChoice" role="group" aria-label="Indicator style">
-        <button type="button" class="ind-opt" data-ind="pic" aria-pressed="true">
-          <div class="ind-demo ind-demo-pic">
-            <img class="ind-demo-img" src="images/entry-easy.png" alt="">
-            <div class="ind-demo-track">
-              <div class="ind-demo-rail"><span style="background:var(--rail-green)"></span><span style="background:var(--rail-amber)"></span><span style="background:var(--rail-yellow)"></span><span style="background:var(--rail-red)"></span></div>
-              <i class="ind-demo-dot" style="left:18%"></i>
-            </div>
-          </div>
-          <div class="ind-label">Picture + slider</div>
-        </button>
-        <button type="button" class="ind-opt" data-ind="bar" aria-pressed="false">
-          <div class="ind-demo ind-demo-bar">
-            <div class="ind-demo-track">
-              <div class="ind-demo-rail"><span style="background:var(--rail-green)"></span><span style="background:var(--rail-amber)"></span><span style="background:var(--rail-yellow)"></span><span style="background:var(--rail-red)"></span></div>
-              <i class="ind-demo-dot" style="left:18%"></i>
-            </div>
-          </div>
-          <div class="ind-label">Slider only</div>
-        </button>
+  <!-- The Oracle — opened from the verdict bar. #summary-body is relocated here at boot. -->
+  <div id="news-overlay" class="db-modal-overlay" onclick="if(event.target===this)closeNews()">
+    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="news-modal-title">
+      <div class="db-modal-head">
+        <div class="db-modal-title" id="news-modal-title">The Oracle</div>
+        <button class="db-modal-close" onclick="closeNews()" aria-label="Close">&#10005;</button>
       </div>
-
-      <div class="ind-head">Pictogram character</div>
-      <div class="ind-choice" id="charChoice" role="group" aria-label="Pictogram character">
-        <button type="button" class="ind-opt" data-char="" aria-pressed="true">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/entry-easy.png" alt=""></div>
-          <div class="ind-label">Human</div>
-        </button>
-        <button type="button" class="ind-opt" data-char="seadragon" aria-pressed="false">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/seadragon/entry-easy.png" alt=""></div>
-          <div class="ind-label">Sea dragon</div>
-        </button>
-        <button type="button" class="ind-opt" data-char="cat" aria-pressed="false">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/cat/entry-easy.png" alt=""></div>
-          <div class="ind-label">Cat</div>
-        </button>
-        <button type="button" class="ind-opt" data-char="dog" aria-pressed="false">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/dog/entry-easy.png" alt=""></div>
-          <div class="ind-label">Dog</div>
-        </button>
-      </div>
-        <p class="ind-note" id="charNote"></p>
-      </div><!-- /ind-group -->
-
-
-      <div class="ind-head">Time-of-day picker</div>
-      <div class="ind-choice" id="timeChoice" role="group" aria-label="Time picker style">
-        <button type="button" class="ind-opt" data-time="slider" aria-pressed="false">
-          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
-            <div class="tsel-demo-rail"><i class="tsel-demo-thumb"></i></div>
-          </div>
-          <div class="ind-label">Slider</div>
-        </button>
-        <button type="button" class="ind-opt" data-time="buttons" aria-pressed="true">
-          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
-            <div class="tsel-demo-pills"><span></span><span class="on"></span><span></span></div>
-          </div>
-          <div class="ind-label">Tap buttons</div>
-        </button>
-        <button type="button" class="ind-opt" data-time="brass" aria-pressed="false">
-          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
-            <div class="tsel-demo-brass"></div>
-          </div>
-          <div class="ind-label">Brass roller</div>
-        </button>
-      </div>
-
-      <button type="button" id="customSave" class="custom-save">Save</button>
+      <div id="news-slot"></div>
     </div>
+  </div>
 
+  <!-- Metric info popup -->
+  <div id="metric-modal" class="db-modal-overlay" onclick="if(event.target===this)closeMetricModal()">
+    <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="metric-modal-title">
+      <div class="db-modal-head">
+        <div class="db-modal-title" id="metric-modal-title">—</div>
+        <button class="db-modal-close" onclick="closeMetricModal()" aria-label="Close">✕</button>
+      </div>
+      <div class="db-modal-summary" id="metric-modal-summary"></div>
+    </div>
+  </div>
+
+  <div class="error-banner" id="errorBanner">
+    <strong>⚠ Could not load forecast data.</strong>
+    <br>Check your connection and try again.
+    <br><button class="retry-btn" onclick="retryLoad()">↺ Try Again</button>
+  </div>
+
+  <!-- SNAPSHOT TAB -->
   </div><!-- /panel-snapshot -->
 
 
@@ -14620,6 +14662,63 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   if (typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(function () { fit(); }).observe(wrap);
   }
+
+  /* ── Enlarge / restore ────────────────────────────────────────────────────
+     Toggles a class on the wrap; the ResizeObserver above then re-fits, so the
+     map is genuinely redrawn at the new size (crisp) rather than scaled up.
+     In the enlarged state the canvas is capped so the whole map stays on
+     screen: its aspect is fixed at 0.4888, so an unconstrained 100% width on a
+     landscape screen would push the bottom of the map below the fold. */
+  (function () {
+    var btn = document.getElementById('swellZoom');
+    if (!btn) return;
+    var _cardW = 0;                       // the canvas width in the normal card
+    function sizeZoomed() {
+      if (!wrap.classList.contains('sw-zoom')) { cv.style.maxWidth = ''; return; }
+      // MEASURE the chrome rather than guessing it. A hardcoded reserve made the
+      // enlarged map SMALLER than the card on a short landscape phone (460 vs 546
+      // px) — the one thing an Enlarge button must never do.
+      var cs = getComputedStyle(wrap);
+      var chrome = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 16;   // +16 slack for gaps
+      ['.chop-graph-head', '.sw-rotate-hint', '.chop-graph-legend'].forEach(function (sel) {
+        var el = wrap.querySelector(sel);
+        if (el && getComputedStyle(el).display !== 'none') chrome += el.offsetHeight;
+      });
+      var byHeight = (window.innerHeight - chrome) / 0.4888;   // 0.4888 = the map's aspect
+      var byWidth  = window.innerWidth - 24;
+      // Never below the card width: if the whole map cannot fit the height, the
+      // overlay scrolls (overflow:auto) rather than shrinking what you came to enlarge.
+      var maxW = Math.max(Math.min(byHeight, byWidth), _cardW || 0, 240);
+      cv.style.maxWidth = Math.round(maxW) + 'px';
+      fit();
+    }
+    function setZoom(on) {
+      // Remember the card size BEFORE going fullscreen — it is the floor below
+      // which the enlarged map must never fall.
+      if (on) _cardW = Math.round(cv.getBoundingClientRect().width) || _cardW;
+      wrap.classList.toggle('sw-zoom', on);
+      document.body.classList.toggle('sw-zoomed', on);
+      btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+      btn.textContent = on ? '✕' : '⤢';
+      btn.title = on ? 'Close the enlarged map' : 'Enlarge the map';
+      sizeZoomed();
+      // One more pass after layout settles — fullscreen changes the width in the
+      // same frame the class lands, and the first fit can read the old box.
+      setTimeout(sizeZoomed, 60);
+    }
+    btn.addEventListener('click', function (e) { e.stopPropagation(); setZoom(!wrap.classList.contains('sw-zoom')); });
+    // Escape closes, matching every other overlay in the app.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && wrap.classList.contains('sw-zoom')) setZoom(false);
+    });
+    // Tap the backdrop (not the canvas or the controls) to close.
+    wrap.addEventListener('click', function (e) {
+      if (!wrap.classList.contains('sw-zoom')) return;
+      if (e.target === wrap) setZoom(false);
+    });
+    window.addEventListener('resize', sizeZoomed);
+    window.addEventListener('orientationchange', function () { setTimeout(sizeZoomed, 120); });
+  })();
   (function ensureFit(tries) {
     if (fit() === false && tries < 60) { setTimeout(function () { ensureFit(tries + 1); }, 120); }
   })(0);
@@ -14803,8 +14902,12 @@ if ('serviceWorker' in navigator) {
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1, custom:1 },
-    { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 },
-    { key:'featurerequests', label:"Bay Talk", sel:'#featureCard', complete:1, custom:1 }
+    { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 }
+    // Bay Talk removed 11 Aug 2026: #featureCard is nested INSIDE .community-group,
+    // so the 'swimmers' row above already shows/hides it. Two switches for one
+    // section only let them disagree. A stale featurerequests=0 in someone's saved
+    // map is now inert — nothing reads the key, and sec-hidden is re-applied from
+    // this list on every load, so Bay Talk simply follows Swimmers' Corner.
   ];
   var MODE_KEY = 'swim_app_mode';            // 'complete' | 'custom'
   // MODE_KEY is re-stamped on every load to refresh its 400-day cookie clock, so
