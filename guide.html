@@ -127,6 +127,26 @@
     border-radius:999px; padding:3px 12px;
   }
 
+
+  /* ---- jump links ----
+     Three only, and short: they must stay on one row on a phone, or they push
+     the first reading and the safety box below the fold. The folded sections
+     already act as their own contents list, so this is a shortcut, not a menu. */
+  .guide-toc{
+    display:flex; flex-wrap:wrap; justify-content:center; gap:9px;
+    margin:22px 0 4px; padding:0;
+  }
+  .guide-toc a{
+    font-family:'DM Mono',ui-monospace,monospace; font-size:12.5px;
+    letter-spacing:.04em; color:var(--ink); text-decoration:none;
+    background:var(--card-faint); border:1px solid var(--border);
+    border-radius:999px; padding:8px 15px; white-space:nowrap;
+    transition:background .18s ease, border-color .18s ease, color .18s ease;
+  }
+  .guide-toc a:hover,.guide-toc a:focus-visible{
+    background:#fff; border-color:var(--sun); color:var(--sun);
+  }
+
   /* ---- sections ---- */
   section{margin-top:44px}
   section#dots{margin-top:40px}
@@ -406,6 +426,12 @@
       <p class="hero-author">Marco Bordieri</p>
       <span class="hero-role">Bay Diver &amp; Creator</span>
     </div>
+
+    <nav class="guide-toc" aria-label="Jump to a section">
+      <a href="#detail">What you see</a>
+      <a href="#install">Install</a>
+      <a href="#how">Scoring</a>
+    </nav>
   </div>
 </header>
 
@@ -852,8 +878,12 @@
     var el;
     try { el = document.querySelector(hash); } catch (e) { return; }
     if (!el) return;
+    /* the target can sit INSIDE a fold (#where) or CONTAIN one (#install,
+       where the <details> is a child of the <section>) — open both ways. */
     var d = el.closest ? el.closest('details') : null;
     while (d) { d.open = true; d = d.parentElement && d.parentElement.closest ? d.parentElement.closest('details') : null; }
+    var inner = el.querySelectorAll ? el.querySelectorAll('details') : [];
+    for (var i = 0; i < inner.length; i++) inner[i].open = true;
     el.scrollIntoView();
   }
   openTo(location.hash);
