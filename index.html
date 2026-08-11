@@ -2544,6 +2544,17 @@
 
       /* indicator-style chooser (two live examples) inside the Custom panel */
       .ind-head { margin: 14px 0 7px; font-size: 10.5px; letter-spacing: .6px; color: var(--dim); text-transform: uppercase; font-weight: 600; }
+      /* The indicator style and the pictogram character are ONE decision in two
+         parts — the character only exists if you picked Picture + slider. Boxing
+         them together says that before the user has to find it out by tapping. */
+      .ind-group { border: 1px solid rgba(17,53,65,0.14); border-radius: 12px; padding: 2px 12px 12px;
+        margin: 14px 0 6px; background: rgba(79,143,173,0.04); }
+      .ind-group .ind-head:first-child { margin-top: 10px; }
+      /* Character row while "Slider only" is on: still tappable (the tap is what
+         triggers the explanation) but visibly not in play. */
+      .ind-group.chars-off #charChoice { opacity: .45; }
+      .ind-note { margin: 8px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--dim); }
+      .ind-note.warn { color: #a95e1e; font-weight: 600; }
       .ind-choice { display: flex; gap: 10px; }
       /* var(--border) is rgba(180,210,230,0.10) and var(--foam) is the same tan as
          the panel behind it, so the unselected option had neither frame nor fill.
@@ -3291,6 +3302,7 @@
       <div class="custom-head"><h4>Choose what to show</h4><button type="button" id="customClose" class="custom-x" aria-label="Close">✕</button></div>
       <div id="customList"></div>
 
+      <div class="ind-group" id="indGroup">
       <div class="ind-head">Entry / Chop / Surge indicators</div>
       <div class="ind-choice" id="indChoice" role="group" aria-label="Indicator style">
         <button type="button" class="ind-opt" data-ind="pic" aria-pressed="true">
@@ -3314,6 +3326,29 @@
         </button>
       </div>
 
+      <div class="ind-head">Pictogram character</div>
+      <div class="ind-choice" id="charChoice" role="group" aria-label="Pictogram character">
+        <button type="button" class="ind-opt" data-char="" aria-pressed="true">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/entry-easy.png" alt=""></div>
+          <div class="ind-label">Human</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="seadragon" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/seadragon/entry-easy.png" alt=""></div>
+          <div class="ind-label">Sea dragon</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="cat" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/cat/entry-easy.png" alt=""></div>
+          <div class="ind-label">Cat</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="dog" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/dog/entry-easy.png" alt=""></div>
+          <div class="ind-label">Dog</div>
+        </button>
+      </div>
+        <p class="ind-note" id="charNote"></p>
+      </div><!-- /ind-group -->
+
+
       <div class="ind-head">Time-of-day picker</div>
       <div class="ind-choice" id="timeChoice" role="group" aria-label="Time picker style">
         <button type="button" class="ind-opt" data-time="slider" aria-pressed="false">
@@ -3333,26 +3368,6 @@
             <div class="tsel-demo-brass"></div>
           </div>
           <div class="ind-label">Brass roller</div>
-        </button>
-      </div>
-
-      <div class="ind-head">Pictogram character</div>
-      <div class="ind-choice" id="charChoice" role="group" aria-label="Pictogram character">
-        <button type="button" class="ind-opt" data-char="" aria-pressed="true">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/entry-easy.png" alt=""></div>
-          <div class="ind-label">Human</div>
-        </button>
-        <button type="button" class="ind-opt" data-char="seadragon" aria-pressed="false">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/seadragon/entry-easy.png" alt=""></div>
-          <div class="ind-label">Sea dragon</div>
-        </button>
-        <button type="button" class="ind-opt" data-char="cat" aria-pressed="false">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/cat/entry-easy.png" alt=""></div>
-          <div class="ind-label">Cat</div>
-        </button>
-        <button type="button" class="ind-opt" data-char="dog" aria-pressed="false">
-          <div class="ind-demo"><img class="ind-demo-img" src="images/dog/entry-easy.png" alt=""></div>
-          <div class="ind-label">Dog</div>
         </button>
       </div>
 
@@ -14895,6 +14910,9 @@ if ('serviceWorker' in navigator) {
     if (ch) ch.querySelectorAll('.ind-opt').forEach(function (o) {
       o.setAttribute('aria-pressed', o.getAttribute('data-ind') === v ? 'true' : 'false');
     });
+    // Keep the character row's dimming + note honest the moment the style flips,
+    // in both directions (guarded: applyMetricStyle runs before the panel wiring).
+    try { if (window._syncCharState) window._syncCharState(); } catch (e) {}
     try { window.dispatchEvent(new Event('resize')); } catch (e) {}
   }
   function setMetricStyle(v){
@@ -15052,8 +15070,37 @@ if ('serviceWorker' in navigator) {
     if (tch) tch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setTimeStyle(o.getAttribute('data-time')); });
     try { if (typeof initTimeRoller === 'function') initTimeRoller(); } catch (e) {}
     applyTimeStyle(getTimeStyle());        // slider / tap-buttons / brass roller, applies in every mode
+    // ── Pictogram character ───────────────────────────────────────────────
+    // The character only shows up inside the pictogram, so on "Slider only"
+    // there is nothing for it to change. Rather than silently storing a choice
+    // that does nothing, say what to do first. The row STAYS tappable — the tap
+    // is what surfaces the explanation; a disabled control would just be inert
+    // and leave the user guessing why.
+    function charsEnabled(){ return getMetricStyle() !== 'bar'; }
+    function setCharNote(msg, warn){
+      var n = document.getElementById('charNote'); if (!n) return;
+      n.textContent = msg || '';
+      n.className = 'ind-note' + (warn ? ' warn' : '');
+    }
+    // Called on load and whenever the indicator style changes.
+    window._syncCharState = function(){
+      var g = document.getElementById('indGroup');
+      if (g) g.classList.toggle('chars-off', !charsEnabled());
+      if (charsEnabled()) setCharNote('', false);
+      else setCharNote('Characters need the pictogram — pick “Picture + slider” above to use them.', false);
+    };
     var cch = document.getElementById('charChoice');
-    if (cch) cch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o && typeof setIconTheme === 'function') setIconTheme(o.getAttribute('data-char') || ''); });
+    if (cch) cch.addEventListener('click', function (e) {
+      var o = e.target.closest('.ind-opt'); if (!o) return;
+      if (!charsEnabled()) {
+        setCharNote('Select “Picture + slider” above first — with “Slider only” there is no pictogram for the character to appear in.', true);
+        var ind = document.getElementById('indChoice');
+        if (ind && ind.scrollIntoView) { try { ind.scrollIntoView({ block:'nearest', behavior:'smooth' }); } catch(_) {} }
+        return;                                    // nothing stored: the choice would be a no-op
+      }
+      if (typeof setIconTheme === 'function') setIconTheme(o.getAttribute('data-char') || '');
+    });
+    _syncCharState();
     try { if (typeof applyIconTheme === 'function') applyIconTheme(getIconTheme()); } catch (e) {}   // pictogram character, applies in every mode
     var _m = getMode();
     // Report both preferences once per session, BEFORE the _pSet re-stamp below,
