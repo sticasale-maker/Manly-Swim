@@ -8825,7 +8825,11 @@ function renderGemComparison(h) {
   const tide_d_g = SITE.tideDir(tideM, {
     s1_d: s1_d_g, s1Dir: swell1Dir, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
   }, 'tideGate');
-  const total_g  = o_g + tide_d_g;
+  // Offshore westerly credit — mirrors calcScore by CALLING the same helper rather
+  // than restating the rule, so this mirror cannot drift from it again. Clamped to
+  // o_g exactly as calcScore clamps to o (a credit can only flatten energy present).
+  const offshore_g = Math.min(offshoreFlatten(windKmh, windDir), Math.max(0, o_g));
+  const total_g  = Math.max(0, o_g + tide_d_g - offshore_g);
   const score_g  = Math.max(0, Math.round(60 - total_g));
 
   const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
@@ -8889,6 +8893,12 @@ function renderGemComparison(h) {
     `<span style="color:#9fd;">windEntry (w=${wEntry_g.toFixed(2)})</span><span>${f(windEntry_g)}</span>` +
     `<span style="color:#9fd;">subtotal o</span><span>${f(o_g)}</span>` +
     `<span style="color:#9fd;">tide_d</span><span>${f(tide_d_g)}</span>` +
+    // Only shown when it bites, and signed negative so the column still adds up:
+    // o + tide − offshore = total. A silent subtraction here is exactly what made
+    // the panel look broken on the first westerly.
+    (offshore_g > 0.0005
+      ? `<span style="color:#9fd;">offshore credit (W ${Math.round(windDir)}°)</span><span style="color:#8f8;">−${f(offshore_g)}</span>`
+      : '') +
     `<span style="color:#9fd;">total</span><span>${f(total_g)}</span>` +
     `<b style="color:#7ec8e3;">SCORE 60−total</b><b style="color:#7ec8e3;">${score_g}</b>` +
     `</div>` +
