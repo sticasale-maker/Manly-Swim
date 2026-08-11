@@ -2215,7 +2215,10 @@
   #splash-skip {
     position: absolute;
     bottom: 28px;
-    right: 22px;
+    /* LEFT, not right: the Announcements pill is fixed to the bottom-right at a far
+       higher z-index (99990 vs 1), so a right-anchored Skip sat underneath it and
+       could be unreachable. max() keeps it clear of a notch in landscape. */
+    left: max(22px, env(safe-area-inset-left, 0px));
     z-index: 1;
     background: rgba(255,255,255,0.15);
     color: rgba(255,255,255,0.85);
@@ -2621,12 +2624,17 @@
       /* Usual swim times — one row per weekday. Two columns so day labels and
          selects each line up; the selects carry a visible border because an
          unstyled select is near-invisible on this card background on iOS. */
-      .habit-grid { display: grid; grid-template-columns: 42px 1fr; gap: 5px 10px; align-items: center; margin-top: 8px; }
-      .habit-day { font-size: 12px; color: var(--text); font-weight: 600; letter-spacing: .3px; }
+      /* TWO day/time pairs per row: a 7-row full-width stack wasted the panel's
+         width and its height in one go. minmax(0,…) lets the selects shrink rather
+         than force the grid wider than the card on a narrow phone. */
+      .habit-grid { display: grid; grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+        gap: 5px 8px; align-items: center; margin-top: 8px; }
+      @media (max-width: 340px) { .habit-grid { grid-template-columns: auto minmax(0, 1fr); } }
+      .habit-day { font-size: 11.5px; color: var(--text); font-weight: 600; letter-spacing: .3px; white-space: nowrap; }
       .habit-grid select {
-        width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12.5px;
-        padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border);
-        background: #fff; color: var(--text); cursor: pointer;
+        width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12px;
+        padding: 4px 4px 4px 6px; border-radius: 7px; border: 1px solid var(--border);
+        background: #fff; color: var(--text); cursor: pointer; min-width: 0;
       }
       .habit-grid select.set { border-color: var(--ocean); color: var(--deep); font-weight: 600; }
       .habit-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
@@ -15339,7 +15347,7 @@ if ('serviceWorker' in navigator) {
           var lab = document.createElement('div'); lab.className = 'habit-day'; lab.textContent = name;
           var sel = document.createElement('select');
           sel.setAttribute('aria-label', 'Usual swim time on ' + name);
-          var o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'no usual time';
+          var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '—';   // em dash: 'no usual time' forced the select wider than half a phone row
           sel.appendChild(o0);
           for (var h = HMIN; h <= HMAX; h++) {
             var o = document.createElement('option'); o.value = String(h); o.textContent = label(h);
