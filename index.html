@@ -2517,6 +2517,13 @@
         <p class="ind-note" id="charNote"></p>
       </div><!-- /ind-group -->
 
+      <div class="ind-group" id="habitGroup">
+        <div class="ind-head">Your usual swim times</div>
+        <p class="ind-note">Select your usual swimming habits and the app will default to those.</p>
+        <div class="habit-grid" id="habitGrid"></div>
+        <div class="habit-actions"><button type="button" id="habitClear">Clear all</button></div>
+      </div>
+
 
       <div class="ind-head">Time-of-day picker</div>
       <div class="ind-choice" id="timeChoice" role="group" aria-label="Time picker style">
@@ -2541,6 +2548,12 @@
       </div>
 
       <button type="button" id="customSave" class="custom-save">Save</button>
+    </div>
+    <div class="habit-ok" id="habitOk" role="dialog" aria-modal="true" aria-labelledby="habitOkMsg">
+      <div class="habit-ok-card">
+        <p id="habitOkMsg">The default times and the colours of the days are now in sync with your swims.</p>
+        <button type="button" id="habitOkBtn">Got it</button>
+      </div>
     </div>
 
   <div class="view-panel active" id="panel-snapshot">
@@ -2605,6 +2618,32 @@
          triggers the explanation) but visibly not in play. */
       .ind-group.chars-off #charChoice { opacity: .45; }
       .ind-note { margin: 8px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--dim); }
+      /* Usual swim times — one row per weekday. Two columns so day labels and
+         selects each line up; the selects carry a visible border because an
+         unstyled select is near-invisible on this card background on iOS. */
+      .habit-grid { display: grid; grid-template-columns: 42px 1fr; gap: 5px 10px; align-items: center; margin-top: 8px; }
+      .habit-day { font-size: 12px; color: var(--text); font-weight: 600; letter-spacing: .3px; }
+      .habit-grid select {
+        width: 100%; box-sizing: border-box; font-family: inherit; font-size: 12.5px;
+        padding: 5px 8px; border-radius: 8px; border: 1px solid var(--border);
+        background: #fff; color: var(--text); cursor: pointer;
+      }
+      .habit-grid select.set { border-color: var(--ocean); color: var(--deep); font-weight: 600; }
+      .habit-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+      .habit-actions button {
+        border: 1px solid var(--border); background: transparent; color: var(--dim);
+        border-radius: 8px; padding: 5px 10px; font-family: inherit; font-size: 11.5px; cursor: pointer;
+      }
+      /* Confirmation after setting habits. Its own overlay rather than the
+         announcements popup, which is a queue of server-driven posts. */
+      .habit-ok { position: fixed; inset: 0; z-index: 9500; display: none;
+        align-items: center; justify-content: center; background: rgba(9,26,33,0.55); padding: 22px; }
+      .habit-ok.show { display: flex; }
+      .habit-ok-card { background: var(--card); border-radius: 16px; padding: 20px 22px; max-width: 340px;
+        text-align: center; box-shadow: 0 10px 40px rgba(9,26,33,0.45); font-family: 'Inter', sans-serif; }
+      .habit-ok-card p { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--text); }
+      .habit-ok-card button { border: none; background: var(--ocean); color: #fff; border-radius: 10px;
+        padding: 9px 20px; font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
       .ind-note.warn { color: #a95e1e; font-weight: 600; }
       .ind-choice { display: flex; gap: 10px; }
       /* var(--border) is rgba(180,210,230,0.10) and var(--foam) is the same tan as
@@ -8360,6 +8399,64 @@ function renderSnapshot(h, wx) {
 // Track which day is selected in the day-picker
 let _selectedDay = null; // date string "YYYY-MM-DD"
 
+/* ── Usual swim times ("habits") ─────────────────────────────────────────────
+   One preferred hour per weekday, 6am–7pm, keyed by JS getDay() (0=Sun…6=Sat).
+   Two things read it: the hour a day opens on when you tap it, and the colour of
+   that day's chip — which becomes the band AT YOUR HOUR instead of a gradient
+   across the whole day. Unset days keep the old behaviour exactly.
+
+   Stored through the app's persist store (400-day cookie clock) with a raw
+   localStorage fallback, same belt-and-braces as the other durable prefs. */
+var HABIT_KEY = 'swim_habit_hours';
+var HABIT_MIN = 6, HABIT_MAX = 19;              // 6am … 7pm inclusive
+function habitGetAll() {
+  var raw = null;
+  try { raw = (window.persistGet ? window.persistGet(HABIT_KEY) : null) || localStorage.getItem(HABIT_KEY); } catch (e) {}
+  if (!raw) return {};
+  try {
+    var o = JSON.parse(raw), out = {};
+    // Re-validate on read: a stale or hand-edited value must not put the slider on
+    // an hour the forecast never carries.
+    for (var k in o) {
+      var h = parseInt(o[k], 10);
+      if (isFinite(h) && h >= HABIT_MIN && h <= HABIT_MAX) out[String(k)] = h;
+    }
+    return out;
+  } catch (e) { return {}; }
+}
+function habitSaveAll(map) {
+  var json = JSON.stringify(map || {});
+  try { if (window.persistSet) window.persistSet(HABIT_KEY, json); } catch (e) {}
+  try { localStorage.setItem(HABIT_KEY, json); } catch (e) {}
+}
+function habitAnySet() { var m = habitGetAll(); for (var k in m) return true; return false; }
+/* Preferred hour for a calendar date, or null. Date string is "YYYY-MM-DD";
+   'T00:00' keeps it local so the weekday cannot shift a day in Sydney. */
+function habitHourFor(date) {
+  if (!date) return null;
+  var m = habitGetAll();
+  var d = new Date(date + 'T00:00');
+  if (isNaN(d)) return null;
+  var h = m[String(d.getDay())];
+  return (h == null) ? null : h;
+}
+
+/* Entry band at ONE hour — the habit-hour counterpart of entryBand8am. Falls back
+   to null (never to another hour) so callers can decide what to show instead. */
+function entryBandAtHour(matrix, date, hour) {
+  if (hour == null) return null;
+  var hh = String(hour).padStart(2, '0');
+  var row = matrix.find(function (r) {
+    return r.dateTime.substring(0, 10) === date && r.dateTime.substring(11, 13) === hh;
+  });
+  if (!row) return null;
+  var cls;
+  try { var q = calcScore(row); cls = q && q.entry && q.entry.cls; } catch (e) { return null; }
+  if (!{ green: 1, amber: 1, yellow: 1, red: 1 }[cls]) return null;
+  return { bg: 'var(--rail-' + cls + ')', fg: '#ffffff',
+           sh: '0 1px 2px rgba(0,0,0,0.55), 0 0 3px rgba(0,0,0,0.45)' };
+}
+
 function entryBand8am(matrix, date) {
   const rows = matrix.filter(r => r.dateTime.substring(0, 10) === date);
   if (!rows.length) return null;
@@ -8436,8 +8533,13 @@ function renderDayPicker(matrix) {
       : `<span class="day-btn-label">${d.toLocaleDateString('en-AU',{weekday:'short'})}</span>` +
         `<span class="day-btn-num">${d.getDate()}</span>`;
     btn.onclick = () => selectDay(date);
-    const _eb = entryDayGradient(matrix, date);
+    // With a usual time set for this weekday the chip shows the band AT THAT HOUR
+    // (a solid colour — it is one moment, not a day), so the circle and the hour
+    // you land on are the same forecast. No habit → the whole-day gradient.
+    const _hh = habitHourFor(date);
+    const _eb = (_hh != null ? entryBandAtHour(matrix, date, _hh) : null) || entryDayGradient(matrix, date);
     if (_eb) { btn.style.background = _eb.bg; btn.style.borderColor = 'transparent'; btn.style.color = _eb.fg; btn.style.textShadow = _eb.sh; }
+    if (_hh != null) btn.title = 'Coloured for your usual ' + fmtHourLabel('0000-00-00 ' + String(_hh).padStart(2,'0') + ':00') + ' swim';
     if (date === _selectedDay) btn.style.boxShadow = '0 0 0 2px var(--deep), 0 0 0 4px var(--ocean)';
     picker.appendChild(btn);
   });
@@ -8464,8 +8566,9 @@ function renderLongRange(matrix) {
   longDays.forEach(date => {
     const rows = matrix.filter(r => r.dateTime.substring(0,10) === date);
     const swellOnly = rows.length > 0 && rows.every(r => r._swellOnly === true);
-    const _eb = entryBand8am(matrix, date);
-    const col = _eb ? _eb.bg : 'rgba(200,189,160,0.35)';   // ENTRY @ 8am colour; neutral if not scorable yet
+    const _hhLR = habitHourFor(date);
+    const _eb = (_hhLR != null ? entryBandAtHour(matrix, date, _hhLR) : null) || entryBand8am(matrix, date);
+    const col = _eb ? _eb.bg : 'rgba(200,189,160,0.35)';   // ENTRY at your usual hour, else 8am; neutral if not scorable
     const d = new Date(date + 'T00:00');
     const btn = document.createElement('button');
     btn.className = 'lr-day' + (swellOnly ? ' lr-look' : '') + (date === _selectedDay ? ' lr-active' : '');
@@ -8491,20 +8594,31 @@ function selectDay(date) {
   const currentOnDay = dayRows.find(({i}) => i === _sliderIdx);
   if (!currentOnDay) {
     const _n = new Date(); const todayStr = `${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;
+    // Your usual hour for this weekday, if you have set one (see habitHourFor).
+    const _habit = habitHourFor(date);
+    const _habitRow = (_habit == null) ? null
+      : dayRows.find(({r}) => r.dateTime.substring(11,13) === String(_habit).padStart(2,'0'));
     if (date === todayStr) {
-      // Today: snap to nearest hour to now
-      const now = Date.now();
-      let best = dayRows[0];
-      let minDiff = Infinity;
-      dayRows.forEach(({r,i}) => {
-        const diff = Math.abs(new Date(r.dateTime.replace(' ','T')).getTime() - now);
-        if (diff < minDiff) { minDiff = diff; best = {r,i}; }
-      });
-      _sliderIdx = best.i;
+      // Today: your usual hour if it is still ahead, otherwise the nearest hour to
+      // now. Opening today on a time that has already been and gone would be a
+      // worse answer than "now" to the question the app exists to answer.
+      const nowH = new Date().getHours();
+      if (_habitRow && _habit >= nowH) {
+        _sliderIdx = _habitRow.i;
+      } else {
+        const now = Date.now();
+        let best = dayRows[0];
+        let minDiff = Infinity;
+        dayRows.forEach(({r,i}) => {
+          const diff = Math.abs(new Date(r.dateTime.replace(' ','T')).getTime() - now);
+          if (diff < minDiff) { minDiff = diff; best = {r,i}; }
+        });
+        _sliderIdx = best.i;
+      }
     } else {
-      // Future day: default to 8am
+      // Any other day: your usual hour, else the long-standing 8am default.
       const eightAm = dayRows.find(({r}) => r.dateTime.substring(11,13) === '08');
-      _sliderIdx = (eightAm || dayRows[0]).i;
+      _sliderIdx = (_habitRow || eightAm || dayRows[0]).i;
     }
   }
 
@@ -15164,7 +15278,11 @@ if ('serviceWorker' in navigator) {
       setMode(m);
       if (m === 'custom') openCustom(); else closeCustom();   // Custom opens the checklist; other modes close it
     });
-    var sv = document.getElementById('customSave');  if (sv) sv.addEventListener('click', closeCustom);
+    var sv = document.getElementById('customSave');
+    if (sv) sv.addEventListener('click', function () {
+      closeCustom();
+      try { if (window._habitOnSave) window._habitOnSave(); } catch (e) {}
+    });
     var cl = document.getElementById('customClose'); if (cl) cl.addEventListener('click', closeCustom);
     var ch = document.getElementById('indChoice');
     if (ch) ch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setMetricStyle(o.getAttribute('data-ind')); });
@@ -15192,6 +15310,76 @@ if ('serviceWorker' in navigator) {
       if (charsEnabled()) setCharNote('', false);
       else setCharNote('Characters need the pictogram — pick “Picture + slider” above to use them.', false);
     };
+    // -- Usual swim times ------------------------------------------------
+    // Seven selects, Monday-first (how people think about a week) but stored by
+    // JS getDay() so habitHourFor can index it straight from a Date. Changing one
+    // re-renders the day picker immediately, so the colour change is visible while
+    // the panel is still open rather than only on the next load.
+    (function buildHabits() {
+      var grid = document.getElementById('habitGrid');
+      if (!grid) return;
+      var DAYS = [['Mon',1],['Tue',2],['Wed',3],['Thu',4],['Fri',5],['Sat',6],['Sun',0]];
+      var HMIN = (typeof HABIT_MIN === 'number') ? HABIT_MIN : 6;
+      var HMAX = (typeof HABIT_MAX === 'number') ? HABIT_MAX : 19;
+      var touched = false;
+      function label(h) { var ap = h < 12 ? 'am' : 'pm', t = h % 12; if (!t) t = 12; return t + ap; }
+      // _matrix is a module-level `let`, so it is NOT on window — reach it by name.
+      function mtx() { try { return (typeof _matrix !== 'undefined' && _matrix && _matrix.length) ? _matrix : null; } catch (e) { return null; } }
+      function repaint() {
+        var m = mtx(); if (!m) return;
+        // Colours and default hours both read the store, so one refresh does both.
+        try { if (typeof renderDayPicker === 'function') renderDayPicker(m); } catch (e) {}
+        try { if (typeof renderLongRange === 'function') renderLongRange(m); } catch (e) {}
+      }
+      function draw() {
+        var map = habitGetAll();
+        grid.innerHTML = '';
+        DAYS.forEach(function (d) {
+          var name = d[0], idx = d[1];
+          var lab = document.createElement('div'); lab.className = 'habit-day'; lab.textContent = name;
+          var sel = document.createElement('select');
+          sel.setAttribute('aria-label', 'Usual swim time on ' + name);
+          var o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'no usual time';
+          sel.appendChild(o0);
+          for (var h = HMIN; h <= HMAX; h++) {
+            var o = document.createElement('option'); o.value = String(h); o.textContent = label(h);
+            sel.appendChild(o);
+          }
+          var cur = map[String(idx)];
+          sel.value = (cur == null) ? '' : String(cur);
+          sel.className = (cur == null) ? '' : 'set';
+          sel.addEventListener('change', function () {
+            var m2 = habitGetAll();
+            if (this.value === '') delete m2[String(idx)]; else m2[String(idx)] = parseInt(this.value, 10);
+            habitSaveAll(m2);
+            this.className = (this.value === '') ? '' : 'set';
+            touched = true;
+            repaint();
+          });
+          grid.appendChild(lab); grid.appendChild(sel);
+        });
+      }
+      draw();
+      var clr = document.getElementById('habitClear');
+      if (clr) clr.addEventListener('click', function () { habitSaveAll({}); touched = false; draw(); repaint(); });
+      // The confirmation belongs to finishing, not to each select - and only when
+      // something was actually set, so Save on an untouched panel stays silent.
+      window._habitOnSave = function () {
+        if (!touched || !habitAnySet()) { touched = false; return false; }
+        touched = false;
+        var ov = document.getElementById('habitOk');
+        if (ov) ov.classList.add('show');
+        try { if (window.track) window.track('habit_set', { days: Object.keys(habitGetAll()).length }); } catch (e) {}
+        return true;
+      };
+      var ok = document.getElementById('habitOkBtn'), ovl = document.getElementById('habitOk');
+      if (ok) ok.addEventListener('click', function () { ovl.classList.remove('show'); });
+      if (ovl) ovl.addEventListener('click', function (e) { if (e.target === ovl) ovl.classList.remove('show'); });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && ovl && ovl.classList.contains('show')) ovl.classList.remove('show');
+      });
+    })();
+
     var cch = document.getElementById('charChoice');
     if (cch) cch.addEventListener('click', function (e) {
       var o = e.target.closest('.ind-opt'); if (!o) return;
