@@ -927,6 +927,64 @@
   .wa2-scrub-m { display: inline-flex; align-items: center; gap: 5px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; color: var(--deep); white-space: nowrap; }
   .wa2-scrub-m i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
+  /* ── Week Ahead fullscreen ────────────────────────────────────────────────
+     The chart is a 360x145 viewBox, so inside the card it renders ~360px wide
+     and a week of hours is squeezed into that. Turning the phone gives roughly
+     2.2x the linear width, which is the difference between reading a trend and
+     guessing at it. The LIVE node is moved into the layer rather than re-rendered:
+     initWeekScrubber positions from getBoundingClientRect(), so it keeps working
+     at any size, and no second copy of the ids can exist. */
+  .wa2-uni { position: relative; }
+  .wa-fs-btn {
+    position: absolute; top: 2px; right: 2px; z-index: 2;
+    display: flex; align-items: center; gap: 4px;
+    background: rgba(10,34,48,0.62); color: #eaf4f8;
+    border: 1px solid rgba(200,230,245,0.28); border-radius: 7px;
+    padding: 3px 7px; font-family: 'Inter', sans-serif; font-size: 10px;
+    font-weight: 600; letter-spacing: 0.3px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wa-fs-btn:hover { background: rgba(10,34,48,0.82); }
+  #waFsHost {
+    position: fixed; inset: 0; z-index: 9000;
+    background: rgba(6,22,32,0.97);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+  }
+  #waFsHost .wa2-uni { width: 100%; }
+  /* Letterbox rather than stretch: preserveAspectRatio is xMidYMid meet, and
+     forcing 'none' would smear the day labels and the tier text. */
+  #waFsHost .wa2-uni-svg { width: 100%; height: auto; max-height: 74vh; margin: 0 auto; }
+  #waFsHost .wa2-scrub-read { margin-top: 12px; }
+  #waFsHost .wa2-scrub-hint, #waFsHost .wa2-scrub-t, #waFsHost .wa2-scrub-m { color: #eaf4f8; }
+  .wa-fs-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 8px; flex: none;
+  }
+  .wa-fs-ttl {
+    font-family: 'Bebas Neue', sans-serif; letter-spacing: 1.5px;
+    font-size: 18px; color: #eaf4f8; text-transform: uppercase;
+  }
+  .wa-fs-close {
+    background: rgba(255,255,255,0.10); color: #eaf4f8;
+    border: 1px solid rgba(200,230,245,0.28); border-radius: 8px;
+    width: 34px; height: 34px; font-size: 18px; line-height: 1; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* Only worth nagging about rotating while the phone is upright AND short —
+     on a tablet or a desktop window portrait is already wide enough. */
+  .wa-fs-rotate { display: none; }
+  @media (orientation: portrait) and (max-width: 560px) {
+    .wa-fs-rotate {
+      display: block; font-family: 'Inter', sans-serif; font-size: 11px;
+      color: rgba(234,244,248,0.72); font-style: italic;
+      text-align: center; margin-top: 10px;
+    }
+  }
+  body.wa-fs-lock { overflow: hidden; }
+
   /* ── Timeline back button ── */
   .timeline-back-btn {
     display: flex; align-items: center; gap: 8px;
@@ -9456,7 +9514,65 @@ function toggleWeekAhead(){
   if (!body || !btn) return;
   var open = body.classList.toggle('wa2-open');
   btn.setAttribute('aria-expanded', String(open));
+  // Closing the card while the fullscreen layer is up would strand the chart node
+  // inside a layer whose parent is hidden; put it back first.
+  if (!open) closeWeekFullscreen();
 }
+
+// ── Week Ahead fullscreen ───────────────────────────────────────────────────
+// Inside the card the chart gets ~360 css px for a whole week. Rotating the phone
+// roughly doubles that, which is the point of this: same chart, readable.
+// The LIVE .wa2-uni node is MOVED into the layer, not cloned and not re-rendered —
+// initWeekScrubber holds direct element references and positions from
+// getBoundingClientRect(), so moving it keeps drag working at the new size, while a
+// clone would duplicate #waUniSvg and break every getElementById the scrubber uses.
+var _waFsOpen = false;
+function openWeekFullscreen(){
+  if (_waFsOpen) return;
+  var uni = document.querySelector('#weekAheadDays .wa2-uni');
+  if (!uni) return;
+  var host = document.createElement('div');
+  host.id = 'waFsHost';
+  host.setAttribute('role', 'dialog');
+  host.setAttribute('aria-modal', 'true');
+  host.setAttribute('aria-label', 'The week ahead, full screen');
+  host.innerHTML =
+      '<div class="wa-fs-bar">'
+    +   '<span class="wa-fs-ttl">The Week Ahead</span>'
+    +   '<button type="button" class="wa-fs-close" aria-label="Close full screen">&times;</button>'
+    + '</div>';
+  host.appendChild(uni);                                  // MOVE, not copy
+  var hint = document.createElement('div');
+  hint.className = 'wa-fs-rotate';
+  hint.textContent = 'Turn your phone sideways for a wider view';
+  host.appendChild(hint);
+  document.body.appendChild(host);
+  document.body.classList.add('wa-fs-lock');
+  _waFsOpen = true;
+
+  host.querySelector('.wa-fs-close').addEventListener('click', closeWeekFullscreen);
+  // Backdrop tap closes, but ONLY on the host itself — a tap that lands on the
+  // chart is a scrub, and closing on it would make the thing unusable.
+  host.addEventListener('click', function(e){ if (e.target === host) closeWeekFullscreen(); });
+  document.addEventListener('keydown', _waFsKey);
+}
+
+function closeWeekFullscreen(){
+  var host = document.getElementById('waFsHost');
+  if (!host) { _waFsOpen = false; return; }
+  var uni  = host.querySelector('.wa2-uni');
+  var back = document.getElementById('weekAheadDays');
+  // Put the chart back before removing the layer, or the node (and its scrubber
+  // listeners) is destroyed with it and the card is left empty until the next
+  // renderWeekAhead — which only fires when the matrix changes, so possibly ages.
+  if (uni && back) back.appendChild(uni);
+  host.remove();
+  document.body.classList.remove('wa-fs-lock');
+  document.removeEventListener('keydown', _waFsKey);
+  _waFsOpen = false;
+}
+
+function _waFsKey(e){ if (e.key === 'Escape') closeWeekFullscreen(); }
 
 // The Week Ahead = a 7-day TREND of Entry / Chop / Surge, stacked. Each metric is
 // mapped onto a shared calm→rough 0-100 scale via its OWN band edges, then drawn as a
@@ -9498,6 +9614,22 @@ function renderWeekAhead(matrix){
   var t0 = Math.min.apply(null, allT), t1 = Math.max.apply(null, allT);
   host.innerHTML = wgUnifiedChart(E, U, C, t0, t1);
   try { initWeekScrubber(E, U, C, t0, t1); } catch (e) {}
+
+  // A re-render replaces host.innerHTML, so if the fullscreen layer is up it is now
+  // holding the OLD detached node while the fresh chart sits in the collapsed card.
+  // Move the new one across (after initWeekScrubber has bound to it) so a data
+  // refresh mid-view updates what's on screen instead of freezing it.
+  if (_waFsOpen) {
+    try {
+      var fsHost = document.getElementById('waFsHost');
+      var fresh  = host.querySelector('.wa2-uni');
+      var stale  = fsHost && fsHost.querySelector('.wa2-uni');
+      if (fsHost && fresh) {
+        if (stale) stale.remove();
+        fsHost.insertBefore(fresh, fsHost.querySelector('.wa-fs-rotate'));
+      }
+    } catch (e) { /* non-fatal: the card still holds a valid chart */ }
+  }
 
   // Collapsed teaser: a thin combined mini of the three trends, so the shut card shows
   // there's a week's worth of trend inside (and reads as tappable, not dead space).
@@ -9562,7 +9694,11 @@ function wgUnifiedChart(E, U, C, t0, t1){
   var svg = '<svg id="waUniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="Week ahead — drag to read any time" aria-valuemin="0" aria-valuemax="100">'
     + s + grid + lines + scr + labels + tier + '</svg>';
   var readout = '<div class="wa2-scrub-read" id="waScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
-  return '<div class="wa2-uni">' + svg + readout + '</div>';
+  // Expand control. A SIBLING of the svg, not a child: the svg owns pointerdown for
+  // the scrubber, so a button inside it would place the scrub line on every press.
+  var expand = '<button type="button" class="wa-fs-btn" onclick="openWeekFullscreen()" '
+    + 'aria-label="Expand the week ahead chart to full screen">&#10530; Expand</button>';
+  return '<div class="wa2-uni">' + expand + svg + readout + '</div>';
 }
 
 // Drives the unified chart's time scrubber: tap or drag anywhere on the chart to
