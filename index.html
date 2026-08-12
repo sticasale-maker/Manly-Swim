@@ -477,19 +477,20 @@
      brings its own ring). The caption pill can't inset into a corner that's now
      transparent background, so it drops below the badge instead. */
   body.icontheme-roundel .metric-icon img.metric-icon-img {
-    width: 96px;
-    height: 96px;
+    width: 80px;
+    height: 80px;
     object-fit: contain;
     border-radius: 0;
   }
-  body.icontheme-roundel .metric-icon-fig {
-    display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
-    line-height: normal;
-  }
+  /* Caption stays OVERLAID as on the landscape art, just centred so it lands on the
+     badge's coloured lower half rather than a transparent corner. Stacking it below
+     the badge instead pushed each metric tile from 90px to 132px — the caption's own
+     height, not the badge's, is what drives the tile taller. */
   body.icontheme-roundel .metric-icon-cap {
-    position: static;
-    background: none; text-shadow: none;
-    color: var(--foam);
+    left: 50%; right: auto; bottom: 7px;
+    transform: translateX(-50%);
+    padding: 0 7px;
+    background: rgba(9,26,33,0.68);
   }
   /* Chooser thumbnail is the same landscape crop — contain it for this one option. */
   #charChoice .ind-opt[data-char="roundel"] .ind-demo-img { object-fit: contain; }
@@ -11845,6 +11846,7 @@ async function nuovoPreflight() {
   // One phase: the video plays to completion (or a 10s safety cap), then fades.
   // The old phase-2 logo/beta card has been removed.
   // Shown once per calendar day (local time); every later launch that day skips it.
+  var _splashDone = null;   // set by whichever splash flow is running; called by Skip
   (function() {
     var videoEl   = document.getElementById('splash-video');
     var videoWrap = document.getElementById('video-splash');
@@ -11888,15 +11890,25 @@ async function nuovoPreflight() {
       videoWrap.style.display = 'none';
     }
 
-    // Skip button — dismisses the video immediately
-    var skipBtn = document.getElementById('splash-skip');
-    if (skipBtn) {
-      skipBtn.addEventListener('click', function() {
-        done = true;                  // prevent endSplash firing again after video ends
-        videoWrap.style.display = 'none';
-      });
-    }
+    _splashDone = function () { done = true; };   // let the Skip button retire this flow
   })();
+
+// Skip button — bound OUTSIDE the once-a-day block above, which returns early on
+// every launch after the first each day. Wired in there, Skip was only ever live
+// on the day's first splash; a splash reopened by tapping the logo (replaySplash)
+// had a dead button. Hiding twice is harmless — the pending 'ended'/10s handlers
+// only hide it again.
+(function () {
+  var skipBtn = document.getElementById('splash-skip');
+  if (!skipBtn) return;
+  skipBtn.addEventListener('click', function () {
+    var wrap = document.getElementById('video-splash');
+    var vid  = document.getElementById('splash-video');
+    if (typeof _splashDone === 'function') _splashDone();
+    if (vid) { try { vid.pause(); } catch (e) {} }
+    if (wrap) { wrap.classList.remove('fade-out'); wrap.style.display = 'none'; }
+  });
+})();
 
 
 
@@ -11914,6 +11926,7 @@ function replaySplash() {
     wrap.classList.add('fade-out');
     setTimeout(function () { wrap.style.display = 'none'; }, 650);
   };
+  _splashDone = function () { done = true; };   // Skip retires this replay too
   if (vid) {
     vid.onended = end; vid.onerror = end;
     try { vid.currentTime = 0; } catch (e) {}
