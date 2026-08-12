@@ -101,47 +101,43 @@ __name(fetchWWLocal, "fetchWWLocal");
 __name2(fetchWWLocal, "fetchWWLocal");
 
 
-// ── PATCH 3 of 4 — /forecast route: overlay local wind + tides ──────────────
-// FIND (the whole remainder of the fetch handler, after the
-// `if (url.pathname !== "/forecast")` 404 guard) — from this line:
+// ── PATCH 3 of 4 — /forecast route: gate + overlay ──────────────────────────
+// This is the LAST thing in the fetch handler — immediately after the
+// `if (url.pathname !== "/forecast") { return ... "Not found" ... }` guard and
+// directly above `async scheduled(event, env, ctx) {`. Split into two small
+// anchors because the whole-tail version was hard to locate. Both FIND strings
+// below are unique in the file.
 //
-//     const days = String(Math.min(Math.max(parseInt(url.searchParams.get("days"), 10) || 5, 1), 7));
+// ── 3a — THE GATE ──
+// FIND (3 lines):
 //
-// ...down to and including the closing brace of its catch block:
+//       const wwRes = await fetch(wwUrl, {
+//         cf: { cacheTtl: FORECAST_EDGE_TTL_SEC, cacheEverything: true }
+//       });
 //
-//     } catch (err) {
-//       return new Response(
-//         JSON.stringify({ error: err.message }),
-//         { status: 500, headers: JSONH() }
-//       );
-//     }
-//
-// REPLACE ALL OF THAT WITH:
+// REPLACE WITH:
+//   (Only the Manly Swim app sends location=swimmers. The Forecast App sends
+//    ?days=5 with no location, so it skips the second WW call entirely and its
+//    response stays byte-identical to today.)
 
-    const days = String(Math.min(Math.max(parseInt(url.searchParams.get("days"), 10) || 5, 1), 7));
-    // THE GATE. Only the Manly Swim app sends location=swimmers. The Forecast App
-    // sends ?days=5 with no location and must come out of here byte-identical to
-    // today — same body, no _sources key, and no second WW call on its behalf.
-    const wantLocal = url.searchParams.get("location") === "swimmers";
-    const wwUrl = `${WW_BASE}/${WW_KEY}/locations/${WW_LOCATION}/weather.json?forecasts=swell,tides,wind&days=${days}`;
-    try {
-      // In parallel — the local call must not add latency on top of the main one.
-      // fetchWWLocal never throws, so Promise.all is safe.
+      const wantLocal = url.searchParams.get("location") === "swimmers";
       const [wwRes, local] = await Promise.all([
         fetch(wwUrl, { cf: { cacheTtl: FORECAST_EDGE_TTL_SEC, cacheEverything: true } }),
         wantLocal ? fetchWWLocal(days) : Promise.resolve(null)
       ]);
-      if (!wwRes.ok) {
-        const txt = await wwRes.text();
-        return new Response(
-          JSON.stringify({ error: `WillyWeather ${wwRes.status}`, detail: txt }),
-          { status: wwRes.status, headers: JSONH() }
-        );
-      }
+
+// ── 3b — THE OVERLAY ──
+// FIND (2 lines, about 10 lines below 3a):
+//
+//       const data = await wwRes.json();
+//       return new Response(JSON.stringify(data), {
+//
+// REPLACE WITH:
+//   (Overlay ONLY what Cabbage Tree Bay actually returned, per block. Swell is
+//    never touched — 23217 has none, and the offshore node is the right source
+//    for the Oceanside FYI anyway.)
+
       const data = await wwRes.json();
-      // Overlay ONLY what Cabbage Tree Bay actually returned. Swell is never
-      // touched — 23217 has none, and the offshore node is the right source for
-      // the Oceanside FYI anyway. Each block falls back independently.
       if (wantLocal) {
         const from = { wind: WW_LOCATION, tides: WW_LOCATION, swell: WW_LOCATION };
         if (local && data && data.forecasts) {
@@ -151,15 +147,6 @@ __name2(fetchWWLocal, "fetchWWLocal");
         data._sources = from;   // provenance: a curl can tell exactly what it got
       }
       return new Response(JSON.stringify(data), {
-        status: 200,
-        headers: JSONH({ "Cache-Control": `public, max-age=${FORECAST_EDGE_TTL_SEC}, s-maxage=${FORECAST_EDGE_TTL_SEC}` })
-      });
-    } catch (err) {
-      return new Response(
-        JSON.stringify({ error: err.message }),
-        { status: 500, headers: JSONH() }
-      );
-    }
 
 
 // ── PATCH 4 of 4 — forecast_history logger must log the SAME wind + tide ────
