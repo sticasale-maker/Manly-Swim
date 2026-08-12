@@ -14,6 +14,7 @@
 <link rel="icon" type="image/png" sizes="16x16" href="images/logos/favicon-16.png?v=3">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#113541">
+<meta name="color-scheme" content="dark">
 <title>Swim Manly — Ocean swim forecast</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Swim Manly">
@@ -470,6 +471,28 @@
     white-space: nowrap; pointer-events: none;
     text-shadow: 0 1px 2px rgba(0,0,0,0.45);
   }
+  /* Roundel theme (Custom → "Roundel"). The artwork is a circular badge, so the
+     156x78 landscape slot above would object-fit:cover it — slicing the ring and
+     the swimmer's head off. Square slot, contain, and no border-radius (the art
+     brings its own ring). The caption pill can't inset into a corner that's now
+     transparent background, so it drops below the badge instead. */
+  body.icontheme-roundel .metric-icon img.metric-icon-img {
+    width: 96px;
+    height: 96px;
+    object-fit: contain;
+    border-radius: 0;
+  }
+  body.icontheme-roundel .metric-icon-fig {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
+    line-height: normal;
+  }
+  body.icontheme-roundel .metric-icon-cap {
+    position: static;
+    background: none; text-shadow: none;
+    color: var(--foam);
+  }
+  /* Chooser thumbnail is the same landscape crop — contain it for this one option. */
+  #charChoice .ind-opt[data-char="roundel"] .ind-demo-img { object-fit: contain; }
   .metric-track-wrap {
     margin: 4px 0 2px;
     position: relative;
@@ -2515,6 +2538,10 @@
         <button type="button" class="ind-opt" data-char="dog" aria-pressed="false">
           <div class="ind-demo"><img class="ind-demo-img" src="images/dog/entry-easy.png" alt=""></div>
           <div class="ind-label">Dog</div>
+        </button>
+        <button type="button" class="ind-opt" data-char="roundel" aria-pressed="false">
+          <div class="ind-demo"><img class="ind-demo-img" src="images/roundel/entry-easy.png" alt=""></div>
+          <div class="ind-label">Roundel</div>
         </button>
       </div>
         <p class="ind-note" id="charNote"></p>
@@ -4720,9 +4747,16 @@ const _ICON_PREFIX = { entry: 'entry', swim: 'chop', surge: 'surge' };
 var ICON_THEME_KEY = 'swim_icon_theme';
 function _iconThemeGet(){ try { return (window.persistGet ? window.persistGet(ICON_THEME_KEY) : localStorage.getItem(ICON_THEME_KEY)); } catch (e) { return null; } }
 function _iconThemeSet(v){ try { if (window.persistSet) window.persistSet(ICON_THEME_KEY, v); else localStorage.setItem(ICON_THEME_KEY, v); } catch (e) {} }
-function getIconTheme(){ var v = _iconThemeGet(); return (v === 'seadragon' || v === 'cat' || v === 'dog') ? v : ''; }
+// Known themes in one place — getIconTheme and setIconTheme both validate against
+// it, so adding a theme can't half-land (valid to set but not to read back).
+var _ICON_THEMES = ['seadragon', 'cat', 'dog', 'roundel'];
+function _iconThemeOk(v){ return _ICON_THEMES.indexOf(v) >= 0 ? v : ''; }
+function getIconTheme(){ return _iconThemeOk(_iconThemeGet()); }
 function iconDir(){ var t = getIconTheme(); return t ? ('images/' + t + '/') : 'images/'; }
 function applyIconTheme(v){
+  // Roundel artwork is square, not the 156x78 landscape the other themes use —
+  // a body class swaps the slot geometry (see .icontheme-roundel in the CSS).
+  document.body.classList.toggle('icontheme-roundel', v === 'roundel');
   var ch = document.getElementById('charChoice');
   if (ch) ch.querySelectorAll('.ind-opt').forEach(function (o) {
     o.setAttribute('aria-pressed', (o.getAttribute('data-char') || '') === v ? 'true' : 'false');
@@ -4733,7 +4767,7 @@ function applyIconTheme(v){
     if (base) im.setAttribute('src', dir + base);
   });
 }
-function setIconTheme(v){ v = (v === 'seadragon' || v === 'cat' || v === 'dog') ? v : ''; _iconThemeSet(v); applyIconTheme(v); }
+function setIconTheme(v){ v = _iconThemeOk(v); _iconThemeSet(v); applyIconTheme(v); }
 window.setIconTheme = setIconTheme; window.getIconTheme = getIconTheme;
 function renderMetricIcon(blockId, cls, cap) {
   const host = document.getElementById(blockId + 'Icon');
