@@ -1435,6 +1435,12 @@
   .cond-value { font-family:'Bebas Neue',sans-serif; font-size:clamp(24px, 7vw, 30px); color:var(--deep); line-height:1; }
   .cond-unit  { font-size:11px; color:var(--dim); margin-top:3px; }
   .cond-sub   { font-size:11px; color:var(--ocean); margin-top:2px; }
+  /* Observed-wind sub-line. Deliberately styled DIFFERENTLY from .cond-sub's
+     forecast siblings — dimmed, not coloured like a headline number — because the
+     scores above it are still computed from the forecast wind, not this reading.
+     It is a cross-check offered to the swimmer, not the input to the verdict. */
+  .cond-obs   { color:var(--dim); font-size:10.5px; line-height:1.35; }
+  .cond-obs b { font-weight:700; color:var(--deep); font-size:11px; }
   /* Swell card, four rows: Oceanside (WW), bay entrance (NS), the ramp (NS·SS)
      and Bower Ln (NS·BL). Each row is "H m, [dir,] Ps" + a dimmed location. */
   .cond-swell-rows { display:flex; flex-direction:column; gap:6px; }
@@ -3135,6 +3141,10 @@
           <div class="cond-label">Wind</div>
           <div class="cond-value" id="sWind">—</div>
           <div class="cond-unit" id="sWindDir">—</div>
+          <!-- Observed wind (BOM North Head). Hidden unless the displayed hour IS
+               the current hour — a live reading shown against tomorrow afternoon
+               would be nonsense. Populated in renderSnapshot. -->
+          <div class="cond-sub cond-obs" id="sWindObs" style="display:none">—</div>
         </div>
         <div class="cond-card">
           <div class="cond-label">Swell</div>
@@ -3574,6 +3584,34 @@ const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
 const NS_STATIC_URL   = 'nearshore.json';   // same directory on GitHub Pages
 const NS_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/nearshore'; // live Worker route; '' = use static nearshore.json
 const NS_FEED_ENABLED = true;
+
+// ── REAL-TIME WIND OBSERVATIONS (BOM) — STEP 1: LOG ONLY ────────────────────
+// BOM has an AWS on NORTH HEAD (WMO 95768), ~1.5 km from the swim patch, on the
+// clifftop at the harbour mouth — by far the closest real anemometer to the bay.
+// It reports a 10-minute mean every 30 minutes.
+//
+// WHAT THIS DOES TODAY: NOTHING to any score. It fetches the observation and logs
+// it against the forecast for the same instant, into Supabase `wind_obs_pairs`.
+// That is deliberate. The forecast is 10 m wind for the swim patch and North Head
+// is an ~85 m clifftop, so obs/forecast carries a large PERSISTENT ratio that is
+// terrain, not forecast error. Bias-correcting on the raw ratio would inflate
+// every score forever. We measure that station factor first, then nudge.
+//
+// Routed through the Worker because bom.gov.au sends no Access-Control-Allow-Origin
+// (so the browser cannot read it) and 403s the default Workers UA. See
+// worker-obs-route.js — paste job, dashboard editor only.
+const OBS_WORKER_URL  = 'https://bold-rain-6ded.sticasale.workers.dev/obs';
+const OBS_STATION     = 'northhead';   // must be a key in OBS_STATIONS in the Worker
+const OBS_ENABLED     = true;          // ?obs=0 disables at runtime
+// Trailing window to vector-average. 90 min = the latest reading plus the two
+// behind it. A single 10-min mean is noisy against an hourly forecast value, and
+// BOM applies NO quality control to this product, so a lone spurious or null
+// reading must never become "the observation".
+const OBS_WINDOW_MIN  = 90;
+// Older than this and the observation is not describing now. Two missed BOM
+// cycles. Beyond it we log nothing rather than log something misleading.
+const OBS_MAX_AGE_MIN = 75;
+
 // Status-line provenance. In nuovo, WillyWeather supplies ONLY wind + tide; swell,
 // sea and periods come from the NSW Nearshore feed (node 103218). Naming WW alone
 // would credit the one source that doesn't drive the forecast. vecchio.html keeps
@@ -3598,8 +3636,9 @@ const SRC_DEFS = [
   { key: 'ww',   label: 'WW', full: 'WillyWeather' },
   { key: 'om',   label: 'OM', full: 'Open-Meteo' },
   { key: 'bw',   label: 'BW', full: 'Beachwatch' },
+  { key: 'ob',   label: 'OB', full: 'BOM North Head (observed wind)' },
 ];
-const _srcStatus = { ns: 'idle', ww: 'idle', om: 'idle', bw: 'idle' };
+const _srcStatus = { ns: 'idle', ww: 'idle', om: 'idle', bw: 'idle', ob: 'idle' };
 
 function setSrc(key, state) {
   if (!(key in _srcStatus)) return;
@@ -7655,6 +7694,207 @@ async function logCalibrationPair(h, result, wwSlot, wwR) {
   }
 }
 
+// ── OBSERVED WIND (BOM NORTH HEAD) — FETCH, AVERAGE, LOG ─────────────────────
+// STEP 1: measurement only. Nothing below is allowed to touch a score, a row, or
+// a render. It fetches, vector-averages, pairs against the forecast for the same
+// instant, and POSTs. See the OBS_* config block for why we measure before we
+// nudge. Every entry point is wrapped so a failure is invisible to the forecast.
+
+// BOM publishes wind_dir as 16-point compass TEXT only — there is no wind_dir_deg
+// in this product. So observed direction is quantised to 22.5° sectors, i.e. ±11.25°
+// is the floor on direction resolution. That is fine for measuring a systematic
+// rotation over thousands of rows; it would NOT support a fine per-hour direction
+// nudge, which is worth knowing before step 2 is designed.
+const OBS_DIR_DEG = {
+  N:0, NNE:22.5, NE:45, ENE:67.5, E:90, ESE:112.5, SE:135, SSE:157.5,
+  S:180, SSW:202.5, SW:225, WSW:247.5, W:270, WNW:292.5, NW:315, NNW:337.5,
+};
+
+// BOM stamps 'yyyymmddHHMMSS' with no separators or zone. aifstime_utc is UTC.
+function obsParseUTC(s) {
+  if (!s || s.length < 14) return NaN;
+  return Date.UTC(+s.slice(0,4), +s.slice(4,6) - 1, +s.slice(6,8),
+                  +s.slice(8,10), +s.slice(10,12), +s.slice(12,14));
+}
+
+// Shortest-arc signed difference a-b, in (-180, 180].
+function obsCircDiff(a, b) { return ((((a - b) % 360) + 540) % 360) - 180; }
+
+async function fetchWindObs(timeoutMs) {
+  if (!OBS_ENABLED) return null;
+  try { if (new URLSearchParams(location.search).get('obs') === '0') return null; } catch (_) {}
+  const url = `${OBS_WORKER_URL}?station=${encodeURIComponent(OBS_STATION)}&t=${Date.now()}`;
+  const res = await fetchWithTimeout(url, timeoutMs || 8000, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`OBS ${res.status}`);
+  return await res.json();
+}
+
+// Vector-average the trailing window into one observation.
+// Speed is a SCALAR mean and direction a VECTOR mean, on purpose: under a veering
+// wind the vector magnitude collapses toward zero, which would understate the wind
+// that actually built the chop, while the vector angle is still the right mean
+// bearing. `steadiness` (|vector mean| / scalar mean) records how much they
+// disagreed, so a later direction nudge can be gated on it instead of guessing.
+function parseWindObs(j) {
+  const rows = (j && Array.isArray(j.obs)) ? j.obs : [];
+  if (!rows.length) return null;
+
+  const now    = Date.now();
+  const newest = obsParseUTC(rows[0].utc);
+  if (!isFinite(newest)) return null;
+  const ageMin = (now - newest) / 60000;
+  // Stale, or clock-skewed into the future by more than one cycle — refuse. A
+  // reading from two hours ago is worse than none: it would be paired against the
+  // wrong forecast instant and pollute the very bias we are trying to measure.
+  if (ageMin > OBS_MAX_AGE_MIN || ageMin < -35) return null;
+
+  const cutoff = newest - OBS_WINDOW_MIN * 60000;
+  let n = 0, spdSum = 0, u = 0, v = 0, gust = null;
+  for (const r of rows) {
+    const t = obsParseUTC(r.utc);
+    if (!isFinite(t) || t < cutoff || t > newest) continue;
+    // BOM does no QC. Nulls are routine; a negative or absurd speed is not, and
+    // must be dropped rather than averaged in.
+    if (typeof r.kmh !== 'number' || !isFinite(r.kmh) || r.kmh < 0 || r.kmh > 200) continue;
+    const deg = (r.dir != null) ? OBS_DIR_DEG[r.dir] : undefined;
+    if (deg === undefined) continue;     // a speed with no bearing is unusable here
+    const rad = deg * Math.PI / 180;
+    spdSum += r.kmh;
+    u += r.kmh * Math.sin(rad);
+    v += r.kmh * Math.cos(rad);
+    n++;
+    if (typeof r.gust === 'number' && isFinite(r.gust)) gust = (gust == null) ? r.gust : Math.max(gust, r.gust);
+  }
+  // Two readings minimum. One reading is not an average, and it is exactly the
+  // case where an unQC'd spike would pass straight through.
+  if (n < 2) return null;
+
+  const spdKmh  = spdSum / n;
+  const vecMag  = Math.hypot(u, v) / n;
+  let dirDeg    = Math.atan2(u / n, v / n) * 180 / Math.PI;
+  if (dirDeg < 0) dirDeg += 360;
+
+  return {
+    station:   j.station || OBS_STATION,
+    name:      j.name || null,
+    tsISO:     new Date(newest).toISOString(),
+    ageMin:    Math.round(ageMin * 10) / 10,
+    spdKmh:    Math.round(spdKmh * 10) / 10,
+    gustKmh:   gust,
+    dirDeg:    Math.round(dirDeg * 10) / 10,
+    n,
+    steadiness: spdKmh > 0 ? Math.round((vecMag / spdKmh) * 1000) / 1000 : null,
+  };
+}
+
+// Interpolate the forecast wind to an arbitrary instant.
+// NOT "the nearest row": the observation is a 10-min mean valid at :00/:30 and the
+// matrix is hourly, so snapping to the nearest hour would record a timing offset as
+// if it were forecast bias — the exact error this table exists to avoid.
+function windForecastAt(matrix, ts) {
+  if (!Array.isArray(matrix) || !matrix.length) return null;
+  let lo = null, hi = null;
+  for (const r of matrix) {
+    if (!r || !r.dateTime || r.windKmh == null) continue;
+    const t = new Date(String(r.dateTime).replace(' ', 'T')).getTime();
+    if (!isFinite(t)) continue;
+    if (t <= ts && (!lo || t > lo.t)) lo = { t, r };
+    if (t >= ts && (!hi || t < hi.t)) hi = { t, r };
+  }
+  if (!lo && !hi) return null;
+  // Refuse to extrapolate. If the observation sits outside the forecast window
+  // entirely (a badly stale matrix), there is no honest pairing to make.
+  if (!lo || !hi) return null;
+  if (lo.t === hi.t) {
+    return { kmh: lo.r.windKmh, dirDeg: lo.r.windDir, rowTs: lo.r.dateTime };
+  }
+  const f = (ts - lo.t) / (hi.t - lo.t);
+  const kmh = lo.r.windKmh + (hi.r.windKmh - lo.r.windKmh) * f;
+  // Direction interpolates along the SHORTEST ARC — a linear blend of 350° and 10°
+  // would sweep through south and report 180°, inverting the wind.
+  const d0  = lo.r.windDir || 0;
+  const dir = (((d0 + obsCircDiff(hi.r.windDir || 0, d0) * f) % 360) + 360) % 360;
+  return {
+    kmh:    Math.round(kmh * 100) / 100,
+    dirDeg: Math.round(dir * 100) / 100,
+    rowTs:  (f < 0.5 ? lo.r.dateTime : hi.r.dateTime),
+  };
+}
+
+// One row per BOM observation instant per device, throttled on the observation
+// timestamp so a re-render inside the same 30-min cycle does not re-POST.
+const _obsInflight = new Set();
+async function logWindObs(matrix, obs) {
+  try {
+    if (!obs || !obs.tsISO) return;
+    const latch = 'swim_obs_last';
+    if (localStorage.getItem(latch) === obs.tsISO) return;
+    if (_obsInflight.has(obs.tsISO)) return;
+    _obsInflight.add(obs.tsISO);
+    try {
+      const fc = windForecastAt(matrix, new Date(obs.tsISO).getTime());
+      if (!fc) return;                       // no honest pairing — log nothing
+
+      const num = (x) => (x == null || !isFinite(x)) ? null : Math.round(x * 1000) / 1000;
+      const deviceId = localStorage.getItem('swim_device_id') ||
+        (function () { const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+          localStorage.setItem('swim_device_id', id); return id; })();
+
+      const payload = {
+        obs_ts:    obs.tsISO,
+        logged_at: new Date().toISOString(),
+        device_id: deviceId,
+        app_build: (typeof APP_BUILD !== 'undefined') ? APP_BUILD : null,
+
+        station:        obs.station,
+        obs_kmh:        num(obs.spdKmh),
+        obs_gust_kmh:   num(obs.gustKmh),
+        obs_dir_deg:    num(obs.dirDeg),
+        obs_n:          obs.n,
+        obs_age_min:    num(obs.ageMin),
+        obs_steadiness: num(obs.steadiness),
+
+        fc_kmh:     num(fc.kmh),
+        fc_dir_deg: num(fc.dirDeg),
+        fc_src:     'ww',                    // wind is WillyWeather on both paths
+        fc_row_ts:  fc.rowTs || null,
+
+        // Left null below 3 km/h: a ratio against a near-zero forecast is arbitrarily
+        // large and would dominate any later fit. The raw speeds are still stored,
+        // so the threshold can be revisited without losing the data.
+        ratio:         (fc.kmh >= 3 && obs.spdKmh >= 3) ? num(obs.spdKmh / fc.kmh) : null,
+        dir_delta_deg: num(obsCircDiff(obs.dirDeg, fc.dirDeg)),
+      };
+
+      // PLAIN INSERT — deliberately NOT the on_conflict + resolution=ignore-duplicates
+      // upsert that logCalibrationPair uses. PostgREST routes an upsert through its
+      // UPDATE path, so it needs an UPDATE policy as well as an INSERT one; measured
+      // 13 Aug 2026 against this table, plain POST → 201 while the identical upsert
+      // → 42501. Granting UPDATE would let any client PATCH rows in what is meant to
+      // be an append-only measurement table, which is a bad trade for a dedupe we
+      // don't need: the unique index still enforces one row per (obs_ts, device_id)
+      // and simply returns 409, which is already handled as success below.
+      const res = await fetch(BB_SUPABASE_URL + '/rest/v1/wind_obs_pairs', {
+        method: 'POST',
+        headers: {
+          'apikey': BB_SUPABASE_KEY,
+          'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(payload),
+      });
+      // A 409 is the unique index doing its job — this instant is already recorded,
+      // so latch and stop retrying it, exactly as logCalibrationPair does.
+      if (res.ok || res.status === 409) localStorage.setItem(latch, obs.tsISO);
+    } finally {
+      _obsInflight.delete(obs.tsISO);        // released on network failure too
+    }
+  } catch (e) {
+    console.warn('wind obs log skipped', e);  // never disturb the forecast
+  }
+}
+
 // Fallback banner — shown when the displayed hour is NOT NS-fed (nearshore feed down,
 // scores came from the WW 'orig' backup). Injected once above the time/metrics block.
 // ── Silent degradation tell (operator-facing, not swimmer-facing) ────────────
@@ -8361,6 +8601,42 @@ function renderSnapshot(h, wx) {
   // Conditions bar
   document.getElementById('sWind').textContent    = Math.round(h.windKmh);
   document.getElementById('sWindDir').textContent = `km/h · ${bearingName(h.windDir)} (${Math.round(h.windDir)}°)`;
+
+  // ── Observed wind, BOM North Head (display only) ─────────────────────────────
+  // Shown ONLY on the hour the reading actually describes. The row above it is a
+  // forecast, and so is every score on this screen — this line is a cross-check,
+  // never a claim that the verdict was computed from it. Once step 2 lands and the
+  // wind is genuinely bias-corrected, this wording has to change with it.
+  try {
+    const obsEl = document.getElementById('sWindObs');
+    if (obsEl) {
+      const o = window._windObs;
+      // Within an hour of the reading. Not "is this the first row": the user can
+      // land on an adjacent hour, and a 10-min mean is fairly describing the hour
+      // either side of itself. Beyond that it is a different weather situation.
+      let near = false;
+      if (o && h && h.dateTime) {
+        const rowT = new Date(String(h.dateTime).replace(' ', 'T')).getTime();
+        const obsT = new Date(o.tsISO).getTime();
+        near = isFinite(rowT) && Math.abs(rowT - obsT) <= 60 * 60 * 1000;
+      }
+      if (o && near) {
+        const gust = (o.gustKmh != null) ? ` · gust ${Math.round(o.gustKmh)}` : '';
+        const age  = o.ageMin < 1 ? 'just now' : `${Math.round(o.ageMin)} min ago`;
+        obsEl.innerHTML =
+          // No escaping needed: every interpolated value is a number we rounded or
+          // a fixed compass string from bearingName's own table. No feed text here.
+          `observed <b>${Math.round(o.spdKmh)} km/h ${bearingName(o.dirDeg)}</b>${gust}` +
+          `<br>North Head · ${age}`;
+        obsEl.title = 'Measured at the BOM automatic weather station on North Head, ' +
+                      'about 1.5 km away. The forecast above, and the scores, are ' +
+                      'still model values — this is what the wind is actually doing.';
+        obsEl.style.display = '';
+      } else {
+        obsEl.style.display = 'none';
+      }
+    }
+  } catch (e) { /* display-only: never let the observed line break the snapshot */ }
   // Swell height at two sheltered points, attenuating the bay-mouth feed by the
   // shelter/dispersion transmit (energy fraction) the scoring + swell map use:
   //   at the ramp = SS table (nsDispLookup, South Steyne entry corner)
@@ -9912,11 +10188,12 @@ async function loadAndRender(forceRefresh = false) {
     // until the user pulled to refresh.
     try {
       const withTimeout = (p, ms) => Promise.race([p, new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
-      const [omRes, wxRes, bwRes, nsRes] = await Promise.allSettled([
+      const [omRes, wxRes, bwRes, nsRes, obRes] = await Promise.allSettled([
         withTimeout(fetchOMarine(),    14000),
         withTimeout(fetchOMWeather(),  16000),
         withTimeout(fetchBeachwatch(), 12000),
         withTimeout(fetchNearshore(),  12000),
+        withTimeout(fetchWindObs(8000), 9000),
       ]);
 
       setSrc('om', (omRes.status === 'fulfilled' && omRes.value) ? 'ok' : 'down');
@@ -9954,6 +10231,24 @@ async function loadAndRender(forceRefresh = false) {
         _wxDaily  = wxRes.value.daily  || {};
       }
       setSrc('bw', (bwRes.status === 'fulfilled' && bwRes.value) ? 'ok' : 'down');
+
+      // ── Observed wind — MEASURE AND LOG ONLY, changes nothing on screen ─────
+      // Deliberately fire-and-forget and NOT awaited: this is instrumentation for
+      // a future bias correction, and it must never add latency to, or be able to
+      // fail, the render below. _windObs is exposed purely so it can be inspected
+      // in the console while the pairing is being validated.
+      try {
+        const obs = (obRes.status === 'fulfilled' && obRes.value) ? parseWindObs(obRes.value) : null;
+        window._windObs = obs;
+        // 'warn', not 'down', when the fetch worked but the reading was stale or
+        // too sparse to average — the source is up, the data just isn't usable now.
+        setSrc('ob', obs ? 'ok' : (obRes.status === 'fulfilled' && obRes.value ? 'warn' : 'down'));
+        if (obs) {
+          diag('OBS ' + obs.station + ' ' + obs.spdKmh + ' km/h @' + obs.dirDeg +
+               '° (n=' + obs.n + ', ' + obs.ageMin + ' min old)');
+          logWindObs(_matrix, obs);
+        }
+      } catch (obErr) { diag('OBS log error (isolated): ' + obErr.message); }
       try { renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null); }
       catch (pErr) { diag('renderPollution error (isolated): ' + pErr.message); console.warn('renderPollution failed (isolated):', pErr); }
 
