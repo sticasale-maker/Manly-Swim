@@ -19152,8 +19152,26 @@ function thfMapBuild() {
       host.classList.add('set');
       thfErr('');
     };
+    // A touch that starts on the cross drags it; a touch that starts anywhere
+    // else is a page scroll. Without this, one preventDefault() on every
+    // touchmove made the whole map a scroll-trap once a pin was down.
+    let draggingCross = false;
+    const onCross = (t) => {
+      if (!host.classList.contains('set')) return false;
+      const cr = cross.getBoundingClientRect();
+      const pad = 20;   // generous hit area beyond the visible ring
+      return t.clientX >= cr.left - pad && t.clientX <= cr.right + pad &&
+             t.clientY >= cr.top - pad && t.clientY <= cr.bottom + pad;
+    };
     host.addEventListener('click', place);
-    host.addEventListener('touchmove', (e) => { e.preventDefault(); place(e); }, { passive: false });
+    host.addEventListener('touchstart', (e) => {
+      draggingCross = onCross(e.touches[0]);
+    }, { passive: true });
+    host.addEventListener('touchmove', (e) => {
+      if (!draggingCross) return;   // let the page scroll instead
+      e.preventDefault();
+      place(e);
+    }, { passive: false });
   };
   img.src = THF_MAP_SRC;
   host.appendChild(img);
