@@ -4068,7 +4068,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       ".st-ranges{display:flex;gap:6px;margin-bottom:10px;}" +
       ".st-range{flex:1;border:1px solid var(--border,#cfe3ea);background:#fff;color:var(--dim,#4a5f6e);border-radius:8px;padding:6px 0;font-size:11px;cursor:pointer;font-family:inherit;}" +
       ".st-range.on{background:var(--ocean,#4a8fad);color:#fff;border-color:var(--ocean,#4a8fad);}" +
-      ".st-tiles{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:6px;}" +
+      ".st-tiles{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:6px;}" +
       ".st-tile{background:#fff;border:1px solid var(--border,#cfe3ea);border-radius:10px;padding:8px 4px;text-align:center;}" +
       ".st-tval{font-family:'Bebas Neue',sans-serif;font-size:22px;line-height:1;color:var(--deep,#113541);}" +
       ".st-tlab{font-size:8.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim,#4a5f6e);margin-top:3px;}" +
@@ -4130,6 +4130,8 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '  <div class="st-sec">Reach — every device that has ever opened it</div>' +
       '  <div class="st-card" id="stCumul"></div>' +
       '  <div class="st-stick" id="stReachCap" style="text-align:left;margin:6px 2px 0;line-height:1.45;"></div>' +
+      '  <div class="st-sec">Installed vs browser — active devices by day</div>' +
+      '  <div class="st-card" id="stInstTrend"></div>' +
       '  <div class="st-sec">Accesses by weekday — week over week</div>' +
       '  <div class="st-card" id="stWeekday"></div>' +
       '  <div class="st-sec">Accesses by hour — last 7 days</div>' +
@@ -4256,7 +4258,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       loadPrefs(days);          // separate RPC: distinct-device split, not an event count
       loadHourly();             // separate RPC: accesses by hour, last 7 days (fixed window)
       loadActive(days);         // separate RPC: DAU + rolling WAU — the trustworthy counts
-      loadQuality();            // separate RPC: installed / returning tiles + the reach caveat
+      loadQuality(days);        // separate RPC: installed / returning / browser tiles + the trend chart
       loadFunnel(days);         // separate RPC: install funnel + the in-app-browser ceiling
       // Cumulative devices always spans the whole history. When the selected range
       // already IS the whole history (30/90 clamp to daysSinceLaunch) we hand the
@@ -4404,11 +4406,11 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
     show(rows.length - 1);
   }
 
-  /* INSTALLED / RETURNING tiles + the caveat under Reach. Uses
+  /* INSTALLED / BROWSER / RETURNING tiles + the caveat under Reach. Uses
      analytics_device_quality — the same function that established the device count
      is inflated. Silent no-op if it has not been installed: the tiles keep their
      em dash, which reads as "not measured" rather than as a zero. */
-  async function loadQuality() {
+  async function loadQuality(days) {
     try {
       var q = await rpc('analytics_device_quality', { p_token: tok(), p_days: 400 });
       if (!q || !q.devices) return;
@@ -4416,8 +4418,10 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       (q.by_install || []).forEach(function (g) { if (g.group_name === 'installed (pwa)') inst = g.devices || 0; });
       (q.lifespan || []).forEach(function (b) { if (b.bucket === 'a: same day only') oneday = b.devices || 0; });
       var ret = Math.max(0, (q.devices || 0) - oneday);
-      var ti = el('stTInst'), tr = el('stTRet');
+      var browser = Math.max(0, (q.devices || 0) - inst);
+      var ti = el('stTInst'), tb = el('stTBrowser'), tr = el('stTRet');
       if (ti) ti.textContent = inst;
+      if (tb) tb.textContent = browser;
       if (tr) tr.textContent = ret;
       var cap = el('stReachCap');
       if (cap) {
@@ -4426,6 +4430,40 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
           'so one swimmer returning later is counted again here — and once counted, never removed.';
       }
     } catch (e) { /* not installed / not authorised — tiles stay as em dashes */ }
+    loadInstallTrend(days);
+  }
+
+  /* Trend behind the Installed/Browser tiles: distinct active devices per day,
+     split by whether that device has ever run installed. A separate RPC because
+     it's grouped by day (analytics_device_quality is one snapshot). */
+  async function loadInstallTrend(days) {
+    var box = el('stInstTrend'); if (!box) return;
+    try {
+      var rows = await rpc('analytics_install_trend', { p_token: tok(), p_days: clampDays(days || 90) });
+      box.innerHTML = installTrendChart(Array.isArray(rows) ? rows : []);
+    } catch (e) { box.innerHTML = '<div class="st-empty">Not authorised.</div>'; }
+  }
+
+  function installTrendChart(rows) {
+    if (!rows.length) return '<div class="st-empty">No data yet.</div>';
+    var W = 320, H = 120, gap = 1.5;
+    var max = rows.reduce(function (m, r) { return Math.max(m, (r.installed || 0) + (r.browser || 0)); }, 1);
+    var bw = W / rows.length, inner = Math.max(1, bw - gap);
+    var bars = rows.map(function (r, i) {
+      var inst = r.installed || 0, brw = r.browser || 0;
+      var x = i * bw;
+      var hInst = (inst / max) * H, hBrw = (brw / max) * H;
+      var yInst = H - hInst, yBrw = yInst - hBrw;
+      var ttl = r.day + ' — ' + inst + ' installed, ' + brw + ' browser';
+      var t = '<title>' + esc(ttl) + '</title>';
+      // Stacked, not grouped: on any given day a device is one or the other,
+      // never both, so the full column height is genuinely "active that day".
+      return '<rect x="' + x.toFixed(1) + '" y="' + yInst.toFixed(1) + '" width="' + inner.toFixed(1) + '" height="' + hInst.toFixed(1) + '" fill="var(--deep,#113541)">' + t + '</rect>' +
+             '<rect x="' + x.toFixed(1) + '" y="' + yBrw.toFixed(1) + '" width="' + inner.toFixed(1) + '" height="' + hBrw.toFixed(1) + '" fill="var(--ocean,#4a8fad)" opacity="0.42">' + t + '</rect>';
+    }).join('');
+    var first = rows[0].day, last = rows[rows.length - 1].day;
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;" preserveAspectRatio="none">' + bars + '</svg>' +
+           '<div class="st-axis"><span>' + esc(first) + '</span><span><span style="color:var(--deep,#113541);">▮</span> installed · <span style="color:var(--ocean,#4a8fad);">▮</span> browser</span><span>' + esc(last) + '</span></div>';
   }
 
   /* CUMULATIVE DEVICES — the install-base curve.
@@ -4680,6 +4718,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       // Filled by loadQuality() \u2014 a second RPC, so they start as an em dash rather
       // than a 0, which would read as "nobody" instead of "not counted yet".
       '<div class="st-tile"><div class="st-tval" id="stTInst">\u2014</div><div class="st-tlab">Installed</div></div>' +
+      '<div class="st-tile"><div class="st-tval" id="stTBrowser">\u2014</div><div class="st-tlab">Browser</div></div>' +
       '<div class="st-tile"><div class="st-tval" id="stTRet">\u2014</div><div class="st-tlab">Returning</div></div>' +
       tile('Reach', t.devices || 0) + tile('Opens', t.sessions || 0);
     el('stStick').innerHTML = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU ' + ratio + '%)' +
