@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stolen bags — admin</title>
+<style>
+  :root{
+    --deep:#0f3543; --ocean:#1b6c8a; --dim:#5b7683; --bg:#eaf0f3;
+    --card:#fff; --line:rgba(17,53,65,0.14); --red:#c0392b; --amber:#e8a400;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--deep);
+       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
+  header{background:var(--deep);color:#fff;padding:14px 18px;position:sticky;top:0;z-index:10;
+         display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  header h1{font-size:19px;margin:0;letter-spacing:.5px;flex:1;min-width:200px}
+  header .meta{font-size:12px;opacity:.75}
+  .wrap{padding:18px;max-width:1400px;margin:0 auto}
+  .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:18px;
+        box-shadow:0 1px 4px rgba(9,26,33,.10)}
+  .card h2{font-size:13px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
+           margin:0 0 4px}
+  .card .sub{font-size:12px;color:var(--dim);margin-bottom:12px}
+  button,select{font:inherit;padding:7px 12px;border-radius:8px;border:1.5px solid var(--line);
+                background:#fff;color:var(--deep);cursor:pointer}
+  button.primary{background:var(--ocean);border-color:var(--ocean);color:#fff}
+  button:disabled{opacity:.45;cursor:default}
+  input[type=text]{font:inherit;padding:7px 10px;border-radius:8px;border:1.5px solid var(--line);
+                   min-width:260px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
+  .tile{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(9,26,33,.10)}
+  .tile .n{font-size:30px;font-weight:700;line-height:1.1}
+  .tile .l{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:3px}
+  .tile.warn .n{color:var(--red)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  .maprow{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+  .mapbox{position:relative;flex:0 0 auto}
+  .mapbox canvas{display:block;border-radius:10px;border:1.5px solid var(--line);max-width:100%}
+  .legend{font-size:12px;color:var(--dim)}
+  .legend .bar{height:12px;width:180px;border-radius:6px;margin:6px 0 3px;
+    background:linear-gradient(90deg,#3b6ea5,#49b0a0,#e8d24a,#e07a2b,#c0392b)}
+  table{border-collapse:collapse;width:100%;font-size:12.5px}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{position:sticky;top:0;background:#f4f8fa;font-size:11px;letter-spacing:.6px;
+     text-transform:uppercase;color:var(--dim);white-space:nowrap;z-index:1}
+  td.num{text-align:right;white-space:nowrap}
+  td.wrap-txt{min-width:220px;max-width:340px}
+  .tablewrap{overflow:auto;max-height:70vh;border-radius:10px;border:1px solid var(--line)}
+  .pill{display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600}
+  .pill.yes{background:rgba(27,108,138,.14);color:var(--ocean)}
+  .pill.no{background:rgba(192,57,43,.12);color:var(--red)}
+  .pill.rec{background:rgba(46,139,87,.15);color:#2e8b57}
+  .pill.sus{background:rgba(232,164,0,.2);color:#8a6100}
+  td img{width:54px;height:54px;object-fit:cover;border-radius:6px;display:block}
+  .msg{padding:14px;border-radius:10px;font-size:13px;line-height:1.5}
+  .msg.err{background:rgba(192,57,43,.1);border-left:3px solid var(--red)}
+  .msg.info{background:rgba(27,108,138,.09);border-left:3px solid var(--ocean)}
+  .axis{font-size:10px;fill:var(--dim)}
+  .note{font-size:11.5px;color:var(--dim);margin-top:8px;line-height:1.5}
+  .hide{display:none}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Stolen bags — admin</h1>
+  <span class="meta" id="hMeta"></span>
+  <select id="range">
+    <option value="30">Last 30 days</option>
+    <option value="90" selected>Last 90 days</option>
+    <option value="365">Last 12 months</option>
+    <option value="3650">Everything</option>
+  </select>
+  <button id="reload">Refresh</button>
+  <button id="csv" class="primary">Export CSV</button>
+</header>
+
+<div class="wrap">
+
+  <div id="auth" class="card hide">
+    <h2>Admin token</h2>
+    <div class="sub">Same token as the stats screen. Stored on this device only.</div>
+    <input type="text" id="tokenIn" placeholder="admin token" autocomplete="off" spellcheck="false">
+    <button class="primary" id="tokenGo">Unlock</button>
+    <div class="note">Or open this page with <code>?token=YOUR_ADMIN_TOKEN</code> once.</div>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="main" class="hide">
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card" style="margin-top:18px">
+      <h2>Where bags are taken</h2>
+      <div class="sub">Every reported spot, over the promenade map. Warmer means more reports in the same place.</div>
+      <div class="maprow">
+        <div class="mapbox"><canvas id="heat"></canvas></div>
+        <div class="legend">
+          <div><b>Density</b></div>
+          <div class="bar"></div>
+          <div style="display:flex;justify-content:space-between;width:180px">
+            <span>one</span><span>many</span>
+          </div>
+          <div class="note" id="heatNote"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Reports over time</h2>
+      <div class="sub">One bar per day, by the day the bag was taken.</div>
+      <div id="timeline"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2>By day of the week</h2>
+        <div class="sub">Which days they work.</div>
+        <div id="dow"></div>
+      </div>
+      <div class="card">
+        <h2>By time of day</h2>
+        <div class="sub" id="hourSub">Which hours they work.</div>
+        <div id="hour"></div>
+        <label class="note" style="display:block;margin-top:10px">
+          <input type="checkbox" id="spread"> Count every hour the bag was unattended, not just the hour it was left
+        </label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Every report</h2>
+      <div class="sub">All fields, newest first. Includes rows flagged <b>suspect</b> or hidden &mdash; you decide what is junk, not the app.</div>
+      <div class="tablewrap"><table id="tbl"></table></div>
+      <div class="note">
+        Free text and photos here go to police, never to the group. If a report names or describes an
+        individual, mark it <b>suspect</b> in SQL rather than deleting it &mdash; the row stays in the
+        record but drops out of any summary.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================================================
+// Stolen bags — admin dashboard
+// =============================================================================
+// Reads the full table through list_bag_thefts(token), which is gated server-side
+// by intro_is_admin(). Every number on this page is computed here from the raw
+// rows, so what you see is the evidence itself rather than a pre-baked summary.
+//
+// Nothing on this page is public. The swimmer-facing app deliberately shows no
+// totals at all — see migrations/bag_theft_admin_only.sql.
+
+const SB_URL = 'https://gkspukabnfbzrvjoewpc.supabase.co';
+const SB_KEY = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
+const TZ     = 'Australia/Sydney';
+const MAP_SRC = 'bag_map.png';
+
+let ROWS = [];
+
+// ── token ────────────────────────────────────────────────────────────────────
+function token() {
+  const q = new URLSearchParams(location.search).get('token');
+  if (q) { try { localStorage.setItem('swim_admin_token', q); } catch (e) {} return q; }
+  try { return localStorage.getItem('swim_admin_token') || ''; } catch (e) { return ''; }
+}
+
+// ── time helpers, all in Sydney ──────────────────────────────────────────────
+const fmt = (d, o) => new Intl.DateTimeFormat('en-AU', Object.assign({ timeZone: TZ }, o)).format(d);
+const dayKey  = d => fmt(d, { year: 'numeric', month: '2-digit', day: '2-digit' })
+                      .split('/').reverse().join('-');           // yyyy-mm-dd
+const hourOf  = d => +fmt(d, { hour: '2-digit', hour12: false });
+const dowOf   = d => fmt(d, { weekday: 'short' });
+const stamp   = d => fmt(d, { day: '2-digit', month: 'short', year: '2-digit',
+                              hour: 'numeric', minute: '2-digit' });
+const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── load ─────────────────────────────────────────────────────────────────────
+async function load() {
+  const t = token();
+  const statusEl = document.getElementById('status');
+  if (!t) {
+    document.getElementById('auth').classList.remove('hide');
+    document.getElementById('main').classList.add('hide');
+    return;
+  }
+  document.getElementById('auth').classList.add('hide');
+  statusEl.innerHTML = '<div class="msg info">Loading…</div>';
+
+  const days = +document.getElementById('range').value;
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/rpc/list_bag_thefts`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_token: t, p_days: days })
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      const bad = /not authorised/.test(body);
+      statusEl.innerHTML = '<div class="msg err">' + (bad
+        ? 'That token was refused. Check it, or open with <code>?token=…</code>.'
+        : 'Could not load (HTTP ' + r.status + '). ' + esc(body.slice(0, 200))) + '</div>';
+      if (bad) document.getElementById('auth').classList.remove('hide');
+      return;
+    }
+    ROWS = await r.json();
+    statusEl.innerHTML = '';
+    document.getElementById('main').classList.remove('hide');
+    render();
+  } catch (e) {
+    statusEl.innerHTML = '<div class="msg err">Network error: ' + esc(e.message) + '</div>';
+  }
+}
+
+// ── render ───────────────────────────────────────────────────────────────────
+function render() {
+  const n = ROWS.length;
+  document.getElementById('hMeta').textContent =
+    n + (n === 1 ? ' report' : ' reports') + ' · times shown in Sydney time';
+
+  tiles();
+  heatmap();
+  timeline();
+  dowChart();
+  hourChart();
+  table();
+}
+
+function tiles() {
+  const val = ROWS.reduce((a, r) => a + (r.value_aud || 0), 0);
+  const pol = ROWS.filter(r => r.police === 'yes').length;
+  const rec = ROWS.filter(r => r.recovered).length;
+  const evt = ROWS.filter(r => r.event_number).length;
+  const trk = ROWS.filter(r => r.tracker && r.tracker !== 'none' && r.tracker !== 'unsure').length;
+  const sus = ROWS.filter(r => r.status === 'suspect' || r.hidden).length;
+  const mins = ROWS.map(r => (new Date(r.missed_at) - new Date(r.left_at)) / 60000).filter(m => m > 0);
+  const med = mins.length ? mins.slice().sort((a, b) => a - b)[Math.floor(mins.length / 2)] : 0;
+
+  const t = [
+    [ROWS.length, 'reports', ''],
+    ['$' + val.toLocaleString(), 'value taken', ''],
+    [pol, 'reported to police', pol < ROWS.length ? 'warn' : ''],
+    [evt, 'with event number', ''],
+    [rec, 'recovered', ''],
+    [trk, 'had a tracker', ''],
+    [Math.round(med) + 'm', 'median time unattended', ''],
+    [sus, 'suspect / hidden', sus ? 'warn' : '']
+  ];
+  document.getElementById('tiles').innerHTML = t.map(([n, l, c]) =>
+    `<div class="tile ${c}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+}
+
+// ── heatmap ──────────────────────────────────────────────────────────────────
+// Accumulates soft blobs into an alpha layer, then colours it through a ramp —
+// so two reports in the same doorway read hotter than two spread down the path.
+function heatmap() {
+  const cv = document.getElementById('heat');
+  const pts = ROWS.filter(r => r.loc_x != null && r.loc_y != null);
+  document.getElementById('heatNote').textContent = pts.length
+    ? pts.length + ' of ' + ROWS.length + ' reports have a map pin. Dots are individual reports.'
+    : 'No reports carry a map pin yet.';
+
+  const img = new Image();
+  img.onload = () => {
+    const W = Math.min(360, img.naturalWidth);
+    const H = Math.round(W * img.naturalHeight / img.naturalWidth);
+    cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    g.drawImage(img, 0, 0, W, H);
+    if (!pts.length) return;
+
+    // 1) alpha accumulation
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const og = off.getContext('2d');
+    const R = Math.max(14, Math.round(W * 0.075));
+    pts.forEach(p => {
+      const x = p.loc_x * W, y = p.loc_y * H;
+      const grd = og.createRadialGradient(x, y, 0, x, y, R);
+      grd.addColorStop(0, 'rgba(0,0,0,0.42)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      og.fillStyle = grd;
+      og.beginPath(); og.arc(x, y, R, 0, Math.PI * 2); og.fill();
+    });
+
+    // 2) colour ramp over the accumulated alpha
+    const id = og.getImageData(0, 0, W, H), d = id.data;
+    const ramp = [[59,110,165],[73,176,160],[232,210,74],[224,122,43],[192,57,43]];
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (!a) continue;
+      const t = Math.min(1, a / 190) * (ramp.length - 1);
+      const k = Math.min(ramp.length - 2, Math.floor(t)), f = t - k;
+      d[i]     = ramp[k][0] + (ramp[k + 1][0] - ramp[k][0]) * f;
+      d[i + 1] = ramp[k][1] + (ramp[k + 1][1] - ramp[k][1]) * f;
+      d[i + 2] = ramp[k][2] + (ramp[k + 1][2] - ramp[k][2]) * f;
+      d[i + 3] = Math.min(210, a * 1.7);
+    }
+    og.putImageData(id, 0, 0);
+    g.drawImage(off, 0, 0);
+
+    // 3) the individual pins, so exact spots stay visible under the blur
+    pts.forEach(p => {
+      g.beginPath();
+      g.arc(p.loc_x * W, p.loc_y * H, 2.6, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(255,255,255,0.95)';
+      g.fill();
+      g.lineWidth = 1; g.strokeStyle = 'rgba(9,26,33,0.8)'; g.stroke();
+    });
+  };
+  img.src = MAP_SRC;
+}
+
+// ── charts (hand-drawn SVG: no libraries, works offline) ─────────────────────
+function bars(host, labels, values, opts) {
+  opts = opts || {};
+  const W = 100, H = 34, pad = 3;             // viewBox units, scales to any width
+  const max = Math.max(1, ...values);
+  const bw = (W - pad * 2) / values.length;
+  const body = values.map((v, i) => {
+    const h = (H - 10) * (v / max);
+    const x = pad + i * bw, y = H - 6 - h;
+    const hot = opts.hot && v === max && v > 0;
+    return `<rect x="${x + bw * 0.14}" y="${y}" width="${bw * 0.72}" height="${h}"
+              rx="${Math.min(1, bw * 0.2)}" fill="${hot ? '#c0392b' : '#1b6c8a'}"></rect>`
+      + (v ? `<text class="axis" x="${x + bw / 2}" y="${y - 1.2}" text-anchor="middle"
+              style="font-size:3px">${v}</text>` : '');
+  }).join('');
+  const axis = labels.map((l, i) => l == null ? '' :
+    `<text class="axis" x="${pad + i * bw + bw / 2}" y="${H - 1}" text-anchor="middle"
+       style="font-size:3.2px">${esc(l)}</text>`).join('');
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible">
+      ${body}${axis}</svg>`;
+}
+
+function timeline() {
+  const host = document.getElementById('timeline');
+  if (!ROWS.length) { host.innerHTML = '<div class="note">Nothing to show.</div>'; return; }
+  const counts = {};
+  ROWS.forEach(r => { const k = dayKey(new Date(r.left_at)); counts[k] = (counts[k] || 0) + 1; });
+  const keys = Object.keys(counts).sort();
+  // fill the gaps, so a quiet fortnight looks quiet instead of being skipped
+  const out = [], labels = [];
+  let d = new Date(keys[0] + 'T00:00:00'), end = new Date(keys[keys.length - 1] + 'T00:00:00');
+  const span = Math.round((end - d) / 86400000) + 1;
+  const every = span > 120 ? 30 : span > 60 ? 14 : span > 21 ? 7 : 2;
+  for (let i = 0; i < span; i++) {
+    const k = d.toISOString().slice(0, 10);
+    out.push(counts[k] || 0);
+    labels.push(i % every === 0 ? fmt(d, { day: 'numeric', month: 'short' }) : null);
+    d = new Date(d.getTime() + 86400000);
+  }
+  bars(host, labels, out, { hot: true });
+}
+
+function dowChart() {
+  const c = {}; DOW.forEach(d => c[d] = 0);
+  ROWS.forEach(r => { const k = dowOf(new Date(r.left_at)); if (k in c) c[k]++; });
+  bars(document.getElementById('dow'), DOW, DOW.map(d => c[d]), { hot: true });
+}
+
+function hourChart() {
+  const spread = document.getElementById('spread').checked;
+  const c = new Array(24).fill(0);
+  ROWS.forEach(r => {
+    const a = new Date(r.left_at), b = new Date(r.missed_at);
+    if (!spread) { c[hourOf(a)]++; return; }
+    // every clock hour the bag sat there gets a count
+    const hrs = Math.min(24, Math.max(1, Math.ceil((b - a) / 3600000)));
+    for (let i = 0; i < hrs; i++) c[hourOf(new Date(a.getTime() + i * 3600000))]++;
+  });
+  document.getElementById('hourSub').textContent = spread
+    ? 'Every hour each bag was left unattended.'
+    : 'The hour each bag was put down.';
+  const labels = c.map((_, h) => h % 3 === 0 ? (h % 12 || 12) + (h < 12 ? 'a' : 'p') : null);
+  bars(document.getElementById('hour'), labels, c, { hot: true });
+}
+
+// ── table ────────────────────────────────────────────────────────────────────
+const COLS = [
+  ['#',            r => r.id],
+  ['Lodged',       r => stamp(new Date(r.created_at))],
+  ['Bag left',     r => stamp(new Date(r.left_at))],
+  ['Noticed gone', r => stamp(new Date(r.missed_at))],
+  ['Unattended',   r => Math.round((new Date(r.missed_at) - new Date(r.left_at)) / 60000) + ' min'],
+  ['Where',        r => r.loc_note],
+  ['Lat, lng',     r => r.lat == null ? '' : r.lat.toFixed(5) + ', ' + r.lng.toFixed(5)],
+  ['Pin x/y',      r => r.loc_x == null ? '' : r.loc_x.toFixed(3) + ' / ' + r.loc_y.toFixed(3)],
+  ['Taken',        r => (r.items || []).join(', ')],
+  ['Also',         r => r.items_other],
+  ['Value',        r => r.value_aud == null ? '' : '$' + Number(r.value_aud).toLocaleString()],
+  ['Keys',         r => r.keys_taken ? '<span class="pill no">yes</span>' : ''],
+  ['Bag',          r => r.bag_desc],
+  ['In sight',     r => r.bag_visible],
+  ['Tracker',      r => r.tracker === 'none' ? '' : r.tracker],
+  ['Last ping',    r => r.tracker_ping],
+  ['Police',       r => r.police === 'yes' ? '<span class="pill yes">yes</span>'
+                        : '<span class="pill no">' + esc(r.police) + '</span>'],
+  ['Event number', r => r.event_number],
+  ['Photo',        r => r.photo_url ? '<a href="' + esc(r.photo_url) + '" target="_blank" rel="noopener">'
+                        + '<img src="' + esc(r.photo_url) + '" alt=""></a>' : ''],
+  ['What happened', r => r.what_happened],
+  ['Impact',       r => r.impact],
+  ['Recovered',    r => r.recovered ? '<span class="pill rec">yes</span>' : ''],
+  ['Recovery note', r => r.recovered_note],
+  ['Status',       r => (r.status !== 'new' ? '<span class="pill sus">' + esc(r.status) + '</span>' : '')
+                        + (r.hidden ? ' <span class="pill sus">hidden</span>' : '')],
+  // Truncated one-way hash of the reporter's network, the only thing that can
+  // show one source lodging many reports. It reverses to nothing.
+  ['Source',       r => (r.ip_hash || '').slice(0, 8)]
+];
+const RAW_HTML = new Set(['Keys','Police','Photo','Recovered','Status']);
+const WRAPPED  = new Set(['Where','Taken','Also','Bag','Last ping','What happened','Impact','Recovery note']);
+
+function table() {
+  const head = '<thead><tr>' + COLS.map(c => `<th>${esc(c[0])}</th>`).join('') + '</tr></thead>';
+  const rows = ROWS.map(r => '<tr>' + COLS.map(([name, get]) => {
+    let v;
+    try { v = get(r); } catch (e) { v = ''; }
+    const cls = (name === '#' || name === 'Value') ? ' class="num"'
+              : WRAPPED.has(name) ? ' class="wrap-txt"' : '';
+    return `<td${cls}>${RAW_HTML.has(name) ? (v || '') : esc(v)}</td>`;
+  }).join('') + '</tr>').join('');
+  document.getElementById('tbl').innerHTML = head + '<tbody>' + rows + '</tbody>';
+}
+
+// ── CSV for police ───────────────────────────────────────────────────────────
+function csv() {
+  if (!ROWS.length) return;
+  const keys = Object.keys(ROWS[0]).filter(k => k !== 'claim_hash');  // never export the hash
+  const q = v => {
+    if (v == null) return '';
+    const s = Array.isArray(v) ? v.join('; ') : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const body = [keys.join(',')].concat(ROWS.map(r => keys.map(k => q(r[k])).join(','))).join('\r\n');
+  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'stolen-bag-reports-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+// ── wiring ───────────────────────────────────────────────────────────────────
+document.getElementById('reload').onclick = load;
+document.getElementById('range').onchange = load;
+document.getElementById('csv').onclick = csv;
+document.getElementById('spread').onchange = hourChart;
+document.getElementById('tokenGo').onclick = () => {
+  const v = document.getElementById('tokenIn').value.trim();
+  if (!v) return;
+  try { localStorage.setItem('swim_admin_token', v); } catch (e) {}
+  load();
+};
+document.getElementById('tokenIn').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('tokenGo').click();
+});
+
+load();
+</script>
+</body>
+</html>
