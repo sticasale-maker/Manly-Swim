@@ -1214,12 +1214,12 @@
   /* Match the "Who's Out There?" title size (.ntm-title = 20px) for Bay Talk + the sightings strip.
      Scoped by id/container so the visibility & bluebottle strips keep the default size.
      Id specificity also beats the small-screen ".bb-status{font-size:13px}" override. */
-  #boardStrip .bb-status, #sightTitle { font-size: 20px; }
+  #boardStrip .bb-status, #sightTitle, #theftTitle { font-size: 20px; }
   /* Bluebottle status is a full sentence, not a short title — keep it compact so
      it doesn't wrap to many lines in the narrow space beside the buttons. */
   #bbStatus { font-size: 15px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #bbSub { white-space: nowrap; }
-  #boardStrip .bb-status, #sightTitle { color: var(--deep); }
+  #boardStrip .bb-status, #sightTitle, #theftTitle { color: var(--deep); }
   /* Bay Talk unread indicator — red pulse when a post is newer than last opened. */
   .board-newdot { display:none; width:9px; height:9px; border-radius:50%; background:var(--red); flex:0 0 auto; margin-right:2px; animation:boardDotPulse 1.2s ease-in-out infinite; }
   @keyframes boardDotPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(192,57,43,0.55); } 50%{ box-shadow:0 0 0 7px rgba(192,57,43,0); } }
@@ -1437,12 +1437,6 @@
   .thf-note.priv { background: rgba(17,53,65,0.07); border-left-color: var(--dim); color: var(--dim); }
   .thf-note a { color: var(--ocean); }
   .thf-err { font-size: 12px; color: #c0392b; margin-top: 10px; font-weight: 600; }
-  /* practice run — must be unmistakable at every glance, or it defeats itself */
-  .thf-practice-bar {
-    background: #2d6a86; color: #fff; border-radius: 10px; padding: 9px 11px;
-    font-size: 12px; line-height: 1.45; margin: 2px 0 4px; text-align: center;
-  }
-  .thf-practice-bar b { display: block; font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 1.2px; }
   .thf-try {
     display: block; text-align: center; margin-top: 9px; font-size: 12px;
     color: var(--ocean); text-decoration: underline; cursor: pointer;
@@ -3161,31 +3155,6 @@
       </div>
     </div>
 
-    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
-    <div id="bbSection">
-      <div class="bb-strip community" id="bbStrip">
-        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
-          <div class="bb-icon">🪼</div>
-          <div class="bb-body">
-            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
-            <div class="bb-sub" id="bbSub"></div>
-          </div>
-          <input type="file" id="bbPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
-          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
-            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
-            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
-          </span>
-          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
-          <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
-            <span id="bbNotifyLabel">🔔 Get notifications</span>
-          </button>
-          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
-        </div>
-        <div class="bb-gallery" id="bbGallery"></div>
-      </div>
-      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
-    </div>
-
     <!-- Stolen bag reports strip — builds the evidence base shared with police
          and (in aggregate only) with the Bold & Beautiful group. -->
     <div id="theftSection">
@@ -3242,6 +3211,31 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
+    <div id="bbSection">
+      <div class="bb-strip community" id="bbStrip">
+        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
+          <div class="bb-icon">🪼</div>
+          <div class="bb-body">
+            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
+            <div class="bb-sub" id="bbSub"></div>
+          </div>
+          <input type="file" id="bbPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
+          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
+            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
+            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
+          </span>
+          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+          <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
+            <span id="bbNotifyLabel">🔔 Get notifications</span>
+          </button>
+          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
+        </div>
+        <div class="bb-gallery" id="bbGallery"></div>
+      </div>
+      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
     </div>
 
     </div><!-- /community-group -->
@@ -18963,7 +18957,6 @@ function theftOpen(ev, practice) {
 
   // The declaration is gone in practice — a tickable "this really happened" on a
   // run that saves nothing is a contradiction, and it teaches people to tick without reading.
-  document.getElementById('thfPracticeBar').hidden = !_thfPractice;
   document.getElementById('thfDeclare').hidden = _thfPractice;
   document.getElementById('thfDeclareBox').checked = false;
   document.getElementById('thfDeclareBox').disabled = _thfPractice;
@@ -19109,16 +19102,6 @@ function thfWindow() {
   // the gap is small enough to be a real overnight window.
   if (missed < left) missed = new Date(missed.getTime() + 86400000);
   return [left, missed];
-}
-
-// Small corrections to a time, without reopening the OS wheel.
-function thfNudge(id, mins) {
-  const el = document.getElementById(id);
-  if (!el || !el.value) return;
-  const [h, m] = el.value.split(':').map(Number);
-  let t = (h * 60 + m + mins + 1440) % 1440;
-  el.value = String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
-  thfDur();
 }
 
 function thfDur() {
@@ -19676,10 +19659,6 @@ else theftLoad();
       <div class="sight-grab"></div>
       <div class="sight-h3" id="thfSheetTitle">REPORT A STOLEN BAG</div>
       <div class="sight-sh-sub" id="thfSheetSub"></div>
-      <div class="thf-practice-bar" id="thfPracticeBar" hidden>
-        <b>PRACTICE RUN</b>
-        Have a look around. Nothing here gets saved or sent &mdash; fill in whatever you like.
-      </div>
 
       <div class="thf-sec">
         <div class="thf-lab">WHEN <span class="req">*</span></div>
@@ -19689,12 +19668,6 @@ else theftLoad();
         <div class="thf-when">
           <div><label>Bag put down</label><input class="thf-in" type="time" id="thfLeftAt"></div>
           <div><label>Noticed gone</label><input class="thf-in" type="time" id="thfMissedAt"></div>
-        </div>
-        <div class="thf-nudge" id="thfNudge">
-          <button type="button" onclick="thfNudge('thfLeftAt',-15)">&minus;15m start</button>
-          <button type="button" onclick="thfNudge('thfLeftAt',15)">+15m start</button>
-          <button type="button" onclick="thfNudge('thfMissedAt',-15)">&minus;15m end</button>
-          <button type="button" onclick="thfNudge('thfMissedAt',15)">+15m end</button>
         </div>
         <div class="thf-dur" id="thfDur"></div>
       </div>
