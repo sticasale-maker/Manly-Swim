@@ -17337,6 +17337,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function showPopup(list){
     if (!list || !list.length) return;
     buildPopup();
+    // The quiet daily line always sorts after real announcements — whatever
+    // order the RPC happens to return them in, a "line a day" must never
+    // outrank something that actually needs the swimmer's attention.
+    list = list.slice().sort(function (a, b) { return (!!a.quiet) - (!!b.quiet); });
     // Every post renders full-size in one scrollable list: nothing is cropped or
     // shrunk to fit the screen; the user scrolls to see them all, tap to dismiss.
     if ($('annPopup')) $('annPopup').classList.remove('ann-imageonly');
