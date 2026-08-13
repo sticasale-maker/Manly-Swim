@@ -4068,6 +4068,10 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       ".st-ranges{display:flex;gap:6px;margin-bottom:10px;}" +
       ".st-range{flex:1;border:1px solid var(--border,#cfe3ea);background:#fff;color:var(--dim,#4a5f6e);border-radius:8px;padding:6px 0;font-size:11px;cursor:pointer;font-family:inherit;}" +
       ".st-range.on{background:var(--ocean,#4a8fad);color:#fff;border-color:var(--ocean,#4a8fad);}" +
+      // The one line meant to be read from across the room: installed base
+      // (all-time) beside how many of the rest are still actually swimming.
+      ".st-headline{background:var(--deep,#113541);color:#fff;border-radius:12px;padding:10px 12px;margin-bottom:10px;text-align:center;font-size:13px;line-height:1.4;}" +
+      ".st-headline b{font-family:'Bebas Neue',sans-serif;font-size:19px;letter-spacing:.5px;}" +
       ".st-tiles{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:6px;}" +
       ".st-tile{background:#fff;border:1px solid var(--border,#cfe3ea);border-radius:10px;padding:8px 4px;text-align:center;}" +
       ".st-tval{font-family:'Bebas Neue',sans-serif;font-size:22px;line-height:1;color:var(--deep,#113541);}" +
@@ -4121,6 +4125,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '    <button class="st-range on" data-d="30">30 days</button>' +
       '    <button class="st-range" data-d="90">90 days</button>' +
       '  </div>' +
+      '  <div class="st-headline"><b id="stHInst">—</b> installed devices (all-time) · <b id="stHBrowser14">—</b> non-installed active in the last 14 days</div>' +
       '  <div class="st-tiles" id="stTiles"></div>' +
       '  <div class="st-stick" id="stStick"></div>' +
       '  <div class="st-sec">Active devices — daily and rolling 7-day</div>' +
@@ -4333,8 +4338,11 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       wireActiveChart(rows);
       // Last row is today (partial day) — the 14-day window is still the true
       // trailing count regardless, unlike DAU which visibly droops mid-morning.
+      var last = rows[rows.length - 1];
       var bau = el('stBau14');
-      if (bau) bau.textContent = rows[rows.length - 1].bau != null ? rows[rows.length - 1].bau : '—';
+      if (bau) bau.textContent = last.bau != null ? last.bau : '—';
+      var hb = el('stHBrowser14');
+      if (hb) hb.textContent = last.bau_browser != null ? last.bau_browser : '—';
     } catch (e) {
       box.innerHTML = '<div class="st-empty">Run migrations/analytics_active_daily.sql to enable this chart.</div>';
     }
@@ -4426,6 +4434,7 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       var ti = el('stTInst'), tb = el('stTBrowser'), tr = el('stTRet');
       if (ti) ti.textContent = inst;
       if (tb) tb.textContent = browser;
+      var hi = el('stHInst'); if (hi) hi.textContent = inst;
       if (tr) tr.textContent = ret;
       var cap = el('stReachCap');
       if (cap) {

@@ -39,14 +39,26 @@
 --      NOTE the plain select. This function returns a TABLE of rows, unlike
 --      analytics_device_quality and analytics_device_gaps which return jsonb —
 --      wrapping this one in jsonb_pretty() fails on a type mismatch.
---      Expect one row per day: day | dau | wau | bau.
+--      Expect one row per day: day | dau | wau | bau | bau_browser.
 --
 --   The stats panel picks the function up on the next open; until then the
 --   "Active devices" card shows a prompt to run this file.
+--
+-- bau_browser (2026-08-14): the non-installed half of bau, for the headline
+-- pairing "N installed (all-time) · M non-installed active in the last 14
+-- days". "ever_pwa" is a device's WHOLE history (same definition as
+-- analytics_device_quality / analytics_install_trend), not just this window —
+-- an installed device that happens to open a plain browser tab once is still
+-- an installed device.
 -- ============================================================================
 
+-- The bau_browser column changes this function's return shape, which
+-- CREATE OR REPLACE cannot do in place — drop first or Postgres errors with
+-- "cannot change return type of existing function".
+drop function if exists public.analytics_active_daily(text, int);
+
 create or replace function public.analytics_active_daily(p_token text, p_days int default 60)
-returns table(day date, dau int, wau int, bau int)
+returns table(day date, dau int, wau int, bau int, bau_browser int)
 language plpgsql
 security definer
 set search_path = public
@@ -57,7 +69,12 @@ begin
   end if;
 
   return query
-  with e as (                                   -- one row per device per local day
+  with ever as (                                -- installed status is a device's whole history
+    select device_id, bool_or(coalesce(pwa, false)) as ever_pwa
+    from analytics_events
+    group by device_id
+  ),
+  e as (                                         -- one row per device per local day
     select distinct
            ae.device_id,
            (ae.created_at at time zone 'Australia/Sydney')::date as d
@@ -81,7 +98,11 @@ begin
          -- "Active at least once every couple of weeks" — a real distinct count
          -- over a real 14-day window, not the installed total scaled by a ratio.
          (select count(distinct e.device_id)::int
-            from e where e.d between days.day - 13 and days.day)          as bau
+            from e where e.d between days.day - 13 and days.day)          as bau,
+         (select count(distinct e.device_id)::int
+            from e join ever using (device_id)
+            where e.d between days.day - 13 and days.day
+              and not ever.ever_pwa)                                      as bau_browser
   from days
   order by days.day;
 end
