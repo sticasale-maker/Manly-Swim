@@ -43,18 +43,18 @@
   /* Timeline, day-of-week and hour-of-day side by side — three small charts
      stacked full-width each used to cost three screens of scrolling for what
      reads fine shoulder to shoulder. */
-  .grid3{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;align-items:start}
-  @media(max-width:1000px){.grid3{grid-template-columns:1fr}}
-  /* Card is block-level so it stretches to the full row by default — capped
-     here so it hugs the map+legend instead of leaving a dead strip of white
-     beside them on any screen wider than the map itself. */
-  .mapcard{max-width:640px}
-  .maprow{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
-  .mapbox{position:relative;flex:0 0 auto}
-  .mapbox canvas{display:block;border-radius:10px;border:1.5px solid var(--line);max-width:100%}
-  .legend{font-size:12px;color:var(--dim)}
-  .legend .bar{height:12px;width:180px;border-radius:6px;margin:6px 0 3px;
+  /* Map on the left filling its card, the three small charts stacked in a
+     column to its right — the map is naturally tall, so this uses that
+     height instead of leaving it beside a blank strip of card. */
+  .dash-top{display:grid;grid-template-columns:1fr 340px;gap:12px;align-items:start}
+  @media(max-width:900px){.dash-top{grid-template-columns:1fr}}
+  .dash-charts{display:flex;flex-direction:column;gap:12px}
+  .mapbox{position:relative;width:100%}
+  .mapbox canvas{display:block;width:100%;height:auto;border-radius:10px;border:1.5px solid var(--line)}
+  .legend{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap}
+  .legend .bar{height:10px;width:140px;border-radius:6px;margin:0;
     background:linear-gradient(90deg,#3b6ea5,#49b0a0,#e8d24a,#e07a2b,#c0392b)}
+  .legend .bar-labels{display:flex;justify-content:space-between;width:140px}
   table{border-collapse:collapse;width:100%;font-size:12.5px}
   th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
   th{position:sticky;top:0;background:#f4f8fa;font-size:11px;letter-spacing:.6px;
@@ -106,40 +106,40 @@
   <div id="main" class="hide">
     <div class="tiles" id="tiles"></div>
 
-    <div class="card mapcard" style="margin-top:12px">
-      <h2>Where bags are taken</h2>
-      <div class="sub">Every reported spot, over the promenade map. Warmer means more reports in the same place.</div>
-      <div class="maprow">
+    <div class="dash-top" style="margin-top:12px">
+      <div class="card">
+        <h2>Where bags are taken</h2>
+        <div class="sub">Every reported spot, over the promenade map. Warmer means more reports in the same place.</div>
         <div class="mapbox"><canvas id="heat"></canvas></div>
         <div class="legend">
-          <div><b>Density</b></div>
-          <div class="bar"></div>
-          <div style="display:flex;justify-content:space-between;width:180px">
-            <span>one</span><span>many</span>
+          <b>Density</b>
+          <div>
+            <div class="bar"></div>
+            <div class="bar-labels"><span>one</span><span>many</span></div>
           </div>
-          <div class="note" id="heatNote"></div>
+          <span id="heatNote"></span>
         </div>
       </div>
-    </div>
 
-    <div class="grid3">
-      <div class="card">
-        <h2>Reports over time</h2>
-        <div class="sub">One bar per day, by the day the bag was taken.</div>
-        <div id="timeline"></div>
-      </div>
-      <div class="card">
-        <h2>By day of the week</h2>
-        <div class="sub">Which days they work.</div>
-        <div id="dow"></div>
-      </div>
-      <div class="card">
-        <h2>By time of day</h2>
-        <div class="sub" id="hourSub">Which hours they work.</div>
-        <div id="hour"></div>
-        <label class="note" style="display:block;margin-top:10px">
-          <input type="checkbox" id="spread"> Count every hour unattended, not just when left
-        </label>
+      <div class="dash-charts">
+        <div class="card">
+          <h2>Reports over time</h2>
+          <div class="sub">One bar per day, by the day the bag was taken.</div>
+          <div id="timeline"></div>
+        </div>
+        <div class="card">
+          <h2>By day of the week</h2>
+          <div class="sub">Which days they work.</div>
+          <div id="dow"></div>
+        </div>
+        <div class="card">
+          <h2>By time of day</h2>
+          <div class="sub" id="hourSub">Which hours they work.</div>
+          <div id="hour"></div>
+          <label class="note" style="display:block;margin-top:10px">
+            <input type="checkbox" id="spread"> Count every hour unattended, not just when left
+          </label>
+        </div>
       </div>
     </div>
 
@@ -283,7 +283,11 @@ function heatmap() {
 
   const img = new Image();
   img.onload = () => {
-    const W = Math.min(360, img.naturalWidth);
+    // Fill the card's own width (that's the point of moving the charts into
+    // a side column) rather than a fixed 360px, capped at the source
+    // resolution so it never upscales past the real artwork.
+    const boxW = cv.parentElement.clientWidth || 360;
+    const W = Math.min(boxW, img.naturalWidth);
     const H = Math.round(W * img.naturalHeight / img.naturalWidth);
     cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
@@ -322,14 +326,17 @@ function heatmap() {
 
     // 3) the individual pins, so exact spots stay visible under the blur — and
     // still easy to find even when it's the only report on the map, not just
-    // when several overlap into a hot blob.
+    // when several overlap into a hot blob. Sized off W, same as the blob
+    // radius above, so they don't shrink to specks now the map can render
+    // much wider than the old fixed 360px.
+    const pinR = Math.max(6.5, W * 0.016);
     pts.forEach(p => {
       const x = p.loc_x * W, y = p.loc_y * H;
-      g.beginPath(); g.arc(x, y, 6.5, 0, Math.PI * 2);
+      g.beginPath(); g.arc(x, y, pinR, 0, Math.PI * 2);
       g.fillStyle = 'rgba(255,255,255,0.95)';
       g.fill();
-      g.lineWidth = 2; g.strokeStyle = 'rgba(9,26,33,0.85)'; g.stroke();
-      g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2);
+      g.lineWidth = Math.max(2, pinR * 0.3); g.strokeStyle = 'rgba(9,26,33,0.85)'; g.stroke();
+      g.beginPath(); g.arc(x, y, pinR * 0.46, 0, Math.PI * 2);
       g.fillStyle = '#c0392b';
       g.fill();
     });
