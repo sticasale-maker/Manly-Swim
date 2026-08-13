@@ -16,25 +16,35 @@
          display:flex;flex-wrap:wrap;gap:12px;align-items:center}
   header h1{font-size:19px;margin:0;letter-spacing:.5px;flex:1;min-width:200px}
   header .meta{font-size:12px;opacity:.75}
-  .wrap{padding:18px;max-width:1400px;margin:0 auto}
-  .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:18px;
+  .wrap{padding:14px;max-width:1400px;margin:0 auto}
+  .card{background:var(--card);border-radius:12px;padding:13px 14px;margin-bottom:12px;
         box-shadow:0 1px 4px rgba(9,26,33,.10)}
-  .card h2{font-size:13px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
-           margin:0 0 4px}
-  .card .sub{font-size:12px;color:var(--dim);margin-bottom:12px}
+  .card h2{font-size:16px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
+           margin:0 0 3px}
+  .card .sub{font-size:13.5px;color:var(--dim);margin-bottom:8px}
+  /* The bar charts are inline SVG scaled by viewBox, so their text grows with
+     container width — uncapped, a wide desktop screen balloons the axis labels
+     to 30-40px while these fixed-size titles stay put. Capping the chart's own
+     width keeps its text proportionate at a glance, whatever the screen. */
+  #timeline, #dow, #hour { max-width: 460px; }
   button,select{font:inherit;padding:7px 12px;border-radius:8px;border:1.5px solid var(--line);
                 background:#fff;color:var(--deep);cursor:pointer}
   button.primary{background:var(--ocean);border-color:var(--ocean);color:#fff}
   button:disabled{opacity:.45;cursor:default}
   input[type=text]{font:inherit;padding:7px 10px;border-radius:8px;border:1.5px solid var(--line);
                    min-width:260px}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
-  .tile{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(9,26,33,.10)}
-  .tile .n{font-size:30px;font-weight:700;line-height:1.1}
-  .tile .l{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:3px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+  .tile{background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(9,26,33,.10)}
+  .tile .n{font-size:28px;font-weight:700;line-height:1.1}
+  .tile .l{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:2px}
   .tile.warn .n{color:var(--red)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  /* Timeline, day-of-week and hour-of-day side by side — three small charts
+     stacked full-width each used to cost three screens of scrolling for what
+     reads fine shoulder to shoulder. */
+  .grid3{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;align-items:start}
+  @media(max-width:1000px){.grid3{grid-template-columns:1fr}}
   .maprow{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
   .mapbox{position:relative;flex:0 0 auto}
   .mapbox canvas{display:block;border-radius:10px;border:1.5px solid var(--line);max-width:100%}
@@ -92,7 +102,7 @@
   <div id="main" class="hide">
     <div class="tiles" id="tiles"></div>
 
-    <div class="card" style="margin-top:18px">
+    <div class="card" style="margin-top:12px">
       <h2>Where bags are taken</h2>
       <div class="sub">Every reported spot, over the promenade map. Warmer means more reports in the same place.</div>
       <div class="maprow">
@@ -108,13 +118,12 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Reports over time</h2>
-      <div class="sub">One bar per day, by the day the bag was taken.</div>
-      <div id="timeline"></div>
-    </div>
-
-    <div class="grid2">
+    <div class="grid3">
+      <div class="card">
+        <h2>Reports over time</h2>
+        <div class="sub">One bar per day, by the day the bag was taken.</div>
+        <div id="timeline"></div>
+      </div>
       <div class="card">
         <h2>By day of the week</h2>
         <div class="sub">Which days they work.</div>
@@ -125,7 +134,7 @@
         <div class="sub" id="hourSub">Which hours they work.</div>
         <div id="hour"></div>
         <label class="note" style="display:block;margin-top:10px">
-          <input type="checkbox" id="spread"> Count every hour the bag was unattended, not just the hour it was left
+          <input type="checkbox" id="spread"> Count every hour unattended, not just when left
         </label>
       </div>
     </div>
@@ -307,13 +316,18 @@ function heatmap() {
     og.putImageData(id, 0, 0);
     g.drawImage(off, 0, 0);
 
-    // 3) the individual pins, so exact spots stay visible under the blur
+    // 3) the individual pins, so exact spots stay visible under the blur — and
+    // still easy to find even when it's the only report on the map, not just
+    // when several overlap into a hot blob.
     pts.forEach(p => {
-      g.beginPath();
-      g.arc(p.loc_x * W, p.loc_y * H, 2.6, 0, Math.PI * 2);
+      const x = p.loc_x * W, y = p.loc_y * H;
+      g.beginPath(); g.arc(x, y, 6.5, 0, Math.PI * 2);
       g.fillStyle = 'rgba(255,255,255,0.95)';
       g.fill();
-      g.lineWidth = 1; g.strokeStyle = 'rgba(9,26,33,0.8)'; g.stroke();
+      g.lineWidth = 2; g.strokeStyle = 'rgba(9,26,33,0.85)'; g.stroke();
+      g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2);
+      g.fillStyle = '#c0392b';
+      g.fill();
     });
   };
   img.src = MAP_SRC;
@@ -322,21 +336,21 @@ function heatmap() {
 // ── charts (hand-drawn SVG: no libraries, works offline) ─────────────────────
 function bars(host, labels, values, opts) {
   opts = opts || {};
-  const W = 100, H = 34, pad = 3;             // viewBox units, scales to any width
+  const W = 100, H = 38, pad = 3;             // viewBox units, scales to any width
   const max = Math.max(1, ...values);
   const bw = (W - pad * 2) / values.length;
   const body = values.map((v, i) => {
-    const h = (H - 10) * (v / max);
-    const x = pad + i * bw, y = H - 6 - h;
+    const h = (H - 13) * (v / max);
+    const x = pad + i * bw, y = H - 9 - h;
     const hot = opts.hot && v === max && v > 0;
     return `<rect x="${x + bw * 0.14}" y="${y}" width="${bw * 0.72}" height="${h}"
               rx="${Math.min(1, bw * 0.2)}" fill="${hot ? '#c0392b' : '#1b6c8a'}"></rect>`
-      + (v ? `<text class="axis" x="${x + bw / 2}" y="${y - 1.2}" text-anchor="middle"
-              style="font-size:3px">${v}</text>` : '');
+      + (v ? `<text x="${x + bw / 2}" y="${y - 1.3}" text-anchor="middle"
+              style="font-size:4.2px;font-weight:700;fill:var(--deep)">${v}</text>` : '');
   }).join('');
   const axis = labels.map((l, i) => l == null ? '' :
-    `<text class="axis" x="${pad + i * bw + bw / 2}" y="${H - 1}" text-anchor="middle"
-       style="font-size:3.2px">${esc(l)}</text>`).join('');
+    `<text x="${pad + i * bw + bw / 2}" y="${H - 1.5}" text-anchor="middle"
+       style="font-size:4px;fill:var(--dim)">${esc(l)}</text>`).join('');
   host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible">
       ${body}${axis}</svg>`;
 }
@@ -351,7 +365,7 @@ function timeline() {
   const out = [], labels = [];
   let d = new Date(keys[0] + 'T00:00:00'), end = new Date(keys[keys.length - 1] + 'T00:00:00');
   const span = Math.round((end - d) / 86400000) + 1;
-  const every = span > 120 ? 30 : span > 60 ? 14 : span > 21 ? 7 : 2;
+  const every = span > 120 ? 30 : span > 60 ? 14 : span > 21 ? 7 : 1;
   for (let i = 0; i < span; i++) {
     const k = d.toISOString().slice(0, 10);
     out.push(counts[k] || 0);
