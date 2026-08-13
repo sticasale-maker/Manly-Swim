@@ -4331,6 +4331,10 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       if (!Array.isArray(rows) || !rows.length) throw new Error('no rows');
       box.innerHTML = activeChart(rows);
       wireActiveChart(rows);
+      // Last row is today (partial day) — the 14-day window is still the true
+      // trailing count regardless, unlike DAU which visibly droops mid-morning.
+      var bau = el('stBau14');
+      if (bau) bau.textContent = rows[rows.length - 1].bau != null ? rows[rows.length - 1].bau : '—';
     } catch (e) {
       box.innerHTML = '<div class="st-empty">Run migrations/analytics_active_daily.sql to enable this chart.</div>';
     }
@@ -4721,11 +4725,18 @@ const SWIM_CONFIG_TTL  = 60 * 60 * 1000; // 1 hour
       '<div class="st-tile"><div class="st-tval" id="stTBrowser">\u2014</div><div class="st-tlab">Browser</div></div>' +
       '<div class="st-tile"><div class="st-tval" id="stTRet">\u2014</div><div class="st-tlab">Returning</div></div>' +
       tile('Reach', t.devices || 0) + tile('Opens', t.sessions || 0);
-    el('stStick').innerHTML = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) + '   (sticky = DAU/MAU ' + ratio + '%)' +
+    el('stStick').innerHTML = 'DAU ' + (s.dau || 0) + ' \u00b7 WAU ' + (s.wau || 0) + ' \u00b7 MAU ' + (s.mau || 0) +
+      ' \u00b7 <b id="stBau14">\u2014</b> active in the last 14 days' + '   (sticky = DAU/MAU ' + ratio + '%)' +
       '<div style="font-size:11px;color:#6b8a97;margin-top:5px;line-height:1.45;">' +
       '<b>Weekly active</b> is the number to quote \u2014 it cannot be inflated by a device losing its id. ' +
       '<b>Reach</b> is every phone that ever opened the app, one-off looks included, and is an upper bound rather than a count of people. ' +
       '<b>Returning</b> = seen on two or more separate days. ' +
+      // Filled by loadActive() once analytics_active_daily resolves \u2014 a real
+      // distinct 14-day device count, not the installed total scaled by the
+      // browser:installed ratio in the trend chart above (that ratio is a
+      // same-day proportion, not a period multiplier, and mixing the two
+      // overstates who is actually still swimming).
+      '<b>Active in the last 14 days</b> is the number for "at least once every couple of weeks". ' +
       '<b>Opens</b> ' + (t.sessions || 0) + ' \u00b7 <b>events</b> ' + (t.events || 0) + ' \u00b7 <b>new this window</b> ' + (t.new_devices || 0) + '.</div>';
     el('stDaily').innerHTML = dailyChart(d.daily || []);
     wireDailyChart(d.daily || []);      // must follow the innerHTML — it binds to #stDailySvg

@@ -1,8 +1,15 @@
 -- ============================================================================
--- analytics_active_daily — daily and rolling-7-day active devices
+-- analytics_active_daily — daily, rolling-7-day, and rolling-14-day active devices
 -- ============================================================================
 -- Powers the "Active devices" chart in ?stats=1, which is the panel's most
 -- trustworthy count.
+--
+-- bau (2026-08-14): "at least once every couple of weeks" is a real, distinct
+-- device count over a real 14-day window — NOT the installed-device total
+-- (783-ish, all-time cumulative) scaled by the browser:installed ratio seen in
+-- the Installed-vs-Browser chart. Those are two different kinds of number: one
+-- only ever grows, the other is a same-day proportion. Multiplying them looks
+-- like an estimate but isn't one. This is the actual count.
 --
 -- WHY THIS EXISTS RATHER THAN BEING DERIVED CLIENT-SIDE
 --   analytics_summary already returns devices-per-day, but distinct-devices-over-
@@ -32,14 +39,14 @@
 --      NOTE the plain select. This function returns a TABLE of rows, unlike
 --      analytics_device_quality and analytics_device_gaps which return jsonb —
 --      wrapping this one in jsonb_pretty() fails on a type mismatch.
---      Expect one row per day: day | dau | wau.
+--      Expect one row per day: day | dau | wau | bau.
 --
 --   The stats panel picks the function up on the next open; until then the
 --   "Active devices" card shows a prompt to run this file.
 -- ============================================================================
 
 create or replace function public.analytics_active_daily(p_token text, p_days int default 60)
-returns table(day date, dau int, wau int)
+returns table(day date, dau int, wau int, bau int)
 language plpgsql
 security definer
 set search_path = public
@@ -55,9 +62,9 @@ begin
            ae.device_id,
            (ae.created_at at time zone 'Australia/Sydney')::date as d
     from analytics_events ae
-    -- Reach back an extra 7 days so the earliest day's rolling window is complete
-    -- rather than silently short.
-    where ae.created_at >= now() - ((p_days + 7) * interval '1 day')
+    -- Reach back an extra 14 days (the widest rolling window below) so the
+    -- earliest day's window is complete rather than silently short.
+    where ae.created_at >= now() - ((p_days + 14) * interval '1 day')
   ),
   days as (
     select generate_series(
@@ -70,7 +77,11 @@ begin
          (select count(distinct e.device_id)::int
             from e where e.d = days.day)                                  as dau,
          (select count(distinct e.device_id)::int
-            from e where e.d between days.day - 6 and days.day)           as wau
+            from e where e.d between days.day - 6 and days.day)           as wau,
+         -- "Active at least once every couple of weeks" — a real distinct count
+         -- over a real 14-day window, not the installed total scaled by a ratio.
+         (select count(distinct e.device_id)::int
+            from e where e.d between days.day - 13 and days.day)          as bau
   from days
   order by days.day;
 end
