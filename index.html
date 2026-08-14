@@ -869,6 +869,14 @@
     letter-spacing: 1.5px; font-size: clamp(16px,4.8vw,20px);
     color: var(--deep); text-transform: uppercase; line-height: 1.05;
   }
+  /* Day/time moved up here from below the chart (was its own full-width line,
+     .wa2-scrub-t) so the expanded card — now open by default — isn't a screen
+     taller than it needs to be. */
+  .wa2-title-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .wa2-head-time {
+    font-family: 'Inter', sans-serif; font-size: 11.5px; font-weight: 600;
+    color: var(--ocean); white-space: nowrap;
+  }
   .wa2-sub {
     display: block; font-family: 'Inter', sans-serif;
     font-size: clamp(9px,2.5vw,10px); color: var(--dim);
@@ -924,6 +932,10 @@
   .wa2-scrub-mrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
   .wa2-scrub-hint { font-family: 'Inter', sans-serif; font-size: 11px; color: var(--dim); font-style: italic; }
   .wa2-scrub-t { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; font-size: 19px; color: var(--deep); white-space: nowrap; }
+  /* Superseded in-card by .wa2-head-time next to the title — kept in the DOM
+     (not deleted) because #waFsHost still shows it full screen, where there is
+     no card header to read it from. */
+  .wa2-card .wa2-scrub-t { display: none; }
   .wa2-scrub-m { display: inline-flex; align-items: center; gap: 5px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600; color: var(--deep); white-space: nowrap; }
   .wa2-scrub-m i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
 
@@ -3237,6 +3249,26 @@
 
     </div><!-- /community-group -->
 
+    <!-- THE WEEK AHEAD — one Best-Swim-Window ribbon per upcoming day (built by
+         renderWeekAhead). Moved directly under Swimmers' Corner 2026-08-14; expanded
+         by default (was collapsed). -->
+    <div class="wa2-card">
+      <button class="wa2-head" id="wa2-toggle" type="button" onclick="toggleWeekAhead()" aria-expanded="true" aria-controls="weekAheadDays">
+        <span class="wa2-head-top">
+          <span class="wa2-head-txt">
+            <span class="wa2-title-row">
+              <span class="wa2-title">The Week Ahead</span>
+              <span class="wa2-head-time" id="waHeadTime">&mdash;</span>
+            </span>
+            <span class="wa2-sub">7-day trend &middot; tap to open</span>
+          </span>
+          <span class="wa2-mini" id="waMini" aria-hidden="true"></span>
+          <span class="wa2-chevron">&#9662;</span>
+        </span>
+      </button>
+      <div id="weekAheadDays" class="wa2-days wa2-open"></div>
+    </div>
+
     <!-- Bluebottle FORECAST risk strip — moved here (after Swimmers' Corner) so this
          wind-only forecast sits below the community reports. Same BBF_ system; render
          is DOM-order-agnostic (id-selected). Must never outrank a live photo sighting. -->
@@ -3265,21 +3297,6 @@
     <!-- "Best Swim Window of the Day" card removed 2026-08-14 — renderDayWindow()
          early-returns when #dayWindowSvg is absent, so its call site and CSS are
          left inert rather than torn out. -->
-
-<!-- THE WEEK AHEAD — one Best-Swim-Window ribbon per upcoming day (built by renderWeekAhead) -->
-  <div class="wa2-card">
-    <button class="wa2-head" id="wa2-toggle" type="button" onclick="toggleWeekAhead()" aria-expanded="false" aria-controls="weekAheadDays">
-      <span class="wa2-head-top">
-        <span class="wa2-head-txt">
-          <span class="wa2-title">The Week Ahead</span>
-          <span class="wa2-sub">7-day trend &middot; tap to open</span>
-        </span>
-        <span class="wa2-mini" id="waMini" aria-hidden="true"></span>
-        <span class="wa2-chevron">&#9662;</span>
-      </span>
-    </button>
-    <div id="weekAheadDays" class="wa2-days"></div>
-  </div>
 
 <!-- FORECASTED VALUES — everything here updates with the slider -->
     <div class="forecast-values">
@@ -9941,6 +9958,10 @@ function initWeekScrubber(E, U, C, t0, t1){
         + '<span class="wa2-scrub-m"><i style="background:#d21f8a"></i><b>CHOP:</b> ' + tierOf(LBL_C, pc) + '</span>'
         + '</div>';
     }
+    // Same day/time text, moved up next to the card title (see .wa2-card
+    // .wa2-scrub-t { display:none } — this is what replaced it in-card).
+    var headTime = document.getElementById('waHeadTime');
+    if (headTime) headTime.textContent = fmtTime(t);
     svg.setAttribute('aria-valuenow', Math.round(frac * 100));
     svg.setAttribute('aria-valuetext', fmtTime(t));
   }
