@@ -1997,6 +1997,64 @@
     background:linear-gradient(90deg,rgba(224,232,238,0.16),#1b4754);
   }
 
+  /* ── Day view card (6am-8pm heat ribbon, swipeable) ──────────────────────── */
+  .dw-card {
+    background: var(--card);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: clamp(12px,4vw,16px) 8px clamp(10px,3vw,12px);
+    margin-bottom: 12px;
+    box-shadow: 0 4px 24px rgba(74,143,173,0.10);
+    /* pan-y: vertical page scroll still belongs to the browser; only horizontal
+       gestures are ours, so a swipe never fights the scroll. */
+    touch-action: pan-y;
+  }
+  .dw-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+  .dw-head-txt { flex: 1 1 auto; min-width: 0; text-align: center; }
+  .dw-day {
+    display: block; font-family: 'Bebas Neue', sans-serif; letter-spacing: 1.5px;
+    font-size: clamp(17px,5vw,21px); color: var(--deep); text-transform: uppercase;
+    line-height: 1.05;
+  }
+  .dw-title {
+    display: block; font-family: 'Inter', sans-serif; font-size: clamp(10px,2.8vw,11.5px);
+    font-weight: 600; color: #6fc0dd; letter-spacing: 0.2px; margin-top: 2px;
+  }
+  .dw-sub {
+    display: block; font-family: 'Inter', sans-serif;
+    font-size: clamp(9px,2.5vw,10px); color: var(--dim);
+    letter-spacing: 0.3px; margin-top: 2px;
+  }
+  .dw-nav {
+    flex: none; width: 34px; height: 34px; border-radius: 9px;
+    background: rgba(22,50,66,0.45); color: #c8bda0;
+    border: 1px solid rgba(180,210,230,0.14);
+    font-size: 21px; line-height: 1; cursor: pointer;
+    font-family: inherit; -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.15s ease, background 0.15s ease;
+  }
+  .dw-nav:hover:not(:disabled) { background: rgba(22,50,66,0.72); }
+  /* Disabled rather than hidden: a control that vanishes at the ends makes the
+     header jump width and the card twitch on every swipe to an edge. */
+  .dw-nav:disabled { opacity: 0.28; cursor: default; }
+  .dw-svg { width: 100%; height: auto; display: block; }
+  .dw-best {
+    font-family: 'Inter', sans-serif; font-size: clamp(10px,2.9vw,12px);
+    font-weight: 600; color: #6fc0dd; text-align: center;
+    margin-top: 8px; padding: 0 6px; line-height: 1.35;
+  }
+  /* Brief slide when the day changes, so a swipe reads as movement between days
+     rather than the numbers silently mutating in place. */
+  @keyframes dwInL { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+  @keyframes dwInR { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+  .dw-anim-next .dw-svg, .dw-anim-next .dw-best { animation: dwInL 0.22s ease-out; }
+  .dw-anim-prev .dw-svg, .dw-anim-prev .dw-best { animation: dwInR 0.22s ease-out; }
+  @media (prefers-reduced-motion: reduce) {
+    .dw-anim-next .dw-svg, .dw-anim-next .dw-best,
+    .dw-anim-prev .dw-svg, .dw-anim-prev .dw-best { animation: none; }
+  }
+
   /* ── Best swim window (3-line day chart) ── */
   .window-graph-wrap {
     background:var(--card);
@@ -3296,9 +3354,28 @@
       <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 105" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
     </div>
 
-    <!-- "Best Swim Window of the Day" card removed 2026-08-14 — renderDayWindow()
-         early-returns when #dayWindowSvg is absent, so its call site and CSS are
-         left inert rather than torn out. -->
+    <!-- DAY VIEW — 6am-8pm heat ribbon for ONE day, swipeable day to day.
+         Reinstates the card removed 2026-08-14: renderDayWindow() was left inert
+         (it early-returns without #dayWindowSvg) rather than torn out, so this is
+         the same proven drawing code, now scoped to 6-20 and given day navigation.
+         Swiping calls selectDay(), the app's existing single entry point, so the
+         slider, snapshot and this card all move together — no second "current day". -->
+    <div class="dw-card" id="dayWindowCard">
+      <div class="dw-head">
+        <button type="button" class="dw-nav" id="dwPrev" onclick="dayWindowStep(-1)"
+                aria-label="Previous day (back towards today)">&#8249;</button>
+        <div class="dw-head-txt">
+          <span class="dw-day" id="dayWindowDay">&mdash;</span>
+          <span class="dw-title" id="dayWindowTitle">Best Swim Window of the Day</span>
+          <span class="dw-sub" id="dayWindowSub">6am&ndash;8pm &middot; swipe to change day</span>
+        </div>
+        <button type="button" class="dw-nav" id="dwNext" onclick="dayWindowStep(1)"
+                aria-label="Next day">&#8250;</button>
+      </div>
+      <svg id="dayWindowSvg" class="dw-svg" viewBox="0 0 360 130"
+           preserveAspectRatio="xMidYMid meet" aria-label="Swim conditions 6am to 8pm"></svg>
+      <div class="dw-best" id="dayWindowBest">&mdash;</div>
+    </div>
 
 <!-- FORECASTED VALUES — everything here updates with the slider -->
     <div class="forecast-values">
@@ -7705,11 +7782,111 @@ function _wgFmt(hhmm){
   return (m === '00') ? (h12 + ' ' + ap) : (h12 + ':' + m + ' ' + ap);
 }
 
+// Day-view bounds. 6am–8pm: the hours the time picker actually offers, so the card
+// and the picker agree on what counts as a swimmable hour.
+var DW_FROM_H = 6, DW_TO_H = 20;
+
+// Days the day view can reach: today forward, in matrix order. Forward-anchored like
+// renderDayPicker — history exists in _matrix (loadForecastHistory backfills 7 days)
+// but a swimmer swiping "back" means back towards today, not into last Tuesday.
+function dayWindowDays(){
+  if (!_matrix || !_matrix.length) return [];
+  var n = new Date();
+  var pad = function(x){ return String(x).padStart(2,'0'); };
+  var today = n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
+  var seen = {}, out = [];
+  _matrix.forEach(function(r){
+    if (!r || !r.dateTime) return;
+    var d = r.dateTime.substring(0,10);
+    if (d < today || seen[d]) return;
+    // SCOREABLE days only. appendNsOutlook tacks days ~8-10 onto _matrix carrying NS
+    // swell but windKmh: null and tideM: null — there is no wind that far out (WW caps
+    // at ~7 days), so a 6am-8pm swim ribbon for them would be meaningless. They also
+    // crash renderSnapshot, which does h.tideM.toFixed(2) unguarded, so stepping into
+    // one would take the whole view down. Require an hour in range with real drivers.
+    var h = parseInt(r.dateTime.substring(11,13),10);
+    if (h < DW_FROM_H || h > DW_TO_H) return;
+    if (r.windKmh == null || r.tideM == null) return;
+    seen[d] = 1; out.push(d);
+  });
+  return out.sort();
+}
+
+// Step the day view. delta +1 = further ahead (swipe left), -1 = back towards today
+// (swipe right). Clamped at both ends, and routed through selectDay() so the slider,
+// the snapshot and this card stay on one day — there is no separate day state here.
+function dayWindowStep(delta){
+  var days = dayWindowDays();
+  if (!days.length) return;
+  var cur = (_selectedDay && days.indexOf(_selectedDay) >= 0)
+    ? days.indexOf(_selectedDay)
+    : 0;
+  var next = Math.max(0, Math.min(days.length - 1, cur + delta));
+  if (next === cur) return;                       // already at an end: do nothing
+  var card = document.getElementById('dayWindowCard');
+  if (card){
+    card.classList.remove('dw-anim-next','dw-anim-prev');
+    void card.offsetWidth;                        // restart the animation
+    card.classList.add(delta > 0 ? 'dw-anim-next' : 'dw-anim-prev');
+  }
+  selectDay(days[next]);                          // re-renders everything, incl. this card
+  try { renderDayPicker(_matrix); } catch (e) {}  // keep the day chips' highlight in step
+}
+
+// Day name + arrow enable/disable. Called from renderDayWindow so it can never
+// disagree with the chart beneath it.
+function dayWindowChrome(day){
+  var days = dayWindowDays(), i = days.indexOf(day);
+  var lbl = document.getElementById('dayWindowDay');
+  if (lbl){
+    var txt = '—';
+    if (day){
+      if (i === 0) txt = 'Today';
+      else if (i === 1) txt = 'Tomorrow';
+      else {
+        var d = new Date(day + 'T00:00');
+        txt = d.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'short' });
+      }
+    }
+    lbl.textContent = txt;
+  }
+  var prev = document.getElementById('dwPrev'), next = document.getElementById('dwNext');
+  if (prev) prev.disabled = (i <= 0);
+  if (next) next.disabled = (i < 0 || i >= days.length - 1);
+}
+
+// Horizontal swipe on the card. Bound once; the card element itself is never
+// replaced (only its svg contents are), so one binding survives every re-render.
+function initDayWindowSwipe(){
+  var card = document.getElementById('dayWindowCard');
+  if (!card || card._dwSwipe) return;
+  card._dwSwipe = true;
+  var x0 = 0, y0 = 0, active = false;
+  card.addEventListener('pointerdown', function(e){
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    // A press that starts on an arrow is a button press, not the start of a swipe.
+    if (e.target && e.target.closest && e.target.closest('.dw-nav')) return;
+    active = true; x0 = e.clientX; y0 = e.clientY;
+  });
+  card.addEventListener('pointerup', function(e){
+    if (!active) return;
+    active = false;
+    var dx = e.clientX - x0, dy = e.clientY - y0;
+    if (Math.abs(dx) < 45) return;                  // a tap or a twitch, not a swipe
+    if (Math.abs(dx) < Math.abs(dy) * 1.4) return;  // mostly vertical — that's a scroll
+    dayWindowStep(dx < 0 ? 1 : -1);                 // drag left = forward a day
+  });
+  // Fired when the browser claims the gesture for scrolling (touch-action: pan-y),
+  // which is exactly when we must not also treat it as a swipe.
+  card.addEventListener('pointercancel', function(){ active = false; });
+}
+
 function renderDayWindow(dateTimeStr){
   var svg    = document.getElementById('dayWindowSvg');
   var bestEl = document.getElementById('dayWindowBest');
   if (!svg) return;
   var day = (dateTimeStr || '').substring(0, 10);
+  try { dayWindowChrome(day); initDayWindowSwipe(); } catch (e) { /* cosmetic; never block the chart */ }
   if (!day || !_matrix || !_matrix.length){
     svg.innerHTML = ''; if (bestEl) bestEl.textContent = '—'; return;
   }
@@ -7732,16 +7909,20 @@ function renderDayWindow(dateTimeStr){
     };
   });
 
-  // Only show / score swimmable hours: 5am–9pm. Everything else is dropped from the ribbon.
-  pts = pts.filter(function(p){ return p.t >= 5 && p.t <= 21; });
+  // Only show / score swimmable hours: 6am–8pm. Everything else is dropped from the
+  // ribbon. Narrowed from 5–21 when the card came back as the day view: 6–20 is
+  // already the range the time picker offers (see initTimeRoller), and a window the
+  // picker cannot select was never much use. Season-independent, as before.
+  pts = pts.filter(function(p){ return p.t >= DW_FROM_H && p.t <= DW_TO_H; });
   if (!pts.length){
-    svg.innerHTML = '<text x="180" y="40" text-anchor="middle" font-size="12" fill="'+WG_INK+'">No 5am–9pm forecast for this day</text>';
+    svg.innerHTML = '<text x="180" y="40" text-anchor="middle" font-size="12" fill="'+WG_INK+'">No 6am–8pm forecast for this day</text>';
     svg.setAttribute('viewBox','0 0 360 70');
     if (bestEl) bestEl.textContent = '—'; return;
   }
 
-  // Window eligibility: hard-clamped to 5am-9pm (swimmable hours), season-independent.
-  function inWindow(t){ return t >= 5 && t <= 21; }
+  // Window eligibility: same clamp as the ribbon, so the boxed best window can never
+  // sit on an hour the card does not draw.
+  function inWindow(t){ return t >= DW_FROM_H && t <= DW_TO_H; }
 
   // Combined swimmability — shared with the Week Ahead strip (see wgCombo).
   function combo(p){ return wgCombo(p.entry, p.chop, p.surge); }
@@ -7793,8 +7974,10 @@ function renderDayWindow(dateTimeStr){
   var subEl   = document.getElementById('dayWindowSub');
   var plural  = merged.length > 1;
   if (titleEl) titleEl.textContent = plural ? 'Best Swim Windows of the Day' : 'Best Swim Window of the Day';
-  if (subEl)   subEl.textContent   = plural ? 'Each row shaded by value · best windows boxed'
-                                             : 'Each row shaded by value · best window boxed';
+  // Keep the swipe affordance in the subline — it is the only thing telling a first-
+  // time user the card is navigable, and this render overwrites whatever the markup said.
+  if (subEl)   subEl.textContent   = (plural ? 'Best windows boxed' : 'Best window boxed')
+                                     + ' · 6am–8pm · swipe for another day';
   var bandTxt = '—';
   if (merged.length){
     bandTxt = (plural ? 'Best: ' : 'Best ≈ ') + merged.map(function(w){
