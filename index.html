@@ -2704,7 +2704,13 @@
 <body>
 <!-- Video splash -->
 <div id="video-splash">
-  <video id="splash-video" src="images/logosplash.mp4" autoplay muted playsinline preload="auto"></video>
+  <!-- src is deliberately NOT set here, and preload is none. With preload="auto"
+       the browser fetched all 2.3 MB before the script below had decided whether
+       this launch was even going to show the splash — so on every launch that
+       skipped it (6 days in 7 now that it is weekly) the download happened anyway
+       and was thrown away. splashArm() sets the src only when it is about to play.
+       muted + playsinline stay: both are required for autoplay on iOS. -->
+  <video id="splash-video" data-src="images/logosplash.mp4" autoplay muted playsinline preload="none"></video>
   <button id="splash-skip" type="button" aria-label="Skip intro">Skip</button>
 </div>
 
@@ -12586,27 +12592,48 @@ async function nuovoPreflight() {
   // ===== SPLASH SCREEN =====
   // One phase: the video plays to completion (or a 10s safety cap), then fades.
   // The old phase-2 logo/beta card has been removed.
-  // Shown once per calendar day (local time); every later launch that day skips it.
+  // Shown once per local WEEK; every later launch that week skips it entirely.
   var _splashDone = null;   // set by whichever splash flow is running; called by Skip
+
+  // Attach the video source on demand. The element ships with data-src and
+  // preload="none" so a launch that isn't going to show the splash costs zero
+  // bytes; this is the only thing that turns it into a real request. Idempotent,
+  // so the weekly flow and replaySplash can both call it freely.
+  function splashArm(vid) {
+    if (!vid || vid.getAttribute('src')) return;
+    var s = vid.getAttribute('data-src');
+    if (!s) return;
+    vid.preload = 'auto';
+    vid.setAttribute('src', s);
+    try { vid.load(); } catch (e) {}
+  }
+  window.splashArm = splashArm;
   (function() {
     var videoEl   = document.getElementById('splash-video');
     var videoWrap = document.getElementById('video-splash');
     if (!videoWrap) return;
 
-    // Show the splash on the first launch of each local calendar day. Every
-    // subsequent launch or reload that same day goes straight to the app.
-    // Stamped as yyyy-mm-dd in LOCAL time (not UTC) so the rollover is midnight
-    // in Sydney, not 10-11am. Written on show, so a mid-splash reload won't replay it.
-    var SPLASH_KEY = 'swim_splash_day_v1';
+    // Show the splash on the first launch of each local WEEK (was each calendar
+    // day). A regular opens this app 300+ mornings a year, in a car park, on
+    // mobile data, wanting one number — a logo animation earns its keep once a
+    // week, not 300 times. Stamped with the LOCAL Monday of the current week, so
+    // the rollover is Sydney midnight Sunday→Monday rather than UTC. Written on
+    // show, so a mid-splash reload won't replay it.
+    // New key name: the old swim_splash_day_v1 value is left behind harmlessly
+    // rather than migrated — a stale daily stamp would never match a week key.
+    var SPLASH_KEY = 'swim_splash_week_v1';
     var _d = new Date();
-    var today = _d.getFullYear() + '-' +
-                ('0' + (_d.getMonth() + 1)).slice(-2) + '-' +
-                ('0' + _d.getDate()).slice(-2);
-    if (persistGet(SPLASH_KEY) === today) {
+    var _dow = (_d.getDay() + 6) % 7;                                  // Mon=0 … Sun=6
+    var _mon = new Date(_d.getFullYear(), _d.getMonth(), _d.getDate() - _dow);
+    var thisWeek = _mon.getFullYear() + '-' +
+                   ('0' + (_mon.getMonth() + 1)).slice(-2) + '-' +
+                   ('0' + _mon.getDate()).slice(-2);
+    if (persistGet(SPLASH_KEY) === thisWeek) {
       videoWrap.style.display = 'none';
       return;
     }
-    persistSet(SPLASH_KEY, today);
+    persistSet(SPLASH_KEY, thisWeek);
+    splashArm(videoEl);   // only now does the 2.3 MB actually get requested
 
     function fadeEl(el, cb) {
       el.classList.add('fade-out');
@@ -12669,6 +12696,9 @@ function replaySplash() {
   };
   _splashDone = function () { done = true; };   // Skip retires this replay too
   if (vid) {
+    // The video now ships without a src, so on any launch that skipped the
+    // weekly splash this is what makes a logo tap actually play something.
+    try { if (window.splashArm) window.splashArm(vid); } catch (e) {}
     vid.onended = end; vid.onerror = end;
     try { vid.currentTime = 0; } catch (e) {}
     var pr = vid.play(); if (pr && pr.catch) pr.catch(function () {});

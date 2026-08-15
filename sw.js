@@ -137,12 +137,14 @@ self.addEventListener('fetch', event => {
   // Ignore non-http(s) schemes (e.g. chrome-extension://) — they can't be cached
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
 
-  // Don't intercept media or range requests. A network-first SW mishandles the
-  // HTTP Range / 206 responses that <video>/<audio> rely on, which stalls or
-  // breaks playback (notably the splash video on iOS Safari). Let the browser
-  // stream these natively.
-  if (event.request.headers.has('range') ||
-      /\.(mp4|webm|ogg|ogv|mov|m4v|m4a|mp3|wav|aac)$/i.test(url.pathname)) {
+  // The splash video is the one media file worth caching: it is 2.3 MB, it is
+  // byte-identical every time, and it is the first thing between a swimmer and
+  // the number they opened the app for. It gets its own handler because the
+  // generic rule below cannot serve it — see serveSplashVideo() for why a
+  // network-first SW breaks <video>, and how the Range/206 contract is honoured.
+  if (url.origin === self.location.origin &&
+      /images\/logosplash\.mp4$/i.test(url.pathname)) {
+    event.respondWith(serveSplashVideo(event.request, url));
     return;
   }
 
@@ -187,3 +189,76 @@ self.addEventListener('fetch', event => {
       })
   );
 });
+
+// ── Splash video: cached, with the Range contract honoured by hand ──────────
+// WHY THIS IS NOT JUST "delete the .mp4 exclusion":
+// <video> does not fetch a file, it fetches byte ranges. Safari in particular
+// issues `Range: bytes=0-` and REQUIRES a 206 with a correct Content-Range back;
+// hand it the plain 200 that a naive cache.match() returns and playback stalls
+// or dies. That is the exact failure the blanket media bail-out above was written
+// to avoid. So to cache this file we have to serve the ranges ourselves.
+//
+// Cached under the VERSIONED cache deliberately: a CI deploy therefore re-fetches
+// it once, which is the price of never serving a stale logo. That costs nothing
+// in practice because index.html only attaches the src on the week's first
+// launch — so the download happens at most once a week per device regardless.
+async function serveSplashVideo(request, url) {
+  // Key on origin+pathname so a cache-buster query can never fragment the entry.
+  const key = url.origin + url.pathname;
+  let cached;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    cached = await cache.match(key);
+    if (!cached) {
+      const fresh = await fetch(key, { cache: 'reload' });
+      if (!fresh || fresh.status !== 200) return fetch(request);
+      // put() consumes the clone; `fresh` stays readable for us to serve from.
+      await cache.put(key, fresh.clone());
+      cached = fresh;
+    }
+  } catch (e) {
+    return fetch(request);           // cache unavailable (private mode, quota) — just stream it
+  }
+
+  const range = request.headers.get('range');
+  if (!range) return cached;         // no Range asked for: the plain 200 is correct
+
+  let buf;
+  try { buf = await cached.arrayBuffer(); }
+  catch (e) { return fetch(request); }
+  const total = buf.byteLength;
+
+  const m = /bytes=(\d*)-(\d*)/i.exec(range);
+  if (!m) return cached;
+
+  let start, end;
+  if (m[1] === '') {
+    // Suffix form `bytes=-N` — the LAST n bytes, not the first n.
+    const n = parseInt(m[2], 10);
+    if (!isFinite(n) || n <= 0) return cached;
+    start = Math.max(0, total - n);
+    end   = total - 1;
+  } else {
+    start = parseInt(m[1], 10);
+    end   = m[2] === '' ? total - 1 : parseInt(m[2], 10);
+  }
+
+  if (!isFinite(start) || !isFinite(end) || start > end || start >= total) {
+    return new Response(null, {
+      status: 416,
+      headers: { 'Content-Range': 'bytes */' + total }
+    });
+  }
+  end = Math.min(end, total - 1);
+
+  return new Response(buf.slice(start, end + 1), {
+    status: 206,
+    statusText: 'Partial Content',
+    headers: {
+      'Content-Type':   cached.headers.get('Content-Type') || 'video/mp4',
+      'Content-Length': String(end - start + 1),
+      'Content-Range':  'bytes ' + start + '-' + end + '/' + total,
+      'Accept-Ranges':  'bytes'
+    }
+  });
+}
