@@ -4,39 +4,75 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stolen bags — admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Same palette as the swim app itself (index.html --ocean/--deep), so this
+     reads as part of the same product rather than a bare admin tool bolted on. */
   :root{
-    --deep:#0f3543; --ocean:#1b6c8a; --dim:#5b7683; --bg:#eaf0f3;
+    --deep:#113541; --ocean:#4a8fad; --dim:#5b7683; --bg:#eaf0f3;
     --card:#fff; --line:rgba(17,53,65,0.14); --red:#c0392b; --amber:#e8a400;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--deep);
-       font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;}
-  header{background:var(--deep);color:#fff;padding:14px 18px;position:sticky;top:0;z-index:10;
-         display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-  header h1{font-size:19px;margin:0;letter-spacing:.5px;flex:1;min-width:200px}
-  header .meta{font-size:12px;opacity:.75}
+  body{
+    margin:0;color:var(--deep);
+    font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+    /* Soft underwater-light wash instead of a flat grey — two large, faint
+       radial glows (sun through water) over the base ocean tint. Fixed so it
+       doesn't scroll away and reads as a backdrop, not a texture to notice. */
+    background:
+      radial-gradient(ellipse 800px 500px at 15% -5%, rgba(74,143,173,0.16), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 15%, rgba(46,139,120,0.12), transparent 55%),
+      var(--bg);
+    background-attachment:fixed;
+  }
+  header{
+    background:linear-gradient(100deg,var(--deep),#1b6c8a 65%,#1c7d8f);
+    color:#fff;padding:16px 18px 20px;position:sticky;top:0;z-index:10;
+    display:flex;flex-wrap:wrap;gap:12px;align-items:center;
+    /* A shallow wave along the bottom edge instead of a hard line. */
+    clip-path:polygon(0 0,100% 0,100% 92%,75% 100%,50% 93%,25% 100%,0 92%);
+    padding-bottom:26px;
+  }
+  header h1{
+    font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:1.2px;
+    margin:0;flex:1;min-width:200px;text-transform:uppercase;
+  }
+  header h1 .wave{ margin-right:2px; filter:drop-shadow(0 1px 1px rgba(0,0,0,.15)); }
+  header .meta{font-size:12px;opacity:.8}
   .wrap{padding:14px;max-width:1400px;margin:0 auto}
-  .card{background:var(--card);border-radius:12px;padding:13px 14px;margin-bottom:12px;
-        box-shadow:0 1px 4px rgba(9,26,33,.10)}
-  .card h2{font-size:19px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
-           margin:0 0 3px}
+  .card{
+    background:var(--card);border-radius:12px;padding:15px 14px 13px;margin-bottom:12px;
+    box-shadow:0 3px 14px rgba(23,80,105,.10);
+    border-top:3px solid transparent;
+    border-image:linear-gradient(90deg,var(--ocean),#2ea578) 1;
+  }
+  .card h2{
+    font-size:19px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
+    margin:0 0 3px;display:flex;align-items:center;gap:7px;
+  }
+  .card h2 .ic{ font-size:16px;filter:saturate(1.15) }
   .card .sub{font-size:15px;color:var(--dim);margin-bottom:8px}
   /* The bar charts are inline SVG scaled by viewBox, so their text grows with
      container width — uncapped, a wide desktop screen balloons the axis labels
      to 30-40px while these fixed-size titles stay put. Capping the chart's own
      width keeps its text proportionate at a glance, whatever the screen. */
   #timeline, #dow, #hour { max-width: 460px; }
-  button,select{font:inherit;padding:7px 12px;border-radius:8px;border:1.5px solid var(--line);
+  button,select{font:inherit;padding:7px 13px;border-radius:999px;border:1.5px solid var(--line);
                 background:#fff;color:var(--deep);cursor:pointer}
-  button.primary{background:var(--ocean);border-color:var(--ocean);color:#fff}
+  button.primary{background:linear-gradient(100deg,var(--ocean),#2ea578);border-color:transparent;color:#fff}
   button:disabled{opacity:.45;cursor:default}
   input[type=text]{font:inherit;padding:7px 10px;border-radius:8px;border:1.5px solid var(--line);
                    min-width:260px}
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-  .tile{background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(9,26,33,.10)}
-  .tile .n{font-size:36px;font-weight:700;line-height:1.1}
-  .tile .l{font-size:12.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:2px}
+  .tile{
+    background:var(--card);border-radius:12px;padding:12px 14px;
+    box-shadow:0 3px 10px rgba(23,80,105,.09);
+    border-left:3px solid var(--ocean);
+  }
+  .tile .n{font-family:'Bebas Neue',sans-serif;font-size:38px;font-weight:400;line-height:1;color:var(--deep)}
+  .tile .l{font-size:12.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:3px}
+  .tile.warn{border-left-color:var(--red)}
   .tile.warn .n{color:var(--red)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:860px){.grid2{grid-template-columns:1fr}}
@@ -83,7 +119,7 @@
 <body>
 
 <header>
-  <h1>Stolen bags — admin</h1>
+  <h1><span class="wave" aria-hidden="true">🌊</span>Stolen bags — admin</h1>
   <span class="meta" id="hMeta"></span>
   <select id="range">
     <option value="30">Last 30 days</option>
@@ -112,7 +148,7 @@
 
     <div class="dash-top" style="margin-top:12px">
       <div class="card">
-        <h2>Where bags are taken</h2>
+        <h2><span class="ic">🗺️</span>Where bags are taken</h2>
         <div class="sub">Every reported spot, over the promenade map. Warmer means more reports in the same place.</div>
         <div class="mapbox"><canvas id="heat"></canvas></div>
         <div class="legend">
@@ -127,17 +163,17 @@
 
       <div class="dash-charts">
         <div class="card">
-          <h2>Reports over time</h2>
+          <h2><span class="ic">📈</span>Reports over time</h2>
           <div class="sub">One bar per day, by the day the bag was taken.</div>
           <div id="timeline"></div>
         </div>
         <div class="card">
-          <h2>By day of the week</h2>
+          <h2><span class="ic">📆</span>By day of the week</h2>
           <div class="sub">Which days they work.</div>
           <div id="dow"></div>
         </div>
         <div class="card">
-          <h2>By time of day</h2>
+          <h2><span class="ic">🕒</span>By time of day</h2>
           <div class="sub" id="hourSub">Which hours they work.</div>
           <div id="hour"></div>
           <label class="note" style="display:block;margin-top:10px">
@@ -148,7 +184,7 @@
     </div>
 
     <div class="card">
-      <h2>Every report</h2>
+      <h2><span class="ic">🧳</span>Every report</h2>
       <div class="sub">All fields, newest first. Includes rows flagged <b>suspect</b> or hidden &mdash; you decide what is junk, not the app.</div>
       <div class="tablewrap"><table id="tbl"></table></div>
       <div class="note">
