@@ -19,9 +19,9 @@
   .wrap{padding:14px;max-width:1400px;margin:0 auto}
   .card{background:var(--card);border-radius:12px;padding:13px 14px;margin-bottom:12px;
         box-shadow:0 1px 4px rgba(9,26,33,.10)}
-  .card h2{font-size:16px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
+  .card h2{font-size:19px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
            margin:0 0 3px}
-  .card .sub{font-size:13.5px;color:var(--dim);margin-bottom:8px}
+  .card .sub{font-size:15px;color:var(--dim);margin-bottom:8px}
   /* The bar charts are inline SVG scaled by viewBox, so their text grows with
      container width — uncapped, a wide desktop screen balloons the axis labels
      to 30-40px while these fixed-size titles stay put. Capping the chart's own
@@ -35,8 +35,8 @@
                    min-width:260px}
   .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
   .tile{background:var(--card);border-radius:12px;padding:12px 14px;box-shadow:0 1px 4px rgba(9,26,33,.10)}
-  .tile .n{font-size:28px;font-weight:700;line-height:1.1}
-  .tile .l{font-size:11px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:2px}
+  .tile .n{font-size:36px;font-weight:700;line-height:1.1}
+  .tile .l{font-size:12.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:2px}
   .tile.warn .n{color:var(--red)}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   @media(max-width:860px){.grid2{grid-template-columns:1fr}}
@@ -46,7 +46,7 @@
   /* Map on the left filling its card, the three small charts stacked in a
      column to its right — the map is naturally tall, so this uses that
      height instead of leaving it beside a blank strip of card. */
-  .dash-top{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .dash-top{display:grid;grid-template-columns:0.75fr 1.25fr;gap:12px;align-items:start}
   @media(max-width:900px){.dash-top{grid-template-columns:1fr}}
   .dash-charts{display:flex;flex-direction:column;gap:12px}
   .mapbox{position:relative;width:100%}
@@ -378,16 +378,27 @@ function timeline() {
   const counts = {};
   ROWS.forEach(r => { const k = dayKey(new Date(r.left_at)); counts[k] = (counts[k] || 0) + 1; });
   const keys = Object.keys(counts).sort();
-  // fill the gaps, so a quiet fortnight looks quiet instead of being skipped
+  // Pure calendar-date arithmetic, UTC-anchored — NOT `new Date(key + 'T00:00:00')`
+  // then `.toISOString().slice(0,10)`. Those two steps read the date in different
+  // timezone frames (local-time parse, then a UTC-time read back), so they silently
+  // disagree by a day for any browser not sitting at exactly UTC+0, which meant the
+  // generated keys missed the real dayKey() keys in `counts` and reports vanished
+  // from the chart (3 reports rendering as 2, discovered 2026-08-15). Date.UTC()
+  // for both ends keeps every step in the same frame, so this can't drift.
+  const [y0, m0, d0] = keys[0].split('-').map(Number);
+  const [y1, m1, d1] = keys[keys.length - 1].split('-').map(Number);
+  const startUTC = Date.UTC(y0, m0 - 1, d0), endUTC = Date.UTC(y1, m1 - 1, d1);
+  const span = Math.round((endUTC - startUTC) / 86400000) + 1;
+  // Cap at ~7 labels regardless of span — the earlier "label every day" fix
+  // (for a 3-day window) became a wall of overlapping unreadable text the
+  // moment the window grew past a couple of weeks.
+  const every = Math.max(1, Math.ceil(span / 7));
   const out = [], labels = [];
-  let d = new Date(keys[0] + 'T00:00:00'), end = new Date(keys[keys.length - 1] + 'T00:00:00');
-  const span = Math.round((end - d) / 86400000) + 1;
-  const every = span > 120 ? 30 : span > 60 ? 14 : span > 21 ? 7 : 1;
   for (let i = 0; i < span; i++) {
-    const k = d.toISOString().slice(0, 10);
+    const dUTC = new Date(startUTC + i * 86400000);
+    const k = dUTC.toISOString().slice(0, 10);
     out.push(counts[k] || 0);
-    labels.push(i % every === 0 ? fmt(d, { day: 'numeric', month: 'short' }) : null);
-    d = new Date(d.getTime() + 86400000);
+    labels.push(i % every === 0 ? fmt(dUTC, { day: 'numeric', month: 'short' }) : null);
   }
   bars(host, labels, out, { hot: true });
 }
