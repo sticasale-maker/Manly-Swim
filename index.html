@@ -3356,7 +3356,7 @@
 
     <!-- DAY VIEW — 6am-8pm heat ribbon for ONE day, swipeable day to day.
          Reinstates the card removed 2026-08-14: renderDayWindow() was left inert
-         (it early-returns without #dayWindowSvg) rather than torn out, so this is
+         (it early-returns without its host) rather than torn out, so this is
          the same proven drawing code, now scoped to 6-20 and given day navigation.
          Swiping calls selectDay(), the app's existing single entry point, so the
          slider, snapshot and this card all move together — no second "current day". -->
@@ -3372,8 +3372,7 @@
         <button type="button" class="dw-nav" id="dwNext" onclick="dayWindowStep(1)"
                 aria-label="Next day">&#8250;</button>
       </div>
-      <svg id="dayWindowSvg" class="dw-svg" viewBox="0 0 360 130"
-           preserveAspectRatio="xMidYMid meet" aria-label="Swim conditions 6am to 8pm"></svg>
+      <div id="dayWindowChart"></div>
       <div class="dw-best" id="dayWindowBest">&mdash;</div>
     </div>
 
@@ -7882,18 +7881,18 @@ function initDayWindowSwipe(){
 }
 
 function renderDayWindow(dateTimeStr){
-  var svg    = document.getElementById('dayWindowSvg');
+  var host   = document.getElementById('dayWindowChart');
   var bestEl = document.getElementById('dayWindowBest');
-  if (!svg) return;
+  if (!host) return;
   var day = (dateTimeStr || '').substring(0, 10);
   try { dayWindowChrome(day); initDayWindowSwipe(); } catch (e) { /* cosmetic; never block the chart */ }
   if (!day || !_matrix || !_matrix.length){
-    svg.innerHTML = ''; if (bestEl) bestEl.textContent = '—'; return;
+    host.innerHTML = ''; if (bestEl) bestEl.textContent = '—'; return;
   }
 
   var rows = _matrix.filter(function(r){ return r.dateTime && r.dateTime.indexOf(day) === 0; });
   if (rows.length < 2){
-    svg.innerHTML = '<text x="180" y="92" text-anchor="middle" font-size="12" fill="'+WG_INK+'">No forecast for this day</text>';
+    host.innerHTML = '<div class="wa2-empty">No forecast for this day.</div>';
     if (bestEl) bestEl.textContent = '—'; return;
   }
 
@@ -7915,8 +7914,7 @@ function renderDayWindow(dateTimeStr){
   // picker cannot select was never much use. Season-independent, as before.
   pts = pts.filter(function(p){ return p.t >= DW_FROM_H && p.t <= DW_TO_H; });
   if (!pts.length){
-    svg.innerHTML = '<text x="180" y="40" text-anchor="middle" font-size="12" fill="'+WG_INK+'">No 6am–8pm forecast for this day</text>';
-    svg.setAttribute('viewBox','0 0 360 70');
+    host.innerHTML = '<div class="wa2-empty">No 6am–8pm forecast for this day.</div>';
     if (bestEl) bestEl.textContent = '—'; return;
   }
 
@@ -7976,8 +7974,9 @@ function renderDayWindow(dateTimeStr){
   if (titleEl) titleEl.textContent = plural ? 'Best Swim Windows of the Day' : 'Best Swim Window of the Day';
   // Keep the swipe affordance in the subline — it is the only thing telling a first-
   // time user the card is navigable, and this render overwrites whatever the markup said.
-  if (subEl)   subEl.textContent   = (plural ? 'Best windows boxed' : 'Best window boxed')
-                                     + ' · 6am–8pm · swipe for another day';
+  // No longer says "boxed": the heat ribbon drew the best window as a box, the line
+  // chart does not — the window is now only the text below the chart.
+  if (subEl)   subEl.textContent   = '6am–8pm · tap to read a time · swipe for another day';
   var bandTxt = '—';
   if (merged.length){
     bandTxt = (plural ? 'Best: ' : 'Best ≈ ') + merged.map(function(w){
@@ -7987,60 +7986,31 @@ function renderDayWindow(dateTimeStr){
   }
   if (bestEl) bestEl.textContent = bandTxt;
 
-  // ── Heat ribbon: 3 zone-coloured rows (Entry / Chop / Surge), one cell per hour ──
-  // top: 22 leaves headroom for the window index badges (r=8, centred at top-12,
-  // so their crown lands at y=2). fullH: ribH+26 clears the hour-tick baseline at
-  // ribH+16 plus the descender on the "p" of 12p/3p/6p/9p. Both were clipped before.
-  var W = 360, L = 46, R = 8, top = 22, rowH = 26, gap = 5, cols = pts.length;
-  var cellW = (W - L - R) / cols;
-  var ribH  = top + 3*rowH + 2*gap;
-  var fullH = ribH + 26;
-  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + fullH);
-
-  var ROWS = [['Entry','entry'], ['Surge','surge'], ['Chop','chop']];
-  var cells = '', labels = '';
-  ROWS.forEach(function(row, r){
-    var ry = top + r*(rowH + gap);
-    labels += '<text x="6" y="'+(ry + rowH/2 + 4)+'" font-size="12" font-weight="600" fill="#c8bda0">'+row[0]+'</text>';
-    pts.forEach(function(p, i){
-      var col = _wgColor(p[row[1]]);
-      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+col+'"/>';
-    });
+  // ── Chart: the SAME visualisation as The Week Ahead ─────────────────────────
+  // Three smoothed lines over one shared calm->rough band background, drawn by
+  // wgUnifiedChart with labels:'hours'. Replaced the 3-row heat ribbon on 16 Aug
+  // 2026 so the two cards read as one family — a colour, a height and a tier mean
+  // the same thing whether you are looking at a week or at one day.
+  var edges = wgBandEdges();
+  if (!edges){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
+  var tsOfRow = function(r){ return new Date(String(r.dateTime).replace(' ','T')).getTime(); };
+  var E = [], U = [], Cc = [];
+  rows.forEach(function(r){
+    var hh = parseInt(r.dateTime.substring(11,13),10);
+    if (hh < DW_FROM_H || hh > DW_TO_H) return;
+    var ts = tsOfRow(r); if (!isFinite(ts)) return;
+    var res; try { res = calcScore(r); } catch(e){ return; }
+    // Hourly, not the week chart's 4-hour worst-in-bin: a single day has room for
+    // every hour, and binning here would flatten the very peaks the card exists to show.
+    E.push([ts, wgPosOf(res.entry.raw, edges.E)]);
+    Cc.push([ts, wgPosOf(res.swim.raw,  edges.S)]);
+    U.push([ts, wgPosOf(res.water.raw, edges.U)]);
   });
-
-  // Hour ticks every 3h (only on whole hours)
-  var ticks = '';
-  pts.forEach(function(p, i){
-    var hh = Math.round(p.t);
-    if (Math.abs(p.t - hh) > 0.01 || hh % 3 !== 0) return;
-    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 16)+'" font-size="11" font-weight="600" fill="'+WG_INK+'" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
-  });
-
-  // Best-window box(es) — bold outline + soft fill wash + index badge when plural
-  var box = '';
-  merged.forEach(function(w, wi){
-    var bx = L + w.lo*cellW, bw = (w.hi - w.lo + 1)*cellW;
-    var by = top - 4, bh = 3*rowH + 2*gap + 8;
-    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="'+WG_BOX+'" fill-opacity="0.07"/>';
-    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="'+WG_BOX+'" stroke-width="2.5" stroke-dasharray="5 3"/>';
-    if (plural){
-      var bcx = bx + (bw+1)/2;
-      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-8)+'" r="8" fill="'+WG_BOX+'"/>';
-      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-4.5)+'" font-size="10" font-weight="700" fill="#113541" text-anchor="middle">'+(wi+1)+'</text>';
-    }
-  });
-
-  // Current-hour caret above the top row (nearest cell to the selected hour)
-  var nowH = parseInt((dateTimeStr||'').substring(11,13),10) + (parseInt((dateTimeStr||'').substring(14,16),10)||0)/60;
-  var nowIdx = -1, bestD = 1e9;
-  pts.forEach(function(p, i){ var d = Math.abs(p.t - nowH); if (d < bestD){ bestD = d; nowIdx = i; } });
-  var caret = '';
-  if (nowIdx >= 0 && nowH >= 5 && nowH <= 21){
-    var cx = L + nowIdx*cellW + cellW/2;
-    caret = '<path d="M'+(cx-4).toFixed(1)+' '+(top-4)+' L'+(cx+4).toFixed(1)+' '+(top-4)+' L'+cx.toFixed(1)+' '+(top+1)+' Z" fill="#c8bda0"/>';
-  }
-
-  svg.innerHTML = cells + box + caret + labels + ticks;
+  if (E.length < 2){ host.innerHTML = '<div class="wa2-empty">No 6am–8pm forecast for this day.</div>'; return; }
+  var dt0 = E[0][0], dt1 = E[E.length-1][0];
+  var DW_OPT = { ns: 'dw', labels: 'hours', expand: false };
+  host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
+  try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
 }
 
 // ── DUAL-SCORE CALIBRATION LOGGER ────────────────────────────────────────────
@@ -9894,6 +9864,32 @@ var WA_LO = 7, WA_HI = 10;
 // both call it, so a change to the weighting can never apply to only one of them.
 function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
 
+// ── Shared calm→rough band scale ────────────────────────────────────────────
+// Each metric has its OWN band edges, so a raw score is mapped onto a common
+// 0-100 (0 = calmest, 100 = roughest) before drawing. That is what lets ONE
+// 4-tier background be meaningful for all three lines. Extracted to module scope
+// when the day view adopted the same chart — two copies of this mapping would let
+// the two charts silently disagree about what "Choppy" looks like.
+function wgBandEdges(){
+  var eT = SITE.entryThresholds, sT = SITE.swimThresholds, uT = SITE.surgeThresholds;
+  if (!eT || !sT || !uT) return null;                 // config not loaded yet
+  return {
+    E: [0, eT.easy,   eT.doable, eT.caution, eT.scaleMax],
+    S: [0, sT.glassy, sT.ripply, sT.choppy,  sT.scaleMax],
+    U: [0, uT.steady, uT.drifty, uT.surgy,   uT.scaleMax]
+  };
+}
+function wgPosOf(v, edges){
+  if (!(v > 0)) return 0;
+  for (var i = 1; i < edges.length; i++){
+    if (v <= edges[i]){
+      var f = (v - edges[i-1]) / Math.max(0.0001, edges[i] - edges[i-1]);
+      return (i-1)*25 + f*25;
+    }
+  }
+  return 100;
+}
+
 // THE WEEK AHEAD — one Best-Swim-Window heat ribbon per upcoming day.
 // Replaces the old detailed 5-day table. Every day after today (Sydney local)
 // that exists in the matrix gets a compact copy of the main day chart: the same
@@ -9971,12 +9967,10 @@ function renderWeekAhead(matrix){
   var tsOf = function(s){ return new Date(String(s).replace(' ','T')).getTime(); };
   var startMs = tsOf(todayStr + ' 00:00:00'), endMs = startMs + 7*86400000;   // today → +7 days
 
-  var eT = SITE.entryThresholds, sT = SITE.swimThresholds, uT = SITE.surgeThresholds;
-  if (!eT || !sT || !uT){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
-  var edgesE = [0, eT.easy, eT.doable, eT.caution, eT.scaleMax];
-  var edgesS = [0, sT.glassy, sT.ripply, sT.choppy, sT.scaleMax];
-  var edgesU = [0, uT.steady, uT.drifty, uT.surgy, uT.scaleMax];
-  function posOf(v, edges){ if (!(v > 0)) return 0; for (var i=1;i<edges.length;i++){ if (v <= edges[i]){ var f=(v-edges[i-1])/Math.max(0.0001, edges[i]-edges[i-1]); return (i-1)*25 + f*25; } } return 100; }
+  var _edges = wgBandEdges();
+  if (!_edges){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
+  var edgesE = _edges.E, edgesS = _edges.S, edgesU = _edges.U;
+  var posOf = wgPosOf;
 
   var BIN = 4*3600*1000, bE = {}, bS = {}, bU = {};
   function put(map, b, p, ts){ var c = map[b]; if (!c || p > c.pos) map[b] = { pos:p, t:ts }; }   // worst-in-bin
@@ -9994,8 +9988,9 @@ function renderWeekAhead(matrix){
 
   var allT = E.concat(C).concat(U).map(function(p){ return p[0]; });
   var t0 = Math.min.apply(null, allT), t1 = Math.max.apply(null, allT);
-  host.innerHTML = wgUnifiedChart(E, U, C, t0, t1);
-  try { initWeekScrubber(E, U, C, t0, t1); } catch (e) {}
+  var WA_OPT = { ns: 'wa', labels: 'days', expand: true };
+  host.innerHTML = wgUnifiedChart(E, U, C, t0, t1, WA_OPT);
+  try { initWeekScrubber(E, U, C, t0, t1, WA_OPT); } catch (e) {}
 
   // A re-render replaces host.innerHTML, so if the fullscreen layer is up it is now
   // holding the OLD detached node while the fresh chart sits in the collapsed card.
@@ -10037,7 +10032,17 @@ var _weekDeepLinkDone = false;
 // scale, so a single 4-tier background is meaningful for all three). Carries a time
 // scrubber (a vertical line + a dot on each trend) that initWeekScrubber drives; the
 // element ids below are the handles it moves. Replaces the three stacked wgTrendRows.
-function wgUnifiedChart(E, U, C, t0, t1){
+// opt = { ns, labels, expand }
+//   ns     — id namespace ('wa' = Week Ahead, 'dw' = day view). Every id in the
+//            markup is prefixed with it. Without this the two charts would both
+//            emit #waUniSvg / #waScrubG / #waDotE and getElementById would hand
+//            the scrubber whichever came first in the DOM.
+//   labels — 'days' puts a weekday under each day column (week view);
+//            'hours' puts a clock tick every 3h (day view, 6am-8pm).
+//   expand — render the fullscreen button (week view only for now).
+function wgUnifiedChart(E, U, C, t0, t1, opt){
+  opt = opt || {};
+  var ns = opt.ns || 'wa', LB = opt.labels || 'days';
   var W = 360, x0 = 3, x1 = W - 3, yTop = 4, bandsH = 122, bh = bandsH / 4;
   var H = yTop + bandsH + 19;
   var span = Math.max(1, t1 - t0);
@@ -10048,44 +10053,69 @@ function wgUnifiedChart(E, U, C, t0, t1){
   // Translucent white wash over the bands so the dark/magenta lines read against
   // them (the vibrant ramp still shows through, just softened).
   s += '<rect x="0" y="' + yTop + '" width="' + W + '" height="' + bandsH + '" fill="#ffffff" fill-opacity="0.34"/>';
-  var grid = '', labels = '', dayMs = 86400000, sm = new Date(t0); sm.setHours(0, 0, 0, 0);
-  for (var m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
-    if (m > t0 && m < t1){ var gx = xAt(m); grid += '<line x1="' + gx.toFixed(1) + '" y1="' + yTop + '" x2="' + gx.toFixed(1) + '" y2="' + (yTop + bandsH) + '" stroke="rgba(0,0,0,.16)" stroke-width="1"/>'; }
-    if (m + dayMs > t0 && m < t1){ var cx = Math.max(x0 + 2, Math.min(x1 - 2, (xAt(Math.max(m, t0)) + xAt(Math.min(m + dayMs, t1))) / 2)); var dd = new Date(m); labels += '<text class="wa2-daylabel" x="' + cx.toFixed(1) + '" y="' + (yTop + bandsH + 15) + '" font-size="12" font-weight="600" text-anchor="middle">' + dd.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase() + '</text>'; }
+  var grid = '', labels = '', dayMs = 86400000;
+  if (LB === 'hours'){
+    // Day view: gridline + clock tick every 3h across the 6am-8pm span. Same ink and
+    // weight as the weekday labels so the two charts read as one family.
+    var hMs = 3600000, firstH = Math.ceil(t0 / hMs) * hMs;
+    for (var hm = firstH; hm <= t1; hm += hMs){
+      var hd = new Date(hm), hh = hd.getHours();
+      if ((hh - DW_FROM_H) % 3 !== 0) continue;
+      if (hm > t0 && hm < t1){
+        var hx = xAt(hm);
+        grid += '<line x1="' + hx.toFixed(1) + '" y1="' + yTop + '" x2="' + hx.toFixed(1) + '" y2="' + (yTop + bandsH) + '" stroke="rgba(0,0,0,.16)" stroke-width="1"/>';
+      }
+      var lx = Math.max(x0 + 9, Math.min(x1 - 9, xAt(hm)));
+      var ap = hh < 12 ? 'AM' : 'PM', h12 = hh % 12 || 12;
+      labels += '<text class="wa2-daylabel" x="' + lx.toFixed(1) + '" y="' + (yTop + bandsH + 15) + '" font-size="12" font-weight="600" text-anchor="middle">' + h12 + ap + '</text>';
+    }
+  } else {
+    var sm = new Date(t0); sm.setHours(0, 0, 0, 0);
+    for (var m = sm.getTime(); m <= t1 + dayMs; m += dayMs){
+      if (m > t0 && m < t1){ var gx = xAt(m); grid += '<line x1="' + gx.toFixed(1) + '" y1="' + yTop + '" x2="' + gx.toFixed(1) + '" y2="' + (yTop + bandsH) + '" stroke="rgba(0,0,0,.16)" stroke-width="1"/>'; }
+      if (m + dayMs > t0 && m < t1){ var cx = Math.max(x0 + 2, Math.min(x1 - 2, (xAt(Math.max(m, t0)) + xAt(Math.min(m + dayMs, t1))) / 2)); var dd = new Date(m); labels += '<text class="wa2-daylabel" x="' + cx.toFixed(1) + '" y="' + (yTop + bandsH + 15) + '" font-size="12" font-weight="600" text-anchor="middle">' + dd.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase() + '</text>'; }
+    }
   }
   var tier = '<text x="3" y="' + (yTop + 8) + '" font-size="7" fill="rgba(17,53,65,.62)">Rough</text><text x="3" y="' + (yTop + bandsH - 2) + '" font-size="7" fill="rgba(17,53,65,.62)">Calm</text>';
   function lineOf(data, color){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + color + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'; }
   var lines = lineOf(U, '#12a594') + lineOf(E, '#1a6ae0') + lineOf(C, '#d21f8a');
-  var scr = '<g id="waScrubG" style="visibility:hidden">'
-    + '<line id="waScrubHalo" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#0a2230" stroke-width="3.6" stroke-opacity="0.35"/>'
-    + '<line id="waScrubLine" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#ffffff" stroke-width="1.6"/>'
-    + '<circle id="waDotU" r="3.6" fill="#12a594" stroke="#fff" stroke-width="1.3"/>'
-    + '<circle id="waDotE" r="3.6" fill="#1a6ae0" stroke="#fff" stroke-width="1.3"/>'
-    + '<circle id="waDotC" r="3.6" fill="#d21f8a" stroke="#fff" stroke-width="1.3"/>'
+  var scr = '<g id="' + ns + 'ScrubG" style="visibility:hidden">'
+    + '<line id="' + ns + 'ScrubHalo" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#0a2230" stroke-width="3.6" stroke-opacity="0.35"/>'
+    + '<line id="' + ns + 'ScrubLine" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#ffffff" stroke-width="1.6"/>'
+    + '<circle id="' + ns + 'DotU" r="3.6" fill="#12a594" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="' + ns + 'DotE" r="3.6" fill="#1a6ae0" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="' + ns + 'DotC" r="3.6" fill="#d21f8a" stroke="#fff" stroke-width="1.3"/>'
     + '</g>';
-  var svg = '<svg id="waUniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="Week ahead — drag to read any time" aria-valuemin="0" aria-valuemax="100">'
+  var aria = (LB === 'hours') ? 'Day view — drag to read any time' : 'Week ahead — drag to read any time';
+  var svg = '<svg id="' + ns + 'UniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="' + aria + '" aria-valuemin="0" aria-valuemax="100">'
     + s + grid + lines + scr + labels + tier + '</svg>';
-  var readout = '<div class="wa2-scrub-read" id="waScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
+  var readout = '<div class="wa2-scrub-read" id="' + ns + 'ScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
   // Expand control. A SIBLING of the svg, not a child: the svg owns pointerdown for
   // the scrubber, so a button inside it would place the scrub line on every press.
-  var expand = '<button type="button" class="wa-fs-btn" onclick="openWeekFullscreen()" '
-    + 'aria-label="Expand the week ahead chart to full screen">&#10530; Expand</button>';
+  var expand = opt.expand
+    ? '<button type="button" class="wa-fs-btn" onclick="openWeekFullscreen()" '
+      + 'aria-label="Expand the week ahead chart to full screen">&#10530; Expand</button>'
+    : '';
   return '<div class="wa2-uni">' + expand + svg + readout + '</div>';
 }
 
 // Drives the unified chart's time scrubber: tap or drag anywhere on the chart to
 // place a vertical line, which reads out the time + each metric's tier at that
-// moment. Position persists (module-scoped _waScrubFrac) across the periodic
+// moment. Position persists (module-scoped _wgScrubFrac[ns]) across the periodic
 // re-renders so the scrubber stays put; first placement defaults to "now".
-var _waScrubFrac = null;
-function initWeekScrubber(E, U, C, t0, t1){
-  var svg = document.getElementById('waUniSvg'); if (!svg) return;
+// One stored position PER CHART. A single shared frac would make the day view and
+// the week chart yank each other's scrub line about on every re-render.
+var _wgScrubFrac = { wa: null, dw: null };
+function initWeekScrubber(E, U, C, t0, t1, opt){
+  opt = opt || {};
+  var ns = opt.ns || 'wa', LB = opt.labels || 'days';
+  var svg = document.getElementById(ns + 'UniSvg'); if (!svg) return;
   var W = 360, x0 = 8, x1 = W - 8, yTop = 4, bandsH = 122;
   var span = Math.max(1, t1 - t0);
-  var g = document.getElementById('waScrubG');
-  var halo = document.getElementById('waScrubHalo'), line = document.getElementById('waScrubLine');
-  var dU = document.getElementById('waDotU'), dE = document.getElementById('waDotE'), dC = document.getElementById('waDotC');
-  var read = document.getElementById('waScrubRead');
+  var g = document.getElementById(ns + 'ScrubG');
+  var halo = document.getElementById(ns + 'ScrubHalo'), line = document.getElementById(ns + 'ScrubLine');
+  var dU = document.getElementById(ns + 'DotU'), dE = document.getElementById(ns + 'DotE'), dC = document.getElementById(ns + 'DotC');
+  var read = document.getElementById(ns + 'ScrubRead');
   var LBL_E = ['Easy','Doable','Caution','Danger'], LBL_U = ['Steady','Drifty','Surgy','Washy'], LBL_C = ['Smooth','Ripply','Choppy','Messy'];
   function xAt(t){ return x0 + (t - t0) / span * (x1 - x0); }
   function yAt(p){ return yTop + (1 - Math.max(0, Math.min(100, p)) / 100) * bandsH; }
@@ -10100,10 +10130,13 @@ function initWeekScrubber(E, U, C, t0, t1){
   function fmtTime(t){
     var d = new Date(t), wd = d.toLocaleDateString('en-AU', { weekday: 'short' }).toUpperCase();
     var h = d.getHours(), ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12, mm = d.getMinutes();
-    return wd + ' ' + h12 + (mm >= 30 ? ':30' : '') + ap;
+    var clock = h12 + (mm >= 30 ? ':30' : '') + ap;
+    // The day view is already headed by the day it is showing, so repeating the
+    // weekday in the readout is noise. The week chart needs it to place the time.
+    return (LB === 'hours') ? clock : (wd + ' ' + clock);
   }
   function place(frac){
-    frac = Math.max(0, Math.min(1, frac)); _waScrubFrac = frac;
+    frac = Math.max(0, Math.min(1, frac)); _wgScrubFrac[ns] = frac;
     var t = t0 + frac * (t1 - t0), xx = xAt(t).toFixed(1);
     if (g) g.style.visibility = 'visible';
     if (halo){ halo.setAttribute('x1', xx); halo.setAttribute('x2', xx); }
@@ -10122,13 +10155,13 @@ function initWeekScrubber(E, U, C, t0, t1){
     }
     // Same day/time text, moved up next to the card title (see .wa2-card
     // .wa2-scrub-t { display:none } — this is what replaced it in-card).
-    var headTime = document.getElementById('waHeadTime');
+    var headTime = document.getElementById(ns + 'HeadTime');
     if (headTime) headTime.textContent = fmtTime(t);
     svg.setAttribute('aria-valuenow', Math.round(frac * 100));
     svg.setAttribute('aria-valuetext', fmtTime(t));
   }
   function fracFromX(clientX){
-    var rect = svg.getBoundingClientRect(); if (!rect.width) return _waScrubFrac || 0;
+    var rect = svg.getBoundingClientRect(); if (!rect.width) return _wgScrubFrac[ns] || 0;
     return ((clientX - rect.left) / rect.width * W - x0) / (x1 - x0);
   }
   var dragging = false;
@@ -10138,11 +10171,11 @@ function initWeekScrubber(E, U, C, t0, t1){
   svg.addEventListener('pointerup', end);
   svg.addEventListener('pointercancel', end);
   svg.addEventListener('keydown', function(e){
-    var step = 1 / Math.max(1, E.length - 1), cur = (_waScrubFrac == null ? 0.5 : _waScrubFrac);
+    var step = 1 / Math.max(1, E.length - 1), cur = (_wgScrubFrac[ns] == null ? 0.5 : _wgScrubFrac[ns]);
     if (e.key === 'ArrowLeft'){ place(cur - step); e.preventDefault(); }
     else if (e.key === 'ArrowRight'){ place(cur + step); e.preventDefault(); }
   });
-  var frac = _waScrubFrac;
+  var frac = _wgScrubFrac[ns];
   if (frac == null){ var now = Date.now(); frac = (now >= t0 && now <= t1) ? (now - t0) / (t1 - t0) : 0; }
   place(frac);
 }
