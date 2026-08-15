@@ -46,10 +46,14 @@
   /* Map on the left filling its card, the three small charts stacked in a
      column to its right — the map is naturally tall, so this uses that
      height instead of leaving it beside a blank strip of card. */
-  .dash-top{display:grid;grid-template-columns:0.75fr 1.25fr;gap:12px;align-items:start}
+  /* auto: the map column sizes to whatever explicit pixel width heatmap() gives
+     .mapbox (computed from the charts column's real rendered height, so the two
+     cards' bottoms line up) — not a fixed fr split, which can't know that height
+     until the three chart cards have actually rendered. */
+  .dash-top{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
   @media(max-width:900px){.dash-top{grid-template-columns:1fr}}
   .dash-charts{display:flex;flex-direction:column;gap:12px}
-  .mapbox{position:relative;width:100%}
+  .mapbox{position:relative}
   .mapbox canvas{display:block;width:100%;height:auto;border-radius:10px;border:1.5px solid var(--line)}
   .legend{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap}
   .legend .bar{height:10px;width:140px;border-radius:6px;margin:0;
@@ -246,10 +250,13 @@ function render() {
     n + (n === 1 ? ' report' : ' reports') + ' · times shown in Sydney time';
 
   tiles();
-  heatmap();
+  // Charts first — heatmap() measures the rendered height of .dash-charts to
+  // size the map so its bottom edge lines up with "By time of day", which is
+  // only known once these three have actually laid out.
   timeline();
   dowChart();
   hourChart();
+  heatmap();
   table();
 }
 
@@ -259,7 +266,6 @@ function tiles() {
   const rec = ROWS.filter(r => r.recovered).length;
   const evt = ROWS.filter(r => r.event_number).length;
   const trk = ROWS.filter(r => r.tracker && r.tracker !== 'none' && r.tracker !== 'unsure').length;
-  const sus = ROWS.filter(r => r.status === 'suspect' || r.hidden).length;
   const mins = ROWS.map(r => (new Date(r.missed_at) - new Date(r.left_at)) / 60000).filter(m => m > 0);
   const med = mins.length ? mins.slice().sort((a, b) => a - b)[Math.floor(mins.length / 2)] : 0;
 
@@ -270,8 +276,7 @@ function tiles() {
     [evt, 'with event number', ''],
     [rec, 'recovered', ''],
     [trk, 'had a tracker', ''],
-    [Math.round(med) + 'm', 'median time unattended', ''],
-    [sus, 'suspect / hidden', sus ? 'warn' : '']
+    [Math.round(med) + 'm', 'median time unattended', '']
   ];
   document.getElementById('tiles').innerHTML = t.map(([n, l, c]) =>
     `<div class="tile ${c}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
@@ -289,12 +294,24 @@ function heatmap() {
 
   const img = new Image();
   img.onload = () => {
-    // Fill the card's own width (that's the point of moving the charts into
-    // a side column) rather than a fixed 360px, capped at the source
-    // resolution so it never upscales past the real artwork.
-    const boxW = cv.parentElement.clientWidth || 360;
-    const W = Math.min(boxW, img.naturalWidth);
-    const H = Math.round(W * img.naturalHeight / img.naturalWidth);
+    // Sized to match the charts column's height, not the card's own width —
+    // the goal is the two cards' BOTTOM edges lining up so the whole dashboard
+    // (map + all three charts) fits one screenshot box above "Every report".
+    // Two passes: .mapbox has no width until we give it one, and the "auto"
+    // grid track would otherwise collapse it near 0 — which wraps the header/
+    // legend text onto many lines and inflates the chrome-height measurement
+    // below. Seed a plausible width first, measure, THEN set the real one.
+    cv.parentElement.style.width = Math.min(300, img.naturalWidth) + 'px';
+    const chartsH = document.querySelector('.dash-charts').getBoundingClientRect().height;
+    const card = cv.closest('.card');
+    const prevDisplay = cv.style.display;
+    cv.style.display = 'none';
+    const chromeH = card.getBoundingClientRect().height;
+    cv.style.display = prevDisplay;
+    const targetH = Math.max(80, chartsH - chromeH);
+    const H = Math.min(targetH, img.naturalHeight);
+    const W = Math.round(H * img.naturalWidth / img.naturalHeight);
+    cv.parentElement.style.width = W + 'px';
     cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     g.drawImage(img, 0, 0, W, H);
@@ -304,7 +321,7 @@ function heatmap() {
     const off = document.createElement('canvas');
     off.width = W; off.height = H;
     const og = off.getContext('2d');
-    const R = Math.max(14, Math.round(W * 0.075));
+    const R = Math.max(16, Math.round(W * 0.09));
     pts.forEach(p => {
       const x = p.loc_x * W, y = p.loc_y * H;
       const grd = og.createRadialGradient(x, y, 0, x, y, R);
@@ -332,10 +349,11 @@ function heatmap() {
 
     // 3) the individual pins, so exact spots stay visible under the blur — and
     // still easy to find even when it's the only report on the map, not just
-    // when several overlap into a hot blob. Sized off W, same as the blob
-    // radius above, so they don't shrink to specks now the map can render
-    // much wider than the old fixed 360px.
-    const pinR = Math.max(6.5, W * 0.016);
+    // when several overlap into a hot blob. A higher floor than the raw W ratio
+    // would give, since the map is now sized to match the chart column's height
+    // (often narrower than it used to render at) rather than the card's full
+    // width — dots must stay readable at that smaller size too.
+    const pinR = Math.max(9, W * 0.026);
     pts.forEach(p => {
       const x = p.loc_x * W, y = p.loc_y * H;
       g.beginPath(); g.arc(x, y, pinR, 0, Math.PI * 2);
