@@ -1383,18 +1383,31 @@
   .thf-dur { font-size: 11.5px; color: var(--ocean); margin-top: 6px; font-weight: 600; }
   .thf-dur.bad { color: #c0392b; }
   /* map picker */
-  /* Deliberately full width and uncapped in height: this map is the one input
-     that has to be precise, and the promenade labels (SHUTTERS, HOOKS, BENCHES)
-     go unreadable if it's shrunk to fit the sheet. The sheet scrolls instead.
+  /* This map is the one input that has to be precise, and the promenade labels
+     (SHUTTERS, HOOKS, BENCHES) go unreadable if it's shrunk to fit the sheet —
+     so it renders bigger than the sheet is wide (160%) and scrolls inside a
+     FIXED-height frame, rather than stretching the whole sheet to the map's
+     height (which used to push every field below it far down the page).
      Taps are measured against the IMAGE rect, not this container's — the border
-     would otherwise offset every pin by about half a percent. */
+     would otherwise offset every pin by about half a percent, and that still
+     works at 160%: getBoundingClientRect() reflects the enlarged size. */
   .thf-map {
-    position: relative; margin: 8px 0 0; border-radius: 12px; overflow: hidden;
+    position: relative; margin: 8px 0 0; border-radius: 12px;
     border: 1.5px solid rgba(17,53,65,0.22); background: #dbe4e8; cursor: crosshair;
-    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
-    display: flex;
+    -webkit-tap-highlight-color: transparent; touch-action: pan-x pan-y;
+    overflow: auto; -webkit-overflow-scrolling: touch;
+    height: clamp(220px, 62vw, 340px);
   }
-  .thf-map img { display: block; width: 100%; height: auto; }
+  /* The cross is positioned with left/top PERCENTAGES, which resolve against
+     their containing block's width — so it has to be THIS wrapper, sized to
+     match the image exactly, not .thf-map (which stays at the frame's smaller
+     visible width once the image overflows it at 160%). Get this wrong and
+     the cross silently lands in the wrong spot on every enlarged map. */
+  .thf-map-inner { position: relative; width: 160%; }
+  .thf-map-inner img { display: block; width: 100%; height: auto; }
+  .thf-map-hint {
+    font-size: 10.5px; color: var(--dim); text-align: center; margin-top: 5px;
+  }
   /* Big on purpose: a fingertip covers roughly 45px, so a small cross vanishes
      under the thumb exactly while it is being dragged. The arms run well past
      the fingertip and a ring marks the centre, so you can still see where the
@@ -19144,6 +19157,8 @@ function thfMapBuild() {
 
   if (!THF_MAP_SRC) { thfMapFallback(host); return; }
 
+  const inner = document.createElement('div');
+  inner.className = 'thf-map-inner';
   const img = new Image();
   img.alt = 'Map of the South Steyne promenade';
   img.onerror = () => { host.dataset.built = ''; thfMapFallback(host); };
@@ -19154,7 +19169,10 @@ function thfMapBuild() {
     const cross = document.createElement('span');
     cross.className = 'thf-cross';
     cross.appendChild(document.createElement('i'));   // centre ring
-    host.appendChild(cross);
+    // Cross goes in .thf-map-inner, NOT host: its left/top percentages resolve
+    // against the containing block's width, which has to be the actual image
+    // width (inner, 160%), not the smaller visible frame (host).
+    inner.appendChild(cross);
     const place = (ev) => {
       const t = ev.touches ? ev.touches[0] : ev;
       const r = img.getBoundingClientRect();   // the image, not the bordered box
@@ -19190,7 +19208,8 @@ function thfMapBuild() {
     }, { passive: false });
   };
   img.src = THF_MAP_SRC;
-  host.appendChild(img);
+  inner.appendChild(img);
+  host.appendChild(inner);
 }
 
 function thfMapFallback(host) {
@@ -19710,6 +19729,7 @@ else theftLoad();
         <div class="thf-lab">WHERE <span class="req">*</span></div>
         <div class="thf-hint">Tap the spot where you left the bag. Drag to fine-tune.</div>
         <div class="thf-map" id="thfMap"></div>
+        <div class="thf-map-hint">Scroll to see the rest of the map</div>
         <input class="thf-in" type="text" id="thfLocNote" maxlength="300" placeholder="Landmark, e.g. &ldquo;on the wall opposite the surf club steps&rdquo;">
       </div>
 
