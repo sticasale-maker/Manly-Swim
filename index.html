@@ -3308,6 +3308,27 @@
 
     </div><!-- /community-group -->
 
+    <!-- DAY VIEW — 6am-8pm for ONE day, swipeable day to day. Drawn by
+         renderDayWindow() with the SAME chart as The Week Ahead below it
+         (wgUnifiedChart, labels:'hours'), so the two read as one family.
+         Sits ABOVE the week card 2026-08-16: today is the question almost every
+         swimmer opens the app with; the week is the follow-up.
+         Swiping calls selectDay(), the app's existing single entry point, so the
+         slider, snapshot and this card all move together — no second "current day". -->
+    <div class="dw-card" id="dayWindowCard">
+      <div class="dw-head">
+        <button type="button" class="dw-nav" id="dwPrev" onclick="dayWindowStep(-1)"
+                aria-label="Previous day (back towards today)">&#8249;</button>
+        <div class="dw-head-txt">
+          <span class="dw-day" id="dayWindowDay">&mdash;</span>
+          <span class="dw-sub" id="dayWindowSub">6am&ndash;8pm &middot; swipe to change day</span>
+        </div>
+        <button type="button" class="dw-nav" id="dwNext" onclick="dayWindowStep(1)"
+                aria-label="Next day">&#8250;</button>
+      </div>
+      <div id="dayWindowChart"></div>
+    </div>
+
     <!-- THE WEEK AHEAD — one Best-Swim-Window ribbon per upcoming day (built by
          renderWeekAhead). Moved directly under Swimmers' Corner 2026-08-14; no
          longer collapsible (was a collapse/expand toggle) — always open, so there
@@ -3350,25 +3371,6 @@
       <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 105" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
     </div>
 
-    <!-- DAY VIEW — 6am-8pm heat ribbon for ONE day, swipeable day to day.
-         Reinstates the card removed 2026-08-14: renderDayWindow() was left inert
-         (it early-returns without its host) rather than torn out, so this is
-         the same proven drawing code, now scoped to 6-20 and given day navigation.
-         Swiping calls selectDay(), the app's existing single entry point, so the
-         slider, snapshot and this card all move together — no second "current day". -->
-    <div class="dw-card" id="dayWindowCard">
-      <div class="dw-head">
-        <button type="button" class="dw-nav" id="dwPrev" onclick="dayWindowStep(-1)"
-                aria-label="Previous day (back towards today)">&#8249;</button>
-        <div class="dw-head-txt">
-          <span class="dw-day" id="dayWindowDay">&mdash;</span>
-          <span class="dw-sub" id="dayWindowSub">6am&ndash;8pm &middot; swipe to change day</span>
-        </div>
-        <button type="button" class="dw-nav" id="dwNext" onclick="dayWindowStep(1)"
-                aria-label="Next day">&#8250;</button>
-      </div>
-      <div id="dayWindowChart"></div>
-    </div>
 
 <!-- FORECASTED VALUES — everything here updates with the slider -->
     <div class="forecast-values">
@@ -9776,6 +9778,27 @@ var WA_LO = 7, WA_HI = 10;
 // both call it, so a change to the weighting can never apply to only one of them.
 function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
 
+// ── Metric line colours + weights (Week Ahead AND the day view) ─────────────
+// ENTRY is the metric that decides whether you can get in, so it must read as the
+// primary line. That is carried by WEIGHT and DARKNESS, not by an exciting hue —
+// the previous palette lost this because magenta CHOP was simply the most vivid
+// thing on screen, and any hue given that job would have won the same way.
+//
+// Validated 16 Aug 2026 with the dataviz palette validator against all four band
+// colours at the 0.62 wash, --pairs all:
+//   worst CVD separation  12.5 (deutan)  — target >= 8
+//   worst normal-vision   28.0            — floor 15
+// The palette it REPLACED failed: CHOP #d21f8a vs SURGE #12a594 came to ΔE 5.9
+// under deuteranopia, i.e. indistinguishable for red-green colourblind readers.
+// Aqua sits under 3:1 contrast on two bands; the relief is the scrubber readout,
+// which names each metric beside its colour dot, so identity is never colour-alone.
+// Keep these three in step with the legend dots in initWeekScrubber.
+var WG_LINE = {
+  entry: { c: '#1c5cab', w: 3.6 },
+  surge: { c: '#1baf7a', w: 2.2 },
+  chop:  { c: '#c2185b', w: 2.2 }
+};
+
 // ── Shared calm→rough band scale ────────────────────────────────────────────
 // Each metric has its OWN band edges, so a raw score is mapped onto a common
 // 0-100 (0 = calmest, 100 = roughest) before drawing. That is what lets ONE
@@ -9962,9 +9985,11 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
   var yAt = function(p){ return yTop + (1 - Math.max(0, Math.min(100, p)) / 100) * bandsH; };
   var cols = ['#b0392f','#e08a3c','#c9c246','#4caf50'];   // rough..calm top→bottom (metric rail ramp)
   var s = ''; for (var i = 0; i < 4; i++) s += '<rect x="0" y="' + (yTop + i * bh).toFixed(1) + '" width="' + W + '" height="' + bh.toFixed(1) + '" fill="' + cols[i] + '"/>';
-  // Translucent white wash over the bands so the dark/magenta lines read against
-  // them (the vibrant ramp still shows through, just softened).
-  s += '<rect x="0" y="' + yTop + '" width="' + W + '" height="' + bandsH + '" fill="#ffffff" fill-opacity="0.34"/>';
+  // Translucent white wash over the bands. Raised 0.34 -> 0.62 on 16 Aug 2026: at
+  // 0.34 the ramp was as saturated as the data, so the lines and the background
+  // competed and no line could clear 3:1 contrast. The bands are a reference scale,
+  // not a series — they should recede. Every line clears contrast at 0.62.
+  s += '<rect x="0" y="' + yTop + '" width="' + W + '" height="' + bandsH + '" fill="#ffffff" fill-opacity="0.62"/>';
   var grid = '', labels = '', dayMs = 86400000;
   if (LB === 'hours'){
     // Day view: gridline + clock tick every 3h across the 6am-8pm span. Same ink and
@@ -9989,14 +10014,15 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
     }
   }
   var tier = '<text x="3" y="' + (yTop + 8) + '" font-size="7" fill="rgba(17,53,65,.62)">Rough</text><text x="3" y="' + (yTop + bandsH - 2) + '" font-size="7" fill="rgba(17,53,65,.62)">Calm</text>';
-  function lineOf(data, color){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + color + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'; }
-  var lines = lineOf(U, '#12a594') + lineOf(E, '#1a6ae0') + lineOf(C, '#d21f8a');
+  function lineOf(data, m){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + m.c + '" stroke-width="' + m.w + '" stroke-linecap="round" stroke-linejoin="round"/>'; }
+  // ENTRY drawn LAST so it is never crossed out by the other two at an intersection.
+  var lines = lineOf(U, WG_LINE.surge) + lineOf(C, WG_LINE.chop) + lineOf(E, WG_LINE.entry);
   var scr = '<g id="' + ns + 'ScrubG" style="visibility:hidden">'
     + '<line id="' + ns + 'ScrubHalo" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#0a2230" stroke-width="3.6" stroke-opacity="0.35"/>'
     + '<line id="' + ns + 'ScrubLine" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#ffffff" stroke-width="1.6"/>'
-    + '<circle id="' + ns + 'DotU" r="3.6" fill="#12a594" stroke="#fff" stroke-width="1.3"/>'
-    + '<circle id="' + ns + 'DotE" r="3.6" fill="#1a6ae0" stroke="#fff" stroke-width="1.3"/>'
-    + '<circle id="' + ns + 'DotC" r="3.6" fill="#d21f8a" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="' + ns + 'DotU" r="3.4" fill="' + WG_LINE.surge.c + '" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="' + ns + 'DotC" r="3.4" fill="' + WG_LINE.chop.c + '" stroke="#fff" stroke-width="1.3"/>'
+    + '<circle id="' + ns + 'DotE" r="4.4" fill="' + WG_LINE.entry.c + '" stroke="#fff" stroke-width="1.4"/>'
     + '</g>';
   var aria = (LB === 'hours') ? 'Day view — drag to read any time' : 'Week ahead — drag to read any time';
   var svg = '<svg id="' + ns + 'UniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="' + aria + '" aria-valuemin="0" aria-valuemax="100">'
@@ -10060,9 +10086,9 @@ function initWeekScrubber(E, U, C, t0, t1, opt){
     if (read){
       read.innerHTML = '<div class="wa2-scrub-t">' + fmtTime(t) + '</div>'
         + '<div class="wa2-scrub-mrow">'
-        + '<span class="wa2-scrub-m"><i style="background:#1a6ae0"></i><b>ENTRY:</b> ' + tierOf(LBL_E, pe) + '</span>'
-        + '<span class="wa2-scrub-m"><i style="background:#12a594"></i><b>SURGE:</b> ' + tierOf(LBL_U, pu) + '</span>'
-        + '<span class="wa2-scrub-m"><i style="background:#d21f8a"></i><b>CHOP:</b> ' + tierOf(LBL_C, pc) + '</span>'
+        + '<span class="wa2-scrub-m"><i style="background:' + WG_LINE.entry.c + '"></i><b>ENTRY:</b> ' + tierOf(LBL_E, pe) + '</span>'
+        + '<span class="wa2-scrub-m"><i style="background:' + WG_LINE.surge.c + '"></i><b>SURGE:</b> ' + tierOf(LBL_U, pu) + '</span>'
+        + '<span class="wa2-scrub-m"><i style="background:' + WG_LINE.chop.c + '"></i><b>CHOP:</b> ' + tierOf(LBL_C, pc) + '</span>'
         + '</div>';
     }
     // Same day/time text, moved up next to the card title (see .wa2-card
