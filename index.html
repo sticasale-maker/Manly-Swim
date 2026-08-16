@@ -17980,6 +17980,131 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       '</div></div>';
   }
 
+  /* ---- "Where you're from" — one saved world city, side by side with Manly ---
+     A lot of this group are expats. They keep a running comparison in their head
+     anyway ("it's 3 degrees in Milan"); this just does the arithmetic.
+
+     ON-DEVICE ONLY. The chosen city lives in localStorage, mirrored to the
+     400-day cookie like every other preference (CLAUDE.md §4) — it never reaches
+     Supabase, because a home town is close to identifying and this app has no
+     accounts and wants none.
+
+     GRANULARITY, measured not assumed (16 Aug 2026): the pollution grid is the
+     CAMS global model at ~0.4° — probing south from Manly, PM2.5 was identical
+     from 2 km to 45 km, i.e. one cell ~40 km across. Europe is on the finer CAMS
+     Europe domain at ~0.1°: probing north from Milan gave a different value every
+     5 km. So this is a CITY-scale number, not a suburb one, and never a street —
+     it will not tell you the smoky end of town from the clean one. */
+  var HOME_KEY = 'swim_home_v1';
+  var _home = null, _homeData = null, _homeTried = false, _homeHits = null, _homeBusy = false;
+  (function () {
+    try { var raw = (window.persistGet ? persistGet(HOME_KEY) : localStorage.getItem(HOME_KEY));
+          if (raw) _home = JSON.parse(raw); } catch (e) { _home = null; }
+  })();
+  function saveHome(h) {
+    _home = h; _homeData = null; _homeTried = false;
+    try {
+      var s = h ? JSON.stringify(h) : '';
+      if (window.persistSet) persistSet(HOME_KEY, s); else localStorage.setItem(HOME_KEY, s);
+    } catch (e) {}
+  }
+
+  function searchHome(q, cb) {
+    _homeBusy = true;
+    fetch('https://geocoding-api.open-meteo.com/v1/search?count=10&language=en&name=' + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        // Sort by POPULATION. The geocoder ranks by string relevance, so a search
+        // for "Milano" returns a Texas hamlet of 421 people above Milan.
+        var rs = (j.results || []).slice().sort(function (a, b) {
+          return (b.population || 0) - (a.population || 0);
+        }).slice(0, 5);
+        _homeHits = rs.map(function (r) {
+          return { name: r.name, cc: r.country_code || '', admin: r.admin1 || '',
+                   pop: r.population || 0, lat: r.latitude, lon: r.longitude };
+        });
+        _homeBusy = false; if (cb) cb();
+      }).catch(function () { _homeHits = []; _homeBusy = false; if (cb) cb(); });
+  }
+
+  /* One forecast call and one air call, each covering BOTH places at once. */
+  function fetchHomeCompare(cb) {
+    if (!_home || _homeTried) return;
+    _homeTried = true;
+    var lat = -33.79 + ',' + _home.lat, lon = 151.29 + ',' + _home.lon;
+    var wx = fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
+        '&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&forecast_days=1&timezone=auto')
+      .then(function (r) { return r.json(); });
+    var aq = fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=' + lat +
+        '&longitude=' + lon + '&current=pm2_5&timezone=UTC')
+      .then(function (r) { return r.json(); });
+    Promise.all([wx, aq]).then(function (res) {
+      var W = Array.isArray(res[0]) ? res[0] : [res[0]];
+      var A = Array.isArray(res[1]) ? res[1] : [res[1]];
+      function pick(i) {
+        var d = W[i] && W[i].daily;
+        return { hi: d && d.temperature_2m_max ? d.temperature_2m_max[0] : null,
+                 lo: d && d.temperature_2m_min ? d.temperature_2m_min[0] : null,
+                 mm: d && d.precipitation_sum ? d.precipitation_sum[0] : null,
+                 pm: A[i] && A[i].current ? A[i].current.pm2_5 : null };
+      }
+      _homeData = { here: pick(0), there: pick(1) };
+      if (cb) cb();
+    }).catch(function () { if (cb) cb(); });
+  }
+
+  function homeTile() {
+    // Picker state — shown until a city is saved, or when they tap "change".
+    if (!_home) {
+      // Population is shown, not decoration: the geocoder ranks by string match,
+      // so a search can return a hamlet that shares the name. Seeing "pop 421"
+      // is what tells someone this is not their Milan.
+      var popTxt = function (p) {
+        if (!p) return '';
+        return p >= 1e6 ? (p / 1e6).toFixed(1) + 'm people'
+             : p >= 1000 ? Math.round(p / 1000) + 'k people' : p + ' people';
+      };
+      var hits = (_homeHits || []).map(function (h, i) {
+        return '<button type="button" class="ssd-hbtn" data-homepick="' + i + '">' +
+               h.name + (h.admin ? ', ' + h.admin : '') +
+               ' <span>' + h.cc + (h.pop ? ' · ' + popTxt(h.pop) : '') + '</span></button>';
+      }).join('');
+      // The index is English-first and its local-name coverage is patchy: "Köln"
+      // finds Cologne, but "Milano" does NOT find Milan. When every match is tiny
+      // we almost certainly missed the city they meant, so say so rather than let
+      // them save a village of 400 people.
+      var allTiny = _homeHits && _homeHits.length && _homeHits.every(function (h) { return (h.pop || 0) < 50000; });
+      return '<div class="ssd-tile ssd-wide" data-hometile>' +
+        '<div class="ssd-cap">🌍 Where are you from?</div>' +
+        '<div class="ssd-sub" style="margin-bottom:7px">Pick a city and it sits beside Manly, every time you open this. Kept on this phone only.</div>' +
+        '<div class="ssd-hrow"><input class="ssd-hin" data-homeq placeholder="Milan, Dublin, Cape Town…" autocomplete="off">' +
+        '<button type="button" class="ssd-hgo" data-homego>' + (_homeBusy ? '…' : 'Find') + '</button></div>' +
+        (hits ? '<div class="ssd-hits">' + hits + '</div>' +
+                (allTiny ? '<div class="ssd-sub">Only small places matched. Try the English spelling — Milan, not Milano; Cologne, not Köln.</div>' : '')
+              : (_homeHits ? '<div class="ssd-sub">Nothing found — try the city name on its own, in English.</div>' : '')) +
+      '</div>';
+    }
+    if (!_homeData) return '';                    // fetch in flight; fill() repaints
+    var A = _homeData.here, B = _homeData.there;
+    var n1 = 'Manly', n2 = _home.name + (_home.cc ? ' ' + _home.cc : '');
+    var row = function (label, a, b, unit, dp) {
+      var f = function (v) { return v == null ? '—' : (dp ? v.toFixed(dp) : Math.round(v)) + unit; };
+      return '<tr><td class="ssd-hl">' + label + '</td><td>' + f(a) + '</td><td>' + f(b) + '</td></tr>';
+    };
+    return '<div class="ssd-tile ssd-wide" data-hometile>' +
+      '<div class="ssd-cap">🌍 Manly vs ' + n2 + '</div>' +
+      '<table class="ssd-htab"><thead><tr><th></th><th>' + n1 + '</th><th>' + _home.name + '</th></tr></thead><tbody>' +
+        row('High', A.hi, B.hi, '°', 0) +
+        row('Low', A.lo, B.lo, '°', 0) +
+        row('Rain today', A.mm, B.mm, ' mm', 1) +
+        row('PM2.5', A.pm, B.pm, '', 0) +
+      '</tbody></table>' +
+      '<div class="ssd-sub">Today, each in its own local time · PM2.5 µg/m³, WHO guideline ' + WHO_PM25_DAILY +
+        ' · pollution is a ~40 km grid cell (~11 km in Europe), so it is a city figure, not a street one' +
+        ' · <button type="button" class="ssd-hchg" data-homeclear>change city</button></div>' +
+    '</div>';
+  }
+
   /* live past-7-day rainfall (mm) — one fetch per session, re-fills on arrival */
   var _rainWk = null, _rainTried = false;
   function fetchRainWk(cb) {
@@ -18371,8 +18496,54 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // Directly under the normals tile, per request. Renders nothing until the
     // air-quality fetch lands, then fill() repaints — same contract as the rain.
     h += airQTile();
+    h += homeTile();
     h += '</div>';
     return h;
+  }
+
+  /* The dashboard is the first thing in this app that is INTERACTIVE inside an
+     announcement, and a live announcement closes on a tap anywhere. Without this
+     every tap on the city search box would dismiss the whole popup. Delegated
+     once per container, so it survives fill() replacing the innards. */
+  function bindDashInteractions(sc) {
+    if (!sc || sc._dashBound) return;
+    sc._dashBound = true;
+    var repaint = function () { if (document.body.contains(sc)) fill(sc); };
+
+    // Anything inside the dashboard is a control, not "tap to dismiss".
+    sc.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('[data-ssd]')) e.stopPropagation();
+    });
+    sc.addEventListener('pointerdown', function (e) {
+      if (e.target.closest && e.target.closest('[data-ssd]')) e.stopPropagation();
+    });
+
+    sc.addEventListener('click', function (e) {
+      var t = e.target;
+      if (t.closest('[data-homego]')) {
+        var inp = sc.querySelector('[data-homeq]');
+        var q = inp && inp.value.trim();
+        if (q) { searchHome(q, repaint); repaint(); }
+        return;
+      }
+      var pick = t.closest('[data-homepick]');
+      if (pick) {
+        var i = +pick.getAttribute('data-homepick');
+        if (_homeHits && _homeHits[i]) { saveHome(_homeHits[i]); _homeHits = null; fetchHomeCompare(repaint); repaint(); }
+        return;
+      }
+      if (t.closest('[data-homeclear]')) { saveHome(null); _homeHits = null; repaint(); }
+    });
+
+    // Enter submits the search — a Find button is not the only way people search.
+    sc.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter') return;
+      var inp = e.target.closest && e.target.closest('[data-homeq]');
+      if (!inp) return;
+      e.preventDefault();
+      var q = inp.value.trim();
+      if (q) { searchHome(q, repaint); repaint(); }
+    });
   }
 
   /* replace [[STORM_STATS]] tokens inside a rendered announcement container */
@@ -18398,6 +18569,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       sc.innerHTML = sc.innerHTML.split('[[STORM_STATS]]').join('<div class="ssd" data-ssd></div>');
       fetchRainWk(function () { if (document.body.contains(sc)) fill(sc); });
       fetchAirQ(function ()  { if (document.body.contains(sc)) fill(sc); });
+      fetchHomeCompare(function () { if (document.body.contains(sc)) fill(sc); });
+      bindDashInteractions(sc);
       fill(sc);
     } catch (e) {}
   };
@@ -18432,6 +18605,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-aqv{flex:0 0 30px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;}' +
     '.ssd-aqhome .ssd-aqn{color:#113541;font-weight:700;}' +
     '.ssd-aqhome{padding-bottom:5px;margin-bottom:5px;border-bottom:1px solid rgba(17,53,65,0.12);}' +
+    // Home-town picker + comparison table.
+    '.ssd-hrow{display:flex;gap:6px;}' +
+    '.ssd-hin{flex:1;min-width:0;font:inherit;font-size:13px;padding:8px 10px;border:1px solid rgba(17,53,65,0.22);border-radius:8px;background:#fff;color:#113541;}' +
+    '.ssd-hgo{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border:none;border-radius:8px;background:#1b6c8a;color:#fff;cursor:pointer;}' +
+    '.ssd-hits{display:flex;flex-direction:column;gap:4px;margin-top:7px;}' +
+    '.ssd-hbtn{text-align:left;font:inherit;font-size:12.5px;padding:7px 9px;border:1px solid rgba(17,53,65,0.18);border-radius:8px;background:#fff;color:#113541;cursor:pointer;}' +
+    '.ssd-hbtn span{color:#5b7683;font-size:11px;}' +
+    '.ssd-htab{width:100%;border-collapse:collapse;font-size:13px;margin-top:2px;}' +
+    '.ssd-htab th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#5b7683;text-align:right;padding:2px 4px;font-weight:600;}' +
+    '.ssd-htab th:first-child{text-align:left;}' +
+    '.ssd-htab td{text-align:right;padding:4px;font-variant-numeric:tabular-nums;border-top:1px solid rgba(17,53,65,0.08);}' +
+    '.ssd-htab td.ssd-hl{text-align:left;color:#4a5f6e;}' +
+    '.ssd-hchg{font:inherit;font-size:11.5px;background:none;border:none;padding:0;color:#1b6c8a;text-decoration:underline;cursor:pointer;}' +
     // Three pictograms side by side. minmax(0,1fr) so a long label can't push a
     // column past the tile — the same clamp the app's own grids needed.
     '.ssd-met3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}' +
