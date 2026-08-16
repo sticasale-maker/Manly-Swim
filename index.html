@@ -2034,6 +2034,9 @@
     letter-spacing: 0.3px; margin-top: 3px;
   }
   .dw-best[hidden] { display: none !important; }
+  /* "No standout time" is an answer, not a finding — dim it so it never competes
+     with the days that do name hours. */
+  .dw-best-quiet { color: var(--dim); font-weight: 500; }
   .dw-nav {
     flex: none; width: 34px; height: 34px; border-radius: 9px;
     background: rgba(22,50,66,0.45); color: #c8bda0;
@@ -8015,10 +8018,16 @@ function renderDayWindow(dateTimeStr){
   var dt0 = E[0][0], dt1 = E[E.length-1][0];
   var bw = dayBestWindows(pts);
   var bestEl = document.getElementById('dayWindowBest');
-  // Empty text, not a placeholder dash: on the days this stays silent there is no
-  // best time to report, and a dash would read as a missing reading rather than as
-  // "any time is much the same".
-  if (bestEl){ bestEl.textContent = bw.txt; bestEl.hidden = !bw.txt; }
+  // Say WHY there is no highlight rather than showing an empty card. Silence and
+  // breakage look identical, and a swimmer who has just switched this card on has
+  // no way to tell "the app decided there is no standout hour" from "the app is
+  // broken" — which is exactly how this feature was reported broken twice.
+  // A red day is the one case that stays silent: see dayBestWindows.
+  if (bestEl){
+    bestEl.textContent = bw.txt || (bw.why === 'flat' ? 'No standout time — much the same all day' : '');
+    bestEl.classList.toggle('dw-best-quiet', !bw.txt);
+    bestEl.hidden = !bestEl.textContent;
+  }
   var DW_OPT = { ns: 'dw', labels: 'hours', expand: false, best: bw.wins };
   host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
   try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
@@ -10166,15 +10175,20 @@ var DW_BEST_TOL_MAX    = 6;     // widest tolerance below the day's peak, in sco
 var DW_BEST_MIN_SPREAD = 5;     // a day flatter than this has no best time
 var DW_BEST_MAX_COVER  = 0.5;   // fraction of the day above which a highlight means nothing
 var DW_BEST_TOL_STEPS  = [0.35, 0.25, 0.18, 0.12, 0.08];   // fractions of the day's spread
+// `why` says WHICH guard silenced a day, because the caller has to distinguish
+// them. A flat day can say so out loud — "much the same all day" is a real answer
+// to "when should I swim". A red day must say NOTHING: any sentence about timing
+// on a day the app is warning about is the mitigation CLAUDE.md §1 bans, and even
+// "no best time today" invites the reading that some other day's line means "go".
 function dayBestWindows(pts){
-  var out = { wins: [], txt: '' };
+  var out = { wins: [], txt: '', why: 'none' };
   if (!pts || pts.length < 3) return out;
-  if (pts.some(function(p){ return p.red; })) return out;          // guard 1 — safety
+  if (pts.some(function(p){ return p.red; })){ out.why = 'red'; return out; }   // guard 1 — safety
 
   var vals = pts.map(function(p){ return p.combo; });
   var hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
   var spread = hi - lo;
-  if (spread < DW_BEST_MIN_SPREAD) return out;                     // guard 2
+  if (spread < DW_BEST_MIN_SPREAD){ out.why = 'flat'; return out; }             // guard 2
 
   // One pass at a given tolerance: local maxima at or above the floor, each grown
   // outwards while the score holds above it. Overlapping or touching windows merge,
@@ -10221,7 +10235,7 @@ function dayBestWindows(pts){
     var r = search(Math.min(DW_BEST_TOL_MAX, spread * DW_BEST_TOL_STEPS[si]));
     if (r && r.cover <= DW_BEST_MAX_COVER){ merged = r.wins; break; }   // guard 3
   }
-  if (!merged || !merged.length) return out;
+  if (!merged || !merged.length){ out.why = 'flat'; return out; }   // guard 3 — no compact window
 
   // Half a step of padding each side, so a one-reading window still draws as a
   // band instead of a zero-width line.
@@ -16839,6 +16853,22 @@ if ('serviceWorker' in navigator) {
     _pSet(MODE_KEY, _m);                            // re-stamp: refreshes the cookie mirror's 400-day clock
     apply(_m);          // panel starts closed even if Custom is the saved mode; picks are still applied
     if (/[?&]admin=1(\b|&|$)/.test(location.search)) openAdmin();   // ?admin=1 opens the preset editor
+
+    // ?show=<section key> — switch that section on and go straight to it.
+    // A support handle, born out of a day spent unable to tell two very different
+    // failures apart from a description: "I ticked it and it still doesn't show"
+    // is the same sentence whether the section will not render on that device or
+    // the control simply never reached it. This link settles it in one tap, and
+    // needs neither the panel nor any digging.
+    try {
+      var _want = (location.search.match(/[?&]show=([a-z]+)/i) || [])[1];
+      if (_want && SECTIONS.some(function (s) { return s.key === _want && !s.core; })) {
+        var _map = getCustom(); _map[_want] = 1; saveCustom(_map);
+        setMode('custom');            // re-reads the map saved above, so the flag survives
+        _lastEnabled = _want;
+        setTimeout(closeCustom, 60);  // closeCustom owns the scroll and the ring
+      }
+    } catch (e) {}
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
