@@ -1933,8 +1933,6 @@
   }
   .chop-graph-head {
     display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
-    /* Gap, not just space-between: with the REALTIME badge on the wind line the
-       right-hand readout reaches within a pixel of the title at 375px wide. */
     gap:10px;
   }
   .chop-graph-title {
@@ -1957,17 +1955,9 @@
   .chop-graph-now .sw-line + .sw-line { margin-top:3px; }
   /* Line-2 wind readout: slightly smaller than the swell line, amber. */
   .chop-graph-now .h.sw-wind-h { color:#c98a2e; }
-  /* "REALTIME" — shown beside the wind readout ONLY on hours the North Head
-     observation actually reached. Deliberately quiet and NOT the red of the live-cam
-     badge: the cam is a picture of now, this is a forecast corrected toward now, and
-     the two must not read as the same claim. Hidden entirely the rest of the time
-     rather than greyed out — a permanently-present badge stops being information. */
-  .chop-graph-now .sw-live {
-    font-size:8.5px; letter-spacing:1px; color:#c98a2e; opacity:.85;
-    border:1px solid rgba(201,138,46,.45); border-radius:3px; padding:1px 4px;
-    white-space:nowrap; align-self:center;
-  }
-  .chop-graph-now .sw-live[hidden] { display:none; }
+  /* The "REALTIME" tell lives ON the amber wind arrow in the canvas, not here: as a
+     header chip it pushed the wind readout onto a second line at phone widths and
+     cost the card a row. See drawWindArrow(). */
   .chop-graph-now .t.sw-wind-t { font-size:clamp(8px,2.4vw,10px); }
   .chop-graph-legend .sw-wind-cap { color:#c98a2e; font-weight:600; }
   .chop-graph-canvas { width:100%; height:auto; display:block; border-radius:8px; }
@@ -3163,7 +3153,7 @@
         </div>
         <div class="chop-graph-now">
           <div class="sw-line"><span class="h" id="swellNowDir">—</span></div>
-          <div class="sw-line"><span class="sw-live" id="swellWindLive" hidden>● REALTIME</span><span class="h sw-wind-h" id="chopNowWind">—</span></div>
+          <div class="sw-line"><span class="h sw-wind-h" id="chopNowWind">—</span></div>
         </div>
         <button type="button" class="sw-zoom-btn" id="swellZoom" aria-expanded="false" title="Enlarge the map" aria-label="Enlarge the swell and wind map">⤢</button>
       </div>
@@ -8890,26 +8880,26 @@ function renderSnapshot(h, wx) {
              result.swim.label, result.swim.cls, h.windKmh);
   }
 
-  // "REALTIME" badge on the wind line. Shown only where the North Head observation
+  // "REALTIME" on the amber wind arrow, only where the North Head observation
   // genuinely moved this hour's wind — the same _windBlendW the blend wrote, so the
-  // badge cannot drift out of step with what the numbers actually are. Below 0.1 the
+  // label cannot drift out of step with what the numbers actually are. Below 0.1 the
   // correction is a fraction of a km/h at the tail of the taper and calling that
   // realtime would be a claim the arrow can't back up.
   try {
-    const liveEl = document.getElementById('swellWindLive');
-    if (liveEl) {
-      const w = h._windBlendW || 0;
-      liveEl.hidden = !(w >= 0.1);
-      if (!liveEl.hidden) {
-        const o = window._windObs;
-        const age = (o && o.ageMin != null)
-          ? (o.ageMin < 1 ? 'just now' : Math.round(o.ageMin) + ' min ago') : 'recently';
-        liveEl.title = 'This hour’s wind is the forecast corrected toward the BOM ' +
-                       'North Head reading (' + age + '), most strongly at the current ' +
-                       'hour and fading out over the next few.';
-      }
+    const live = (h._windBlendW || 0) >= 0.1;
+    if (window.swellSetWindLive) window.swellSetWindLive(live);
+    // Canvas text is invisible to a screen reader, so the same fact goes on the
+    // element label — otherwise moving the tell into the drawing quietly removes it
+    // for anyone not looking at it.
+    const cv = document.getElementById('swellCanvas');
+    if (cv) {
+      const baseLbl = 'Swell refracting around the headland into Cabbage Tree Bay, ' +
+                      'with the forecast wind direction, for the selected hour';
+      cv.setAttribute('aria-label', live
+        ? baseLbl + '. This hour’s wind is corrected toward the live BOM North Head reading.'
+        : baseLbl);
     }
-  } catch (e) { /* badge is decoration — never let it break the map */ }
+  } catch (e) { /* a label is decoration — never let it break the map */ }
 
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
@@ -15698,6 +15688,8 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 
   var W = 0, H = 0, dpr = 1, PHASE = 0, _lastTs = 0;
   var _sw = 110, _sp = 10, _hgt = 1, _tx = 0.6, _key = '', _lastKey = '', _windDir = 90;
+  // Set by swellSetWindLive(): does THIS hour's wind carry the North Head observation?
+  var _windLive = false;
 
   // Wind arrow + arrowhead (lifted from the wind-chop map, recoloured amber for the
   // merged card — Option B) and the N compass, both drawn on top of the swell basemap.
@@ -15714,6 +15706,24 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang - 0.4) * hl, ey - Math.sin(ang - 0.4) * hl);
     ctx.moveTo(ex, ey); ctx.lineTo(ex - Math.cos(ang + 0.4) * hl, ey - Math.sin(ang + 0.4) * hl);
     ctx.stroke();
+    // "REALTIME" — this hour's wind carries the North Head observation, not just the
+    // model. Sits UNDER the arrow disc, never rotating with it: the arrow's angle is
+    // information and a label that swung around with it would read as part of the
+    // geometry. Drawn only when the blend actually reached this hour, so it stays a
+    // tell rather than decoration. In the card header this cost a whole extra line
+    // at phone widths, which is why it lives on the arrow.
+    if (_windLive) {
+      var lf = Math.max(7, 0.021 * W);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.font = '700 ' + lf + 'px ui-sans-serif,system-ui,sans-serif';
+      // Dark halo first: the arrow sits over open water AND the chop field, whose
+      // brightness moves with the wind, so amber-on-nothing is not reliably legible.
+      ctx.lineWidth = Math.max(2, 0.006 * W); ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(6,40,55,0.75)';
+      ctx.strokeText('REALTIME', ax, ay + L * 0.62 + lf * 0.25);
+      ctx.fillStyle = '#ffb35c';
+      ctx.fillText('REALTIME', ax, ay + L * 0.62 + lf * 0.25);
+    }
     ctx.restore();
   }
   // Global swell-direction vector (blue) — same geometry as the wind arrow, offset so
@@ -15846,6 +15856,10 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     }
   }
   window.swellSet = swellSet;
+  // Separate from swellSet's argument list on purpose: swellSet is the forecast
+  // payload and this is a provenance flag about it. The renderer animates on rAF,
+  // so setting it is enough — the next frame picks it up.
+  window.swellSetWindLive = function (on) { _windLive = !!on; };
   window.swellFit = fit;
 
   window.addEventListener('resize', fit);
