@@ -125,19 +125,37 @@ video is the one exception and serves ranges by hand (`serveSplashVideo`).
 The working folder is a **Google-Drive-synced copy, not a git repo**. Never
 `git init` here — Drive corrupts `.git`.
 
-Work from a clone outside Drive, and **never copy a whole file in either
-direction**. The two copies drift both ways, and a wholesale copy destroys work:
+Work from a clone outside Drive. **The repo is the source of truth, not Drive.**
+Start every change from `git fetch && git reset --hard origin/main`, then apply
+your edits onto `HEAD`. **Never copy a whole file from Drive into the clone** —
+the two copies drift both ways and a wholesale copy destroys work:
 
-- Drive can be **behind** the repo (it has been missing the SW push handlers and
-  the vecchio failover).
+- Drive can be **behind** the repo. `sw.js` habitually is: a wholesale copy has
+  twice deleted the push-notification handlers, `notificationclick` and the
+  vecchio failover, and on 17 Aug 2026 that actually reached `main`.
 - Drive can be **ahead** with another session's unpushed work.
 - Drive's `APP_BUILD` / `CACHE_VERSION` are always stale, because CI stamps them
   in the repo and that never syncs back.
 
 So: diff the Drive file against `HEAD`, apply **only** the intended hunks onto
-`HEAD`, and confirm with `git diff --cached --stat HEAD` that nothing else rode
-along. Push to `main`; GitHub Pages serves it at `app.viz.net.au/Manly-Swim/`
-(every repo on this account inherits that domain — no per-repo DNS).
+`HEAD`, and gate on the size of the result.
+
+```bash
+git diff --stat HEAD        # must match the change you intended
+git diff HEAD | grep -E '^[+-].*(APP_BUILD|CACHE_VERSION)'   # must be empty
+```
+
+**If the diff is bigger than the edit you made, stop and read it.** 63 changed
+lines for a 5-line edit is the tell, and it is the check that would have caught
+every one of the incidents above. The same applies after any scripted deletion:
+confirm it took only what you meant (e.g. compare the `function` names in the
+touched module before and after) — one over-long slice removed `startSwellMirror`
+along with its neighbour and blanked the dashboard's swell map.
+
+Push to `main`; GitHub Pages serves it at `app.viz.net.au/Manly-Swim/` (every repo
+on this account inherits that domain — no per-repo DNS). Another session may push
+while you work: if `git push` is rejected, `git fetch && git rebase origin/main`,
+re-check syntax, then push.
 
 A push is not a deploy. Verify the live `APP_BUILD` actually changed; the Fastly
 edge caches for ~10 minutes, so cache-bust with `?cb=` when checking.
