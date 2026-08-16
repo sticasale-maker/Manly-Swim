@@ -5407,6 +5407,12 @@ const SITE_DEFAULTS = {
   obsBlendGustHi:    2.6,   // at/above which confidence bottoms out
   obsBlendMinConf:   0.45,  // floor. Never discard the observation entirely — a gusty
                             // reading is still evidence, just weaker evidence.
+  // Confidence applies to the FORECAST hours, not to now (16 Aug 2026). A gusty
+  // window means we can't say what 11am holds; it does not mean we don't know what
+  // the wind is doing at 9am — that was measured. So the damping ramps in over the
+  // first hour of lead time and the current hour keeps the observation whole.
+  // Ramped, not switched, so the correction still has no step in it anywhere.
+  obsBlendConfLeadHrs: 1,
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
   // the ~6 km approach. Once its period lengthens (strong/sustained wind), its wavelength
@@ -8274,10 +8280,18 @@ function blendObsIntoMatrix(matrix, obs) {
     addKmh = Math.max(-cap, Math.min(cap, obsKmh - fc.kmh));
   }
 
-  // ── Confidence: how far to trust THIS observation ──────────────────────────
+  // ── Confidence: how far to trust this observation ABOUT LATER ──────────────
   // Ramps down between the lo/hi knobs on two independent gustiness measures, and
   // takes the worse of the two — either one being bad is enough to mean "the wind is
   // unsettled right now". Floored, never zeroed: a gusty reading is still evidence.
+  //
+  // It is a statement about FORECAST hours only. Gustiness means we cannot say what
+  // 11am holds; it does not mean we don't know what the wind is doing right now —
+  // that part was measured, by the only real anemometer near the bay, and the model
+  // has no better claim on it. (WillyWeather returns one BOM cell for the bay, Manly
+  // and North Head alike — identical 72/72 over three days — so the forecast carries
+  // no local detail here that a substitution could lose.) Applied below via a lead-
+  // time ramp, so the current hour keeps the observation whole.
   const ramp = (x, lo, hi) => (x == null || !isFinite(x)) ? 1
              : Math.max(0, Math.min(1, 1 - (x - lo) / Math.max(1e-6, hi - lo)));
   const gustRatio = (obs.gustKmh != null && obsKmh > 0) ? obs.gustKmh / obsKmh : null;
@@ -8313,10 +8327,16 @@ function blendObsIntoMatrix(matrix, obs) {
     if (!r._windRaw) r._windRaw = { kmh: r.windKmh, dir: r.windDir };
     if (r._windRaw.kmh == null) continue;
 
-    // Raised cosine: 1 at the obs instant → 0 at the edge, scaled by how much this
-    // observation is worth. conf shrinks how FAR the wind is pulled, never how
-    // smoothly — the taper shape, and so the absence of any visible step, is intact.
-    const w = conf * 0.5 * (1 + Math.cos(Math.PI * Math.abs(dt) / span));
+    // Raised cosine: 1 at the obs instant → 0 at the edge.
+    const taper = 0.5 * (1 + Math.cos(Math.PI * Math.abs(dt) / span));
+    // Gustiness damping fades IN with lead time: none at the observation (it owns
+    // now), full from +obsBlendConfLeadHrs on. Same raised-cosine shape as the taper
+    // so nothing acquires a step. Behind the observation there is no lead time and
+    // so no damping either.
+    const leadMs = Math.max(0, (S.obsBlendConfLeadHrs ?? 1)) * 3600000;
+    const g = (dt <= 0 || leadMs <= 0) ? (dt <= 0 ? 0 : 1)
+            : 0.5 * (1 - Math.cos(Math.PI * Math.min(1, dt / leadMs)));
+    const w = (1 - (1 - conf) * g) * taper;
     const base = r._windRaw.kmh;
     const kmh  = (ratio != null) ? base * (1 + w * (ratio - 1)) : base + w * addKmh;
     r.windKmh  = Math.max(0, Math.round(kmh * 100) / 100);
