@@ -9280,19 +9280,12 @@ function renderSnapshot(h, wx) {
   // breaking-height curve here: it shoaled the wave UP to its breaking crest and read
   // far taller than the eye — right for a safety SCORE, wrong as the number we display.
   // The Entry classification/bands stay on the demerit path (ws_d/ww_d/s1_d), untouched.
-  const _entryBreakH = (function () {
-    var cl = function (v) { return Math.max(0, Math.min(1, v)); };
-    var wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
-    var nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
-    var wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
-    var ref  = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-    var dT   = (h.tideM != null ? h.tideM : ref) - ref;   // signed metres from reference (<0 below)
-    var gain = SITE.tideGain || 0;
-    var tg   = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
-    var Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))  // swell energy at the ramp, tide-scaled
-            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));   // + sea energy at the ramp, tide-scaled
-    return Math.sqrt(Hs2);   // incident significant height at the ramp
-  })();
+  // Incident significant height at the ramp (swell + sea, tide-scaled). This WAS
+  // a line-for-line inline copy of shelteredRampH() — identical maths, duplicated.
+  // It agreed only because the two copies happened to still match; editing either
+  // one would have split the pictogram caption from the Oracle silently. Same
+  // reason the swell card's own copy was removed (see the note there).
+  const _entryBreakH = shelteredRampH(h);
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   // Banner suppressed while WW is the deliberate, announced default (FORCE_WW) — users
@@ -9506,10 +9499,8 @@ function renderSnapshot(h, wx) {
   // arriving at the ramp (swell+sea, typical wave — see _entryBreakH); Chop shows
   // the steep-face height in cm; Surge shows the bay swell height.
   (function () {
-    const S = (typeof SITE !== 'undefined') ? SITE : null;
-    const Hm = h.swell1H || 0;
-    const cx = (v) => Math.max(0, Math.min(1, v));
-    const bayH  = (Hm > 0 && S && S.blDisp) ? Hm * Math.sqrt(cx(blDispLookup(h.swell1Dir, h.swell1P))) : Hm;
+    // Also formerly an inline copy — now the shared definition, same as the card.
+    const bayH  = shelteredBayH(h);
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
     setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _entryBreakH.toFixed(1) + ' m at the ramp');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
@@ -9644,12 +9635,6 @@ function renderSnapshot(h, wx) {
   // falls back to the raw mouth height if its table has not loaded yet.
   (function () {
     const Hm = h.swell1H;                    // raw NS bay-mouth height (node 103218)
-    const s  = (typeof SITE !== 'undefined') ? SITE : null;
-    const clampTx = (v) => Math.max(0, Math.min(1, v));
-    // Sheltered residual height H·√transmit (display only; scores untouched).
-    const residH = (tbl, lookup) => (Hm > 0 && tbl)
-      ? Hm * Math.sqrt(clampTx(lookup(h.swell1Dir, h.swell1P)))
-      : Hm;
     const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
 
     // Row 1 — Oceanside: the WillyWeather offshore swell (outside the bay), with
@@ -9666,11 +9651,23 @@ function renderSnapshot(h, wx) {
     set('sSwell1EntryH', Hm.toFixed(1));
     set('sSwell1EntryD', `m · ${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`);
     set('sSwell1EntryP', `${Math.round(h.swell1P)}s period`);
-    // Section 3 — sheltered NS residuals, height only (refracted direction not
+    // Section 3 — sheltered residuals, height only (refracted direction not
     // modelled; period is conserved so it is omitted here per the layout).
     // Bare numbers — the cards carry their own "metres" unit line, same as sections 1-2.
-    set('sSwell1Ramp', residH(s && s.nsDisp, nsDispLookup).toFixed(1));
-    set('sSwell1Bay',  residH(s && s.blDisp, blDispLookup).toFixed(1));
+    //
+    // BOTH come from shelteredRampH / shelteredBayH — the two functions whose own
+    // comment says "One definition, two callers — do not re-implement either".
+    // This block HAD re-implemented it, as a local residH() doing H·√transmit on
+    // the swell partition alone, and the two had drifted: on 16 Aug 2026 the card
+    // read 0.1 m at the ramp for hours where the Oracle was being told 0.5 m —
+    // 3.2-3.6x apart, the exact failure the 18 Jul 2026 comment was written after.
+    //
+    // The ramp figure is the one that SUPPORTS THE ENTRY SCORE: swell + wind-wave
+    // + tide, not swell alone. That is the number a swimmer should be able to hold
+    // the verdict to. It reads higher than the old display value — that is the
+    // point; the old one was quietly omitting most of what Entry is scoring.
+    set('sSwell1Ramp', shelteredRampH(h).toFixed(1));
+    set('sSwell1Bay',  shelteredBayH(h).toFixed(1));
     // Chop — the same steep-face height the Chop classification prints, straight off
     // result.swim.raw so the two can never disagree. That raw is in CENTIMETRES;
     // shown here in metres to match the ramp/Bower cards beside it.
