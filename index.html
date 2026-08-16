@@ -8381,6 +8381,15 @@ function blendObsIntoMatrix(matrix, obs) {
 
   const fwdMs  = Math.max(0, (S.obsBlendTaperHrs ?? 3)) * 3600000;
   const backMs = Math.max(0, (S.obsBlendBackHrs  ?? 1)) * 3600000;
+
+  // The hour the observation is OF gets the correction whole, whichever side of
+  // the reading the clock happens to be on. Taper by time-distance alone put the
+  // in-progress hour BELOW the hour after it — a reading at 11:30 corrected 11:00
+  // by 0.50 and 12:00 by 0.82 — because the backward reach is shorter than the
+  // forward one. But the observation is not 30 minutes away from 11:00, it is part
+  // of it: it was measured inside that hour and describes it directly.
+  const od = new Date(obsT);
+  const obsHourTs = new Date(od.getFullYear(), od.getMonth(), od.getDate(), od.getHours()).getTime();
   let touched = 0, maxW = 0;
 
   for (const r of matrix) {
@@ -8392,9 +8401,12 @@ function blendObsIntoMatrix(matrix, obs) {
     const t = new Date(String(r.dateTime).replace(' ', 'T')).getTime();
     if (!isFinite(t)) continue;
 
-    const dt   = t - obsT;
-    const span = dt >= 0 ? fwdMs : backMs;
-    if (span <= 0 || Math.abs(dt) >= span) {
+    const dt      = t - obsT;
+    const isOwnHr = (t === obsHourTs);          // the hour the reading was taken in
+    const span    = dt >= 0 ? fwdMs : backMs;
+    // isOwnHr short-circuits the reach test too: with a short backward span the
+    // containing hour can sit outside it entirely and would otherwise be skipped.
+    if (!isOwnHr && (span <= 0 || Math.abs(dt) >= span)) {
       // Outside the reach: restore the untouched model value, so a row that was
       // blended by an earlier (now older) observation goes back to pure forecast
       // rather than keeping a stale correction.
@@ -8405,13 +8417,15 @@ function blendObsIntoMatrix(matrix, obs) {
     if (r._windRaw.kmh == null) continue;
 
     // Raised cosine: 1 at the obs instant → 0 at the edge.
-    const taper = 0.5 * (1 + Math.cos(Math.PI * Math.abs(dt) / span));
+    const taper = isOwnHr ? 1 : 0.5 * (1 + Math.cos(Math.PI * Math.abs(dt) / span));
     // Gustiness damping fades IN with lead time: none at the observation (it owns
     // now), full from +obsBlendConfLeadHrs on. Same raised-cosine shape as the taper
     // so nothing acquires a step. Behind the observation there is no lead time and
     // so no damping either.
+    // No lead time within the hour the reading belongs to, so no damping there
+    // either — gustiness is a statement about hours we cannot see yet.
     const leadMs = Math.max(0, (S.obsBlendConfLeadHrs ?? 1)) * 3600000;
-    const g = (dt <= 0 || leadMs <= 0) ? (dt <= 0 ? 0 : 1)
+    const g = (isOwnHr || dt <= 0 || leadMs <= 0) ? ((isOwnHr || dt <= 0) ? 0 : 1)
             : 0.5 * (1 - Math.cos(Math.PI * Math.min(1, dt / leadMs)));
     const w = (1 - (1 - conf) * g) * taper;
     const base = r._windRaw.kmh;
