@@ -933,6 +933,22 @@
     transition: max-height 0.35s ease, opacity 0.3s ease;
   }
   .wa2-days.wa2-open { opacity: 1; max-height: 4000px; margin-top: 8px; }
+  /* Quiet door into #panel-timeline (the hour-by-hour table). Deliberately a
+     text link rather than a tab: the week strip is where a swimmer is already
+     scanning days, and the table is a drill-down from that, not a peer view. */
+  .wa2-hourly {
+    display: inline-flex; align-items: center; gap: 5px;
+    /* min-height rather than padding does the work: the tap target hits the 44px
+       touch minimum while the text still lines up with the card's 8px gutter and
+       the centring keeps the visible link where padding alone would have put it. */
+    margin: 0; padding: 0 8px; min-height: 44px;
+    border: none; background: transparent;
+    font-family: 'Inter', sans-serif; font-size: 12px;
+    color: var(--ocean); cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wa2-hourly:hover { text-decoration: underline; }
+  .wa2-hourly .wa2-hourly-arrow { font-size: 15px; line-height: 1; }
   .wa2-day {
     display: block; width: 100%; box-sizing: border-box; text-align: left;
     background: rgba(22,50,66,0.35); border: 1px solid rgba(180,210,230,0.10);
@@ -3404,7 +3420,7 @@
     </div>
 
     <!-- "Who's Out There?" (ntmSection) removed 2026-07-24 — superseded by Bay Talk.
-         Its render() early-returns when #ntmSection is absent; CSS/admin left inert. -->
+         Its CSS, JS module and admin overlay were deleted 2026-08-17. -->
 
     <!-- THE BOARD — collapsed-by-default strip (Q&A: submit, upvote, reply; Marco answers) -->
     <div id="boardSection">
@@ -3539,6 +3555,9 @@
         </span>
       </div>
       <div id="weekAheadDays" class="wa2-days wa2-open"></div>
+      <button type="button" class="wa2-hourly" onclick="openTimeline()">
+        Hour by hour<span class="wa2-hourly-arrow" aria-hidden="true">&rsaquo;</span>
+      </button>
     </div>
 
     <!-- Bluebottle FORECAST risk strip — moved here (after Swimmers' Corner) so this
@@ -7931,6 +7950,15 @@ function switchTab(tab) {
     b.setAttribute('aria-selected', on ? 'true' : 'false');
   });
   if (tab === 'timeline') { try { if (window.track) window.track('open_timeline', {}); } catch (e) {} }
+}
+
+// The Week Ahead's "Hour by hour" link. Scrolls to the top on the way in: the
+// link sits a long way down the snapshot panel, and switchTab only swaps which
+// panel is .active — it does not touch scroll position, so without this the
+// timeline opens already scrolled past its own header.
+function openTimeline() {
+  switchTab('timeline');
+  try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (e) { window.scrollTo(0, 0); }
 }
 
 // About lives in guide.html now. The header pill and the "New here?" banner both
