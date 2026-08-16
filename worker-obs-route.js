@@ -37,6 +37,11 @@ var OBS_STATIONS = {
 // that is more than one cycle stale.
 var OBS_CACHE_TTL = 240;
 
+// Ceiling on ?hours=. BOM ships 72 h; the today-graph only ever shows the current
+// day, and an hourly aggregate of 36 h is ~2 KB — small enough to be uninteresting
+// next to the forecast payload, which is the test this trim has to pass.
+var OBS_HIST_MAX_H = 36;
+
 async function handleObs(request, env, url, ctx) {
   if (request.method !== "GET") return errJSON("Method not allowed", 405);
 
@@ -44,7 +49,30 @@ async function handleObs(request, env, url, ctx) {
   const wmo = OBS_STATIONS[key];
   if (!wmo) return errJSON("Unknown station", 400);
 
-  const kvKey = "obs:" + key;
+  // ?hours=N — ask for the observed HISTORY as well as the nowcast rows. Used to
+  // redraw the past of the today-graph with what the wind actually did, instead of
+  // what was forecast for it. Absent → byte-identical to the original response, so
+  // an old client and a new one can hit the same route.
+  var histH = parseInt(url.searchParams.get("hours") || "0", 10);
+  if (!isFinite(histH) || histH < 0) histH = 0;
+  if (histH > OBS_HIST_MAX_H) histH = OBS_HIST_MAX_H;
+
+  // ONE KV entry regardless of the parameter, holding the full aggregate: the
+  // per-request slice happens below. Keyed :v2 so a body cached by the previous
+  // version of this route (no `hourly` key) is not served to a client asking for
+  // history — it would look like a station with no past, which is indistinguishable
+  // from a broken feed.
+  const kvKey = "obs:" + key + ":v2";
+
+  // The per-request shape. The cached body always carries the full history; a client
+  // that did not ask for it gets no `hourly` key at all rather than an empty array,
+  // so "this route has no history" and "this station has no history" stay
+  // distinguishable at the client.
+  function shape(full) {
+    if (!histH) { var o = Object.assign({}, full); delete o.hourly; return o; }
+    var all = Array.isArray(full.hourly) ? full.hourly : [];
+    return Object.assign({}, full, { hourly: all.slice(Math.max(0, all.length - histH)) });
+  }
 
   // Serve from KV first. Note this is deliberately NOT a stale-if-error cache with
   // an unbounded lifetime: a wind observation that is hours old is worse than no
@@ -56,8 +84,10 @@ async function handleObs(request, env, url, ctx) {
       if (hit) {
         const parsed = JSON.parse(hit);
         if (parsed && parsed.cachedAt && (Date.now() - parsed.cachedAt) < OBS_CACHE_TTL * 1000) {
-          return new Response(JSON.stringify(parsed), {
+          return new Response(JSON.stringify(shape(parsed)), {
             status: 200,
+            // Vary on nothing at the CDN: the URL carries `hours`, so the two shapes
+            // are already different cache keys.
             headers: JSONH({ "Cache-Control": "public, max-age=120, s-maxage=120" })
           });
         }
@@ -119,6 +149,62 @@ async function handleObs(request, env, url, ctx) {
     };
   });
 
+  // ── Hourly aggregate of the observed history ────────────────────────────────
+  // BOM reports a 10-minute mean every 30 minutes; the app's matrix is hourly. So
+  // the readings are folded into clock hours HERE, not on the phone: it is the same
+  // arithmetic for every client and it is what makes the payload small.
+  //
+  // Grouped on the UTC hour, which is safe because Sydney's offset is a whole number
+  // of hours — the UTC hour boundary and the local one are the same instant. Speed is
+  // a scalar mean and direction a vector mean, the same split parseWindObs uses and
+  // for the same reason: under a veering wind the vector magnitude collapses toward
+  // zero and would understate the wind that actually blew.
+  var DIR_DEG = {
+    N:0, NNE:22.5, NE:45, ENE:67.5, E:90, ESE:112.5, SE:135, SSE:157.5,
+    S:180, SSW:202.5, SW:225, WSW:247.5, W:270, WNW:292.5, NW:315, NNW:337.5,
+  };
+  function buildHourly(rows, maxHours) {
+    var cutoff = Date.now() - maxHours * 3600 * 1000;
+    var acc = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var s = r.aifstime_utc;
+      if (!s || s.length < 14) continue;
+      var t = Date.UTC(+s.slice(0,4), +s.slice(4,6) - 1, +s.slice(6,8),
+                       +s.slice(8,10), +s.slice(10,12), +s.slice(12,14));
+      if (!isFinite(t) || t < cutoff) continue;
+      // Same refusal as the client: BOM applies no QC, so a null or absurd value is
+      // dropped rather than averaged in.
+      if (typeof r.wind_spd_kmh !== "number" || !isFinite(r.wind_spd_kmh) ||
+          r.wind_spd_kmh < 0 || r.wind_spd_kmh > 200) continue;
+      var deg = (typeof r.wind_dir === "string") ? DIR_DEG[r.wind_dir] : undefined;
+      if (deg === undefined) continue;
+      var hk = s.slice(0, 10);                       // yyyymmddHH
+      var a = acc[hk] || (acc[hk] = { n:0, spd:0, u:0, v:0, gust:null });
+      var rad = deg * Math.PI / 180;
+      a.n++; a.spd += r.wind_spd_kmh;
+      a.u += r.wind_spd_kmh * Math.sin(rad);
+      a.v += r.wind_spd_kmh * Math.cos(rad);
+      if (typeof r.gust_kmh === "number" && isFinite(r.gust_kmh)) {
+        a.gust = (a.gust == null) ? r.gust_kmh : Math.max(a.gust, r.gust_kmh);
+      }
+    }
+    var out = [];
+    Object.keys(acc).sort().forEach(function (hk) {
+      var a = acc[hk];
+      var dir = Math.atan2(a.u / a.n, a.v / a.n) * 180 / Math.PI;
+      if (dir < 0) dir += 360;
+      out.push({
+        utcHour: hk,                                  // yyyymmddHH, hour START
+        kmh:  Math.round((a.spd / a.n) * 10) / 10,
+        gust: a.gust,
+        dir:  Math.round(dir * 10) / 10,
+        n:    a.n,
+      });
+    });
+    return out;
+  }
+
   const body = {
     station:  key,
     wmo:      wmo,
@@ -129,6 +215,11 @@ async function handleObs(request, env, url, ctx) {
     // quality-controlled, so nulls and spurious readings do occur.
     qc:       false,
     obs:      slim,
+    // Always BUILT at full depth and cached at full depth; sliced per request below.
+    // Building it costs one pass over rows we already parsed, and it means a client
+    // asking for 6 h and one asking for 24 h share a single BOM fetch and a single
+    // KV entry.
+    hourly:   buildHourly(rows, OBS_HIST_MAX_H),
     cachedAt: Date.now(),
   };
 
@@ -141,7 +232,7 @@ async function handleObs(request, env, url, ctx) {
     try { if (ctx && ctx.waitUntil) ctx.waitUntil(put); } catch (_) {}
   }
 
-  return new Response(JSON.stringify(body), {
+  return new Response(JSON.stringify(shape(body)), {
     status: 200,
     headers: JSONH({ "Cache-Control": "public, max-age=120, s-maxage=120" })
   });
@@ -171,6 +262,14 @@ async function handleObs(request, env, url, ctx) {
 //     → {"station":"northhead","wmo":95768,"name":"North Head",...}   live
 //     → Not found        Block 2 is missing, or landed below the 404 fallback
 //     → "Unknown station"  Block 1 pasted but OBS_STATIONS didn't come with it
+//   NO "hourly" key in that response — that is correct, it is the nowcast shape.
+//   Then the history shape (added 16 Aug 2026):
+//   curl "https://bold-rain-6ded.sticasale.workers.dev/obs?station=northhead&hours=24"
+//     → the same body PLUS "hourly":[{"utcHour":"2026081523","kmh":..,"dir":..},…]
+//       ascending, one row per clock hour, up to 24 of them.
+//     → no "hourly" key: the OLD route is still deployed. The app degrades cleanly
+//       (past hours simply stay on the forecast wind), so this is not an outage —
+//       but it does mean the paste did not land.
 //   Then confirm the crons SURVIVED (a stripped cron is the failure mode this
 //   Worker has actually had before — see the deploy rule):
 //     Dashboard → Settings → Triggers → Cron Triggers must still list BOTH.

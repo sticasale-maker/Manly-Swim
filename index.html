@@ -3898,6 +3898,14 @@ const OBS_WINDOW_MIN  = 90;
 // Older than this and the observation is not describing now. Two missed BOM
 // cycles. Beyond it we log nothing rather than log something misleading.
 const OBS_MAX_AGE_MIN = 75;
+// Observed HISTORY, for the past of the today-graph. Those hours are over: what the
+// wind was forecast to do is no longer the interesting question, and the station
+// measured what it actually did. Hours strictly in the past get the observation
+// outright — no taper, nothing to fade toward, it is not an estimate.
+// Requires the ?hours= support in worker-obs-route.js; without it the Worker simply
+// returns no `hourly` key and the past stays on the forecast wind.
+const OBS_PAST_ENABLED = true;   // ?obspast=0 disables at runtime
+const OBS_PAST_HOURS   = 24;     // Worker caps this at 36
 
 // Status-line provenance. In nuovo, WillyWeather supplies ONLY wind + tide; swell,
 // sea and periods come from the NSW Nearshore feed (node 103218). Naming WW alone
@@ -7998,6 +8006,13 @@ async function logCalibrationPair(h, result, wwSlot, wwR) {
   try {
     const fts = h && h.dateTime;                 // the hour object's timestamp field
     if (!fts) return;
+    // Never log an hour whose wind was REPLACED by an observation (16 Aug 2026).
+    // This table pairs forecast inputs with the scores the model produced from them;
+    // a row whose wind is a measurement is not a forecast and would quietly teach the
+    // calibration that the model is better than it is. Nowcast-BLENDED hours are
+    // still logged: there the wind is what the app actually scored, so the row stays
+    // reproducible, and the correction is recoverable from wind_obs_pairs.
+    if (h._windObsPast) return;
     const hourKey = String(fts).slice(0, 13);    // yyyy-mm-ddThh — hourly throttle
     if (localStorage.getItem('swim_pair_last') === hourKey) return;
     if (_pairInflight.has(hourKey)) return;   // a concurrent render already has this hour
@@ -8108,7 +8123,10 @@ function obsCircDiff(a, b) { return ((((a - b) % 360) + 540) % 360) - 180; }
 async function fetchWindObs(timeoutMs) {
   if (!OBS_ENABLED) return null;
   try { if (new URLSearchParams(location.search).get('obs') === '0') return null; } catch (_) {}
-  const url = `${OBS_WORKER_URL}?station=${encodeURIComponent(OBS_STATION)}&t=${Date.now()}`;
+  let hours = 0;
+  try { hours = (OBS_PAST_ENABLED && new URLSearchParams(location.search).get('obspast') !== '0') ? OBS_PAST_HOURS : 0; } catch (_) { hours = OBS_PAST_HOURS; }
+  const url = `${OBS_WORKER_URL}?station=${encodeURIComponent(OBS_STATION)}` +
+              (hours ? `&hours=${hours}` : '') + `&t=${Date.now()}`;
   const res = await fetchWithTimeout(url, timeoutMs || 8000, { cache: 'no-store' });
   if (!res.ok) throw new Error(`OBS ${res.status}`);
   return await res.json();
@@ -8233,6 +8251,61 @@ function windForecastAt(matrix, ts) {
   };
 }
 
+// ── OBSERVED WIND FOR HOURS THAT ARE OVER ────────────────────────────────────
+// The past of the today-graph was, until now, the forecast for those hours — the
+// Worker cron logs WW's wind into forecast_history and the graph reads it back. But
+// those hours have happened. There is nothing to predict, and the station measured
+// what the wind actually did, so the observation simply replaces the forecast.
+//
+// No taper here, unlike the nowcast blend: a taper expresses declining confidence in
+// an estimate about a time we cannot see, and this is not an estimate. Either the
+// hour has an observation, in which case use it, or it does not, in which case leave
+// the forecast alone.
+//
+// STRICTLY the past. The current hour is still in progress and its observation
+// covers only the part that has already happened, so it stays with the blend, which
+// is built for exactly that overlap.
+function applyObservedPast(matrix, hourly) {
+  if (!Array.isArray(matrix) || !matrix.length || !Array.isArray(hourly) || !hourly.length) return 0;
+
+  // Index the observations by LOCAL clock hour. The Worker groups on the UTC hour,
+  // which is the same instant as the local one here (Sydney is a whole-hour offset),
+  // but the matrix keys on local time, so the conversion has to happen somewhere and
+  // Date does it correctly across the DST boundary.
+  const byLocal = new Map();
+  for (const o of hourly) {
+    if (!o || !o.utcHour || o.kmh == null || o.dir == null) continue;
+    const s = String(o.utcHour);
+    if (s.length < 10) continue;
+    const t = Date.UTC(+s.slice(0,4), +s.slice(4,6) - 1, +s.slice(6,8), +s.slice(8,10));
+    if (!isFinite(t)) continue;
+    const d = new Date(t);
+    const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+              String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0');
+    byLocal.set(k, o);
+  }
+
+  // Start of the CURRENT local hour — everything from here forward is untouched.
+  const now = new Date();
+  const curHourTs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours()).getTime();
+
+  let n = 0;
+  for (const r of matrix) {
+    if (!r || !r.dateTime) continue;
+    const t = new Date(String(r.dateTime).replace(' ', 'T')).getTime();
+    if (!isFinite(t) || t >= curHourTs) continue;
+    const o = byLocal.get(String(r.dateTime).slice(0, 13).replace('T', ' '));
+    if (!o) continue;
+    if (!r._windRaw) r._windRaw = { kmh: r.windKmh, dir: r.windDir };
+    r.windKmh     = o.kmh;
+    r.windDir     = o.dir;
+    r._windObsPast = true;      // read by the blend, the REALTIME label and the logger
+    r._windBlendW  = 1;
+    n++;
+  }
+  return n;
+}
+
 // ── OBSERVED-WIND NOWCAST BLEND — STEP 2: THE OBS NOW MOVES THE SCORES ───────
 // Near the observation instant the station is right and the model is an estimate;
 // three hours out the reverse is true. So the correction is applied at full weight
@@ -8312,6 +8385,10 @@ function blendObsIntoMatrix(matrix, obs) {
 
   for (const r of matrix) {
     if (!r || !r.dateTime) continue;
+    // An hour that already carries its own observation is not improved by being
+    // nudged toward a neighbouring one — it has the measurement itself. This also
+    // stops the restore branch below from putting the forecast back.
+    if (r._windObsPast) continue;
     const t = new Date(String(r.dateTime).replace(' ', 'T')).getTime();
     if (!isFinite(t)) continue;
 
@@ -8906,7 +8983,10 @@ function renderSnapshot(h, wx) {
   // correction is a fraction of a km/h at the tail of the taper and calling that
   // realtime would be a claim the arrow can't back up.
   try {
-    const live = (h._windBlendW || 0) >= 0.1;
+    // True for a past hour drawn straight from the station, and for a near hour the
+    // blend actually reached. Below 0.1 the correction is a fraction of a km/h at the
+    // tail of the taper and calling that realtime would overclaim.
+    const live = !!h._windObsPast || (h._windBlendW || 0) >= 0.1;
     if (window.swellSetWindLive) window.swellSetWindLive(live);
     // Canvas text is invisible to a screen reader, so the same fact goes on the
     // element label — otherwise moving the tell into the drawing quietly removes it
@@ -8915,9 +8995,9 @@ function renderSnapshot(h, wx) {
     if (cv) {
       const baseLbl = 'Swell refracting around the headland into Cabbage Tree Bay, ' +
                       'with the forecast wind direction, for the selected hour';
-      cv.setAttribute('aria-label', live
-        ? baseLbl + '. This hour’s wind is corrected toward the live BOM North Head reading.'
-        : baseLbl);
+      cv.setAttribute('aria-label', !live ? baseLbl : baseLbl + (h._windObsPast
+        ? '. This hour has passed: the wind shown is what the BOM North Head station measured.'
+        : '. This hour’s wind is corrected toward the live BOM North Head reading.'));
     }
   } catch (e) { /* a label is decoration — never let it break the map */ }
 
@@ -10943,6 +11023,13 @@ async function loadAndRender(forceRefresh = false) {
           diag('OBS ' + obs.station + ' ' + obs.spdKmh + ' km/h @' + obs.dirDeg +
                '° (n=' + obs.n + ', ' + obs.ageMin + ' min old)');
           logWindObs(_matrix, obs);
+          // Past hours FIRST: the blend then skips them, and both agree about who
+          // owns which hour instead of overwriting each other.
+          try {
+            const nPast = applyObservedPast(_matrix, obRes.value && obRes.value.hourly);
+            window._windObsPastN = nPast;
+            if (nPast) diag('OBS past — ' + nPast + ' hours redrawn from the station');
+          } catch (pErr) { diag('OBS past error (isolated): ' + pErr.message); }
           const bl = blendObsIntoMatrix(_matrix, obs);
           window._windBlend = bl;
           if (bl && bl.touched) {
@@ -10967,6 +11054,14 @@ async function loadAndRender(forceRefresh = false) {
       // Non-fatal: if Supabase is unreachable the live forecast stays intact.
       const added = await withTimeout(loadForecastHistory(), 6000).catch(() => 0);
       if (added > 0) {
+        // The backfill is where the past hours mostly come from, and it lands AFTER
+        // the observation pass above — so those rows arrive still carrying the
+        // forecast wind. Re-apply, or the today-graph's morning would silently stay
+        // on the forecast while the hours already in the matrix showed the station.
+        try {
+          const nPast2 = applyObservedPast(_matrix, obRes.status === 'fulfilled' && obRes.value ? obRes.value.hourly : null);
+          if (nPast2) diag('OBS past (after history) — ' + nPast2 + ' hours');
+        } catch (pErr2) { diag('OBS past re-apply error (isolated): ' + pErr2.message); }
         renderDayPicker(_matrix);
         renderSlider(_matrix);
         renderTimeline(_matrix, _wxMatrix);
