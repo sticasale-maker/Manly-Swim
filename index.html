@@ -2869,6 +2869,19 @@
     <!-- Complete / Custom detail toggle (choice persists across refresh) -->
     <style>
       .sec-hidden { display: none !important; }
+      /* Brief ring on a section just switched on in the Custom panel, so the end of
+         the scroll says "this is the thing you ticked" rather than dropping you in
+         the middle of the page. Outline, not border: it cannot shift layout. */
+      @keyframes secJustOn {
+        0%, 70% { outline-color: rgba(74,143,173,0.85); }
+        100%    { outline-color: rgba(74,143,173,0); }
+      }
+      .sec-juston {
+        outline: 2px solid rgba(74,143,173,0.85); outline-offset: 3px;
+        border-radius: var(--radius);
+        animation: secJustOn 1.6s ease-out forwards;
+      }
+      @media (prefers-reduced-motion: reduce) { .sec-juston { animation: none; } }
       /* Sits directly under the About pill in the header, right-aligned to line up
          with it. Negative top margin pulls it into the header's bottom padding —
          the pair reads as one block and costs almost no extra height. */
@@ -16490,6 +16503,8 @@ if ('serviceWorker' in navigator) {
         // value that gets frozen.
         if (getMode() !== 'custom') setMode('custom');
         else apply('custom');
+        if (cb.checked) _lastEnabled = s.key;                  // closeCustom scrolls here
+        else if (_lastEnabled === s.key) _lastEnabled = null;  // ticked then unticked — go nowhere
       });
       list.appendChild(row);
     });
@@ -16546,7 +16561,43 @@ if ('serviceWorker' in navigator) {
     // beacon there is no denominator for "of the people who saw the choice, ...".
     try { if (window.track) window.track('open_custom', {}); } catch (e) {}
   }
-  function closeCustom(){ var p = document.getElementById('customPanel'); if (p) p.classList.remove('show'); }
+  // Section a swimmer has just switched ON, so closing the panel can take them to
+  // it. Without this the checklist is a control with no feedback: the sections sit
+  // as far as three viewports down the page (the day view lands around y=1900 of a
+  // 3600px page, below Swimmers' Corner), the panel is an overlay, and closing it
+  // returns you to exactly the screen you were on. Tick, close, nothing changed —
+  // which is precisely how "I ticked it and I still can't see it" happens, and it
+  // is a page-position problem, not a visibility bug.
+  var _lastEnabled = null;
+  function closeCustom(){
+    var p = document.getElementById('customPanel'); if (p) p.classList.remove('show');
+    var key = _lastEnabled; _lastEnabled = null;
+    if (!key) return;
+    var sct = null;
+    SECTIONS.forEach(function (s){ if (s.key === key) sct = s; });
+    var el = sct && document.querySelector(sct.sel);
+    if (!el || el.classList.contains('sec-hidden')) return;
+    // After the overlay's transition, or the scroll starts under a panel still
+    // occupying the screen and lands in the wrong place on iOS.
+    setTimeout(function(){
+      var _still = false;
+      try { _still = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+      try { el.scrollIntoView({ behavior: _still ? 'auto' : 'smooth', block: 'center' }); }
+      catch (e) { el.scrollIntoView(); }                       // older Safari: no options object
+      // A smooth scroll is an animation, and an animation can be dropped — a
+      // backgrounded or non-compositing page silently ignores it and leaves you
+      // exactly where you were, which is the very problem this code exists to fix.
+      // So check that it actually moved, and jump outright if it did not.
+      if (!_still) setTimeout(function(){
+        var r = el.getBoundingClientRect();
+        if (r.top >= innerHeight || r.bottom <= 0) {
+          try { el.scrollIntoView({ behavior: 'auto', block: 'center' }); } catch (e) { el.scrollIntoView(); }
+        }
+      }, 700);
+      el.classList.add('sec-juston');
+      setTimeout(function(){ el.classList.remove('sec-juston'); }, 2400);
+    }, 220);
+  }
 
   // ── Admin preset editor (open with ?admin=1 or window.openAdmin()) ──
   function adminSnippet(){
