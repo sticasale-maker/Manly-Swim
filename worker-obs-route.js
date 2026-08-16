@@ -274,3 +274,168 @@ async function handleObs(request, env, url, ctx) {
 //   Worker has actually had before — see the deploy rule):
 //     Dashboard → Settings → Triggers → Cron Triggers must still list BOTH.
 // ─────────────────────────────────────────────────────────────────────────────
+
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ── BLOCK 3 — UPGRADE PATCHES, 16 Aug 2026 (observed history, ?hours=N) ──────
+//
+// The /obs route is ALREADY DEPLOYED. Do NOT re-paste Block 1 over it — apply
+// these five patches to the deployed source instead. Each FIND string is unique
+// in the file; search for it, replace it with the PASTE block underneath.
+//
+// Everything above in this file is the finished result, so if a patch will not
+// match, the fallback is to replace the whole `handleObs` function (and the two
+// `var OBS_…` lines above it) with lines 22-190 of this file.
+//
+// WHAT THEY DO: `?hours=N` adds an `hourly` array — the observed wind folded into
+// clock hours, up to 36 h back — so the app can redraw the PAST of the today-graph
+// with what the wind actually did. With no `hours` param the response is byte-for-
+// byte what it is today, so the currently-deployed app keeps working unchanged.
+//
+// ── PATCH 1 of 5 — the history depth cap ────────────────────────────────────
+// FIND:
+//     var OBS_CACHE_TTL = 240;
+// PASTE DIRECTLY BELOW IT (leave that line in place):
+/*
+// Ceiling on ?hours=. BOM ships 72 h; the today-graph only ever shows the current
+// day, and an hourly aggregate of 36 h is ~2 KB — small enough to be uninteresting
+// next to the forecast payload, which is the test this trim has to pass.
+var OBS_HIST_MAX_H = 36;
+*/
+//
+// ── PATCH 2 of 5 — read the param, version the KV key, add the shaper ───────
+// FIND (one line, inside handleObs):
+//     const kvKey = "obs:" + key;
+// REPLACE THAT LINE WITH:
+/*
+  // ?hours=N — ask for the observed HISTORY as well as the nowcast rows. Used to
+  // redraw the past of the today-graph with what the wind actually did, instead of
+  // what was forecast for it. Absent → byte-identical to the original response, so
+  // an old client and a new one can hit the same route.
+  var histH = parseInt(url.searchParams.get("hours") || "0", 10);
+  if (!isFinite(histH) || histH < 0) histH = 0;
+  if (histH > OBS_HIST_MAX_H) histH = OBS_HIST_MAX_H;
+
+  // ONE KV entry regardless of the parameter, holding the full aggregate: the
+  // per-request slice happens below. Keyed :v2 so a body cached by the previous
+  // version of this route (no `hourly` key) is not served to a client asking for
+  // history — it would look like a station with no past, which is indistinguishable
+  // from a broken feed.
+  const kvKey = "obs:" + key + ":v2";
+
+  // The per-request shape. The cached body always carries the full history; a client
+  // that did not ask for it gets no `hourly` key at all rather than an empty array,
+  // so "this route has no history" and "this station has no history" stay
+  // distinguishable at the client.
+  function shape(full) {
+    if (!histH) { var o = Object.assign({}, full); delete o.hourly; return o; }
+    var all = Array.isArray(full.hourly) ? full.hourly : [];
+    return Object.assign({}, full, { hourly: all.slice(Math.max(0, all.length - histH)) });
+  }
+*/
+//
+// ── PATCH 3 of 5 — shape the KV-cached response ─────────────────────────────
+// FIND:
+//           return new Response(JSON.stringify(parsed), {
+// REPLACE THAT LINE WITH:
+/*
+          return new Response(JSON.stringify(shape(parsed)), {
+            status: 200,
+            // Vary on nothing at the CDN: the URL carries `hours`, so the two shapes
+            // are already different cache keys.
+*/
+// …and DELETE the now-duplicated `status: 200,` line immediately below it.
+//
+// ── PATCH 4 of 5 — the hourly aggregator ────────────────────────────────────
+// FIND:
+//     const body = {
+// PASTE THIS ENTIRE BLOCK DIRECTLY ABOVE THAT LINE (leave that line in place):
+/*
+  // ── Hourly aggregate of the observed history ────────────────────────────────
+  // BOM reports a 10-minute mean every 30 minutes; the app's matrix is hourly. So
+  // the readings are folded into clock hours HERE, not on the phone: it is the same
+  // arithmetic for every client and it is what makes the payload small.
+  //
+  // Grouped on the UTC hour, which is safe because Sydney's offset is a whole number
+  // of hours — the UTC hour boundary and the local one are the same instant. Speed is
+  // a scalar mean and direction a vector mean, the same split parseWindObs uses and
+  // for the same reason: under a veering wind the vector magnitude collapses toward
+  // zero and would understate the wind that actually blew.
+  var DIR_DEG = {
+    N:0, NNE:22.5, NE:45, ENE:67.5, E:90, ESE:112.5, SE:135, SSE:157.5,
+    S:180, SSW:202.5, SW:225, WSW:247.5, W:270, WNW:292.5, NW:315, NNW:337.5,
+  };
+  function buildHourly(rows, maxHours) {
+    var cutoff = Date.now() - maxHours * 3600 * 1000;
+    var acc = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var s = r.aifstime_utc;
+      if (!s || s.length < 14) continue;
+      var t = Date.UTC(+s.slice(0,4), +s.slice(4,6) - 1, +s.slice(6,8),
+                       +s.slice(8,10), +s.slice(10,12), +s.slice(12,14));
+      if (!isFinite(t) || t < cutoff) continue;
+      // Same refusal as the client: BOM applies no QC, so a null or absurd value is
+      // dropped rather than averaged in.
+      if (typeof r.wind_spd_kmh !== "number" || !isFinite(r.wind_spd_kmh) ||
+          r.wind_spd_kmh < 0 || r.wind_spd_kmh > 200) continue;
+      var deg = (typeof r.wind_dir === "string") ? DIR_DEG[r.wind_dir] : undefined;
+      if (deg === undefined) continue;
+      var hk = s.slice(0, 10);                       // yyyymmddHH
+      var a = acc[hk] || (acc[hk] = { n:0, spd:0, u:0, v:0, gust:null });
+      var rad = deg * Math.PI / 180;
+      a.n++; a.spd += r.wind_spd_kmh;
+      a.u += r.wind_spd_kmh * Math.sin(rad);
+      a.v += r.wind_spd_kmh * Math.cos(rad);
+      if (typeof r.gust_kmh === "number" && isFinite(r.gust_kmh)) {
+        a.gust = (a.gust == null) ? r.gust_kmh : Math.max(a.gust, r.gust_kmh);
+      }
+    }
+    var out = [];
+    Object.keys(acc).sort().forEach(function (hk) {
+      var a = acc[hk];
+      var dir = Math.atan2(a.u / a.n, a.v / a.n) * 180 / Math.PI;
+      if (dir < 0) dir += 360;
+      out.push({
+        utcHour: hk,                                  // yyyymmddHH, hour START
+        kmh:  Math.round((a.spd / a.n) * 10) / 10,
+        gust: a.gust,
+        dir:  Math.round(dir * 10) / 10,
+        n:    a.n,
+      });
+    });
+    return out;
+  }
+*/
+//
+// ── PATCH 5 of 5 — put the history in the body, and shape the live response ──
+// FIND (inside the `const body = {` object literal):
+//     obs:      slim,
+// REPLACE THAT LINE WITH:
+/*
+    obs:      slim,
+    // Always BUILT at full depth and cached at full depth; sliced per request below.
+    // Building it costs one pass over rows we already parsed, and it means a client
+    // asking for 6 h and one asking for 24 h share a single BOM fetch and a single
+    // KV entry.
+    hourly:   buildHourly(rows, OBS_HIST_MAX_H),
+*/
+// THEN FIND (the last return in handleObs):
+//     return new Response(JSON.stringify(body), {
+// REPLACE THAT LINE WITH:
+/*
+  return new Response(JSON.stringify(shape(body)), {
+*/
+//
+// ── VERIFY AFTER THIS UPGRADE ───────────────────────────────────────────────
+//   1. The old shape is untouched (this is the regression that matters — the
+//      currently-deployed app calls it without the param on every boot):
+//      curl -s ".../obs?station=northhead" | grep -c hourly     → 0
+//   2. The new shape:
+//      curl -s ".../obs?station=northhead&hours=24"
+//        → …,"hourly":[{"utcHour":"2026081523","kmh":21.5,"gust":32,"dir":112.5,
+//          "n":2}, …]  ascending, one row per clock hour, at most 24 rows.
+//   3. KV did not get crossed with the old entry: ask for hours=24 twice in a row
+//      (the second is a KV hit) and confirm `hourly` is present BOTH times.
+//   4. Cron Triggers still list BOTH. This Worker has lost them to a deploy before.
+// ═════════════════════════════════════════════════════════════════════════════
