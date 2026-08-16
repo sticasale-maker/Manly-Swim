@@ -356,6 +356,18 @@
   .metric-header {
     display:flex; align-items:baseline; gap:8px;
   }
+  /* Non-colour band encoding. Colour is never the only channel: the dot's SHAPE
+     changes with the band, so the rails still read for a colour-blind swimmer and
+     in bright sun. Circle = best, then squircle, rounded square, and a diamond at
+     the worst band — a corner-up shape reads as a warning without any hue. */
+  .metric-track-dot[data-band="0"] { border-radius:50%; }
+  .metric-track-dot[data-band="1"] { border-radius:32%; }
+  .metric-track-dot[data-band="2"] { border-radius:14%; }
+  .metric-track-dot[data-band="3"] {
+    border-radius:12%;
+    transform:translate(-50%,-50%) rotate(45deg);
+  }
+
   /* ── The answer line ── the call itself, above the three rails.
      Colour comes from the SAME class names the metric blocks use (green /
      yellow / orange / red), so the line and the rail it is describing can never
@@ -9374,6 +9386,10 @@ function renderSnapshot(h, wx) {
     dot.style.setProperty('--pos', clamped + '%');
     dot.style.color = colorVar;
     dot.style.background = colorVar;
+    // Band index drives the dot's SHAPE (see .metric-track-dot[data-band]), so the
+    // rail is not colour-only. The rail is always four equal 25% bands, so the
+    // banded position IS the band — no second derivation of the thresholds.
+    dot.dataset.band = String(Math.max(0, Math.min(3, Math.floor(clamped / 25))));
     // Record raw (unclamped) auto position for calibration capture comparison.
     if (dotId === 'metricEntryDot') _autoDotPct.entry = pct;
     else if (dotId === 'metricSwimDot') _autoDotPct.swim = pct;
