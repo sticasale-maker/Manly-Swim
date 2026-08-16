@@ -37,6 +37,11 @@ const PASSTHROUGH_HOSTS = [
   'gkspukabnfbzrvjoewpc.supabase.co',      // Supabase
   'docs.google.com',                        // Google Sheet CSV (direct fallback)
   'fonts.gstatic.com',                      // font files — let browser cache naturally
+  // Live cam stills. MUST be passthrough: these are captioned as current, and a
+  // network-first SW would happily serve yesterday's frame from cache on a bad
+  // connection — a stale photo presented as "right now" is the worst kind of
+  // wrong this app can be. Never cache a frame that claims to be live.
+  'camstills.cdn-surfline.com',
 ];
 
 // ── Install: pre-cache shell assets ──────────────────────────
@@ -66,44 +71,6 @@ self.addEventListener('message', event => {
   }
 });
 
-// ── Push: bluebottle alerts ───────────────────────────────────
-// Payload-less by design — the sender (Cloudflare Worker) posts a VAPID-signed
-// push with no encrypted body, so we show a fixed notification. If a body is
-// ever attached later, we honour it.
-self.addEventListener('push', event => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch (e) { /* no or non-JSON payload */ }
-  const title = data.title || '🪼 Bluebottles at Manly';
-  const body  = data.body  || 'A swimmer reported bluebottles with a photo. Tap to check the bay.';
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body,
-      icon: './images/logos/icon-192.png',
-      badge: './images/logos/favicon-32.png',
-      tag: 'bluebottle',
-      renotify: true,
-      data: { url: './' }
-    })
-  );
-});
-
-// ── Notification click: focus an open tab or open the app ─────
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || './';
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cls => {
-      for (const c of cls) {
-        if ('focus' in c) {
-          if (typeof c.navigate === 'function') { try { c.navigate(url); } catch (e) {} }
-          return c.focus();
-        }
-      }
-      if (self.clients.openWindow) return self.clients.openWindow(url);
-    })
-  );
-});
-
 // ── Activate: delete old caches ───────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
@@ -117,16 +84,6 @@ self.addEventListener('activate', event => {
           })
       )
     ).then(() => self.clients.claim())
-     // Force any window still open on the stale fallback over to the current build.
-     // index.html re-runs the NS preflight (bounce-guarded), so a genuine outage just
-     // fails over again — this fires once per SW activation and can't loop.
-     .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-       .then(cls => Promise.all(cls.map(c =>
-         (c.url && c.url.indexOf('vecchio.html') !== -1 && typeof c.navigate === 'function')
-           ? c.navigate('index.html').catch(() => {})
-           : null
-       )))
-       .catch(() => {}))
   );
 });
 
@@ -145,6 +102,14 @@ self.addEventListener('fetch', event => {
   if (url.origin === self.location.origin &&
       /images\/logosplash\.mp4$/i.test(url.pathname)) {
     event.respondWith(serveSplashVideo(event.request, url));
+    return;
+  }
+
+  // Don't intercept other media or range requests. A network-first SW mishandles
+  // the HTTP Range / 206 responses that <video>/<audio> rely on, which stalls or
+  // breaks playback (notably on iOS Safari). Let the browser stream these natively.
+  if (event.request.headers.has('range') ||
+      /\.(mp4|webm|ogg|ogv|mov|m4v|m4a|mp3|wav|aac)$/i.test(url.pathname)) {
     return;
   }
 

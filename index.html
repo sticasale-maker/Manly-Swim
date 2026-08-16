@@ -17793,8 +17793,13 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
      ramp (swell+sea energy through the SS transmit table, tide-scaled — the
      _entryBreakH construction), Surge = the bay residual H*sqrt(BL transmit). */
   var ZONE_IDX = { green: 0, amber: 1, yellow: 2, red: 3 };
+  // Internal key stays 'swim' (as everywhere else in the app) while the image
+  // files are named chop-*.png — same split the main app's _ICON_WORD uses.
   var ICON_WORD = { entry: ['easy','doable','caution','dangerous'],
-                    surge: ['steady','drifty','surgy','washy'] };
+                    surge: ['steady','drifty','surgy','washy'],
+                    swim:  ['smooth','ripply','choppy','messy'] };
+  var MET_PREFIX = { entry: 'entry', surge: 'surge', swim: 'chop' };
+  var MET_CAP    = { entry: 'Entry', surge: 'Surge', swim: 'Chop' };
   var RAIL_COL = { green: '#2f9e63', amber: '#d9a11e', yellow: '#e07b39', red: '#c0392b' };
   // Both defer to the single definitions near nsDispLookup/blDispLookup. These
   // used to hold their own copy of the maths, which is how the Oracle's prose
@@ -17804,9 +17809,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function metricCell(kind, met, readout) {
     if (!met) return '';
     var i = ZONE_IDX[met.cls] != null ? ZONE_IDX[met.cls] : 0;
-    var prefix = (kind === 'entry') ? 'entry' : 'surge';
+    var prefix = MET_PREFIX[kind] || 'entry';
     return '<div class="ssd-met">' +
-      '<div class="ssd-met-cap">' + (kind === 'entry' ? 'Entry' : 'Surge') + '</div>' +
+      '<div class="ssd-met-cap">' + (MET_CAP[kind] || kind) + '</div>' +
       '<div class="ssd-met-fig"><img src="images/' + prefix + '-' + ICON_WORD[kind][i] + '.png" alt="" loading="lazy">' +
         (readout ? '<span class="ssd-met-read">' + readout + '</span>' : '') + '</div>' +
       '<div class="ssd-met-lab" style="color:' + (RAIL_COL[met.cls] || '#113541') + '">' + met.label + '</div>' +
@@ -17834,9 +17839,33 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '</div>';
   }
 
-  /* Copy every frame of the live swell canvas into the popup's mirror. Stops
-     itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
-     there is never a loop running against a detached node. */
+  /* ---- South Steyne live cam -------------------------------------------
+     The same Surfline still the cam row on the main page uses. Three rules it
+     has to respect:
+       * It is STAMPED with the time it was fetched, not captioned a bare "LIVE".
+         The still carries no capture time of its own, so the honest claim is
+         when we asked for it. A frame that silently goes stale under a LIVE
+         label is the sea-temp failure in another costume (CLAUDE.md §8).
+       * It cache-busts on every render, so re-opening the popup never re-shows
+         the frame from last time.
+       * On error the whole tile removes itself — a broken-image icon in a
+         dashboard reads as the app being broken, and a swimmer learns nothing
+         from it. Silence is the correct failure here. */
+  var SS_CAM_URL = 'https://camstills.cdn-surfline.com/ap-southeast-2/au-manlysouthsteyne/latest_small.jpg';
+  function camBlock() {
+    var now = new Date();
+    var hh = now.getHours(), ap = hh < 12 ? 'am' : 'pm', h12 = hh % 12 || 12;
+    var stamp = h12 + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes() + ap;
+    // On error the CAM BLOCK removes itself, not the whole tile — the three
+    // metrics above it are still perfectly good without a photo.
+    return '<div class="ssd-camwrap" data-camwrap>' +
+      '<img class="ssd-cam" alt="Live camera view of South Steyne, Manly" ' +
+        'src="' + SS_CAM_URL + '?t=' + Date.now() + '" ' +
+        'onerror="var w=this.closest(\'[data-camwrap]\'); if(w) w.remove();">' +
+      '<div class="ssd-swline"><span>South Steyne · Surfline</span>' +
+        '<span>as at ' + stamp + '</span></div>' +
+    '</div>';
+  }
 
   /* Copy every frame of the live swell canvas into the popup's mirror. Stops
      itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
@@ -18218,11 +18247,22 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       // Full width since the countdown tile was removed: it was the other half of
       // this row, and without it this one sat alone in a 2-column grid with a
       // column of dead space beside it.
-      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Real-time entry &amp; surge</div>' +
-           '<div class="ssd-metrow ssd-metcol">' +
+      // All three rails, then the live cam, in ONE tile: the numbers and the
+      // photograph of the same moment belong together — a swimmer reads the call
+      // and then checks it against the water without moving their eye to another
+      // card. The cam sits BELOW the metrics but INSIDE this tile, above the
+      // modelled swell map further down: a photograph is a real observation and a
+      // model must never visually outrank one (CLAUDE.md §8).
+      // Chop's readout is its steep-face height in CM, straight off result.swim.raw
+      // — the same figure the Chop rail prints, so the two cannot disagree.
+      var _chopRead = (liveRes.swim && liveRes.swim.raw != null)
+        ? (Math.round(liveRes.swim.raw * 10) / 10) + ' cm' : '';
+      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Right now at the bay</div>' +
+           '<div class="ssd-metrow ssd-met3">' +
              metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
              metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
-           '</div></div>';
+             metricCell('swim',  liveRes.swim,  _chopRead) +
+           '</div>' + camBlock() + '</div>';
     }
     if (cur) h += swellWindTile(cur, liveRes);
     /* PARKED 2026-07 — "How rare is this?" tile. Removed from the dashboard per request; deps left intact (rarityChart, pct, nowTotal). Uncomment to restore.
@@ -18293,6 +18333,13 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-dist{width:100%;display:block;margin:2px 0 0;}' +
     '.ssd-map{width:100%;max-width:300px;display:block;margin:0 auto;border-radius:8px;}' +
     '.ssd-swell{width:100%;display:block;border-radius:8px;}' +
+    // Matches the swell canvas above it. min-height holds the tile's shape while
+    // the still is in flight, so the dashboard does not jump as it lands.
+    '.ssd-cam{width:100%;display:block;border-radius:8px;background:#0e2a35;min-height:110px;object-fit:cover;}' +
+    '.ssd-camwrap{margin-top:9px;}' +
+    // Three pictograms side by side. minmax(0,1fr) so a long label can't push a
+    // column past the tile — the same clamp the app's own grids needed.
+    '.ssd-met3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}' +
     '.ssd-swline{display:flex;justify-content:space-between;gap:10px;font-size:11.5px;color:#4a5f6e;margin-top:5px;}' +
     '.ssd-metrow{display:flex;gap:10px;}' +
     '.ssd-metcol{flex-direction:column;gap:8px;}' +
