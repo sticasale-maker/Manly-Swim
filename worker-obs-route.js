@@ -14,9 +14,33 @@
 // PASTE IN THE DASHBOARD EDITOR, NOT WRANGLER: this Worker is dashboard-managed;
 // deploying from a local copy has stripped its KV binding and cron triggers before.
 //
-// ── BLOCK 1 of 2 ────────────────────────────────────────────────────────────
-// Paste this anywhere at top level — e.g. directly ABOVE the line
+// ── HOW TO APPLY THIS (checked against the deployed source, 16 Aug 2026) ────
+// /obs is ALREADY deployed and its routing line is ALREADY in the fetch handler:
+//     if (url.pathname === "/obs") return handleObs(request, env, url, ctx);
+// Do not add it again. The only thing that changes is the block below.
+//
+// worker-obs-PASTE.js in this folder is exactly that block and nothing else —
+// open it, select all, copy. In the dashboard editor select from this line:
+//     // Station whitelist. Keys MUST match OBS_STATIONS in index.html. Anything not
+// down to the closing brace of handleObs — that is the last `}` on its own line
+// before:
 //     var worker_patched_default = {
+// Delete the selection, paste, save. One selection, one paste, nothing to edit
+// by hand afterwards.
+//
+// NEVER paste a fragment of this. The deployed file is an ES module (it ends in
+// `export { worker_patched_default as default }`), so it runs in strict mode and
+// a stray assignment to an undeclared name — `OBS_HIST_MAX_H = 36` without its
+// `var` — throws a ReferenceError while the module is being evaluated. That does
+// not break the /obs route; it stops the Worker starting AT ALL, so /forecast
+// dies too and the Forecast App with it. Whole block or nothing.
+//
+// TWO CHANGES COME WITH THIS PASTE, not one. The deployed handleObs predates the
+// UA-fallback work of 13 Aug: it makes a single BOM call with one User-Agent and
+// no per-UA cacheKey. The block below has the two-attempt version. That is the
+// intended state — the deployed copy is simply behind — but it means the request
+// to BOM changes shape at the same time as `hourly` arrives, so if something
+// looks wrong afterwards, those are the two suspects.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Station whitelist. Keys MUST match OBS_STATIONS in index.html. Anything not
@@ -239,7 +263,7 @@ async function handleObs(request, env, url, ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ── BLOCK 2 of 2 ────────────────────────────────────────────────────────────
+// ── ROUTING (ALREADY DEPLOYED — recorded here, nothing to do) ────────────────
 // Inside the fetch handler, FIND this line (added when /tune was deployed):
 //
 //     if (url.pathname === "/tune") return handleTune(request, env, url, ctx);
@@ -257,50 +281,16 @@ async function handleObs(request, env, url, ctx) {
 // like the GET side of /tune. OPTIONS is already handled at the top of fetch, so
 // CORS preflight needs nothing here.
 //
-// ── VERIFY AFTER DEPLOY ─────────────────────────────────────────────────────
-//   curl "https://bold-rain-6ded.sticasale.workers.dev/obs?station=northhead"
-//     → {"station":"northhead","wmo":95768,"name":"North Head",...}   live
-//     → Not found        Block 2 is missing, or landed below the 404 fallback
-//     → "Unknown station"  Block 1 pasted but OBS_STATIONS didn't come with it
-//   NO "hourly" key in that response — that is correct, it is the nowcast shape.
-//   Then the history shape (added 16 Aug 2026):
-//   curl "https://bold-rain-6ded.sticasale.workers.dev/obs?station=northhead&hours=24"
-//     → the same body PLUS "hourly":[{"utcHour":"2026081523","kmh":..,"dir":..},…]
-//       ascending, one row per clock hour, up to 24 of them.
-//     → no "hourly" key: the OLD route is still deployed. The app degrades cleanly
-//       (past hours simply stay on the forecast wind), so this is not an outage —
-//       but it does mean the paste did not land.
-//   Then confirm the crons SURVIVED (a stripped cron is the failure mode this
-//   Worker has actually had before — see the deploy rule):
-//     Dashboard → Settings → Triggers → Cron Triggers must still list BOTH.
-// ─────────────────────────────────────────────────────────────────────────────
-
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ── UPDATING THE ALREADY-DEPLOYED ROUTE (16 Aug 2026, observed history) ──────
-//
-// /obs is already live, so this is a REPLACEMENT of one contiguous region, not a
-// set of scattered edits. worker-obs-PASTE.js in this folder is that region and
-// nothing else: no instructions, no wrapper comments, open it and copy all of it.
-//
-// In the dashboard editor, select from this line:
-//     // Station whitelist. Keys MUST match OBS_STATIONS in index.html. Anything not
-// down to the closing brace of handleObs, which is the last `}` before this line:
-//     // ── BLOCK 2 of 2 ─────────────────────────────────────────────────────
-// Delete the selection, paste the file, save.
-//
-// WHAT IT ADDS: `?hours=N` returns an `hourly` array — the observed wind folded
-// into clock hours, up to 36 h back — so the app can redraw the PAST of the
-// today-graph with what the wind actually did. Block 2's routing line is
-// unchanged and does not need re-pasting.
-//
-// ── VERIFY ──────────────────────────────────────────────────────────────────
-//   1. The old shape is untouched. This is the regression that matters: the
-//      deployed app calls the route without the param on every boot.
-//      curl -s ".../obs?station=northhead" | grep -c hourly        -> 0
-//   2. The new shape:
-//      curl -s ".../obs?station=northhead&hours=24" | grep -c hourly -> 1
-//   3. KV not crossed with the old entry: run 2 twice (the second is a KV hit),
-//      `hourly` must be present both times.
-//   4. Cron Triggers still list BOTH. This Worker has lost them to a deploy before.
-// ═════════════════════════════════════════════════════════════════════════════
+// ── VERIFY AFTER SAVING ─────────────────────────────────────────────────────
+// 1. THE REGRESSION THAT MATTERS. The deployed app calls /obs with no `hours` on
+//    every boot, and the Forecast App shares this Worker, so check the Worker is
+//    alive and the old shape is unchanged BEFORE anything else:
+//      curl -s ".../obs?station=northhead" | grep -c hourly           -> 0
+//      curl -s ".../forecast?days=5" | head -c 80                     -> JSON, not an error
+//    A 500 on either means the paste landed badly — revert to the previous
+//    version in the dashboard's deployment list, do not debug it live.
+// 2. The new shape:
+//      curl -s ".../obs?station=northhead&hours=24" | grep -c hourly  -> 1
+// 3. Run 2 twice. The second is a KV hit, and `hourly` must be there both times —
+//    that is the :v2 key doing its job.
+// 4. Cron Triggers still list BOTH. This Worker has lost them to a deploy before.
