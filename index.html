@@ -2026,6 +2026,14 @@
     font-size: clamp(9px,2.5vw,10px); color: var(--dim);
     letter-spacing: 0.3px; margin-top: 2px;
   }
+  /* Best times of the day. [hidden] needs the !important because .dw-best sets
+     display, and a bare display:block would beat the UA sheet's [hidden] rule. */
+  .dw-best {
+    display: block; font-family: 'Inter', sans-serif; font-weight: 600;
+    font-size: clamp(10px,2.9vw,12px); color: var(--ocean);
+    letter-spacing: 0.3px; margin-top: 3px;
+  }
+  .dw-best[hidden] { display: none !important; }
   .dw-nav {
     flex: none; width: 34px; height: 34px; border-radius: 9px;
     background: rgba(22,50,66,0.45); color: #c8bda0;
@@ -3328,6 +3336,9 @@
         <div class="dw-head-txt">
           <span class="dw-day" id="dayWindowDay">&mdash;</span>
           <span class="dw-sub" id="dayWindowSub">6am&ndash;8pm &middot; swipe to change day</span>
+          <!-- Best times, filled by dayBestWindows(). Hidden on the days it finds
+               nothing to say — see the three guards on that function. -->
+          <span class="dw-best" id="dayWindowBest" hidden></span>
         </div>
         <button type="button" class="dw-nav" id="dwNext" onclick="dayWindowStep(1)"
                 aria-label="Next day">&#8250;</button>
@@ -7959,21 +7970,28 @@ function renderDayWindow(dateTimeStr){
   // wgUnifiedChart with labels:'hours', so a colour, a height and a tier mean the
   // same thing whether you are reading a week or one day.
   //
-  // The best-window search that used to live here (peak detection, window growing,
-  // merging, the "Best ~ 7am-10am" line and the "Best Swim Window of the Day"
-  // heading) was removed 16 Aug 2026 along with the two labels it fed. It had no
-  // other consumer once the heat ribbon stopped drawing the boxes, and on a settled
-  // day it reported the whole 6am-8pm span as "best", which told a swimmer nothing.
-  // The three lines already show where the good hours are.
+  // The best-window search was removed on 16 Aug 2026 because on a settled day it
+  // reported the whole 6am-8pm span as "best", which told a swimmer nothing. It is
+  // back the same day as dayBestWindows(), which keeps the peak detection but adds
+  // the three guards that failure needed — red day, flat day, over-wide window —
+  // and stays silent rather than naming a best time it cannot justify.
   var edges = wgBandEdges();
   if (!edges){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
   var tsOfRow = function(r){ return new Date(String(r.dateTime).replace(' ','T')).getTime(); };
-  var E = [], U = [], Cc = [];
+  var E = [], U = [], Cc = [], pts = [];
   rows.forEach(function(r){
     var hh = parseInt(r.dateTime.substring(11,13),10);
     if (hh < DW_FROM_H || hh > DW_TO_H) return;
     var ts = tsOfRow(r); if (!isFinite(ts)) return;
     var res; try { res = calcScore(r); } catch(e){ return; }
+    // Scores (60 = best) for the best-times search, alongside the band positions
+    // (0-100, 100 = roughest) the lines are drawn from. Two scales, opposite
+    // directions — keep them straight.
+    pts.push({
+      t: ts, hhmm: r.dateTime.substring(11,16),
+      combo: wgCombo(res.entry.score, res.swim.score, res.water.score),
+      red: (res.entry.cls === 'red' || res.swim.cls === 'red' || res.water.cls === 'red')
+    });
     // Hourly, not the week chart's 4-hour worst-in-bin: a single day has room for
     // every hour, and binning here would flatten the very peaks the card exists to show.
     E.push([ts, wgPosOf(res.entry.raw, edges.E)]);
@@ -7982,7 +8000,13 @@ function renderDayWindow(dateTimeStr){
   });
   if (E.length < 2){ host.innerHTML = '<div class="wa2-empty">No 6am–8pm forecast for this day.</div>'; return; }
   var dt0 = E[0][0], dt1 = E[E.length-1][0];
-  var DW_OPT = { ns: 'dw', labels: 'hours', expand: false };
+  var bw = dayBestWindows(pts);
+  var bestEl = document.getElementById('dayWindowBest');
+  // Empty text, not a placeholder dash: on the days this stays silent there is no
+  // best time to report, and a dash would read as a missing reading rather than as
+  // "any time is much the same".
+  if (bestEl){ bestEl.textContent = bw.txt; bestEl.hidden = !bw.txt; }
+  var DW_OPT = { ns: 'dw', labels: 'hours', expand: false, best: bw.wins };
   host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
   try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
 }
@@ -10097,6 +10121,106 @@ var WA_LO = 7, WA_HI = 10;
 // both call it, so a change to the weighting can never apply to only one of them.
 function wgCombo(entry, chop, surge){ return (3*entry + 2*chop + surge) / 6; }
 
+// ── Best times of the day ───────────────────────────────────────────────────
+// Finds the stretches of a day that are meaningfully better than the rest of it,
+// for the day view's highlight. Restored 16 Aug 2026 after the original search was
+// pulled on the 16th for calling the whole 6am-8pm span "best" on a settled day.
+// Three guards fix that failure, and the first of them is a safety rule:
+//
+//  1. RED DAYS GET NO HIGHLIGHT AT ALL. If any hour is red on Entry, Chop or
+//     Surge, this returns nothing. "It's better at 10" is timing-based mitigation
+//     — the category CLAUDE.md §1 bans outright, alongside "go with a mate" and
+//     "fine if you're experienced". Deliberately ANY hour, not the day's dominant
+//     condition: the highlight would sit on the calm hours of a day that also has
+//     a red one, which is exactly the sentence we must never write. It also means
+//     a swimmer never sees a best-time badge on a day the app is warning about.
+//  2. A FLAT DAY HAS NO BEST TIME. If the day's combined score varies by less
+//     than DW_BEST_MIN_SPREAD, every hour is the same swim and naming three of
+//     them as "best" is noise. This is what shipped broken before.
+//  3. A HIGHLIGHT COVERING MOST OF THE DAY IS NOT A HIGHLIGHT. If the merged
+//     windows cover more than DW_BEST_MAX_COVER of the span, the search is RETRIED
+//     with a tighter tolerance rather than abandoned — see below.
+//
+// The tolerance is not a constant. It starts proportional to the day's own range
+// (so a day that swings 40 points and one that swings 8 both get a sensible first
+// guess) and then TIGHTENS until the result is compact enough to be worth drawing.
+// This is what turns "best 6 AM–3 PM" — ten hours, i.e. no advice at all — into the
+// three or four hours actually at the peak. Only when even the tightest pass still
+// sprawls does the day go silent, and a day like that really has no best time.
+//
+// pts: [{ t: ms, hhmm: 'HH:MM', combo: 0-60 (higher = better), red: bool }], time-ordered.
+var DW_BEST_TOL_MAX    = 6;     // widest tolerance below the day's peak, in score points
+var DW_BEST_MIN_SPREAD = 5;     // a day flatter than this has no best time
+var DW_BEST_MAX_COVER  = 0.5;   // fraction of the day above which a highlight means nothing
+var DW_BEST_TOL_STEPS  = [0.35, 0.25, 0.18, 0.12, 0.08];   // fractions of the day's spread
+function dayBestWindows(pts){
+  var out = { wins: [], txt: '' };
+  if (!pts || pts.length < 3) return out;
+  if (pts.some(function(p){ return p.red; })) return out;          // guard 1 — safety
+
+  var vals = pts.map(function(p){ return p.combo; });
+  var hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
+  var spread = hi - lo;
+  if (spread < DW_BEST_MIN_SPREAD) return out;                     // guard 2
+
+  // One pass at a given tolerance: local maxima at or above the floor, each grown
+  // outwards while the score holds above it. Overlapping or touching windows merge,
+  // so one broad good stretch is reported as a single window, not as its bumps.
+  function search(tol){
+    var floor = hi - tol, peaks = [];
+    vals.forEach(function(v, i){
+      if (v < floor) return;
+      if (i > 0 && vals[i-1] > v) return;
+      if (i < vals.length-1 && vals[i+1] > v) return;
+      peaks.push(i);
+    });
+    if (!peaks.length) return null;
+
+    var merged = [];
+    peaks.map(function(pk){
+      var a = pk, b = pk;
+      while (a-1 >= 0 && vals[a-1] >= floor) a--;
+      while (b+1 < vals.length && vals[b+1] >= floor) b++;
+      return { lo:a, hi:b };
+    }).sort(function(x,y){ return x.lo - y.lo; }).forEach(function(w){
+      var last = merged[merged.length-1];
+      if (last && w.lo <= last.hi + 1) last.hi = Math.max(last.hi, w.hi);
+      else merged.push({ lo:w.lo, hi:w.hi });
+    });
+
+    // A lone reading sitting beside a real stretch is a blip, usually the last hour
+    // of a rising tail caught as an endpoint "peak". Drop the singletons whenever
+    // something broader survived; a day whose windows are ALL single readings keeps
+    // them, because then that is genuinely the shape of the day.
+    if (merged.some(function(w){ return w.hi > w.lo; }))
+      merged = merged.filter(function(w){ return w.hi > w.lo; });
+
+    if (merged.length > 3){                                        // keep the three strongest
+      merged.forEach(function(w){ var p = -1; for (var i = w.lo; i <= w.hi; i++) p = Math.max(p, vals[i]); w.peak = p; });
+      merged = merged.sort(function(x,y){ return y.peak - x.peak; }).slice(0,3).sort(function(x,y){ return x.lo - y.lo; });
+    }
+    var covered = merged.reduce(function(n, w){ return n + (w.hi - w.lo + 1); }, 0);
+    return { wins: merged, cover: covered / pts.length };
+  }
+
+  var merged = null;
+  for (var si = 0; si < DW_BEST_TOL_STEPS.length; si++){
+    var r = search(Math.min(DW_BEST_TOL_MAX, spread * DW_BEST_TOL_STEPS[si]));
+    if (r && r.cover <= DW_BEST_MAX_COVER){ merged = r.wins; break; }   // guard 3
+  }
+  if (!merged || !merged.length) return out;
+
+  // Half a step of padding each side, so a one-reading window still draws as a
+  // band instead of a zero-width line.
+  var half = (pts[pts.length-1].t - pts[0].t) / Math.max(1, pts.length - 1) / 2;
+  out.wins = merged.map(function(w){ return { a: pts[w.lo].t - half, b: pts[w.hi].t + half }; });
+  out.txt  = (merged.length > 1 ? 'Best: ' : 'Best ≈ ') + merged.map(function(w){
+    return (w.lo === w.hi) ? _wgFmt(pts[w.lo].hhmm)
+                           : (_wgFmt(pts[w.lo].hhmm) + '–' + _wgFmt(pts[w.hi].hhmm));
+  }).join('  ·  ');
+  return out;
+}
+
 // ── Metric line colours + weights (Week Ahead AND the day view) ─────────────
 // ENTRY is the metric that decides whether you can get in, so it must read as the
 // primary line. That is carried by WEIGHT and DARKNESS, not by an exciting hue —
@@ -10309,6 +10433,18 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
   // competed and no line could clear 3:1 contrast. The bands are a reference scale,
   // not a series — they should recede. Every line clears contrast at 0.62.
   s += '<rect x="0" y="' + yTop + '" width="' + W + '" height="' + bandsH + '" fill="#ffffff" fill-opacity="0.62"/>';
+  // Best-times highlight. opt.best is a list of {a,b} ms ranges found by
+  // dayBestWindows(); this function only draws them, and draws nothing when the
+  // list is empty (a flat day, or a day with a red hour — see dayBestWindows).
+  // Painted over the band wash but UNDER the grid and the three lines, so it reads
+  // as a region of the background rather than as a fourth series. Ink, not cream:
+  // WG_BOX is designed for the dark ribbon and vanishes on this pale wash.
+  var best = '';
+  (opt.best || []).forEach(function(w){
+    var bx = xAt(Math.max(w.a, t0)), bw = Math.max(4, xAt(Math.min(w.b, t1)) - bx);
+    best += '<rect x="' + bx.toFixed(1) + '" y="' + yTop + '" width="' + bw.toFixed(1) + '" height="' + bandsH + '" fill="#0a2230" fill-opacity="0.07"/>'
+          + '<rect x="' + bx.toFixed(1) + '" y="' + (yTop + 0.75) + '" width="' + bw.toFixed(1) + '" height="' + (bandsH - 1.5) + '" fill="none" stroke="#0a2230" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="5 3"/>';
+  });
   var grid = '', labels = '', dayMs = 86400000;
   if (LB === 'hours'){
     // Day view: gridline + clock tick every 3h across the 6am-8pm span. Same ink and
@@ -10345,7 +10481,7 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
     + '</g>';
   var aria = (LB === 'hours') ? 'Day view — drag to read any time' : 'Week ahead — drag to read any time';
   var svg = '<svg id="' + ns + 'UniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="' + aria + '" aria-valuemin="0" aria-valuemax="100">'
-    + s + grid + lines + scr + labels + tier + '</svg>';
+    + s + best + grid + lines + scr + labels + tier + '</svg>';
   var readout = '<div class="wa2-scrub-read" id="' + ns + 'ScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
   // Expand control. A SIBLING of the svg, not a child: the svg owns pointerdown for
   // the scrubber, so a button inside it would place the scrub line on every press.
@@ -16344,7 +16480,16 @@ if ('serviceWorker' in navigator) {
       if (s.core) { var tag = document.createElement('span'); tag.className = 'lock-tag'; tag.textContent = 'always'; row.appendChild(tag); }
       else cb.addEventListener('change', function () {
         var map = getCustom(); map[s.key] = cb.checked ? 1 : 0; saveCustom(map);
-        if (getMode() === 'custom') apply('custom');
+        // Ticking a box in this list IS choosing Custom, so switch the mode if the
+        // device is still on Complete. Until 'dayview' every section was complete:1,
+        // so a tick while in Complete changed nothing on screen and the dead control
+        // went unnoticed for months. dayview is the first section that is ON ONLY IN
+        // CUSTOM, and there the old behaviour saved the preference and showed nothing
+        // — the swimmer ticks "Day view", the card stays hidden, the app looks broken.
+        // setMode re-reads the map saved on the line above, so the fresh tick is the
+        // value that gets frozen.
+        if (getMode() !== 'custom') setMode('custom');
+        else apply('custom');
       });
       list.appendChild(row);
     });
