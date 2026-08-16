@@ -2027,6 +2027,19 @@
     letter-spacing: 0.3px; margin-top: 2px;
   }
   .dw-svg { width: 100%; height: auto; display: block; }
+  /* Ribbon ink, via CSS tokens rather than the cream literals the drawing code used.
+     Those literals (#c8bda0 row labels, WG_INK ticks, WG_BOX window box) were chosen
+     for the DARK Week Ahead strip. This card is var(--card), which on the sand theme
+     is #c8bda0 itself — the row names were being painted in the card's own colour and
+     were invisible. --deep/--dim/--card flip with the theme, so both themes stay legible.
+     CSS beats SVG presentation attributes, so these win wherever they are applied. */
+  .dw-svg .dw-lab   { fill: var(--deep); }
+  .dw-svg .dw-tick  { fill: var(--dim); }
+  .dw-svg .dw-caret { fill: var(--deep); }
+  .dw-svg .dw-box   { stroke: var(--deep); }
+  .dw-svg .dw-wash  { fill: var(--deep); }
+  .dw-svg .dw-badge { fill: var(--deep); }
+  .dw-svg .dw-bnum  { fill: var(--card); }   /* numeral sits ON the badge, so use the surface */
   /* Best times, under the ribbon. [hidden] needs the !important because .dw-best
      sets display, and a bare display:block beats the UA sheet's [hidden] rule. */
   .dw-best {
@@ -7973,7 +7986,7 @@ function renderDayWindow(dateTimeStr){
   try { dayWindowChrome(day); initDayWindowSwipe(); } catch (e) { /* cosmetic; never block the ribbon */ }
   function bail(msg){
     svg.setAttribute('viewBox', '0 0 360 70');
-    svg.innerHTML = msg ? '<text x="180" y="40" text-anchor="middle" font-size="12" fill="' + WG_INK + '">' + msg + '</text>' : '';
+    svg.innerHTML = msg ? '<text class="dw-tick" x="180" y="40" text-anchor="middle" font-size="12">' + msg + '</text>' : '';
     if (bestEl) bestEl.hidden = true;
   }
   if (!day || !_matrix || !_matrix.length){ bail(''); return; }
@@ -8030,7 +8043,7 @@ function renderDayWindow(dateTimeStr){
   var cells = '', labels = '';
   ROWS.forEach(function(row, r){
     var ry = top + r*(rowH + gap);
-    labels += '<text x="6" y="'+(ry + rowH/2 + 4)+'" font-size="12" font-weight="600" fill="#c8bda0">'+row[0]+'</text>';
+    labels += '<text class="dw-lab" x="6" y="'+(ry + rowH/2 + 4)+'" font-size="12" font-weight="600">'+row[0]+'</text>';
     pts.forEach(function(p, i){
       // Chop is wind-driven; with no wind data (swell-only outlook) leave the middle
       // row blank rather than colour a meaningless value. CLAUDE.md section 8: absent
@@ -8046,7 +8059,7 @@ function renderDayWindow(dateTimeStr){
   pts.forEach(function(p, i){
     var hh = Math.round(p.t);
     if (Math.abs(p.t - hh) > 0.01 || hh % 3 !== 0) return;
-    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 16)+'" font-size="11" font-weight="600" fill="'+WG_INK+'" text-anchor="middle">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
+    ticks += '<text x="'+(L + i*cellW + cellW/2).toFixed(1)+'" y="'+(ribH + 16)+'" font-size="11" font-weight="600" text-anchor="middle" class="dw-tick">'+((hh%12)||12)+(hh<12?'a':'p')+'</text>';
   });
 
   // Best-window box(es) — bold outline + soft fill wash + index badge when plural
@@ -8054,12 +8067,12 @@ function renderDayWindow(dateTimeStr){
   merged.forEach(function(w, wi){
     var bx = L + w.lo*cellW, bw2 = (w.hi - w.lo + 1)*cellW;
     var by = top - 4, bh = 3*rowH + 2*gap + 8;
-    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw2+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="'+WG_BOX+'" fill-opacity="0.07"/>';
-    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw2+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" stroke="'+WG_BOX+'" stroke-width="2.5" stroke-dasharray="5 3"/>';
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw2+1).toFixed(1)+'" height="'+bh+'" rx="5" class="dw-wash" fill-opacity="0.10"/>';
+    box += '<rect x="'+(bx-1.5).toFixed(1)+'" y="'+by+'" width="'+(bw2+1).toFixed(1)+'" height="'+bh+'" rx="5" fill="none" class="dw-box" stroke-width="2.5" stroke-dasharray="5 3"/>';
     if (plural){
       var bcx = bx + (bw2+1)/2;
-      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-8)+'" r="8" fill="'+WG_BOX+'"/>';
-      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-4.5)+'" font-size="10" font-weight="700" fill="#113541" text-anchor="middle">'+(wi+1)+'</text>';
+      box += '<circle cx="'+bcx.toFixed(1)+'" cy="'+(by-8)+'" r="8" class="dw-badge"/>';
+      box += '<text x="'+bcx.toFixed(1)+'" y="'+(by-4.5)+'" font-size="10" font-weight="700" text-anchor="middle" class="dw-bnum">'+(wi+1)+'</text>';
     }
   });
 
@@ -8070,7 +8083,7 @@ function renderDayWindow(dateTimeStr){
   var caret = '';
   if (nowIdx >= 0 && nowH >= DW_FROM_H && nowH <= DW_TO_H){
     var cx = L + nowIdx*cellW + cellW/2;
-    caret = '<path d="M'+(cx-4).toFixed(1)+' '+(top-4)+' L'+(cx+4).toFixed(1)+' '+(top-4)+' L'+cx.toFixed(1)+' '+(top+1)+' Z" fill="#c8bda0"/>';
+    caret = '<path d="M'+(cx-4).toFixed(1)+' '+(top-4)+' L'+(cx+4).toFixed(1)+' '+(top-4)+' L'+cx.toFixed(1)+' '+(top+1)+' Z" class="dw-caret"/>';
   }
 
   svg.innerHTML = cells + box + caret + labels + ticks;
@@ -16435,7 +16448,7 @@ if ('serviceWorker' in navigator) {
     // 'daywindow' — a device that used the pre-14-Aug card still carries
     // daywindow:1 in its saved CUSTOM_KEY map, and reusing the key would switch the
     // card on for exactly the people who never asked for it back.
-    { key:'dayview', label:"Day view (hour-by-hour Entry/Chop/Surge)", sel:'#dayWindowCard', complete:0, custom:0 },
+    { key:'dayview', label:"Day View Matrix", sel:'#dayWindowCard', complete:0, custom:0 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
