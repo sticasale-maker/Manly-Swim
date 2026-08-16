@@ -2086,6 +2086,16 @@
     font-size: clamp(9px,2.5vw,10px); color: var(--dim);
     letter-spacing: 0.3px; margin-top: 2px;
   }
+  /* Day + scrubbed time on one line. The time used to sit under the chart on a
+     row of its own (.wa2-scrub-t), which cost a whole row for four characters. */
+  .dw-title-row { display: flex; align-items: baseline; gap: 9px; justify-content: center; flex-wrap: wrap; }
+  .dw-head-time {
+    font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px;
+    font-size: clamp(15px,4.4vw,19px); color: var(--ocean); white-space: nowrap;
+  }
+  /* The in-card time row is now redundant — but it is kept in the DOM because the
+     fullscreen layer has no card header to read the time from. */
+  .dw-card .wa2-scrub-t { display: none; }
   .dw-svg { width: 100%; height: auto; display: block; }
   /* Ribbon ink, via CSS tokens rather than the cream literals the drawing code used.
      Those literals (#c8bda0 row labels, WG_INK ticks, WG_BOX window box) were chosen
@@ -3454,7 +3464,13 @@
         <button type="button" class="dw-nav dw-prev" onclick="dayWindowStep(-1)"
                 aria-label="Previous day (back towards today)">&#8249;</button>
         <div class="dw-head-txt">
-          <span class="dw-day">&mdash;</span>
+          <span class="dw-title-row">
+            <span class="dw-day">&mdash;</span>
+            <!-- Scrubbed time, beside the day rather than on its own line under the
+                 chart — same move as the Week Ahead header. initWeekScrubber fills
+                 <ns>HeadTime, and this card runs with ns='dw'. -->
+            <span class="dw-head-time" id="dwHeadTime">&mdash;</span>
+          </span>
           <span class="dw-sub" id="dayLinesSub">6am&ndash;8pm &middot; swipe to change day</span>
         </div>
         <button type="button" class="dw-nav dw-next" onclick="dayWindowStep(1)"
@@ -10782,12 +10798,12 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
   // and the three lines, so it reads as a region of the background rather than a
   // fourth series. Ink, not WG_BOX cream: cream was picked for the dark ribbon and
   // disappears on this pale wash.
+  // Best-window highlight REMOVED 2026-08-16: the dashed boxes read as a second
+  // chart drawn over the first, and on a pale wash the dashes fought the three
+  // lines they were meant to frame. opt.best is still accepted and still computed
+  // by renderDayLines (dayBestWindows) so nothing upstream breaks — it is simply
+  // not drawn. Delete that computation too if it stays unused.
   var best = '';
-  (opt.best || []).forEach(function(w){
-    var bx = xAt(Math.max(w.a, t0)), bw = Math.max(4, xAt(Math.min(w.b, t1)) - bx);
-    best += '<rect x="' + bx.toFixed(1) + '" y="' + yTop + '" width="' + bw.toFixed(1) + '" height="' + bandsH + '" fill="#0a2230" fill-opacity="0.07"/>'
-          + '<rect x="' + bx.toFixed(1) + '" y="' + (yTop + 0.75) + '" width="' + bw.toFixed(1) + '" height="' + (bandsH - 1.5) + '" fill="none" stroke="#0a2230" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="5 3"/>';
-  });
   var grid = '', labels = '', dayMs = 86400000;
   if (LB === 'hours'){
     // Day view: gridline + clock tick every 3h across the 6am-8pm span. Same ink and
