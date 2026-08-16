@@ -356,6 +356,49 @@
   .metric-header {
     display:flex; align-items:baseline; gap:8px;
   }
+  /* ── The answer line ── the call itself, above the three rails.
+     Colour comes from the SAME class names the metric blocks use (green /
+     yellow / orange / red), so the line and the rail it is describing can never
+     disagree about which band they are in. Deliberately quiet furniture: no
+     background fill on a good day, because the whole point is that a good day
+     needs no announcement. */
+  .answer-line {
+    font-family:'Bebas Neue',sans-serif;
+    font-size:clamp(19px,5.4vw,25px); letter-spacing:1.1px; line-height:1.12;
+    color:var(--deep); text-transform:uppercase;
+    padding:9px 12px; margin-bottom:8px;
+    border-radius:10px; border:1px solid transparent;
+    background:rgba(255,255,255,0.42);
+  }
+  .answer-line .al-driver { text-transform:uppercase; }
+  .answer-line.green  { border-color:rgba(43,67,71,0.30); }
+  .answer-line.yellow { border-color:rgba(224,124,42,0.55); background:rgba(255,255,255,0.62); }
+  .answer-line.orange { border-color:rgba(200,100,20,0.60); background:rgba(255,255,255,0.62); }
+  .answer-line.red    { border-color:rgba(192,57,43,0.70); background:rgba(255,255,255,0.72); }
+  .answer-line.green  .al-driver { color:var(--green); }
+  .answer-line.yellow .al-driver { color:var(--yellow); }
+  .answer-line.orange .al-driver { color:#c86414; }
+  .answer-line.red    .al-driver { color:var(--red); }
+  /* The site-check sentence is prose, not a label — it must stay readable as a
+     sentence rather than being shouted in Bebas caps like the rest of the line. */
+  .answer-line .al-site {
+    display:block; margin-top:5px;
+    font-family:'Inter',sans-serif; font-weight:600;
+    font-size:13px; letter-spacing:0.2px; line-height:1.4;
+    text-transform:none; color:var(--red);
+  }
+  /* Marks the rail that set the day. Sits inside .metric-name, which is why it
+     has to reset the Bebas letter-spacing it inherits. */
+  .metric-setby {
+    font-family:'Inter',sans-serif; font-weight:600;
+    font-size:9.5px; letter-spacing:0.4px; text-transform:uppercase;
+    border:1px solid currentColor; border-radius:20px;
+    padding:1px 6px; margin-left:6px; vertical-align:2px; opacity:0.85;
+  }
+  /* Non-binding rails step back. Opacity alone is not an accessible signal, so
+     it is only ever the SECOND cue — the tag above is the first. */
+  .metric-block.metric-quiet { opacity:0.62; }
+
   .metric-name {
     font-family:'Bebas Neue',sans-serif;
     font-size:22px; letter-spacing:2px; text-transform:uppercase;
@@ -3047,6 +3090,12 @@
       </div>
       <!-- Compact conditions line under the day header: verdict + weather + feels + "what to expect".
            The whole row taps through to the news (openNews). Keeps every id the JS drives. -->
+      <!-- THE ANSWER LINE. #verdictBar below is a button that opens The Oracle,
+           so this is a SIBLING above it, not a child — nesting it would make the
+           verdict itself a tap target for the news modal. Filled by
+           renderAnswerLine() from swimVerdict(); hidden until it has content so
+           a failed render degrades to exactly the old layout. -->
+      <div class="answer-line" id="answerLine" hidden></div>
       <div class="cond-strip" id="verdictBar" role="button" tabindex="0"
            onclick="openNews()"
            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNews();}"
@@ -9113,6 +9162,79 @@ function renderBluebottleForecast(h){
   }
 }
 
+// ── The answer line ─────────────────────────────────────────────────────────
+// One sentence above the rails naming the call and the metric that set it. It
+// derives NOTHING: swimVerdict() is the same function _bannerFacts uses, and the
+// band labels come from the result object the three blocks were just rendered
+// from. On a dangerous day it prints facts.siteCheck VERBATIM and never a
+// flattened "do not swim" — see CLAUDE.md §1; that phrasing is what the Worker's
+// own validator rejects, and it would be wrong anyway (a red entry off South
+// Steyne means try the sheltered ways in, not that the bay is shut).
+function renderAnswerLine(result) {
+  const el = document.getElementById('answerLine');
+  if (!el || !result) return;
+
+  const v = swimVerdict(result.entry.label, result.swim.label, result.water.label);
+
+  // Mark the rail(s) that set the day and step the others back. Done here rather
+  // than in setMetric so the tag and the sentence are written from one decision.
+  const blocks = { entry: 'metricEntry', swim: 'metricSwim', surge: 'metricSurge' };
+  const driving = new Set(v.setBy.map(s => s.key));
+  Object.keys(blocks).forEach(k => {
+    const b = document.getElementById(blocks[k]);
+    if (!b) return;
+    const nameEl = b.querySelector('.metric-name');
+    const old = nameEl && nameEl.querySelector('.metric-setby');
+    if (old) old.remove();
+    // Nothing is dimmed and nothing is tagged on a good day, or on a day where
+    // all three agree — a tag that appears every morning stops being a signal.
+    const mark = driving.has(k) && driving.size < 3 && v.safetyLevel !== 'good';
+    b.classList.toggle('metric-quiet', driving.size < 3 && v.safetyLevel !== 'good' && !driving.has(k));
+    if (mark && nameEl) {
+      const tag = document.createElement('span');
+      tag.className = 'metric-setby';
+      tag.textContent = 'setting today';
+      nameEl.appendChild(tag);
+    }
+  });
+
+  if (v.safetyLevel === 'good') {
+    // A good day needs no headline. Saying "GOOD" every morning trains people to
+    // stop reading the line, so it is only there when it is carrying information.
+    el.hidden = true;
+    el.className = 'answer-line';
+    el.textContent = '';
+    return;
+  }
+
+  const cls = v.safetyLevel === 'dangerous' ? 'red' : 'yellow';
+  const words = v.setBy.map(s => s.word);
+  const drivers = words.length > 1
+    ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1]
+    : words[0];
+  const verb = words.length > 1 ? 'are' : 'is';
+  const head = v.safetyLevel === 'dangerous' ? 'Rough' : 'Caution';
+
+  // Built as nodes with textContent rather than an innerHTML string: there is no
+  // global esc() in this scope, and a verdict surface is the last place to start
+  // concatenating markup.
+  el.className = 'answer-line ' + cls;
+  el.textContent = head + ' — ';
+  const drv = document.createElement('span');
+  drv.className = 'al-driver';
+  drv.textContent = drivers;
+  el.appendChild(drv);
+  el.appendChild(document.createTextNode(' ' + verb + ' what’s setting it'));
+  // VERBATIM. Do not summarise, truncate or re-word this string.
+  if (v.siteCheck) {
+    const site = document.createElement('span');
+    site.className = 'al-site';
+    site.textContent = v.siteCheck;
+    el.appendChild(site);
+  }
+  el.hidden = false;
+}
+
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) {
     diag('renderSnapshot BAILED — ' + (!h ? 'no row object' : 'row has no dateTime'));
@@ -9362,6 +9484,10 @@ function renderSnapshot(h, wx) {
     setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _entryBreakH.toFixed(1) + ' m at the ramp');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, bayH.toFixed(1) + ' m in the bay');
+    // The call itself, from the labels these three blocks just rendered — so the
+    // line is always describing the slot on screen. Isolated: a throw here must
+    // never blank the rails.
+    try { renderAnswerLine(result); } catch (e) { console.warn('answer line:', e.message); }
     // ?tune=1 — mirror the three derived heights into the inputs box (guarded no-op otherwise)
     const gt = id => document.getElementById(id);
     if (gt('tw-out-ramp')) {
@@ -13605,6 +13731,42 @@ function runCalibration() {
 // CONDITIONS BANNER — AI-generated summary
 // =============================================================================
 let _bannerGenerated = false;
+
+// ── THE VERDICT, DERIVED ONCE ───────────────────────────────────────────────
+// safetyLevel + siteCheck used to be computed inline inside _bannerFacts. The
+// answer line above the rails needs exactly the same two values, and CLAUDE.md
+// §1 is explicit that a surface which RE-derives them becomes a fifth copy that
+// drifts silently (the rule already lives in the local baseline, the client
+// summaryConflict, the Worker SWIMSUM_SYS and the Worker validator). So the
+// logic lives here, and _bannerFacts + the answer line are both callers.
+//
+// `setBy` is the new part: which metric actually put the day in its tier. It is
+// read straight off the SAME conditions, so it can never disagree with the level
+// it explains. Multiple metrics can qualify — all of them are named.
+function swimVerdict(entryLabel, swimLabel, surgeLabel) {
+  const dangerous = [];
+  if (entryLabel === 'Dangerous') dangerous.push({ key: 'entry', word: 'entry' });
+  if (surgeLabel === 'Washy')     dangerous.push({ key: 'surge', word: 'surge' });
+  if (swimLabel  === 'Messy')     dangerous.push({ key: 'swim',  word: 'chop'  });
+
+  const caution = [];
+  if (entryLabel === 'Caution') caution.push({ key: 'entry', word: 'entry' });
+  if (surgeLabel === 'Surgy')   caution.push({ key: 'surge', word: 'surge' });
+  if (swimLabel  === 'Choppy')  caution.push({ key: 'swim',  word: 'chop'  });
+
+  const level = dangerous.length ? 'dangerous' : caution.length ? 'caution' : 'good';
+  return {
+    safetyLevel: level,
+    setBy: level === 'dangerous' ? dangerous : level === 'caution' ? caution : [],
+    // A Dangerous ENTRY is the only thing that produces a site check: it is a
+    // statement about how you get in off South Steyne, not about the whole bay.
+    // Washy surge only narrows WHICH sheltered way in — it does not create one.
+    siteCheck: entryLabel === 'Dangerous'
+      ? (surgeLabel === 'Washy' ? 'check on site for entry at Shelly Beach'
+                                : 'check on site for entry at Bower Lane or Shelly Beach')
+      : null
+  };
+}
 let _bannerWaterBase = '';
 let _bannerFacts = null;
 
@@ -14203,10 +14365,14 @@ async function generateBannerSummaryLocal() {
     waterText = waterText.replace(/\btoday\b/g, 'this afternoon');
   }
 
-  // Water icon
+  // The one derivation of the verdict, shared by the icon below, _bannerFacts
+  // further down, and the answer line above the rails.
+  const _sv = swimVerdict(domEntry, domSwim, domSurge);
+
+  // Water icon — was a verbatim copy of the safetyLevel expression, now reads it.
   document.getElementById('banner-water-icon').textContent =
-    domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy' ? '⚠️' :
-    domEntry === 'Caution'   || domSurge === 'Surgy' || domSwim === 'Choppy' ? '🏄' : '🏊';
+    _sv.safetyLevel === 'dangerous' ? '⚠️' :
+    _sv.safetyLevel === 'caution'   ? '🏄' : '🏊';
 
   // Oceanside = the true out-the-back / OFFSHORE swell, read from the stashed
   // WillyWeather snapshot `_ww` \u2014 the SAME source the "Oceanside" row on the swell
@@ -14247,18 +14413,16 @@ async function generateBannerSummaryLocal() {
     timeCtx: timeCtx,
     dayPhrase: dayPhrase,
     verdict: { entry: domEntry, swim: domSwim, surge: domSurge },
-    safetyLevel: (domEntry === 'Dangerous' || domSwim === 'Messy' || domSurge === 'Washy') ? 'dangerous'
-               : (domEntry === 'Caution' || domSurge === 'Surgy' || domSwim === 'Choppy') ? 'caution' : 'good',
-    // Computed HERE, not left to the summariser to derive from the verdicts. The
-    // rule is a small piece of local knowledge (a red entry off South Steyne does
-    // not mean the bay is shut — it means try the sheltered ways in, and which one
-    // depends on the surge), and an LLM asked to infer it would eventually get the
-    // Bower Lane / Shelly split backwards. The Worker echoes this string verbatim
+    // safetyLevel and siteCheck both come from swimVerdict() — the single
+    // derivation shared with the answer line above the rails. They used to be
+    // inlined here; two copies of this rule is exactly what CLAUDE.md §1 forbids.
+    // siteCheck is still computed on OUR side rather than left to the summariser:
+    // a red entry off South Steyne does not mean the bay is shut, it means try the
+    // sheltered ways in, and an LLM asked to infer that would eventually get the
+    // Bower Lane / Shelly split backwards. The Worker echoes the string verbatim
     // and its validator rejects any draft that omits it.
-    siteCheck: domEntry === 'Dangerous'
-      ? (domSurge === 'Washy' ? 'check on site for entry at Shelly Beach'
-                              : 'check on site for entry at Bower Lane or Shelly Beach')
-      : null,
+    safetyLevel: _sv.safetyLevel,
+    siteCheck:   _sv.siteCheck,
     weather: {
       sky: wxInfo.desc, tempRange: tempRange || '', feelsLike: avgFeel,
       windChill: windChill, windKmh: avgWind, windDir: dominantWindDir,
