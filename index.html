@@ -17900,6 +17900,86 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     })();
   }
 
+  /* ---- Air quality, Manly against the world's dirtiest air ----------------
+     One Open-Meteo air-quality call covers every city at once (the API takes
+     comma-separated lat/lon lists), so this is a single request, free, no key.
+
+     The CANDIDATE list is curated — polling the whole world to find today's true
+     worst five would be hundreds of requests — but the RANKING is live, and that
+     matters: on the day this was written Dhaka came in cleaner than Cairo and
+     barely above Manly, so a hard-coded league table would already have been
+     lying. We fetch the candidates, sort by today's actual PM2.5, and show the
+     worst five next to us.
+
+     Framing is deliberately factual, not gloating: these are real places where
+     people are breathing this. The tile states numbers and the WHO guideline and
+     leaves the reader to draw the conclusion. */
+  var AIRQ_CITIES = [
+    { n: 'Manly',      lat: -33.79, lon: 151.29, home: true },
+    { n: 'Delhi',      lat:  28.61, lon:  77.21 },
+    { n: 'Lahore',     lat:  31.55, lon:  74.34 },
+    { n: 'Dhaka',      lat:  23.81, lon:  90.41 },
+    { n: 'Cairo',      lat:  30.05, lon:  31.23 },
+    { n: 'Jakarta',    lat:  -6.21, lon: 106.85 },
+    { n: 'Beijing',    lat:  39.90, lon: 116.41 },
+    { n: 'Karachi',    lat:  24.86, lon:  67.01 },
+    { n: 'Kolkata',    lat:  22.57, lon:  88.36 },
+    { n: 'Hanoi',      lat:  21.03, lon: 105.85 },
+    { n: 'Kathmandu',  lat:  27.72, lon:  85.32 },
+    { n: 'Santiago',   lat: -33.46, lon: -70.65 }
+  ];
+  var WHO_PM25_DAILY = 15;          // WHO 2021 24-hour guideline, µg/m³
+  var _airQ = null, _airTried = false;
+  function fetchAirQ(cb) {
+    if (_airTried) return;
+    _airTried = true;
+    var lats = AIRQ_CITIES.map(function (c) { return c.lat; }).join(',');
+    var lons = AIRQ_CITIES.map(function (c) { return c.lon; }).join(',');
+    fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=' + lats +
+          '&longitude=' + lons + '&current=pm2_5,european_aqi&timezone=UTC')
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        // Multi-location returns an ARRAY, one entry per coordinate, in order.
+        var arr = Array.isArray(j) ? j : [j];
+        var out = [];
+        for (var i = 0; i < AIRQ_CITIES.length && i < arr.length; i++) {
+          var c = (arr[i] && arr[i].current) || {};
+          if (c.pm2_5 == null) continue;
+          out.push({ n: AIRQ_CITIES[i].n, home: !!AIRQ_CITIES[i].home,
+                     pm: c.pm2_5, aqi: c.european_aqi });
+        }
+        if (out.length >= 3) _airQ = out;
+        if (cb) cb();
+      }).catch(function () { if (cb) cb(); });
+  }
+
+  function airQTile() {
+    if (!_airQ) return '';                       // silent until it lands; fill() re-runs
+    var home = null, rest = [];
+    _airQ.forEach(function (c) { if (c.home) home = c; else rest.push(c); });
+    if (!home) return '';
+    rest.sort(function (a, b) { return b.pm - a.pm; });
+    var worst = rest.slice(0, 5);
+    var mx = Math.max.apply(null, worst.map(function (c) { return c.pm; }).concat([home.pm, 1]));
+    var col = function (pm) {
+      return pm <= WHO_PM25_DAILY ? '#2f9e63' : pm <= 35 ? '#d9a11e' : pm <= 75 ? '#e07b39' : '#c0392b';
+    };
+    var bar = function (c) {
+      var w = Math.max(2, (c.pm / mx) * 100);
+      return '<div class="ssd-aqrow' + (c.home ? ' ssd-aqhome' : '') + '">' +
+        '<span class="ssd-aqn">' + c.n + '</span>' +
+        '<span class="ssd-aqtrack"><span class="ssd-aqbar" style="width:' + w.toFixed(1) + '%;background:' + col(c.pm) + '"></span></span>' +
+        '<span class="ssd-aqv" style="color:' + col(c.pm) + '">' + Math.round(c.pm) + '</span>' +
+      '</div>';
+    };
+    var times = home.pm > 0 ? (worst[0].pm / home.pm) : 0;
+    return '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌏 The air you are breathing</div>' +
+      bar(home) + worst.map(bar).join('') +
+      '<div class="ssd-sub">PM2.5 µg/m³ right now · WHO guideline is ' + WHO_PM25_DAILY +
+        (times >= 2 ? ' · ' + worst[0].n + ' is breathing ' + times.toFixed(times < 10 ? 1 : 0) + '× what we are' : '') +
+      '</div></div>';
+  }
+
   /* live past-7-day rainfall (mm) — one fetch per session, re-fills on arrival */
   var _rainWk = null, _rainTried = false;
   function fetchRainWk(cb) {
@@ -18288,6 +18368,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🌡️ Today versus a normal ' + MONTHS[m] + '</div>' + anoms +
            '<div class="ssd-note">' + noteBits.join(' · ') + '</div></div>';
     }
+    // Directly under the normals tile, per request. Renders nothing until the
+    // air-quality fetch lands, then fill() repaints — same contract as the rain.
+    h += airQTile();
     h += '</div>';
     return h;
   }
@@ -18314,6 +18397,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (sc.innerHTML.indexOf('[[STORM_STATS]]') === -1) return;
       sc.innerHTML = sc.innerHTML.split('[[STORM_STATS]]').join('<div class="ssd" data-ssd></div>');
       fetchRainWk(function () { if (document.body.contains(sc)) fill(sc); });
+      fetchAirQ(function ()  { if (document.body.contains(sc)) fill(sc); });
       fill(sc);
     } catch (e) {}
   };
@@ -18339,6 +18423,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // the still is in flight, so the dashboard does not jump as it lands.
     '.ssd-cam{width:100%;display:block;border-radius:8px;background:#0e2a35;min-height:110px;object-fit:cover;}' +
     '.ssd-camwrap{margin-top:9px;}' +
+    // Air-quality league table. Home row is emphasised rather than recoloured, so
+    // the bar colours keep meaning WHO band and nothing else.
+    '.ssd-aqrow{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px;}' +
+    '.ssd-aqn{flex:0 0 62px;color:#4a5f6e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+    '.ssd-aqtrack{flex:1;height:9px;background:rgba(17,53,65,0.08);border-radius:5px;overflow:hidden;}' +
+    '.ssd-aqbar{display:block;height:100%;border-radius:5px;}' +
+    '.ssd-aqv{flex:0 0 30px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;}' +
+    '.ssd-aqhome .ssd-aqn{color:#113541;font-weight:700;}' +
+    '.ssd-aqhome{padding-bottom:5px;margin-bottom:5px;border-bottom:1px solid rgba(17,53,65,0.12);}' +
     // Three pictograms side by side. minmax(0,1fr) so a long label can't push a
     // column past the tile — the same clamp the app's own grids needed.
     '.ssd-met3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}' +
