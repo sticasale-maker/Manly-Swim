@@ -3315,8 +3315,10 @@
     <!-- DAY VIEW — 6am-8pm for ONE day, swipeable day to day. Drawn by
          renderDayWindow() with the SAME chart as The Week Ahead below it
          (wgUnifiedChart, labels:'hours'), so the two read as one family.
-         Sits ABOVE the week card 2026-08-16: today is the question almost every
-         swimmer opens the app with; the week is the follow-up.
+         Sits ABOVE the week card, but HIDDEN BY DEFAULT: SECTIONS key 'dayview' is
+         complete:0 / custom:0, so it only appears once a swimmer ticks "Day view"
+         in the Custom panel. renderDayWindow() still runs while it is hidden —
+         cheap, and it means the card is already drawn the moment it is ticked.
          Swiping calls selectDay(), the app's existing single entry point, so the
          slider, snapshot and this card all move together — no second "current day". -->
     <div class="dw-card" id="dayWindowCard">
@@ -16234,6 +16236,13 @@ if ('serviceWorker' in navigator) {
     // 'daywindow' (Best swim window day chart) removed 2026-08-14 along with its
     // #dayWindowWrap card. A stale daywindow=0 in someone's saved CUSTOM_KEY map
     // is now inert — nothing reads the key.
+    //
+    // Day view (#dayWindowCard) is back 16 Aug 2026, but OFF in both presets: it is
+    // opt-in from the Custom panel only. Deliberately keyed 'dayview', NOT the old
+    // 'daywindow' — a device that used the pre-14-Aug card still carries
+    // daywindow:1 in its saved CUSTOM_KEY map, and reusing the key would switch the
+    // card on for exactly the people who never asked for it back.
+    { key:'dayview', label:"Day view (hour-by-hour Entry/Chop/Surge)", sel:'#dayWindowCard', complete:0, custom:0 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
