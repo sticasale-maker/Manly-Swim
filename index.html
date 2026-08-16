@@ -6245,10 +6245,31 @@ function shelteredRampH(h) {
             + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));
   return Math.sqrt(Math.max(0, Hs2));
 }
+// Bower Lane / in-bay significant height. Mirrors shelteredRampH, but through the
+// BL table and with the components SURGE actually scores (blSwimWater):
+//   swell   — via blDispLookup, tide-scaled
+//   sea     — only its HEAVE fraction (1 − slap). Slap goes to CHOP; slap + heave
+//             = 1, lossless, so counting the whole sea here would double-count it.
+//   tide    — bowerTideGate, NOT the Entry tideGate: the bay gate opens earlier
+//             (10% at 10°, 20% at 40°, full at 80°) than the ramp's (70°→90°).
+// This used to be swell-only, which made the "in the bay" caption read near-zero on
+// days with a real sea running and put it out of step with the Surge score beside it.
 function shelteredBayH(h) {
-  const Hm = h.swell1H || 0;
-  if (!(Hm > 0) || !SITE.blDisp) return Hm;
-  return Hm * Math.sqrt(Math.max(0, Math.min(1, blDispLookup(h.swell1Dir, h.swell1P))));
+  const cl = function (v) { return Math.max(0, Math.min(1, v)); };
+  if (!SITE.blDisp) return h.swell1H || 0;
+  // Sea partition direction only — never windDir (see waveTxBL).
+  const wwDir = (h.windWaveDir != null) ? h.windWaveDir : h.swell1Dir;
+  const wwP   = h.windWaveP || 5;
+  const txS   = cl(blDispLookup(h.swell1Dir, h.swell1P));
+  const txW   = cl(blDispLookup(wwDir, wwP));
+  const ref   = (SITE.tideRef != null ? SITE.tideRef : 0.7);
+  const dT    = (h.tideM != null ? h.tideM : ref) - ref;
+  const gain  = SITE.tideGain || 0;
+  const tg    = function (d) { try { return SITE.bowerTideGate ? SITE.bowerTideGate(d) : 1; } catch (e) { return 1; } };
+  const heave = 1 - chopSlapWeight(h.windWaveH || 0, wwP);
+  const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * txS * (1 + gain * dT * tg(h.swell1Dir))
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * heave * txW * (1 + gain * dT * tg(wwDir));
+  return Math.sqrt(Math.max(0, Hs2));
 }
 
 // ── THE BL TABLE IS A WAVE TABLE ─────────────────────────────────────────────
@@ -9319,6 +9340,8 @@ function renderSnapshot(h, wx) {
              result.entry.label, result.entry.cls,
              h.windDir, result.swim.raw, (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14,
              result.swim.label, result.swim.cls, h.windKmh);
+    // Same two functions the pictogram captions, the swell card and the Oracle use.
+    if (window.swellSetHeights) swellSetHeights(shelteredRampH(h), shelteredBayH(h));
   }
 
   // "REALTIME" on the amber wind arrow, only where the North Head observation
@@ -16304,12 +16327,56 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = '500 ' + fp + 'px ui-sans-serif,system-ui,sans-serif';
     ctx.fillText('South Steyne', 0.03 * W, 0.31 * H);
     ctx.fillText('Shelly Beach', 0.50 * W, 0.74 * H);
+    // The three heights, placed where each one is actually measured: what arrives
+    // offshore, what is left at the South Steyne ramp, and what is left at Bower
+    // Lane. All three come from the SAME functions the scores and the Oracle use
+    // (shelteredRampH / shelteredBayH) — see swellSetHeights(). This is the swell
+    // CARD's labelled-pair exception in its spatial form: each number is pinned to
+    // the place it belongs to, never floated in prose.
+    drawHeightPins(fp);
     // Direction vectors on top of the basemap. Swell = blue (global offshore dir,
     // BEFORE refraction = raw _sw); wind = amber. Both point where the wave/wind travels TO.
     var _st = (_sw + 180) * Math.PI / 180, _sdx = Math.sin(_st), _sdy = -Math.cos(_st);
     drawSwellArrow(_sdx, _sdy);
     var _wt = (_windDir + 180) * Math.PI / 180, _wdx = Math.sin(_wt), _wdy = -Math.cos(_wt);
     drawWindArrow(_wdx, _wdy);
+  }
+
+  // The two sheltered heights, pushed in by renderSnapshot. null until the first
+  // snapshot lands, and each pin is skipped while its value is null — an unlabelled
+  // map is fine, a map labelled 0.0 before the data arrives is a lie.
+  var _rampH = null, _bayH = null;
+  function swellSetHeights(rampH, bayH) {
+    _rampH = (typeof rampH === 'number' && isFinite(rampH)) ? rampH : null;
+    _bayH  = (typeof bayH  === 'number' && isFinite(bayH))  ? bayH  : null;
+  }
+  window.swellSetHeights = swellSetHeights;
+
+  // One pin: a value in metres with a small caption, drawn with a dark halo so it
+  // survives both the pale sand of the land and the mid-blue of the water.
+  function drawHeightPins(fp) {
+    var pin = function (val, cap, nx, ny, align) {
+      if (val == null) return;
+      var x = nx * W, y = ny * H;
+      var vf = Math.max(13, 0.040 * W), cf = Math.max(9, 0.021 * W);
+      ctx.textAlign = align || 'center';
+      ctx.lineJoin = 'round';
+      ctx.font = '700 ' + vf + 'px ui-sans-serif,system-ui,sans-serif';
+      ctx.strokeStyle = 'rgba(6,28,38,0.85)'; ctx.lineWidth = Math.max(2.5, 0.008 * W);
+      ctx.strokeText(val.toFixed(1) + ' m', x, y);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(val.toFixed(1) + ' m', x, y);
+      ctx.font = '500 ' + cf + 'px ui-sans-serif,system-ui,sans-serif';
+      ctx.strokeText(cap, x, y + cf * 1.25);
+      ctx.fillStyle = 'rgba(228,240,246,0.92)';
+      ctx.fillText(cap, x, y + cf * 1.25);
+    };
+    // Offshore sits out in open water on the swell side; the two sheltered figures
+    // sit beside the place names already drawn above.
+    pin(_hgt,   'offshore',    0.79, 0.13, 'center');
+    pin(_rampH, 'at the ramp', 0.14, 0.40, 'center');
+    pin(_bayH,  'at Bower Ln', 0.40, 0.60, 'center');
+    ctx.textAlign = 'left';
   }
 
   var W = 0, H = 0, dpr = 1, PHASE = 0, _lastTs = 0;
