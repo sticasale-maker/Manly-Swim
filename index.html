@@ -2942,6 +2942,20 @@
         </button>
       </div>
 
+      <div class="ind-group" id="homeGroup">
+        <div class="ind-head">Where your heart is</div>
+        <p class="ind-note">Somewhere else that matters to you — where you grew up, where family is,
+          where you'd rather be right now. Pick it and the dashboard adds a side-by-side of
+          today: high, low, rain and air quality. One place, kept on this device only.</p>
+        <div class="home-pick">
+          <input type="text" id="homeQ" placeholder="City name" autocomplete="off"
+                 autocapitalize="words" spellcheck="false" aria-label="City name">
+          <button type="button" id="homeGo">Find</button>
+        </div>
+        <div class="home-res" id="homeRes"></div>
+        <div class="home-now" id="homeNow"></div>
+      </div>
+
       <button type="button" id="customSave" class="custom-save">Save</button>
     </div>
     <div class="habit-ok" id="habitOk" role="dialog" aria-modal="true" aria-labelledby="habitOkMsg">
@@ -3046,6 +3060,37 @@
       .habit-actions button {
         border: 1px solid var(--border); background: transparent; color: var(--dim);
         border-radius: 8px; padding: 5px 10px; font-family: inherit; font-size: 11.5px; cursor: pointer;
+      }
+      /* "Where your heart is" city picker. Search results are BUTTONS, not a
+         <select>: the population is the thing that disambiguates Milan from
+         Milano, Texas, and a native select truncates it on a phone. */
+      .home-pick { display: flex; gap: 6px; }
+      .home-pick input {
+        flex: 1 1 auto; min-width: 0; font-family: inherit; font-size: 13.5px;
+        padding: 7px 9px; border-radius: 8px; border: 1px solid var(--border);
+        background: #fff; color: var(--text);
+      }
+      .home-pick button {
+        flex: 0 0 auto; border: none; background: var(--ocean); color: #fff;
+        border-radius: 8px; padding: 7px 14px; font-family: inherit;
+        font-size: 13px; font-weight: 700; cursor: pointer;
+      }
+      .home-res { margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+      .home-res button {
+        text-align: left; border: 1px solid var(--border); background: #fff;
+        color: var(--text); border-radius: 8px; padding: 7px 10px;
+        font-family: inherit; font-size: 13px; cursor: pointer; line-height: 1.35;
+      }
+      .home-res button b { font-weight: 700; }
+      .home-res button span { color: var(--dim); font-size: 11.5px; }
+      .home-res .home-msg { color: var(--dim); font-size: 12px; line-height: 1.45; }
+      .home-res .home-msg.warn { color: #a95e1e; font-weight: 600; }
+      .home-now { margin-top: 8px; font-size: 12.5px; color: var(--dim); }
+      .home-now b { color: var(--text); }
+      .home-now button {
+        margin-left: 8px; border: 1px solid var(--border); background: transparent;
+        color: var(--dim); border-radius: 7px; padding: 3px 9px;
+        font-family: inherit; font-size: 11.5px; cursor: pointer;
       }
       /* Confirmation after setting habits. Its own overlay rather than the
          announcements popup, which is a queue of server-driven posts. */
@@ -17183,6 +17228,78 @@ if ('serviceWorker' in navigator) {
     if (tch) tch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setTimeStyle(o.getAttribute('data-time')); });
     try { if (typeof initTimeRoller === 'function') initTimeRoller(); } catch (e) {}
     applyTimeStyle(getTimeStyle());        // slider / tap-buttons / brass roller, applies in every mode
+
+    // ── "Where your heart is" ───────────────────────────────────────────────
+    // The storage, geocoding and comparison live with the dashboard module and
+    // are reached through window.swimHome — this is only the picker UI. Guarded
+    // because the dashboard module is defined later in the file.
+    (function () {
+      var q = document.getElementById('homeQ'),
+          go = document.getElementById('homeGo'),
+          res = document.getElementById('homeRes'),
+          now = document.getElementById('homeNow');
+      if (!q || !go || !res || !now) return;
+      function api(){ return window.swimHome; }
+
+      function label(h) {
+        var p = h.pop;
+        var pop = !p ? '' : p >= 1e6 ? (p / 1e6).toFixed(1).replace('.0', '') + 'm people'
+                          : p >= 1000 ? Math.round(p / 1000) + 'k people'
+                          : p + ' people';
+        return { name: h.name, where: [h.admin, h.cc].filter(Boolean).join(' '), pop: pop };
+      }
+      function showCurrent() {
+        var a = api(), h = a && a.get();
+        now.textContent = '';
+        if (!h) return;
+        var b = document.createElement('b'); b.textContent = h.name;
+        now.appendChild(document.createTextNode('Showing: '));
+        now.appendChild(b);
+        var clr = document.createElement('button');
+        clr.type = 'button'; clr.textContent = 'Remove';
+        clr.addEventListener('click', function () {
+          api().set(null); res.textContent = ''; q.value = ''; showCurrent();
+        });
+        now.appendChild(clr);
+      }
+      function msg(text, warn) {
+        var d = document.createElement('div');
+        d.className = 'home-msg' + (warn ? ' warn' : '');
+        d.textContent = text;
+        res.appendChild(d);
+      }
+      function paint() {
+        var hits = api() && api().hits();
+        res.textContent = '';
+        if (!hits) return;
+        if (!hits.length) { msg('No match. Try the English spelling.'); return; }
+        // A geocoder ranks "Milano" by string match, so a 421-person Texas hamlet
+        // outranks Milan. Population is what tells them apart, so it is on screen.
+        hits.forEach(function (h) {
+          var L = label(h);
+          var b = document.createElement('button');
+          b.type = 'button';
+          var nm = document.createElement('b'); nm.textContent = L.name + (L.where ? ', ' + L.where : '');
+          b.appendChild(nm);
+          if (L.pop) { b.appendChild(document.createElement('br'));
+                       var s = document.createElement('span'); s.textContent = L.pop; b.appendChild(s); }
+          b.addEventListener('click', function () {
+            api().set(h); res.textContent = ''; q.value = ''; showCurrent();
+          });
+          res.appendChild(b);
+        });
+        var big = hits.some(function (h) { return (h.pop || 0) >= 50000; });
+        if (!big) msg('Only small places matched. Try the English spelling — Milan, not Milano; Cologne, not Köln.', true);
+      }
+      function run() {
+        var s = q.value.trim(); if (!s || !api()) return;
+        res.textContent = ''; msg('Searching…');
+        api().search(s, paint);
+      }
+      go.addEventListener('click', run);
+      q.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); run(); } });
+      showCurrent();
+    })();
     // ── Pictogram character ───────────────────────────────────────────────
     // The character only shows up inside the pictogram, so on "Slider only"
     // there is nothing for it to change. Rather than silently storing a choice
@@ -17980,7 +18097,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       '</div></div>';
   }
 
-  /* ---- "Where you're from" — one saved world city, side by side with Manly ---
+  /* ---- "Where your heart is" — one saved world city, side by side with Manly ---
      A lot of this group are expats. They keep a running comparison in their head
      anyway ("it's 3 degrees in Milan"); this just does the arithmetic.
 
@@ -18008,6 +18125,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (window.persistSet) persistSet(HOME_KEY, s); else localStorage.setItem(HOME_KEY, s);
     } catch (e) {}
   }
+  // The picker itself lives in the Customise panel (a different scope), while the
+  // fetching and rendering stay here with the rest of the dashboard. These three
+  // are the whole contract between them — set() also clears the cached comparison
+  // so the next dashboard render refetches for the new city.
+  window.swimHome = {
+    get:    function () { return _home; },
+    set:    function (h) { saveHome(h); },
+    search: function (q, cb) { searchHome(q, cb); },
+    hits:   function () { return _homeHits; }
+  };
 
   function searchHome(q, cb) {
     _homeBusy = true;
@@ -18054,34 +18181,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   }
 
   function homeTile() {
-    // Picker state — shown until a city is saved, or when they tap "change".
+    // The PICKER moved to the Customise panel — a search box inside an
+    // announcement is the wrong place for a setting, and a live announcement
+    // closes on a tap anywhere, which fought the input. Here we only ever render
+    // the RESULT, plus a one-line pointer to where the setting lives so nobody
+    // has to discover the feature by accident.
     if (!_home) {
-      // Population is shown, not decoration: the geocoder ranks by string match,
-      // so a search can return a hamlet that shares the name. Seeing "pop 421"
-      // is what tells someone this is not their Milan.
-      var popTxt = function (p) {
-        if (!p) return '';
-        return p >= 1e6 ? (p / 1e6).toFixed(1) + 'm people'
-             : p >= 1000 ? Math.round(p / 1000) + 'k people' : p + ' people';
-      };
-      var hits = (_homeHits || []).map(function (h, i) {
-        return '<button type="button" class="ssd-hbtn" data-homepick="' + i + '">' +
-               h.name + (h.admin ? ', ' + h.admin : '') +
-               ' <span>' + h.cc + (h.pop ? ' · ' + popTxt(h.pop) : '') + '</span></button>';
-      }).join('');
-      // The index is English-first and its local-name coverage is patchy: "Köln"
-      // finds Cologne, but "Milano" does NOT find Milan. When every match is tiny
-      // we almost certainly missed the city they meant, so say so rather than let
-      // them save a village of 400 people.
-      var allTiny = _homeHits && _homeHits.length && _homeHits.every(function (h) { return (h.pop || 0) < 50000; });
-      return '<div class="ssd-tile ssd-wide" data-hometile>' +
-        '<div class="ssd-cap">🌍 Where are you from?</div>' +
-        '<div class="ssd-sub" style="margin-bottom:7px">Pick a city and it sits beside Manly, every time you open this. Kept on this phone only.</div>' +
-        '<div class="ssd-hrow"><input class="ssd-hin" data-homeq placeholder="Milan, Dublin, Cape Town…" autocomplete="off">' +
-        '<button type="button" class="ssd-hgo" data-homego>' + (_homeBusy ? '…' : 'Find') + '</button></div>' +
-        (hits ? '<div class="ssd-hits">' + hits + '</div>' +
-                (allTiny ? '<div class="ssd-sub">Only small places matched. Try the English spelling — Milan, not Milano; Cologne, not Köln.</div>' : '')
-              : (_homeHits ? '<div class="ssd-sub">Nothing found — try the city name on its own, in English.</div>' : '')) +
+      return '<div class="ssd-tile ssd-wide ssd-hempty" data-hometile>' +
+        '<div class="ssd-cap">🌍 Where your heart is</div>' +
+        '<div class="ssd-hmsg">Pick a place in <b>Customise</b> and this will show it ' +
+          'side by side with Manly — high, low, rain and air quality — from then on.</div>' +
       '</div>';
     }
     if (!_homeData) return '';                    // fetch in flight; fill() repaints
@@ -18101,7 +18210,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       '</tbody></table>' +
       '<div class="ssd-sub">Today, each in its own local time · PM2.5 µg/m³, WHO guideline ' + WHO_PM25_DAILY +
         ' · pollution is a ~40 km grid cell (~11 km in Europe), so it is a city figure, not a street one' +
-        ' · <button type="button" class="ssd-hchg" data-homeclear>change city</button></div>' +
+        ' · change it in Customise</div>' +
     '</div>';
   }
 
@@ -18503,8 +18612,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 
   /* The dashboard is the first thing in this app that is INTERACTIVE inside an
      announcement, and a live announcement closes on a tap anywhere. Without this
-     every tap on the city search box would dismiss the whole popup. Delegated
-     once per container, so it survives fill() replacing the innards. */
+     a tap on any control inside it would dismiss the whole popup. Delegated once
+     per container, so it survives fill() replacing the innards. The city PICKER
+     is not here — it lives in the Customise panel; this only guards the taps. */
   function bindDashInteractions(sc) {
     if (!sc || sc._dashBound) return;
     sc._dashBound = true;
@@ -18518,32 +18628,6 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (e.target.closest && e.target.closest('[data-ssd]')) e.stopPropagation();
     });
 
-    sc.addEventListener('click', function (e) {
-      var t = e.target;
-      if (t.closest('[data-homego]')) {
-        var inp = sc.querySelector('[data-homeq]');
-        var q = inp && inp.value.trim();
-        if (q) { searchHome(q, repaint); repaint(); }
-        return;
-      }
-      var pick = t.closest('[data-homepick]');
-      if (pick) {
-        var i = +pick.getAttribute('data-homepick');
-        if (_homeHits && _homeHits[i]) { saveHome(_homeHits[i]); _homeHits = null; fetchHomeCompare(repaint); repaint(); }
-        return;
-      }
-      if (t.closest('[data-homeclear]')) { saveHome(null); _homeHits = null; repaint(); }
-    });
-
-    // Enter submits the search — a Find button is not the only way people search.
-    sc.addEventListener('keydown', function (e) {
-      if (e.key !== 'Enter') return;
-      var inp = e.target.closest && e.target.closest('[data-homeq]');
-      if (!inp) return;
-      e.preventDefault();
-      var q = inp.value.trim();
-      if (q) { searchHome(q, repaint); repaint(); }
-    });
   }
 
   /* replace [[STORM_STATS]] tokens inside a rendered announcement container */
@@ -18604,6 +18688,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-aqbar{display:block;height:100%;border-radius:5px;}' +
     '.ssd-aqv{flex:0 0 30px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;}' +
     '.ssd-aqhome .ssd-aqn{color:#113541;font-weight:700;}' +
+    '.ssd-hempty .ssd-hmsg{font-size:12.5px;line-height:1.5;color:#3d5a66;}' +
+    '.ssd-hempty .ssd-hmsg b{color:#113541;}' +
     '.ssd-aqhome{padding-bottom:5px;margin-bottom:5px;border-bottom:1px solid rgba(17,53,65,0.12);}' +
     // Home-town picker + comparison table.
     '.ssd-hrow{display:flex;gap:6px;}' +
