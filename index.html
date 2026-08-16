@@ -18160,7 +18160,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     _homeTried = true;
     var lat = -33.79 + ',' + _home.lat, lon = 151.29 + ',' + _home.lon;
     var wx = fetch('https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lon +
-        '&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&forecast_days=1&timezone=auto')
+        '&daily=temperature_2m_max,temperature_2m_min,precipitation_sum' +
+        '&past_days=7&forecast_days=1&timezone=auto')
       .then(function (r) { return r.json(); });
     var aq = fetch('https://air-quality-api.open-meteo.com/v1/air-quality?latitude=' + lat +
         '&longitude=' + lon + '&current=pm2_5&timezone=UTC')
@@ -18170,9 +18171,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var A = Array.isArray(res[1]) ? res[1] : [res[1]];
       function pick(i) {
         var d = W[i] && W[i].daily;
-        return { hi: d && d.temperature_2m_max ? d.temperature_2m_max[0] : null,
-                 lo: d && d.temperature_2m_min ? d.temperature_2m_min[0] : null,
-                 mm: d && d.precipitation_sum ? d.precipitation_sum[0] : null,
+        // past_days=7 puts the 7 finished days first and today last, so the
+        // temperatures are read off the END and the rain off the FRONT.
+        var v = (d && d.precipitation_sum) || [], last = v.length - 1;
+        var sum = 0, n = 0;
+        for (var k = 0; k < Math.min(7, v.length); k++) {
+          if (v[k] != null) { sum += v[k]; n++; }
+        }
+        return { hi: d && d.temperature_2m_max ? d.temperature_2m_max[last] : null,
+                 lo: d && d.temperature_2m_min ? d.temperature_2m_min[last] : null,
+                 mm: n >= 5 ? sum : null,
                  pm: A[i] && A[i].current ? A[i].current.pm2_5 : null };
       }
       _homeData = { here: pick(0), there: pick(1) };
@@ -18205,10 +18213,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       '<table class="ssd-htab"><thead><tr><th></th><th>' + n1 + '</th><th>' + _home.name + '</th></tr></thead><tbody>' +
         row('High', A.hi, B.hi, '°', 0) +
         row('Low', A.lo, B.lo, '°', 0) +
-        row('Rain today', A.mm, B.mm, ' mm', 1) +
+        row('Rain last 7d', A.mm, B.mm, ' mm', 1) +
         row('PM2.5', A.pm, B.pm, '', 0) +
       '</tbody></table>' +
-      '<div class="ssd-sub">Today, each in its own local time · PM2.5 µg/m³, WHO guideline ' + WHO_PM25_DAILY +
+      '<div class="ssd-sub">High, low and PM2.5 are today; rain is the 7 days before today · each in its own local time · PM2.5 µg/m³, WHO guideline ' + WHO_PM25_DAILY +
         ' · pollution is a ~40 km grid cell (~11 km in Europe), so it is a city figure, not a street one' +
         ' · change it in Customise</div>' +
     '</div>';
