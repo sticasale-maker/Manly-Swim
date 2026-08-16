@@ -17838,6 +17838,39 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
      itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
      there is never a loop running against a detached node. */
 
+  /* Copy every frame of the live swell canvas into the popup's mirror. Stops
+     itself when the mirror leaves the DOM (a re-fill) or the popup closes, so
+     there is never a loop running against a detached node. */
+  var _mirrorRaf = null;
+  function startSwellMirror(sc) {
+    if (_mirrorRaf) { cancelAnimationFrame(_mirrorRaf); _mirrorRaf = null; }
+    var dst = sc.querySelector('canvas[data-swellmirror]');
+    var src = document.getElementById('swellCanvas');
+    if (!dst || !src) return;
+    var ctx = dst.getContext('2d');
+    /* Visibility, NOT the overlay's .show class: showPopup() injects the body
+       before it adds .show, so keying off the class killed the loop on frame
+       one. Wait (bounded) until the canvas is actually laid out, then run until
+       it is detached or hidden again — i.e. until the popup is dismissed. */
+    function paint() {
+      if (!src.width || !src.height) return;
+      if (dst.width !== src.width || dst.height !== src.height) { dst.width = src.width; dst.height = src.height; }
+      try { ctx.drawImage(src, 0, 0); } catch (e) {}
+    }
+    /* Paint once up front so the tile is never blank: rAF is frozen while the
+       page is hidden/backgrounded, so without this the canvas could render
+       empty. Worst case we degrade to a still frame; normally we animate. */
+    paint();
+    var seen = false, waited = 0;
+    (function loop() {
+      if (!document.contains(dst)) { _mirrorRaf = null; return; }
+      var visible = dst.getClientRects().length > 0;
+      if (visible) { seen = true; paint(); }
+      else if (seen || ++waited > 900) { _mirrorRaf = null; return; }
+      _mirrorRaf = requestAnimationFrame(loop);
+    })();
+  }
+
   /* live past-7-day rainfall (mm) — one fetch per session, re-fills on arrival */
   var _rainWk = null, _rainTried = false;
   function fetchRainWk(cb) {
@@ -18182,7 +18215,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
        2025 percentile apples-to-apples (the hindcast carries no tide). Its
        swell/wind lines were duplicated by the Swell + wind tile anyway. */
     if (liveRes && cur) {
-      h += '<div class="ssd-tile"><div class="ssd-cap">🏊 Real-time entry &amp; surge</div>' +
+      // Full width since the countdown tile was removed: it was the other half of
+      // this row, and without it this one sat alone in a 2-column grid with a
+      // column of dead space beside it.
+      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Real-time entry &amp; surge</div>' +
            '<div class="ssd-metrow ssd-metcol">' +
              metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
              metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
