@@ -1933,6 +1933,9 @@
   }
   .chop-graph-head {
     display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+    /* Gap, not just space-between: with the REALTIME badge on the wind line the
+       right-hand readout reaches within a pixel of the title at 375px wide. */
+    gap:10px;
   }
   .chop-graph-title {
     font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px;
@@ -1954,6 +1957,17 @@
   .chop-graph-now .sw-line + .sw-line { margin-top:3px; }
   /* Line-2 wind readout: slightly smaller than the swell line, amber. */
   .chop-graph-now .h.sw-wind-h { color:#c98a2e; }
+  /* "REALTIME" — shown beside the wind readout ONLY on hours the North Head
+     observation actually reached. Deliberately quiet and NOT the red of the live-cam
+     badge: the cam is a picture of now, this is a forecast corrected toward now, and
+     the two must not read as the same claim. Hidden entirely the rest of the time
+     rather than greyed out — a permanently-present badge stops being information. */
+  .chop-graph-now .sw-live {
+    font-size:8.5px; letter-spacing:1px; color:#c98a2e; opacity:.85;
+    border:1px solid rgba(201,138,46,.45); border-radius:3px; padding:1px 4px;
+    white-space:nowrap; align-self:center;
+  }
+  .chop-graph-now .sw-live[hidden] { display:none; }
   .chop-graph-now .t.sw-wind-t { font-size:clamp(8px,2.4vw,10px); }
   .chop-graph-legend .sw-wind-cap { color:#c98a2e; font-weight:600; }
   .chop-graph-canvas { width:100%; height:auto; display:block; border-radius:8px; }
@@ -3149,7 +3163,7 @@
         </div>
         <div class="chop-graph-now">
           <div class="sw-line"><span class="h" id="swellNowDir">—</span></div>
-          <div class="sw-line"><span class="h sw-wind-h" id="chopNowWind">—</span></div>
+          <div class="sw-line"><span class="sw-live" id="swellWindLive" hidden>● REALTIME</span><span class="h sw-wind-h" id="chopNowWind">—</span></div>
         </div>
         <button type="button" class="sw-zoom-btn" id="swellZoom" aria-expanded="false" title="Enlarge the map" aria-label="Enlarge the swell and wind map">⤢</button>
       </div>
@@ -5365,6 +5379,44 @@ const SITE_DEFAULTS = {
   chopLeeFrom:   180,   // core arc start (deg, wind FROM)
   chopLeeTo:     280,   // core arc end
   chopLeeTaper:  20,    // taper width (deg) outside each edge, back to no shelter
+  // ── Observed-wind nowcast blend (16 Aug 2026) ───────────────────────────────────
+  // The BOM North Head reading is the only real anemometer near the bay, and near the
+  // present hour it beats the model. So the CURRENT hour is nudged toward it and the
+  // nudge decays to nothing a few hours out, where the model is the better estimate
+  // and an observation is just old weather. Everything downstream of the wind — CHOP,
+  // the offshore-westerly credit, the wind term of ENTRY — moves with it, which is the
+  // point: one corrected wind, not a second wind shown beside the first.
+  //
+  // Applied to the forecast MATRIX, after the obs/forecast pair has been logged, so
+  // wind_obs_pairs keeps measuring the RAW model against the station. Blending first
+  // would make the table converge on itself and the bias would read as solved.
+  obsBlendEnabled:  true,
+  obsBlendTaperHrs: 3,     // forward decay to zero weight. 0 disables the forward reach.
+  obsBlendBackHrs:  1,     // backward decay — the recent past, for the timeline only
+  obsBlendRatioMin: 0.5,   // clamp on obs/forecast. Beyond this it is a station or a
+  obsBlendRatioMax: 2.0,   // feed fault, not a nowcast, and must not scale the day.
+  obsBlendMinKmh:   3,     // below this on either side, ratio is meaningless → additive
+  obsBlendMaxAddKmh: 8,    // clamp on the light-wind additive path
+  obsBlendMaxDirDeg: 60,   // clamp on the direction nudge. A bigger disagreement is a
+                           // different weather situation, not a correctable offset.
+  obsBlendSteadyMin: 0.6,  // |vector mean|/scalar mean. Under a veering wind the mean
+                           // bearing is not a bearing — rotate nothing, speed only.
+  // ── Gust rejection (16 Aug 2026) ────────────────────────────────────────────────
+  // The observation prevails over the model — but it has to be the WIND that prevails,
+  // not one squally ten minutes. Two independent defences, because they catch
+  // different things:
+  //   1. The blend reads the MEDIAN of the trailing window, not the mean. A single
+  //      high interval cannot move a median at all. (Set in parseWindObs.)
+  //   2. Confidence: how much the readings in the window disagreed, and how far the
+  //      peak gust ran above the sustained wind. A steady window corrects at full
+  //      strength; a squally one still corrects, just less far — because in a squally
+  //      hour nobody, model or station, knows what the next hour holds.
+  obsBlendScatterLo: 0.12,  // relative scatter at/below which confidence is 1
+  obsBlendScatterHi: 0.45,  // at/above which confidence bottoms out
+  obsBlendGustLo:    1.5,   // gust/sustained at/below which confidence is 1
+  obsBlendGustHi:    2.6,   // at/above which confidence bottoms out
+  obsBlendMinConf:   0.45,  // floor. Never discard the observation entirely — a gusty
+                            // reading is still evidence, just weaker evidence.
   // ── Fetch-sea corridor survival (period gate) ───────────────────────────────────
   // A fetch-grown sea only reaches CTB as CHOP if it's short enough to run straight down
   // the ~6 km approach. Once its period lengthens (strong/sustained wind), its wavelength
@@ -8087,6 +8139,7 @@ function parseWindObs(j) {
 
   const cutoff = newest - OBS_WINDOW_MIN * 60000;
   let n = 0, spdSum = 0, u = 0, v = 0, gust = null;
+  const spds = [];                        // kept for the robust (median) speed below
   for (const r of rows) {
     const t = obsParseUTC(r.utc);
     if (!isFinite(t) || t < cutoff || t > newest) continue;
@@ -8097,6 +8150,7 @@ function parseWindObs(j) {
     if (deg === undefined) continue;     // a speed with no bearing is unusable here
     const rad = deg * Math.PI / 180;
     spdSum += r.kmh;
+    spds.push(r.kmh);
     u += r.kmh * Math.sin(rad);
     v += r.kmh * Math.cos(rad);
     n++;
@@ -8111,12 +8165,30 @@ function parseWindObs(j) {
   let dirDeg    = Math.atan2(u / n, v / n) * 180 / Math.PI;
   if (dirDeg < 0) dirDeg += 360;
 
+  // ── Robust speed + window scatter (for the nowcast blend only) ─────────────
+  // The mean above stays exactly as it was, because wind_obs_pairs is a measurement
+  // series and its definition must not drift under it. But a mean of 3-4 unQC'd
+  // 10-min readings is dragged by one squally interval, and the blend then hands
+  // that squall to the whole afternoon. So the blend uses the MEDIAN, which a
+  // single high interval cannot move at all, and is told how much the window
+  // disagreed with itself so it can back off when the wind is genuinely unsettled.
+  const sorted = spds.slice().sort((a, b) => a - b);
+  const mid    = sorted.length >> 1;
+  const spdMed = (sorted.length % 2) ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  // Scatter as a fraction of the wind: mean |deviation from the median| / median.
+  // Relative, not absolute, because 5 km/h of slop in a 40 km/h blow is a steady
+  // wind and the same 5 in a 8 km/h drift is not a wind direction at all.
+  const mad    = spds.reduce((s, x) => s + Math.abs(x - spdMed), 0) / n;
+  const scatter = spdMed > 0 ? mad / spdMed : null;
+
   return {
     station:   j.station || OBS_STATION,
     name:      j.name || null,
     tsISO:     new Date(newest).toISOString(),
     ageMin:    Math.round(ageMin * 10) / 10,
     spdKmh:    Math.round(spdKmh * 10) / 10,
+    spdMedKmh: Math.round(spdMed * 10) / 10,     // blend input; NOT what gets logged
+    scatter:   scatter == null ? null : Math.round(scatter * 1000) / 1000,
     gustKmh:   gust,
     dirDeg:    Math.round(dirDeg * 10) / 10,
     n,
@@ -8128,10 +8200,17 @@ function parseWindObs(j) {
 // NOT "the nearest row": the observation is a 10-min mean valid at :00/:30 and the
 // matrix is hourly, so snapping to the nearest hour would record a timing offset as
 // if it were forecast bias — the exact error this table exists to avoid.
+// Always reads the RAW model wind: once blendObsIntoMatrix has run, windKmh/windDir
+// carry the observation, and both callers here want the untouched forecast — the
+// logger so wind_obs_pairs keeps measuring real model error, the blend so re-running
+// it corrects from the model rather than compounding on its own output.
 function windForecastAt(matrix, ts) {
   if (!Array.isArray(matrix) || !matrix.length) return null;
+  const raw = (r) => r._windRaw || { kmh: r.windKmh, dir: r.windDir };
   let lo = null, hi = null;
-  for (const r of matrix) {
+  for (const r0 of matrix) {
+    const r = r0 && r0.dateTime ? Object.assign({ dateTime: r0.dateTime }, raw(r0)) : null;
+    if (r) { r.windKmh = r.kmh; r.windDir = r.dir; }
     if (!r || !r.dateTime || r.windKmh == null) continue;
     const t = new Date(String(r.dateTime).replace(' ', 'T')).getTime();
     if (!isFinite(t)) continue;
@@ -8156,6 +8235,114 @@ function windForecastAt(matrix, ts) {
     dirDeg: Math.round(dir * 100) / 100,
     rowTs:  (f < 0.5 ? lo.r.dateTime : hi.r.dateTime),
   };
+}
+
+// ── OBSERVED-WIND NOWCAST BLEND — STEP 2: THE OBS NOW MOVES THE SCORES ───────
+// Near the observation instant the station is right and the model is an estimate;
+// three hours out the reverse is true. So the correction is applied at full weight
+// at the obs time and tapered to zero over SITE.obsBlendTaperHrs.
+//
+// The taper is a raised cosine, not a straight line: a linear ramp is continuous in
+// value but not in slope, and its kink lands exactly where the user is looking — the
+// next hour or two. This way the corrected series has no visible step or elbow
+// anywhere; hour n and hour n+1 differ by a little more than the model said, never by
+// a jump. That is the whole reason the blend is a taper rather than "use the obs for
+// now, the forecast after".
+//
+// Rewrites windKmh/windDir in place, but always recomputes from _windRaw, so calling
+// it twice (a re-render, a second obs inside one session) corrects once, not twice.
+function blendObsIntoMatrix(matrix, obs) {
+  const S = (typeof SITE !== 'undefined') ? SITE : {};
+  if (!S.obsBlendEnabled) return null;
+  try { if (new URLSearchParams(location.search).get('obsblend') === '0') return null; } catch (_) {}
+  if (!Array.isArray(matrix) || !matrix.length || !obs || !obs.tsISO) return null;
+
+  const obsT = new Date(obs.tsISO).getTime();
+  if (!isFinite(obsT)) return null;
+
+  // The correction is defined against the forecast AT THE OBS INSTANT, interpolated
+  // — not against the nearest hourly row. Snapping would fold a timing offset of up
+  // to 30 min into the correction and then spread it over the whole taper.
+  const fc = windForecastAt(matrix, obsT);
+  if (!fc || fc.kmh == null) return null;
+
+  // Speed correction. Multiplicative where both winds are real, because forecast error
+  // scales with the wind; additive in light air, where a ratio against 1 km/h is noise
+  // amplified into a gale.
+  // The MEDIAN of the trailing window, not its mean: one squally ten minutes must not
+  // set the afternoon's wind. Falls back to the mean for an obs object that predates
+  // the field (a cached one, mid-deploy).
+  const obsKmh = (obs.spdMedKmh != null) ? obs.spdMedKmh : obs.spdKmh;
+
+  const minKmh = S.obsBlendMinKmh ?? 3;
+  let ratio = null, addKmh = null;
+  if (fc.kmh >= minKmh && obsKmh >= minKmh) {
+    ratio = Math.max(S.obsBlendRatioMin ?? 0.5,
+            Math.min(S.obsBlendRatioMax ?? 2.0, obsKmh / fc.kmh));
+  } else {
+    const cap = S.obsBlendMaxAddKmh ?? 8;
+    addKmh = Math.max(-cap, Math.min(cap, obsKmh - fc.kmh));
+  }
+
+  // ── Confidence: how far to trust THIS observation ──────────────────────────
+  // Ramps down between the lo/hi knobs on two independent gustiness measures, and
+  // takes the worse of the two — either one being bad is enough to mean "the wind is
+  // unsettled right now". Floored, never zeroed: a gusty reading is still evidence.
+  const ramp = (x, lo, hi) => (x == null || !isFinite(x)) ? 1
+             : Math.max(0, Math.min(1, 1 - (x - lo) / Math.max(1e-6, hi - lo)));
+  const gustRatio = (obs.gustKmh != null && obsKmh > 0) ? obs.gustKmh / obsKmh : null;
+  const conf = Math.max(S.obsBlendMinConf ?? 0.45, Math.min(
+    ramp(obs.scatter, S.obsBlendScatterLo ?? 0.12, S.obsBlendScatterHi ?? 0.45),
+    ramp(gustRatio,   S.obsBlendGustLo    ?? 1.5,  S.obsBlendGustHi    ?? 2.6)));
+
+  // Direction nudge, gated on steadiness: under a veering wind the vector mean bearing
+  // is an artefact and rotating the forecast by it would invent a wind shift.
+  const steady = (obs.steadiness == null) ? 1 : obs.steadiness;
+  const dcap   = S.obsBlendMaxDirDeg ?? 60;
+  const rawDD  = obsCircDiff(obs.dirDeg, fc.dirDeg);
+  const dirDelta = (steady >= (S.obsBlendSteadyMin ?? 0.6) && Math.abs(rawDD) <= dcap) ? rawDD : 0;
+
+  const fwdMs  = Math.max(0, (S.obsBlendTaperHrs ?? 3)) * 3600000;
+  const backMs = Math.max(0, (S.obsBlendBackHrs  ?? 1)) * 3600000;
+  let touched = 0, maxW = 0;
+
+  for (const r of matrix) {
+    if (!r || !r.dateTime) continue;
+    const t = new Date(String(r.dateTime).replace(' ', 'T')).getTime();
+    if (!isFinite(t)) continue;
+
+    const dt   = t - obsT;
+    const span = dt >= 0 ? fwdMs : backMs;
+    if (span <= 0 || Math.abs(dt) >= span) {
+      // Outside the reach: restore the untouched model value, so a row that was
+      // blended by an earlier (now older) observation goes back to pure forecast
+      // rather than keeping a stale correction.
+      if (r._windRaw) { r.windKmh = r._windRaw.kmh; r.windDir = r._windRaw.dir; r._windBlendW = 0; }
+      continue;
+    }
+    if (!r._windRaw) r._windRaw = { kmh: r.windKmh, dir: r.windDir };
+    if (r._windRaw.kmh == null) continue;
+
+    // Raised cosine: 1 at the obs instant → 0 at the edge, scaled by how much this
+    // observation is worth. conf shrinks how FAR the wind is pulled, never how
+    // smoothly — the taper shape, and so the absence of any visible step, is intact.
+    const w = conf * 0.5 * (1 + Math.cos(Math.PI * Math.abs(dt) / span));
+    const base = r._windRaw.kmh;
+    const kmh  = (ratio != null) ? base * (1 + w * (ratio - 1)) : base + w * addKmh;
+    r.windKmh  = Math.max(0, Math.round(kmh * 100) / 100);
+    if (dirDelta && r._windRaw.dir != null) {
+      r.windDir = (((r._windRaw.dir + w * dirDelta) % 360) + 360) % 360;
+    } else if (r._windRaw.dir != null) {
+      r.windDir = r._windRaw.dir;
+    }
+    r._windBlendW = Math.round(w * 1000) / 1000;
+    touched++;
+    if (w > maxW) maxW = w;
+  }
+
+  return { touched, maxW, ratio, addKmh, dirDelta, conf,
+           scatter: obs.scatter, gustRatio,
+           obsKmh, obsMeanKmh: obs.spdKmh, fcKmh: fc.kmh, ageMin: obs.ageMin };
 }
 
 // One row per BOM observation instant per device, throttled on the observation
@@ -8703,6 +8890,27 @@ function renderSnapshot(h, wx) {
              result.swim.label, result.swim.cls, h.windKmh);
   }
 
+  // "REALTIME" badge on the wind line. Shown only where the North Head observation
+  // genuinely moved this hour's wind — the same _windBlendW the blend wrote, so the
+  // badge cannot drift out of step with what the numbers actually are. Below 0.1 the
+  // correction is a fraction of a km/h at the tail of the taper and calling that
+  // realtime would be a claim the arrow can't back up.
+  try {
+    const liveEl = document.getElementById('swellWindLive');
+    if (liveEl) {
+      const w = h._windBlendW || 0;
+      liveEl.hidden = !(w >= 0.1);
+      if (!liveEl.hidden) {
+        const o = window._windObs;
+        const age = (o && o.ageMin != null)
+          ? (o.ageMin < 1 ? 'just now' : Math.round(o.ageMin) + ' min ago') : 'recently';
+        liveEl.title = 'This hour’s wind is the forecast corrected toward the BOM ' +
+                       'North Head reading (' + age + '), most strongly at the current ' +
+                       'hour and fading out over the next few.';
+      }
+    }
+  } catch (e) { /* badge is decoration — never let it break the map */ }
+
   // Time
   const dt = new Date(h.dateTime.replace(' ','T'));
   setSlotHeader(dt);
@@ -8940,10 +9148,11 @@ function renderSnapshot(h, wx) {
   document.getElementById('sWindDir').textContent = `km/h · ${bearingName(h.windDir)} (${Math.round(h.windDir)}°)`;
 
   // ── Observed wind, BOM North Head (display only) ─────────────────────────────
-  // Shown ONLY on the hour the reading actually describes. The row above it is a
-  // forecast, and so is every score on this screen — this line is a cross-check,
-  // never a claim that the verdict was computed from it. Once step 2 lands and the
-  // wind is genuinely bias-corrected, this wording has to change with it.
+  // Shown ONLY on the hour the reading actually describes. Since the nowcast blend
+  // landed (16 Aug 2026) the wind above is no longer pure model on these hours — it
+  // has been nudged toward this reading, at full weight here and fading out over the
+  // next few hours. So this line says what the station measured and the tooltip says
+  // how much of it reached the numbers; it is not a rival value shown beside them.
   try {
     const obsEl = document.getElementById('sWindObs');
     if (obsEl) {
@@ -8965,9 +9174,12 @@ function renderSnapshot(h, wx) {
           // a fixed compass string from bearingName's own table. No feed text here.
           `observed <b>${Math.round(o.spdKmh)} km/h ${bearingName(o.dirDeg)}</b>${gust}` +
           `<br>North Head · ${age}`;
+        const wPct = (h._windBlendW != null) ? Math.round(h._windBlendW * 100) : 0;
         obsEl.title = 'Measured at the BOM automatic weather station on North Head, ' +
-                      'about 1.5 km away. The forecast above, and the scores, are ' +
-                      'still model values — this is what the wind is actually doing.';
+                      'about 1.5 km away. The wind shown above is the forecast pulled ' +
+                      (wPct > 0 ? wPct + '% of the way toward this reading' : 'toward this reading') +
+                      ' — the correction is strongest now and fades out over the next ' +
+                      'few hours, where the model is the better estimate.';
         obsEl.style.display = '';
       } else {
         obsEl.style.display = 'none';
@@ -10702,11 +10914,15 @@ async function loadAndRender(forceRefresh = false) {
       }
       setSrc('bw', (bwRes.status === 'fulfilled' && bwRes.value) ? 'ok' : 'down');
 
-      // ── Observed wind — MEASURE AND LOG ONLY, changes nothing on screen ─────
-      // Deliberately fire-and-forget and NOT awaited: this is instrumentation for
-      // a future bias correction, and it must never add latency to, or be able to
-      // fail, the render below. _windObs is exposed purely so it can be inspected
-      // in the console while the pairing is being validated.
+      // ── Observed wind — LOG THE RAW PAIR, THEN NOWCAST-BLEND ───────────────
+      // Two separate jobs, in this order and no other:
+      //   1. logWindObs pairs the observation against the RAW model wind. It must run
+      //      before the blend or the table starts measuring the correction against
+      //      itself and the bias silently reads as fixed.
+      //   2. blendObsIntoMatrix nudges the near hours toward the station, tapering to
+      //      zero a few hours out. From here on the observation DOES move the scores.
+      // logWindObs is fire-and-forget (it computes its pairing synchronously, then
+      // POSTs): it must never add latency to, or be able to fail, the render below.
       try {
         const obs = (obRes.status === 'fulfilled' && obRes.value) ? parseWindObs(obRes.value) : null;
         window._windObs = obs;
@@ -10717,6 +10933,14 @@ async function loadAndRender(forceRefresh = false) {
           diag('OBS ' + obs.station + ' ' + obs.spdKmh + ' km/h @' + obs.dirDeg +
                '° (n=' + obs.n + ', ' + obs.ageMin + ' min old)');
           logWindObs(_matrix, obs);
+          const bl = blendObsIntoMatrix(_matrix, obs);
+          window._windBlend = bl;
+          if (bl && bl.touched) {
+            diag('OBS blend — ' + bl.touched + ' hours, w≤' + bl.maxW.toFixed(2) +
+                 ' (conf ' + bl.conf.toFixed(2) + ')' +
+                 (bl.ratio != null ? ', ×' + bl.ratio.toFixed(2) : ', +' + bl.addKmh.toFixed(1) + ' km/h') +
+                 (bl.dirDelta ? ', ' + Math.round(bl.dirDelta) + '°' : ''));
+          }
         }
       } catch (obErr) { diag('OBS log error (isolated): ' + obErr.message); }
       try { renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null); }
