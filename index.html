@@ -18257,7 +18257,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       // — the same figure the Chop rail prints, so the two cannot disagree.
       var _chopRead = (liveRes.swim && liveRes.swim.raw != null)
         ? (Math.round(liveRes.swim.raw * 10) / 10) + ' cm' : '';
-      h += '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🏊 Right now at the bay</div>' +
+      // No caption on this tile: the announcement's own title says what this is,
+      // and a second heading immediately under it just repeats the author.
+      h += '<div class="ssd-tile ssd-wide">' +
            '<div class="ssd-metrow ssd-met3">' +
              metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
              metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
@@ -18579,7 +18581,17 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         '<div id="annBody"><div id="annTitle"></div><div id="annText"></div></div>' +
         '<div id="annScroll" style="display:none;"></div>' +
       '</div>';
-    ov.addEventListener('click', dismissPopup);   // tap anywhere closes
+    // Tap ANYWHERE closes — for a swimmer that is right: they have read it and
+    // want it gone in one tap, wherever their thumb lands.
+    // NOT in preview. There the admin is trying to READ their own draft, and
+    // tap-anywhere made that nearly impossible: touching the card (to scroll, to
+    // check a link, to look at the stats block) dismissed it, and the only way
+    // back was to hit Preview again. In preview only the BACKDROP closes it,
+    // matching how every other sheet in this app behaves.
+    ov.addEventListener('click', function (e) {
+      if (_preview && e.target !== ov) return;
+      dismissPopup();
+    });
     document.body.appendChild(ov);
   }
   function fmtStamp(a){
