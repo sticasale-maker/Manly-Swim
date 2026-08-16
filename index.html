@@ -3350,24 +3350,29 @@
 
     </div><!-- /community-group -->
 
-    <!-- DAY VIEW — 6am-8pm for ONE day, swipeable day to day. Drawn by
-         renderDayWindow() with the SAME chart as The Week Ahead below it
-         (wgUnifiedChart, labels:'hours'), so the two read as one family.
-         Sits ABOVE the week card, but HIDDEN BY DEFAULT: SECTIONS key 'dayview' is
-         complete:0 / custom:0, so it only appears once a swimmer ticks "Day view"
-         in the Custom panel. renderDayWindow() still runs while it is hidden —
-         cheap, and it means the card is already drawn the moment it is ticked.
-         Swiping calls selectDay(), the app's existing single entry point, so the
-         slider, snapshot and this card all move together — no second "current day". -->
+    <!-- TWO DAY CARDS, both 6am-8pm for ONE day and both swipeable day to day.
+         They are DIFFERENT READINGS of the same hours, not variants of one card,
+         so each has its own Custom-panel switch and either can be off:
+           • MATRIX (#dayWindowCard, key 'dayview')  — renderDayWindow(): a cell per
+             hour per metric, zone-coloured. Answers "what is each metric doing".
+           • LINES  (#dayLinesCard, key 'daylines') — renderDayLines(): the SAME
+             visualisation as The Week Ahead below (wgUnifiedChart, labels:'hours'),
+             so a colour, a height and a tier mean the same thing whether you are
+             reading a week or one day. Answers "what is the shape of the day".
+         Both HIDDEN BY DEFAULT (complete:0 / custom:0) and both render while hidden
+         — cheap, and it means the card is already drawn the moment it is ticked.
+         Swiping either calls selectDay(), the app's existing single entry point, so
+         the slider, the snapshot and BOTH cards move together — no second
+         "current day", and the two headers can never disagree. -->
     <div class="dw-card" id="dayWindowCard">
       <div class="dw-head">
-        <button type="button" class="dw-nav" id="dwPrev" onclick="dayWindowStep(-1)"
+        <button type="button" class="dw-nav dw-prev" id="dwPrev" onclick="dayWindowStep(-1)"
                 aria-label="Previous day (back towards today)">&#8249;</button>
         <div class="dw-head-txt">
           <span class="dw-day" id="dayWindowDay">&mdash;</span>
           <span class="dw-sub" id="dayWindowSub">6am&ndash;8pm &middot; swipe to change day</span>
         </div>
-        <button type="button" class="dw-nav" id="dwNext" onclick="dayWindowStep(1)"
+        <button type="button" class="dw-nav dw-next" id="dwNext" onclick="dayWindowStep(1)"
                 aria-label="Next day">&#8250;</button>
       </div>
       <svg id="dayWindowSvg" class="dw-svg" viewBox="0 0 360 130"
@@ -3375,6 +3380,20 @@
       <!-- Best times, filled by dayBestWindows(). Hidden on the days it finds
            nothing to say — see the three guards on that function. -->
       <div class="dw-best" id="dayWindowBest" hidden></div>
+    </div>
+
+    <div class="dw-card" id="dayLinesCard">
+      <div class="dw-head">
+        <button type="button" class="dw-nav dw-prev" onclick="dayWindowStep(-1)"
+                aria-label="Previous day (back towards today)">&#8249;</button>
+        <div class="dw-head-txt">
+          <span class="dw-day">&mdash;</span>
+          <span class="dw-sub" id="dayLinesSub">6am&ndash;8pm &middot; swipe to change day</span>
+        </div>
+        <button type="button" class="dw-nav dw-next" onclick="dayWindowStep(1)"
+                aria-label="Next day">&#8250;</button>
+      </div>
+      <div id="dayLinesChart"></div>
     </div>
 
     <!-- THE WEEK AHEAD — one Best-Swim-Window ribbon per upcoming day (built by
@@ -7930,32 +7949,33 @@ function dayWindowStep(delta){
   try { renderDayPicker(_matrix); } catch (e) {}  // keep the day chips' highlight in step
 }
 
-// Day name + arrow enable/disable. Called from renderDayWindow so it can never
-// disagree with the chart beneath it.
+// Day name + arrow enable/disable. Called from the day renderers so the headers can
+// never disagree with the chart beneath them. Class-driven, not id-driven: there are
+// two day cards now (matrix and lines), either of which may be switched off, and
+// they always show the SAME day — both follow selectDay. Addressing them by id
+// would have left whichever card is not the first one with a dead header.
 function dayWindowChrome(day){
   var days = dayWindowDays(), i = days.indexOf(day);
-  var lbl = document.getElementById('dayWindowDay');
-  if (lbl){
-    var txt = '—';
-    if (day){
-      if (i === 0) txt = 'Today';
-      else if (i === 1) txt = 'Tomorrow';
-      else {
-        var d = new Date(day + 'T00:00');
-        txt = d.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'short' });
-      }
+  var txt = '—';
+  if (day){
+    if (i === 0) txt = 'Today';
+    else if (i === 1) txt = 'Tomorrow';
+    else {
+      var d = new Date(day + 'T00:00');
+      txt = d.toLocaleDateString('en-AU', { weekday:'long', day:'numeric', month:'short' });
     }
-    lbl.textContent = txt;
   }
-  var prev = document.getElementById('dwPrev'), next = document.getElementById('dwNext');
-  if (prev) prev.disabled = (i <= 0);
-  if (next) next.disabled = (i < 0 || i >= days.length - 1);
+  document.querySelectorAll('.dw-day').forEach(function(el){ el.textContent = txt; });
+  document.querySelectorAll('.dw-prev').forEach(function(b){ b.disabled = (i <= 0); });
+  document.querySelectorAll('.dw-next').forEach(function(b){ b.disabled = (i < 0 || i >= days.length - 1); });
 }
 
 // Horizontal swipe on the card. Bound once; the card element itself is never
 // replaced (only its svg contents are), so one binding survives every re-render.
 function initDayWindowSwipe(){
-  var card = document.getElementById('dayWindowCard');
+  document.querySelectorAll('.dw-card').forEach(_bindDayCardSwipe);
+}
+function _bindDayCardSwipe(card){
   if (!card || card._dwSwipe) return;
   card._dwSwipe = true;
   var x0 = 0, y0 = 0, active = false;
@@ -8087,6 +8107,69 @@ function renderDayWindow(dateTimeStr){
   }
 
   svg.innerHTML = cells + box + caret + labels + ticks;
+}
+
+// The OTHER day card: the same three metrics as the matrix above, drawn as the
+// Week Ahead's chart (wgUnifiedChart, labels:'hours') so a colour, a height and a
+// tier mean the same thing whether you are reading a week or one day. Independent
+// of renderDayWindow rather than a mode of it — both can be on at once, and a
+// swimmer may want either or neither.
+//
+// The best-times search is the SAME dayBestWindows() the matrix uses, so the two
+// cards can never name different best hours for one day. Only the drawing differs:
+// the matrix boxes its window in cells, this one shades the time span.
+function renderDayLines(dateTimeStr){
+  var host = document.getElementById('dayLinesChart');
+  if (!host) return;
+  var day = (dateTimeStr || '').substring(0, 10);
+  try { dayWindowChrome(day); initDayWindowSwipe(); } catch (e) { /* cosmetic; never block the chart */ }
+  if (!day || !_matrix || !_matrix.length){ host.innerHTML = ''; return; }
+
+  var rows = _matrix.filter(function(r){ return r.dateTime && r.dateTime.indexOf(day) === 0; });
+  if (rows.length < 2){ host.innerHTML = '<div class="wa2-empty">No forecast for this day.</div>'; return; }
+
+  var subEl = document.getElementById('dayLinesSub');
+  // The only thing telling a first-time user the card is navigable. Set here rather
+  // than left in the markup because this render owns the card's text.
+  if (subEl) subEl.textContent = '6am–8pm · tap to read a time · swipe for another day';
+
+  var edges = wgBandEdges();
+  if (!edges){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
+  var tsOfRow = function(r){ return new Date(String(r.dateTime).replace(' ','T')).getTime(); };
+  var E = [], U = [], Cc = [], pts = [];
+  rows.forEach(function(r){
+    var hh = parseInt(r.dateTime.substring(11,13),10);
+    if (hh < DW_FROM_H || hh > DW_TO_H) return;
+    var ts = tsOfRow(r); if (!isFinite(ts)) return;
+    var res; try { res = calcScore(r); } catch(e){ return; }
+    // Scores (60 = best) for the best-times search, alongside the band positions
+    // (0-100, 100 = roughest) the lines are drawn from. Two scales, opposite
+    // directions — keep them straight.
+    pts.push({
+      hhmm: r.dateTime.substring(11,16),
+      combo: wgCombo(res.entry.score, res.swim.score, res.water.score),
+      red: (res.entry.cls === 'red' || res.swim.cls === 'red' || res.water.cls === 'red')
+    });
+    // Hourly, not the week chart's 4-hour worst-in-bin: a single day has room for
+    // every hour, and binning here would flatten the very peaks the card exists to show.
+    E.push([ts, wgPosOf(res.entry.raw, edges.E)]);
+    Cc.push([ts, wgPosOf(res.swim.raw,  edges.S)]);
+    U.push([ts, wgPosOf(res.water.raw, edges.U)]);
+  });
+  if (E.length < 2){ host.innerHTML = '<div class="wa2-empty">No 6am–8pm forecast for this day.</div>'; return; }
+
+  // Best window as TIME SPANS for this chart's x-axis. dayBestWindows returns cell
+  // indices (the matrix draws in columns); E is built from the same filtered rows in
+  // the same order, so index i is E[i]'s timestamp. Half a step of padding each side
+  // keeps a one-hour window from collapsing to a zero-width line.
+  var bw = dayBestWindows(pts);
+  var half = (E[E.length-1][0] - E[0][0]) / Math.max(1, E.length - 1) / 2;
+  var spans = bw.idx.map(function(w){ return { a: E[w.lo][0] - half, b: E[w.hi][0] + half }; });
+
+  var dt0 = E[0][0], dt1 = E[E.length-1][0];
+  var DW_OPT = { ns: 'dw', labels: 'hours', expand: false, best: spans };
+  host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
+  try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
 }
 
 // ── DUAL-SCORE CALIBRATION LOGGER ────────────────────────────────────────────
@@ -9478,6 +9561,7 @@ function renderSnapshot(h, wx) {
   renderGemComparison(h);
   // Best swim window — redraw the 3-line day chart for this day / hour
   try { renderDayWindow(h.dateTime); } catch (e) {}
+  try { renderDayLines(h.dateTime);  } catch (e) {}
   return true;
 }
 
@@ -10515,6 +10599,18 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
   // competed and no line could clear 3:1 contrast. The bands are a reference scale,
   // not a series — they should recede. Every line clears contrast at 0.62.
   s += '<rect x="0" y="' + yTop + '" width="' + W + '" height="' + bandsH + '" fill="#ffffff" fill-opacity="0.62"/>';
+  // Best-times shading. opt.best is a list of {a,b} ms spans from dayBestWindows()
+  // via renderDayLines; empty (and so nothing drawn) on a flat or red day, and never
+  // passed at all by the week chart. Painted over the band wash but UNDER the grid
+  // and the three lines, so it reads as a region of the background rather than a
+  // fourth series. Ink, not WG_BOX cream: cream was picked for the dark ribbon and
+  // disappears on this pale wash.
+  var best = '';
+  (opt.best || []).forEach(function(w){
+    var bx = xAt(Math.max(w.a, t0)), bw = Math.max(4, xAt(Math.min(w.b, t1)) - bx);
+    best += '<rect x="' + bx.toFixed(1) + '" y="' + yTop + '" width="' + bw.toFixed(1) + '" height="' + bandsH + '" fill="#0a2230" fill-opacity="0.07"/>'
+          + '<rect x="' + bx.toFixed(1) + '" y="' + (yTop + 0.75) + '" width="' + bw.toFixed(1) + '" height="' + (bandsH - 1.5) + '" fill="none" stroke="#0a2230" stroke-opacity="0.5" stroke-width="1.5" stroke-dasharray="5 3"/>';
+  });
   var grid = '', labels = '', dayMs = 86400000;
   if (LB === 'hours'){
     // Day view: gridline + clock tick every 3h across the 6am-8pm span. Same ink and
@@ -10551,7 +10647,7 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
     + '</g>';
   var aria = (LB === 'hours') ? 'Day view — drag to read any time' : 'Week ahead — drag to read any time';
   var svg = '<svg id="' + ns + 'UniSvg" class="wa2-svg wa2-uni-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" tabindex="0" role="slider" aria-label="' + aria + '" aria-valuemin="0" aria-valuemax="100">'
-    + s + grid + lines + scr + labels + tier + '</svg>';
+    + s + best + grid + lines + scr + labels + tier + '</svg>';
   var readout = '<div class="wa2-scrub-read" id="' + ns + 'ScrubRead"><span class="wa2-scrub-hint">Tap or drag the chart to read any time</span></div>';
   // Expand control. A SIBLING of the svg, not a child: the svg owns pointerdown for
   // the scrubber, so a button inside it would place the scrub line on every press.
@@ -16448,7 +16544,12 @@ if ('serviceWorker' in navigator) {
     // 'daywindow' — a device that used the pre-14-Aug card still carries
     // daywindow:1 in its saved CUSTOM_KEY map, and reusing the key would switch the
     // card on for exactly the people who never asked for it back.
-    { key:'dayview', label:"Day View Matrix", sel:'#dayWindowCard', complete:0, custom:0 },
+    { key:'dayview',  label:"Day View Matrix", sel:'#dayWindowCard', complete:0, custom:0 },
+    // Separate key, separate switch: the matrix and the lines are two readings of the
+    // same hours, and a swimmer may want either, both or neither. 'dayview' stays on
+    // the MATRIX because that is what devices which have already ticked it are
+    // showing — moving the key would silently swap their card for a different one.
+    { key:'daylines', label:"Day View Lines",  sel:'#dayLinesCard',  complete:0, custom:0 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
