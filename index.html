@@ -8242,6 +8242,8 @@ function renderDayLines(dateTimeStr){
   var subEl = document.getElementById('dayLinesSub');
   // The only thing telling a first-time user the card is navigable. Set here rather
   // than left in the markup because this render owns the card's text.
+  // Base text only. The dotted-line clause is appended further down, once
+  // chopRawDiffers is known — the legend must not promise a line that is not drawn.
   if (subEl) subEl.textContent = '6am–8pm · tap to read a time · swipe for another day';
 
   var edges = wgBandEdges();
@@ -8302,6 +8304,12 @@ function renderDayLines(dateTimeStr){
   // line all day — a second line that never means anything is worse than none.
   var DW_OPT = { ns: 'dw', labels: 'hours', expand: false, best: spans,
                  chopRaw: chopRawDiffers ? Craw : null };
+
+  // Legend for the dotted line, appended only when there IS one to explain. Same
+  // condition as the series itself, so the caption and the chart cannot disagree.
+  if (subEl && chopRawDiffers) {
+    subEl.textContent += ' · dotted line shows forecasted chop (vs real time)';
+  }
   host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
   try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
 }
