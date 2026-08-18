@@ -5551,8 +5551,11 @@ const SITE_DEFAULTS = {
   obsBlendRatioMax: 2.0,   // feed fault, not a nowcast, and must not scale the day.
   obsBlendMinKmh:   3,     // below this on either side, ratio is meaningless → additive
   obsBlendMaxAddKmh: 8,    // clamp on the light-wind additive path
-  obsBlendMaxDirDeg: 60,   // clamp on the direction nudge. A bigger disagreement is a
-                           // different weather situation, not a correctable offset.
+  // obsBlendMaxDirDeg (was 60) RETIRED 18 Aug 2026 — see the direction gate in
+  // blendObsIntoMatrix. It fired hardest on the mornings the station was right.
+  obsBlendRedOneWay: true, // the observation may push an hour INTO red, never OUT of
+                           // it. Not a statement about the station's accuracy — it is
+                           // that the two error directions cost a swimmer differently.
   obsBlendSteadyMin: 0.6,  // |vector mean|/scalar mean. Under a veering wind the mean
                            // bearing is not a bearing — rotate nothing, speed only.
   // ── Gust rejection (16 Aug 2026) ────────────────────────────────────────────────
@@ -8664,6 +8667,16 @@ function applyObservedPast(matrix, hourly) {
   return n;
 }
 
+// Is any of the three metrics in the red band for this row? Same test dayBestWindows
+// and the day charts use, so "red" means one thing across the app. Returns false if
+// scoring throws — an unscoreable row is not evidence of danger.
+function isRedRow(row) {
+  try {
+    const res = calcScore(row);
+    return res.entry.cls === 'red' || res.swim.cls === 'red' || res.water.cls === 'red';
+  } catch (e) { return false; }
+}
+
 // ── OBSERVED-WIND NOWCAST BLEND — STEP 2: THE OBS NOW MOVES THE SCORES ───────
 // Near the observation instant the station is right and the model is an estimate;
 // three hours out the reverse is true. So the correction is applied at full weight
@@ -8730,12 +8743,21 @@ function blendObsIntoMatrix(matrix, obs) {
     ramp(obs.scatter, S.obsBlendScatterLo ?? 0.12, S.obsBlendScatterHi ?? 0.45),
     ramp(gustRatio,   S.obsBlendGustLo    ?? 1.5,  S.obsBlendGustHi    ?? 2.6)));
 
-  // Direction nudge, gated on steadiness: under a veering wind the vector mean bearing
-  // is an artefact and rotating the forecast by it would invent a wind shift.
+  // Direction nudge, gated on steadiness ONLY. The ±60° cap is gone (18 Aug 2026).
+  // It was justified as "a bigger disagreement is a different weather situation, not
+  // a correctable offset" — but WW serves ONE cell several km wide whose centre is no
+  // closer to the bay than the station is, so a large disagreement is not evidence
+  // that the station is wrong. Worse, the cap was a cliff, not a clamp: 59° applied
+  // in full, 61° applied nothing. It switched the correction off exactly when the
+  // forecast was most wrong. Measured 18 Aug 2026 — sea breeze in at 10:00, WW said
+  // SSE, North Head read ENE, ~90° apart. Under the cap that hour would have kept the
+  // observed SPEED and the forecast's sheltered BEARING: a wind that blew nowhere.
+  //
+  // Steadiness still gates it, and still must: across a veering window the vector
+  // mean bearing is an artefact regardless of how far it sits from the forecast.
   const steady = (obs.steadiness == null) ? 1 : obs.steadiness;
-  const dcap   = S.obsBlendMaxDirDeg ?? 60;
   const rawDD  = obsCircDiff(obs.dirDeg, fc.dirDeg);
-  const dirDelta = (steady >= (S.obsBlendSteadyMin ?? 0.6) && Math.abs(rawDD) <= dcap) ? rawDD : 0;
+  const dirDelta = (steady >= (S.obsBlendSteadyMin ?? 0.6)) ? rawDD : 0;
 
   // FORWARD ONLY. There was a backward reach; it is gone, because there is nothing
   // left for it to do. Hours that are over are replaced outright by their own
@@ -8749,7 +8771,7 @@ function blendObsIntoMatrix(matrix, obs) {
   // from 11:00 — it was measured inside that hour and describes it directly.
   const od = new Date(obsT);
   const obsHourTs = new Date(od.getFullYear(), od.getMonth(), od.getDate(), od.getHours()).getTime();
-  let touched = 0, maxW = 0;
+  let touched = 0, maxW = 0, redHeld = 0;
 
   for (const r of matrix) {
     if (!r || !r.dateTime) continue;
@@ -8794,11 +8816,40 @@ function blendObsIntoMatrix(matrix, obs) {
       r.windDir = r._windRaw.dir;
     }
     r._windBlendW = Math.round(w * 1000) / 1000;
+
+    // ── ONE-WAY RED GUARD ───────────────────────────────────────────────────
+    // With the direction cap gone the observation can rotate an hour by any angle,
+    // and rotating toward the west makes the bay read SAFER twice over: into the
+    // 180–280° lee arc chop is scaled by chopLeeFactor, and within 270°±35° Entry
+    // is credited by offshoreFlatten. Both are legitimate when the wind really has
+    // gone offshore. But the two error directions do not cost the same: calling a
+    // rough bay calm puts someone in the water, calling a calm bay rough costs them
+    // a swim. So the correction may WORSEN an hour freely and may not RESCUE one.
+    //
+    // Deliberately the whole wind, not just the bearing: the rule is about the
+    // verdict a swimmer reads, and a lighter observed speed can lift an hour out of
+    // red on its own. Reverting to _windRaw leaves the row exactly as the forecast
+    // had it, which is the state this guard exists to preserve.
+    if (S.obsBlendRedOneWay !== false) {
+      try {
+        if (isRedRow(Object.assign({}, r, { windKmh: r._windRaw.kmh, windDir: r._windRaw.dir })) &&
+            !isRedRow(r)) {
+          r.windKmh = r._windRaw.kmh;
+          r.windDir = r._windRaw.dir;
+          r._windBlendW = 0;
+          r._windRedHeld = true;      // read by the diag line; nothing else branches on it
+          redHeld++;
+          continue;                   // not counted as touched: nothing was changed
+        }
+        r._windRedHeld = false;
+      } catch (e) { /* scoring failure must never break the blend */ }
+    }
+
     touched++;
     if (w > maxW) maxW = w;
   }
 
-  return { touched, maxW, ratio, addKmh, dirDelta, conf,
+  return { touched, maxW, ratio, addKmh, dirDelta, conf, redHeld,
            scatter: obs.scatter, gustRatio,
            obsKmh, obsMeanKmh: obs.spdKmh, fcKmh: fc.kmh, ageMin: obs.ageMin };
 }
@@ -11525,7 +11576,8 @@ async function loadAndRender(forceRefresh = false) {
             diag('OBS blend — ' + bl.touched + ' hours, w≤' + bl.maxW.toFixed(2) +
                  ' (conf ' + bl.conf.toFixed(2) + ')' +
                  (bl.ratio != null ? ', ×' + bl.ratio.toFixed(2) : ', +' + bl.addKmh.toFixed(1) + ' km/h') +
-                 (bl.dirDelta ? ', ' + Math.round(bl.dirDelta) + '°' : ''));
+                 (bl.dirDelta ? ', ' + Math.round(bl.dirDelta) + '°' : '') +
+                 (bl.redHeld ? ', ' + bl.redHeld + ' held red' : ''));
           }
         }
       } catch (obErr) { diag('OBS log error (isolated): ' + obErr.message); }
