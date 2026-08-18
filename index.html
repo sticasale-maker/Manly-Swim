@@ -8277,15 +8277,25 @@ function renderDayLines(dateTimeStr){
     Cc.push([ts, chopPos]);
     // Raw-forecast twin of the line above. The row is CLONED, never mutated: this
     // same matrix row is scored by every other card on the page.
-    var rw = r._windRaw, rawPos = chopPos;
+    //
+    // NO OBSERVATION => NO POINT, never a point laid on top of the solid line.
+    // _windRaw exists only where the obs pipeline actually touched the row. Without
+    // it the "forecast" and the shown value are the same number, and drawing them
+    // coincident reads as "the forecast was right" when the truth is "nothing was
+    // measured here" — absent data painted as a good reading. A HOLE in the dotted
+    // line says the second thing instead. Past the taper a hole is right too: there
+    // is no correction out there to draw.
+    var rw = r._windRaw, rawPos = null;
     if (rw && rw.kmh != null) {
       var rawRow = Object.assign({}, r, { windKmh: rw.kmh, windDir: (rw.dir != null ? rw.dir : r.windDir) });
-      // On a throw, rawPos stays at chopPos: a dotted line that hugs the solid one
-      // is the honest way to say "no correction to show here".
-      try { rawPos = wgPosOf(calcScore(rawRow).swim.raw, edges.S); } catch (e) {}
+      try { rawPos = wgPosOf(calcScore(rawRow).swim.raw, edges.S); } catch (e) { rawPos = null; }
     }
-    if (Math.abs(rawPos - chopPos) > 0.5) chopRawDiffers = true;
-    Craw.push([ts, rawPos]);
+    if (rawPos == null) {
+      Craw.push(null);                       // unbacked hour — break the line here
+    } else {
+      if (Math.abs(rawPos - chopPos) > 0.5) chopRawDiffers = true;
+      Craw.push([ts, rawPos]);
+    }
     U.push([ts, wgPosOf(res.water.raw, edges.U)]);
   });
   if (E.length < 2){ host.innerHTML = '<div class="wa2-empty">No 6am–8pm forecast for this day.</div>'; return; }
@@ -10874,10 +10884,28 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
   // (past the blend taper) the solid line covers it and the chart looks unchanged.
   function dashOf(data, m){
     if (!data || data.length < 2) return '';
-    var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; });
-    return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + m.c
-      + '" stroke-width="' + (m.w - 0.6) + '" stroke-dasharray="2.5 3" stroke-opacity="0.85"'
-      + ' stroke-linecap="round" stroke-linejoin="round"/>';
+    // data carries nulls for hours with no observation behind them. Each RUN of real
+    // points becomes its own path, so the line breaks across a hole instead of
+    // bridging it. A lone backed hour has no run to draw, so it gets a dot rather
+    // than vanishing silently.
+    var out = '', run = [];
+    function flush(){
+      if (run.length >= 2) {
+        out += '<path d="' + bbfSmoothPath(run) + '" fill="none" stroke="' + m.c
+          + '" stroke-width="' + (m.w - 0.6) + '" stroke-dasharray="2.5 3" stroke-opacity="0.85"'
+          + ' stroke-linecap="round" stroke-linejoin="round"/>';
+      } else if (run.length === 1) {
+        out += '<circle cx="' + run[0][0].toFixed(1) + '" cy="' + run[0][1].toFixed(1)
+          + '" r="1.3" fill="' + m.c + '" fill-opacity="0.85"/>';
+      }
+      run = [];
+    }
+    data.forEach(function(v){
+      if (!v) { flush(); return; }
+      run.push([xAt(v[0]), yAt(v[1])]);
+    });
+    flush();
+    return out;
   }
   var lines = lineOf(U, WG_LINE.surge) + dashOf(opt.chopRaw, WG_LINE.chop) + lineOf(C, WG_LINE.chop) + lineOf(E, WG_LINE.entry);
   var scr = '<g id="' + ns + 'ScrubG" style="visibility:hidden">'
