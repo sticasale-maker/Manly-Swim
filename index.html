@@ -8328,7 +8328,7 @@ function renderDayLines(dateTimeStr){
   // Legend for the dotted line, appended only when there IS one to explain. Same
   // condition as the series itself, so the caption and the chart cannot disagree.
   if (subEl && chopRawDiffers) {
-    subEl.textContent += ' · dotted line shows forecasted chop (vs real time)';
+    subEl.textContent += ' · dotted line: Willyweather forecast';
   }
   host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
   try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
@@ -8876,6 +8876,63 @@ async function logWindObs(matrix, obs) {
     console.warn('wind obs log skipped', e);  // never disturb the forecast
   }
 }
+
+// ── PERIODIC OBSERVATION REFRESH ─────────────────────────────────────────────
+// loadAndRender runs at startup and on explicit retry only — there is no timer,
+// and the visibility handler calls retryIfStillEmpty, which no-ops once data has
+// loaded. So a phone left open on the beach kept its STARTUP observation for the
+// whole session: the very hour a swimmer is standing in could be scored on a wind
+// measured hours earlier. On 18 Aug 2026 the sea breeze came in at 10:00 and an
+// open page would not have shown it at all.
+//
+// This re-fetches ONLY the station reading (a few hundred bytes) and re-applies it
+// to the matrix already in memory. The forecast is NOT re-downloaded: it changes a
+// few times a day, the observation every 30 minutes, and re-pulling WW/NS/OM on a
+// timer would spend a swimmer's mobile data to learn nothing.
+//
+// Safe to run repeatedly, which is the whole reason it can live on a timer:
+// applyObservedPast captures _windRaw only if absent, and blendObsIntoMatrix
+// always recomputes FROM _windRaw, so the correction lands once however many
+// times this fires. It also picks up the hour rollover for free — at the top of
+// the hour the in-progress hour becomes past and swaps to its own observation.
+const OBS_REFRESH_MS = 5 * 60 * 1000;   // BOM publishes every 30 min and the
+                                        // Worker's own KV cache is 4 min, so 5 min
+                                        // catches a new reading promptly without
+                                        // ever being the thing that hammers either.
+async function refreshWindObsOnly(why) {
+  // Hidden tab: nothing to repaint, and a backgrounded phone should not be
+  // spending radio on it. The visibilitychange hook below catches up on return.
+  if (document.hidden) return;
+  if (!OBS_ENABLED || !Array.isArray(_matrix) || !_matrix.length) return;
+  try {
+    const raw = await fetchWindObs(8000);
+    const obs = raw ? parseWindObs(raw) : null;
+    // Stale or too sparse to average: keep what we already have rather than
+    // regress the scores to the bare forecast.
+    if (!obs) return;
+    window._windObs = obs;
+    try { setSrc('ob', 'ok'); } catch (e) {}
+    // Same order as the startup path: log the RAW pair before the blend, or the
+    // table measures the correction against itself. Per-hour latched, so the extra
+    // calls a timer makes are no-ops once the hour is recorded.
+    try { logWindObs(_matrix, obs); } catch (e) {}
+    try { applyObservedPast(_matrix, raw && raw.hourly); } catch (e) {}
+    window._windBlend = blendObsIntoMatrix(_matrix, obs);
+    const h = _matrix[_sliderIdx] || wwData || null;
+    renderSnapshot(h, (h && typeof wxLookup === 'function') ? wxLookup(h.dateTime) : null);
+    renderSlider(_matrix);
+    renderTimeline(_matrix, _wxMatrix);   // also redraws the week chart
+    diag('OBS refresh (' + (why || 'timer') + ') — ' + obs.spdKmh + ' km/h @' +
+         obs.dirDeg + '° (' + obs.ageMin + ' min old)');
+  } catch (e) {
+    // Never surface: a failed refresh must leave the last good render alone.
+    diag('OBS refresh failed (isolated): ' + e.message);
+  }
+}
+setInterval(function () { refreshWindObsOnly('timer'); }, OBS_REFRESH_MS);
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) refreshWindObsOnly('foreground');
+});
 
 // Fallback banner — shown when the displayed hour is NOT NS-fed (nearshore feed down,
 // scores came from the WW 'orig' backup). Injected once above the time/metrics block.
