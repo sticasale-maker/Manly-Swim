@@ -8247,7 +8247,14 @@ function renderDayLines(dateTimeStr){
   var edges = wgBandEdges();
   if (!edges){ host.innerHTML = '<div class="wa2-empty">Loading…</div>'; return; }
   var tsOfRow = function(r){ return new Date(String(r.dateTime).replace(' ','T')).getTime(); };
-  var E = [], U = [], Cc = [], pts = [];
+  var E = [], U = [], Cc = [], Craw = [], pts = [];
+  // Craw is the PURE-FORECAST chop, for the dotted companion line. blendObsIntoMatrix
+  // rewrote windKmh/windDir in place from the North Head observation and kept the
+  // model values on _windRaw, so this recomputes the same metric from the untouched
+  // forecast. The two series are identical once the blend's raised-cosine taper
+  // reaches zero at SITE.obsBlendTaperHrs — that is what makes them converge, and
+  // the gap before then IS the correction, drawn.
+  var chopRawDiffers = false;
   rows.forEach(function(r){
     var hh = parseInt(r.dateTime.substring(11,13),10);
     if (hh < DW_FROM_H || hh > DW_TO_H) return;
@@ -8264,7 +8271,19 @@ function renderDayLines(dateTimeStr){
     // Hourly, not the week chart's 4-hour worst-in-bin: a single day has room for
     // every hour, and binning here would flatten the very peaks the card exists to show.
     E.push([ts, wgPosOf(res.entry.raw, edges.E)]);
-    Cc.push([ts, wgPosOf(res.swim.raw,  edges.S)]);
+    var chopPos = wgPosOf(res.swim.raw,  edges.S);
+    Cc.push([ts, chopPos]);
+    // Raw-forecast twin of the line above. The row is CLONED, never mutated: this
+    // same matrix row is scored by every other card on the page.
+    var rw = r._windRaw, rawPos = chopPos;
+    if (rw && rw.kmh != null) {
+      var rawRow = Object.assign({}, r, { windKmh: rw.kmh, windDir: (rw.dir != null ? rw.dir : r.windDir) });
+      // On a throw, rawPos stays at chopPos: a dotted line that hugs the solid one
+      // is the honest way to say "no correction to show here".
+      try { rawPos = wgPosOf(calcScore(rawRow).swim.raw, edges.S); } catch (e) {}
+    }
+    if (Math.abs(rawPos - chopPos) > 0.5) chopRawDiffers = true;
+    Craw.push([ts, rawPos]);
     U.push([ts, wgPosOf(res.water.raw, edges.U)]);
   });
   if (E.length < 2){ host.innerHTML = '<div class="wa2-empty">No 6am–8pm forecast for this day.</div>'; return; }
@@ -8278,7 +8297,11 @@ function renderDayLines(dateTimeStr){
   var spans = bw.idx.map(function(w){ return { a: E[w.lo][0] - half, b: E[w.hi][0] + half }; });
 
   var dt0 = E[0][0], dt1 = E[E.length-1][0];
-  var DW_OPT = { ns: 'dw', labels: 'hours', expand: false, best: spans };
+  // Only pass the dotted series when it has something to say. With the obs feed
+  // down, or every hour outside the taper, it would sit exactly under the solid
+  // line all day — a second line that never means anything is worse than none.
+  var DW_OPT = { ns: 'dw', labels: 'hours', expand: false, best: spans,
+                 chopRaw: chopRawDiffers ? Craw : null };
   host.innerHTML = wgUnifiedChart(E, U, Cc, dt0, dt1, DW_OPT);
   try { initWeekScrubber(E, U, Cc, dt0, dt1, DW_OPT); } catch (e) {}
 }
@@ -10837,7 +10860,18 @@ function wgUnifiedChart(E, U, C, t0, t1, opt){
   var tier = '<text x="3" y="' + (yTop + 8) + '" font-size="7" fill="rgba(17,53,65,.62)">Rough</text><text x="3" y="' + (yTop + bandsH - 2) + '" font-size="7" fill="rgba(17,53,65,.62)">Calm</text>';
   function lineOf(data, m){ if (!data || data.length < 2) return ''; var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; }); return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + m.c + '" stroke-width="' + m.w + '" stroke-linecap="round" stroke-linejoin="round"/>'; }
   // ENTRY drawn LAST so it is never crossed out by the other two at an intersection.
-  var lines = lineOf(U, WG_LINE.surge) + lineOf(C, WG_LINE.chop) + lineOf(E, WG_LINE.entry);
+  // Dotted twin of the chop line: the same metric BEFORE the observed-wind nowcast
+  // blend. Same hue, so it reads as the same quantity; thinner and dashed, so it
+  // reads as the weaker claim; drawn UNDER the solid line, so where the two agree
+  // (past the blend taper) the solid line covers it and the chart looks unchanged.
+  function dashOf(data, m){
+    if (!data || data.length < 2) return '';
+    var pts = data.map(function(v){ return [xAt(v[0]), yAt(v[1])]; });
+    return '<path d="' + bbfSmoothPath(pts) + '" fill="none" stroke="' + m.c
+      + '" stroke-width="' + (m.w - 0.6) + '" stroke-dasharray="2.5 3" stroke-opacity="0.85"'
+      + ' stroke-linecap="round" stroke-linejoin="round"/>';
+  }
+  var lines = lineOf(U, WG_LINE.surge) + dashOf(opt.chopRaw, WG_LINE.chop) + lineOf(C, WG_LINE.chop) + lineOf(E, WG_LINE.entry);
   var scr = '<g id="' + ns + 'ScrubG" style="visibility:hidden">'
     + '<line id="' + ns + 'ScrubHalo" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#0a2230" stroke-width="3.6" stroke-opacity="0.35"/>'
     + '<line id="' + ns + 'ScrubLine" x1="0" y1="' + (yTop - 2) + '" x2="0" y2="' + (yTop + bandsH + 2) + '" stroke="#ffffff" stroke-width="1.6"/>'
