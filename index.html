@@ -5553,9 +5553,11 @@ const SITE_DEFAULTS = {
   obsBlendMaxAddKmh: 8,    // clamp on the light-wind additive path
   // obsBlendMaxDirDeg (was 60) RETIRED 18 Aug 2026 — see the direction gate in
   // blendObsIntoMatrix. It fired hardest on the mornings the station was right.
-  obsBlendRedOneWay: true, // the observation may push an hour INTO red, never OUT of
-                           // it. Not a statement about the station's accuracy — it is
-                           // that the two error directions cost a swimmer differently.
+  obsBlendRedOneWay: true, // the observation may push an hour INTO a SAFETY red (Entry
+                           // or Surge), never OUT of one. Not a statement about the
+                           // station's accuracy — the two error directions cost a
+                           // swimmer differently. CHOP is excluded on purpose: comfort,
+                           // not safety. See isSafetyRedRow.
   obsBlendSteadyMin: 0.6,  // |vector mean|/scalar mean. Under a veering wind the mean
                            // bearing is not a bearing — rotate nothing, speed only.
   // ── Gust rejection (16 Aug 2026) ────────────────────────────────────────────────
@@ -8667,13 +8669,24 @@ function applyObservedPast(matrix, hourly) {
   return n;
 }
 
-// Is any of the three metrics in the red band for this row? Same test dayBestWindows
-// and the day charts use, so "red" means one thing across the app. Returns false if
-// scoring throws — an unscoreable row is not evidence of danger.
-function isRedRow(row) {
+// Is this row red in a way that MATTERS FOR SAFETY? Deliberately NOT "any of the three
+// metrics is red" — that was the first version and it was wrong.
+//
+// CHOP IS COMFORT, NOT SAFETY. A red chop is a rough, slappy, unpleasant swim. It is
+// not a reason to keep anyone out of the water, and there is no duty to refuse to
+// lower it when the wind actually on the water says it has dropped. Including it made
+// the one-way guard fire on comfort: on 18 Aug 2026 it held two hours scoring
+// amber/RED/green — Entry amber, Surge green — punching a hole in the middle of the
+// nowcast taper for no safety reason at all.
+//
+// ENTRY is the metric people swim on and the one the red-zone sentence is about.
+// SURGE counts too because Washy changes the entry advice itself (facts.siteCheck
+// drops Bower Lane and sends everyone to Shelly).
+// Returns false if scoring throws — an unscoreable row is not evidence of danger.
+function isSafetyRedRow(row) {
   try {
     const res = calcScore(row);
-    return res.entry.cls === 'red' || res.swim.cls === 'red' || res.water.cls === 'red';
+    return res.entry.cls === 'red' || res.water.cls === 'red';
   } catch (e) { return false; }
 }
 
@@ -8818,13 +8831,15 @@ function blendObsIntoMatrix(matrix, obs) {
     r._windBlendW = Math.round(w * 1000) / 1000;
 
     // ── ONE-WAY RED GUARD ───────────────────────────────────────────────────
-    // With the direction cap gone the observation can rotate an hour by any angle,
-    // and rotating toward the west makes the bay read SAFER twice over: into the
-    // 180–280° lee arc chop is scaled by chopLeeFactor, and within 270°±35° Entry
-    // is credited by offshoreFlatten. Both are legitimate when the wind really has
-    // gone offshore. But the two error directions do not cost the same: calling a
-    // rough bay calm puts someone in the water, calling a calm bay rough costs them
-    // a swim. So the correction may WORSEN an hour freely and may not RESCUE one.
+    // With the direction cap gone the observation can rotate an hour by any angle, and
+    // rotating toward the west credits Entry (offshoreFlatten, within 270°±35°).
+    // Legitimate when the wind really has gone offshore — but the two error directions
+    // do not cost the same: calling a dangerous entry safe puts someone in the water,
+    // calling a safe one dangerous costs them a swim. So the correction may WORSEN an
+    // hour freely and may not RESCUE one.
+    //
+    // SAFETY metrics only (Entry, Surge) — chop is never held. If the wind on the water
+    // says the slap has dropped, say so.
     //
     // Deliberately the whole wind, not just the bearing: the rule is about the
     // verdict a swimmer reads, and a lighter observed speed can lift an hour out of
@@ -8832,8 +8847,8 @@ function blendObsIntoMatrix(matrix, obs) {
     // had it, which is the state this guard exists to preserve.
     if (S.obsBlendRedOneWay !== false) {
       try {
-        if (isRedRow(Object.assign({}, r, { windKmh: r._windRaw.kmh, windDir: r._windRaw.dir })) &&
-            !isRedRow(r)) {
+        if (isSafetyRedRow(Object.assign({}, r, { windKmh: r._windRaw.kmh, windDir: r._windRaw.dir })) &&
+            !isSafetyRedRow(r)) {
           r.windKmh = r._windRaw.kmh;
           r.windDir = r._windRaw.dir;
           r._windBlendW = 0;
