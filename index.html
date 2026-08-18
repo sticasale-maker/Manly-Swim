@@ -4052,6 +4052,19 @@ const OBS_BLEND_WINDOW_MIN = 60;
 // Older than this and the observation is not describing now. Two missed BOM
 // cycles. Beyond it we log nothing rather than log something misleading.
 const OBS_MAX_AGE_MIN = 75;
+// Readings an hour must have before it is allowed to overwrite its forecast. BOM
+// publishes a 10-min mean every 30 min, so a clock hour is COMPLETE at n=2 and
+// provisional at n=1. Applying it at n=1 made a past hour move twice — once when
+// its first reading landed, again when the second arrived and changed the mean —
+// and a past that rewrites itself reads as a bug even when every value is right.
+// The cost is real and worth stating: the most recent completed hour sits on its
+// FORECAST for up to ~30 min, until its second reading lands. It is not rescued by
+// the nowcast blend either — that is forward-only, so any past hour it does not own
+// is restored to the raw model wind. So the hour reads as predicted, then switches
+// once to measured. One honest change beats two, which is the whole point.
+// (It also draws no dotted comparison line while it waits, which is correct: there
+// is no complete measurement to compare against yet.)
+const OBS_PAST_MIN_N = 2;
 // Observed HISTORY, for the past of the today-graph. Those hours are over: what the
 // wind was forecast to do is no longer the interesting question, and the station
 // measured what it actually did. Hours strictly in the past get the observation
@@ -8636,8 +8649,13 @@ function applyObservedPast(matrix, hourly) {
   // but the matrix keys on local time, so the conversion has to happen somewhere and
   // Date does it correctly across the DST boundary.
   const byLocal = new Map();
+  let provisional = 0;
   for (const o of hourly) {
     if (!o || !o.utcHour || o.kmh == null || o.dir == null) continue;
+    // Incomplete hour — leave it on the forecast until its second reading lands.
+    // Guarded on o.n being PRESENT: a payload from a Worker that predates the
+    // count must behave as it always did, not silently drop every past hour.
+    if (o.n != null && o.n < OBS_PAST_MIN_N) { provisional++; continue; }
     const s = String(o.utcHour);
     if (s.length < 10) continue;
     const t = Date.UTC(+s.slice(0,4), +s.slice(4,6) - 1, +s.slice(6,8), +s.slice(8,10));
@@ -8647,6 +8665,7 @@ function applyObservedPast(matrix, hourly) {
               String(d.getDate()).padStart(2, '0') + ' ' + String(d.getHours()).padStart(2, '0');
     byLocal.set(k, o);
   }
+  try { window._obsPastProvisional = provisional; } catch (e) {}
 
   // Start of the CURRENT local hour — everything from here forward is untouched.
   const now = new Date();
