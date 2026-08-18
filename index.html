@@ -4039,6 +4039,16 @@ const OBS_ENABLED     = true;          // ?obs=0 disables at runtime
 // BOM applies NO quality control to this product, so a lone spurious or null
 // reading must never become "the observation".
 const OBS_WINDOW_MIN  = 90;
+// Shorter window for the BLEND's speed median only. 90 min reaches back four
+// readings, and across a sea-breeze onset the two stale ones drag the median
+// down: measured 18 Aug 2026, readings 4/4/15/15 gave a median of 9.5 while the
+// two closest observations both said 15, so the current hour's chop was fed by a
+// wind that had stopped blowing an hour earlier. 60 min still holds THREE
+// readings, so the median is still an order statistic a single rogue interval
+// cannot move — the anti-squall guarantee is kept, the reach-back is halved.
+// Deliberately NOT applied to spdKmh/dirDeg: those are logged to wind_obs_pairs,
+// which is a measurement series whose definition must not drift under it.
+const OBS_BLEND_WINDOW_MIN = 60;
 // Older than this and the observation is not describing now. Two missed BOM
 // cycles. Beyond it we log nothing rather than log something misleading.
 const OBS_MAX_AGE_MIN = 75;
@@ -8493,8 +8503,10 @@ function parseWindObs(j) {
   if (ageMin > OBS_MAX_AGE_MIN || ageMin < -35) return null;
 
   const cutoff = newest - OBS_WINDOW_MIN * 60000;
+  const cutoffBlend = newest - OBS_BLEND_WINDOW_MIN * 60000;
   let n = 0, spdSum = 0, u = 0, v = 0, gust = null;
   const spds = [];                        // kept for the robust (median) speed below
+  const spdsBlend = [];                   // same, over the shorter blend window
   for (const r of rows) {
     const t = obsParseUTC(r.utc);
     if (!isFinite(t) || t < cutoff || t > newest) continue;
@@ -8506,6 +8518,7 @@ function parseWindObs(j) {
     const rad = deg * Math.PI / 180;
     spdSum += r.kmh;
     spds.push(r.kmh);
+    if (t >= cutoffBlend) spdsBlend.push(r.kmh);
     u += r.kmh * Math.sin(rad);
     v += r.kmh * Math.cos(rad);
     n++;
@@ -8527,13 +8540,17 @@ function parseWindObs(j) {
   // that squall to the whole afternoon. So the blend uses the MEDIAN, which a
   // single high interval cannot move at all, and is told how much the window
   // disagreed with itself so it can back off when the wind is genuinely unsettled.
-  const sorted = spds.slice().sort((a, b) => a - b);
+  // Prefer the shorter window; fall back to the full one if BOM has dropped
+  // cycles and it holds fewer than the two readings a median needs.
+  const spdsB  = (spdsBlend.length >= 2) ? spdsBlend : spds;
+  const nB     = spdsB.length;
+  const sorted = spdsB.slice().sort((a, b) => a - b);
   const mid    = sorted.length >> 1;
   const spdMed = (sorted.length % 2) ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
   // Scatter as a fraction of the wind: mean |deviation from the median| / median.
   // Relative, not absolute, because 5 km/h of slop in a 40 km/h blow is a steady
   // wind and the same 5 in a 8 km/h drift is not a wind direction at all.
-  const mad    = spds.reduce((s, x) => s + Math.abs(x - spdMed), 0) / n;
+  const mad    = spdsB.reduce((s, x) => s + Math.abs(x - spdMed), 0) / nB;
   const scatter = spdMed > 0 ? mad / spdMed : null;
 
   return {
