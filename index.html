@@ -9445,7 +9445,9 @@ function renderAnswerLine(result) {
   // Mark the rail(s) that set the day and step the others back. Done here rather
   // than in setMetric so the tag and the sentence are written from one decision.
   const blocks = { entry: 'metricEntry', swim: 'metricSwim', surge: 'metricSurge' };
-  const driving = new Set(v.setBy.map(s => s.key));
+  // Roughness drives the LINE (so a messy day names chop); safety drives the
+  // COLOUR and the warning icon. Rough-but-not-dangerous is amber, never red.
+  const driving = new Set(v.roughSetBy.map(s => s.key));
   Object.keys(blocks).forEach(k => {
     const b = document.getElementById(blocks[k]);
     if (!b) return;
@@ -9454,8 +9456,8 @@ function renderAnswerLine(result) {
     if (old) old.remove();
     // Nothing is dimmed and nothing is tagged on a good day, or on a day where
     // all three agree — a tag that appears every morning stops being a signal.
-    const mark = driving.has(k) && driving.size < 3 && v.safetyLevel !== 'good';
-    b.classList.toggle('metric-quiet', driving.size < 3 && v.safetyLevel !== 'good' && !driving.has(k));
+    const mark = driving.has(k) && driving.size < 3 && v.roughLevel !== 'good';
+    b.classList.toggle('metric-quiet', driving.size < 3 && v.roughLevel !== 'good' && !driving.has(k));
     if (mark && nameEl) {
       const tag = document.createElement('span');
       tag.className = 'metric-setby';
@@ -9464,7 +9466,7 @@ function renderAnswerLine(result) {
     }
   });
 
-  if (v.safetyLevel === 'good') {
+  if (v.roughLevel === 'good') {
     // Shown on good days too. It was hidden at first on the theory that a line
     // appearing every morning stops being read — but the whole point of the line
     // is that reading three rails to conclude "all fine" costs a swimmer exactly
@@ -9483,12 +9485,14 @@ function renderAnswerLine(result) {
   }
 
   const cls = v.safetyLevel === 'dangerous' ? 'red' : 'yellow';
-  const words = v.setBy.map(s => s.word);
+  const words = v.roughSetBy.map(s => s.word);
   const drivers = words.length > 1
     ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1]
     : words[0];
   const verb = words.length > 1 ? 'are' : 'is';
-  const head = v.safetyLevel === 'dangerous' ? 'Rough' : 'Caution';
+  // 'Rough' for the top of either scale — a dangerous entry/surge OR a messy
+  // surface. The colour above still separates the two.
+  const head = (v.safetyLevel === 'dangerous' || v.roughLevel === 'rough') ? 'Rough' : 'Caution';
 
   // Built as nodes with textContent rather than an innerHTML string: there is no
   // global esc() in this scope, and a verdict surface is the last place to start
@@ -13877,20 +13881,48 @@ let _bannerGenerated = false;
 // `setBy` is the new part: which metric actually put the day in its tier. It is
 // read straight off the SAME conditions, so it can never disagree with the level
 // it explains. Multiple metrics can qualify — all of them are named.
+// TWO TIERS, NOT ONE (20 Aug 2026). safetyLevel answers "is this dangerous" and
+// roughLevel answers "how unpleasant is it". They used to be one value, and CHOP
+// was in it — so a Doable entry with Steady surge and Messy chop came out
+// "dangerous", and that is what the Oracle was handed. It wrote "The water is
+// dangerous tomorrow. Do not swim." for a day whose entry was Doable and surge
+// Steady in every single hour.
+//
+// Chop is comfort, not safety (Marco, 18 Aug 2026): a messy surface is a rough,
+// slappy swim, not a reason to keep anyone out. It still has to SHOW — a messy day
+// must not read "all three clear" — so it drives the headline through roughLevel
+// while the safety verdict, the warning icon and every CLAUDE.md §1 rule are left
+// to entry and surge alone.
 function swimVerdict(entryLabel, swimLabel, surgeLabel) {
+  // SAFETY — entry and surge only. Surge counts because Washy changes the entry
+  // advice itself (see siteCheck below): it is a statement about getting in and
+  // out, not about how the swim feels.
   const dangerous = [];
   if (entryLabel === 'Dangerous') dangerous.push({ key: 'entry', word: 'entry' });
   if (surgeLabel === 'Washy')     dangerous.push({ key: 'surge', word: 'surge' });
-  if (swimLabel  === 'Messy')     dangerous.push({ key: 'swim',  word: 'chop'  });
 
   const caution = [];
   if (entryLabel === 'Caution') caution.push({ key: 'entry', word: 'entry' });
   if (surgeLabel === 'Surgy')   caution.push({ key: 'surge', word: 'surge' });
-  if (swimLabel  === 'Choppy')  caution.push({ key: 'swim',  word: 'chop'  });
 
   const level = dangerous.length ? 'dangerous' : caution.length ? 'caution' : 'good';
+
+  // ROUGHNESS — the same two, PLUS chop. Drives the headline and the rail tags,
+  // nothing else.
+  const roughSet = (level === 'dangerous' ? dangerous : level === 'caution' ? caution : []).slice();
+  let roughLevel = level;
+  if (swimLabel === 'Messy') {
+    roughSet.push({ key: 'swim', word: 'chop' });
+    if (roughLevel !== 'dangerous') roughLevel = 'rough';
+  } else if (swimLabel === 'Choppy') {
+    roughSet.push({ key: 'swim', word: 'chop' });
+    if (roughLevel === 'good') roughLevel = 'caution';
+  }
+
   return {
     safetyLevel: level,
+    roughLevel: roughLevel,
+    roughSetBy: roughSet,
     setBy: level === 'dangerous' ? dangerous : level === 'caution' ? caution : [],
     // A Dangerous ENTRY is the only thing that produces a site check: it is a
     // statement about how you get in off South Steyne, not about the whole bay.
@@ -14123,12 +14155,18 @@ function summaryConflict(text, facts) {
     // A red ENTRY is not a shut bay: the call is to look at the sheltered ways in.
     // The exact sentence is computed client-side (facts.siteCheck) and must survive
     // verbatim, so the Bower Lane / Shelly split can never come back inverted.
-    if (facts.siteCheck) {
-      if (t.indexOf(String(facts.siteCheck).toLowerCase()) < 0)
-        return 'missing the site-check line: "' + facts.siteCheck + '"';
-      if (/\b(do not swim|don'?t swim|no[- ]swim|not a swim|stay out of the water)\b/.test(t))
-        return 'gives an absolute no-swim call instead of the site check';
-    }
+    // An absolute no-swim call is refused ALWAYS, not only when a site check exists
+    // to replace it. This guard used to sit INSIDE the siteCheck branch, and
+    // siteCheck is null unless ENTRY is Dangerous — so a day made dangerous by
+    // surge alone had no guard at all, and on 20 Aug 2026 "Do not swim." reached
+    // the screen through exactly that gap.
+    if (/\b(do not swim|don'?t swim|no[- ]swim|not a swim|stay out of the water)\b/.test(t))
+      return 'gives an absolute no-swim call (CLAUDE.md §1: the bay is not shut)';
+    // A red ENTRY is not a shut bay: the call is to look at the sheltered ways in.
+    // The exact sentence is computed client-side (facts.siteCheck) and must survive
+    // verbatim, so the Bower Lane / Shelly split can never come back inverted.
+    if (facts.siteCheck && t.indexOf(String(facts.siteCheck).toLowerCase()) < 0)
+      return 'missing the site-check line: "' + facts.siteCheck + '"';
   }
   if (v.entry && v.entry !== 'Easy' && /\beasy\b/.test(t))
     return 'says "easy" but Entry=' + v.entry;
@@ -14224,7 +14262,24 @@ async function generateBannerSummaryLocal() {
   // afternoon → dominant Entry = Caution even though the displayed slot reads
   // Easy), which is what made the summary contradict the sliders. Read the slot
   // on screen; fall back to the day-dominant only if no snapshot has rendered yet.
-  const snapRes  = (_lastSnapshot && _lastSnapshot.result) ? _lastSnapshot.result : null;
+  // ...except that reading the SELECTED slot was itself the bug. On 20 Aug the
+  // slot was 19 Aug 23:00 (Messy) while timeCtx was 'tomorrow', so the tomorrow
+  // summary was written from tonight's chop — a different day entirely. And the
+  // cache key is date+clock-hour+timeCtx with no slot in it, so whichever slot
+  // happened to be selected when the hour's first summary generated got frozen
+  // for everyone.
+  //
+  // REFERENCE HOUR IS 08:00 (Marco, 20 Aug 2026). These are morning swimmers: the
+  // question a summary answers is what the bay is like when they get in, not what
+  // it is like at whatever moment the slider was left on. Deterministic, so the
+  // same day summarises the same way no matter who triggers it or when.
+  const REF_HOUR = 8;
+  const _refRow = scored.find(r => parseInt(String(r.dateTime).substring(11, 13), 10) === REF_HOUR);
+  // No 08:00 in the window (rest-of-today, or a short/backfilled day) → the first
+  // hour the window does cover, which is the nearest thing to 'now'. Only if the
+  // window is somehow empty of both do we fall back to the day-dominant.
+  const snapRes  = (_refRow && _refRow.result) ? _refRow.result
+                 : (scored[0] && scored[0].result) ? scored[0].result : null;
   const domEntry = snapRes ? snapRes.entry.label : dominant(entryLabels);
   const domSwim  = snapRes ? snapRes.swim.label  : dominant(swimLabels);
   const domSurge = snapRes ? snapRes.water.label : dominant(surgeLabels);
