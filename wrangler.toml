@@ -1,72 +1,65 @@
 # bold-rain-6ded — deploy config
 #
-# NOT SAFE TO DEPLOY YET. One thing is still missing; see the block at the bottom.
-#
 # WHY THIS FILE EXISTS: `wrangler deploy` publishes exactly what this file
 # declares and silently drops everything it does not. This Worker is shared with
 # the Forecast App, and a deploy on 30 Jul 2026 stripped the daily-sentence cron —
-# nobody noticed for two days (CLAUDE.md §6). So every trigger and binding the
-# dashboard shows has to be reproduced here, verbatim, before the first CLI deploy.
+# nobody noticed for two days (CLAUDE.md §6). Every trigger, binding and setting
+# the dashboard shows is reproduced here so a CLI deploy is not a demolition.
 #
-# Read off the dashboard 20 Aug 2026:
-#   Triggers  — Every hour, and At 06:00 PM. No queue consumers, no email triggers.
-#   Bindings  — one: KV namespace RATE -> viz-rate-limits
-#   Domains   — workers.dev production + preview enabled, NO custom domains, NO routes
-#   Runtime   — compatibility date 2026-05-30, no flags, Placement default
-#   Build     — no git repository connected
+# Everything below was read off the dashboard on 20 Aug 2026 rather than guessed.
+#   Triggers       Every hour, and At 06:00 PM. No queue consumers, no email triggers.
+#   Bindings       one: KV namespace RATE -> viz-rate-limits
+#   Domains        workers.dev production + preview on, NO custom domains, NO routes
+#   Runtime        compatibility date 2026-05-30, no flags, placement default
+#   Observability  Logs ON (invocation logs + persist to dashboard), sampling 100%,
+#                  Traces OFF, no export destinations
+#   Variables      eight entries, ALL of type Secret
+#   Build          no git repository connected
 
 name = "bold-rain-6ded"
 main = "worker.js"
 compatibility_date = "2026-05-30"
 
-# Production and preview workers.dev URLs are both enabled in the dashboard.
-# app.viz.net.au calls bold-rain-6ded.sticasale.workers.dev directly, so turning
-# this off would take every route down at once.
+# Both workers.dev URLs are enabled. app.viz.net.au calls
+# bold-rain-6ded.sticasale.workers.dev directly, so turning this off would take
+# every route down at once.
 workers_dev = true
 
 # The KV store behind /tune, /obs, the NS last-known-good cache and every daily
-# rate cap. Losing this binding does not error — the code degrades quietly, which
+# rate cap. Losing this binding does not throw — the code degrades quietly, which
 # is worse: /tune falls back to cache and the caps stop counting.
 [[kv_namespaces]]
 binding = "RATE"
 id = "12b1ee36bbee4230a48b17fe445e5db0"   # viz-rate-limits
 
-# scheduled() branches on event.cron. The hourly one runs logHour +
-# nsKeepTokenFresh; 18:00 posts the daily sentence. Both, or one of those two jobs
-# silently stops.
+# scheduled() branches on event.cron: the hourly one runs logHour +
+# nsKeepTokenFresh, 18:00 posts the daily sentence. Both, or one of those two jobs
+# stops with no error anywhere.
 [triggers]
 crons = ["0 * * * *", "0 18 * * *"]
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BEFORE THE FIRST `wrangler deploy` — still to confirm
+# Logs are ON in the dashboard at 100% sampling, so they are declared here. Omit
+# this and a deploy can switch observability off — and "off" is invisible until the
+# day you go looking for a log and find nothing. Traces are off and stay off:
+# that is the dashboard's current state, not an oversight.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+# NO [vars] BLOCK, verified rather than assumed. Settings -> Variables and Secrets
+# lists eight entries and every one is type Secret: ADMIN_PASSPHRASE, ADMIN_TOKEN,
+# ANTHROPIC_API_KEY, INTRO_NOTIFY_TO, NS_TOKEN, RESEND_API_KEY,
+# SUPABASE_SERVICE_KEY, SUPABASE_URL. Secrets live outside the script and survive a
+# deploy untouched, so there is nothing to reproduce. Plain-text vars would have to
+# be declared here or they would be wiped — there are none.
 #
-# 1. PLAIN-TEXT VARIABLES. Secrets survive a deploy untouched; plain vars do NOT
-#    unless they are declared here in [vars]. The Bindings tab shows only the KV
-#    namespace, but the code reads a dozen env values and some are probably plain
-#    vars rather than secrets:
+# The code also reads RESEND_FROM, BOARD_LINK, NTFY_TOPIC, NS_REFRESH_TOKEN,
+# PUBLISH_TOKEN and INTRO_APPROVE_LINK. None are set in the dashboard, and each is
+# read with a coded fallback, so they are already running on their defaults.
 #
-#      SUPABASE_URL, ANTHROPIC_API_KEY, SUPABASE_SERVICE_KEY, ADMIN_PASSPHRASE,
-#      RESEND_API_KEY, RESEND_FROM, INTRO_NOTIFY_TO, INTRO_APPROVE_LINK,
-#      BOARD_LINK, NTFY_TOPIC, NS_TOKEN, NS_REFRESH_TOKEN, ADMIN_TOKEN,
-#      PUBLISH_TOKEN
-#
-#    Needed: the Settings -> "Variables and Secrets" list, showing which are
-#    SECRET and which are plain text. Every plain one gets a line in [vars] below.
-#    Deploying without them takes the Worker down in ways that fail quietly —
-#    sendEmailResend just returns "no RESEND_API_KEY set" and the email never goes.
-#
-# 2. OBSERVABILITY. If the Observability tab has logs enabled, omitting
-#    [observability] here may switch it off. Check and add:
-#      [observability]
-#      enabled = true
-#
-# 3. The Runtime tab shows Cache = Disabled. There is no wrangler.toml key that
-#    obviously maps to it; confirm it is unchanged after the first deploy.
-#
-# FIRST DEPLOY PROCEDURE
-#   1. wrangler deploy --dry-run   (prints what it would upload — read it)
+# DEPLOY PROCEDURE
+#   1. wrangler deploy --dry-run          read what it intends to upload
 #   2. wrangler deploy
-#   3. Immediately re-check the dashboard: both crons still listed, RATE binding
-#      still present, variables intact.
-#   4. curl the app and confirm APP_BUILD-independent routes still answer:
-#      /obs?station=northhead, /tune, /forecast?days=1
+#   3. Re-check the dashboard at once: BOTH crons listed, RATE binding present,
+#      the eight secrets present, Logs still on
+#   4. Hit the routes: /obs?station=northhead, /tune, /forecast?days=1
