@@ -1,4 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
+// APPLIED 19 Aug 2026 — pasted, deployed and confirmed working by Marco. Kept as
+// the record of what was changed and why; do NOT apply it a second time. If the
+// Worker is ever rebuilt from scratch, this is the patch it needs again.
+//
 // PASTE JOB — bold-rain-6ded, Cloudflare dashboard editor. NOT deployed from this
 // repo (CLAUDE.md §6: the Worker is shared with the Forecast App and is
 // dashboard-managed). Additive only — no existing route's behaviour changes.
