@@ -14288,6 +14288,15 @@ function summaryConflict(text, facts) {
   // chop the forecast never reported (swim=Smooth, prose "the surface is choppy").
   if (['Smooth', 'Ripply'].indexOf(v.swim) !== -1 && /\b(choppy|messy|chopped up|rough surface)\b/.test(t))
     return 'says choppy but Chop=' + v.swim;
+  // Hedging a calm verdict is the same defect in softer words, and nothing above
+  // catches it because it contradicts no verdict outright — it overstates one
+  // without ever naming a rougher word. The prompt asked for this and got it
+  // wrong three times out of three: "rhythm and breathing may take a little
+  // concentration" on a RIPPLY morning was live today. Kept in step with the
+  // Worker's copy (CLAUDE.md 1: the rule lives in four places, and a fifth that
+  // drifts is the failure mode).
+  if (['Smooth', 'Ripply'].indexOf(v.swim) !== -1 && /\b(uncomfortable|uneven|awkward|hard work|concentration)\b/.test(t))
+    return 'hedges a ' + v.swim + ' surface with discomfort wording';
   if (['Surgy', 'Washy'].indexOf(v.surge) !== -1 && /\b(no real surge|minimal surge|no significant surge|isn't surging)\b/.test(t))
     return 'downplays surge but Surge=' + v.surge;
   // A height quoted as being "in the bay" must be the bay residual, not the
