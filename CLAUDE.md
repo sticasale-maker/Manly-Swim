@@ -112,10 +112,21 @@ video is the one exception and serves ranges by hand (`serveSplashVideo`).
 
 - **Live scoring path is NS.** `const DEFAULT_SRC = 'ns'`. (An older note claiming
   the default flipped to WW is stale — verify in code, not from notes.)
-- **Sea temperature has one source: a Facebook post scraper** on a laptop, outside
-  this repo. `index.html` states the community reading is the ONLY source and
-  WW/Open-Meteo is never used. It is the most fragile thing in the app; a labelled
-  model fallback is a legitimate conversation but must not be added silently.
+- **Sea temperature is community-first, with a labelled satellite fallback.** The
+  primary source is a Facebook post scraper on a laptop, outside this repo, whose
+  reading Marco enters into `water_temp_now` by hand each morning. That is still the
+  most fragile thing in the app. The fallback was agreed on 20 Aug 2026 and is the
+  conversation the old note here reserved — it is **not** a licence for more:
+  - One day old counts as CURRENT (it just predates that morning's entry).
+  - At **two** days the app switches to Open-Meteo marine SST and **says so** — the
+    tile shows a "satellite" label and the Oracle names it. Never swap silently: a
+    regular knows the community number and would see it change for no stated reason.
+  - `resolveSeaTemp()` is the ONE decider, read by both the tile and the Oracle's
+    facts. A second caller deciding this itself is how the card and the prose end up
+    quoting different temperatures.
+  - The satellite is a good LEVEL and a poor trend (18.0 at 06:00 on eight straight
+    days in Aug 2026, 0.2 off the community figure). Fine for a gap; not a
+    measurement, and never to be presented as one.
 - **A re-tune is owed.** The WW wind location moved from Long Reef to Cabbage Tree
   Bay on 13 Aug 2026; every wind-driven knob was tuned on wind ~5 km/h stronger.
   Anything touching CHOP is building on knobs known to be miscalibrated.

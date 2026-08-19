@@ -856,6 +856,12 @@
   .sea-temp-card2 { display: flex; align-items: center; background: var(--card); padding: 5px 12px 5px 20px; }
   .sea-temp-card2 .st-left { flex: 0 0 auto; }
   .sea-temp-card2 .quality-card-label { font-size: 20px; margin-bottom: 1px; }
+  /* Shown ONLY when the number is not the swimmers' own reading. The normal case
+     is visually untouched, and a modelled figure never sits there unlabelled
+     looking like a measurement (CLAUDE.md 8). */
+  .st-src { font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
+            color: var(--dim); margin-top: 1px; }
+  .st-src[hidden] { display: none; }
   .st-peng-wrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
   .st-penguin { height: 42px; width: auto; flex: 0 0 auto; display: none; }
   /* Pollution card: a state-matched penguin (label baked in), linked to Beachwatch. */
@@ -3344,6 +3350,7 @@
             <span style="font-family:'Bebas Neue',sans-serif;font-size:clamp(22px,6vw,28px);letter-spacing:1px;color:var(--text);line-height:1;" id="seaTempValSlim">—</span>
             <span style="font-size:11px;color:var(--dim);">°C</span>
           </div>
+          <div class="st-src" id="seaTempSrc" hidden>satellite</div>
         </div>
         <div class="st-peng-wrap"><img id="seaTempPenguin" class="st-penguin" alt="" aria-hidden="true"></div>
       </div>
@@ -9889,7 +9896,7 @@ function renderSnapshot(h, wx) {
         wx.feelsLike != null ? Math.round(wx.feelsLike) + '°' : '—';
     }
   }
-  // Sea temp — Facebook community reading is the ONLY source. Never fall back to
+  // Sea temp — the Facebook community reading is the PREFERRED source and the only
   // WW/Open-Meteo: the FB value set for the day stands until the pipeline overwrites it.
   const seaTempEl = document.getElementById('seaTempVal');
   const seaTempSlim = document.getElementById('seaTempValSlim');
@@ -11951,8 +11958,9 @@ const BB_SUPABASE_KEY  = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
 
 // ── Community morning water temperature ───────────────────────────────────────
 // Read-only here (anon key, same as the bluebottle reads). The PC pipeline writes
-// water_temp_now via the service role. This Facebook reading is the ONLY source for
-// the sea-temp tile — WW/Open-Meteo is never used. The stored value stands until the
+// water_temp_now via the service role. This Facebook reading is the PREFERRED source
+// for the sea-temp tile. Open-Meteo marine SST is used ONLY once the reading is two
+// days old, and only ever LABELLED as satellite — see resolveSeaTemp(). The value stands until the
 // pipeline overwrites it, so yesterday's reading shows until today's is posted.
 window._communitySeaTemp = null;
 // The DAY the reading is for. It was already being selected from the API and then
@@ -11974,6 +11982,64 @@ function setSeaPenguin(v) {
   if (img.getAttribute('src') !== src) img.setAttribute('src', src);
   img.style.display = 'block';   // explicit value — '' would fall back to the CSS display:none
 }
+// The swimmers' 06:00 reading is what this app is built on, and it wins whenever
+// it is current. Marco enters it by hand each morning, so ONE day old only means
+// "before today's update" and is treated as current. TWO days means the update did
+// not happen, and at that point a labelled satellite figure is more honest than an
+// ageing measurement presented as today's.
+//
+// The satellite is Open-Meteo marine SST, already on every matrix row, so this adds
+// no request. It is a good LEVEL and a poor trend: it read 18.0 at 06:00 on eight
+// consecutive days in Aug 2026 while sitting 0.2 off the community reading. That is
+// fine for filling a two-day gap and is exactly why it must never be passed off as
+// the morning measurement.
+var SEA_TEMP_STALE_D = 1;
+function _satSeaTempNow() {
+  try {
+    const rows = (typeof _matrix !== 'undefined' && Array.isArray(_matrix)) ? _matrix : null;
+    if (!rows || !rows.length) return null;
+    const now = Date.now();
+    let best = null, bestDiff = Infinity;
+    for (const r of rows) {
+      if (!r || r.seaTemp == null) continue;
+      const t = Date.parse(String(r.dateTime).replace(' ', 'T'));
+      if (!isFinite(t)) continue;
+      const d = Math.abs(t - now);
+      if (d < bestDiff) { bestDiff = d; best = Number(r.seaTemp); }
+    }
+    return (best != null && isFinite(best) && best > 1 && best < 35) ? best : null;
+  } catch (e) { return null; }
+}
+// ONE resolver, read by the tile AND by the Oracle's facts. Two callers deciding
+// this separately is how the card and the prose end up quoting different numbers.
+function resolveSeaTemp() {
+  try {
+    const c = window._communitySeaTemp;
+    const fresh = (c != null && c > 1);
+    const age = communitySeaTempAgeDays();
+    if (fresh && age != null && age <= SEA_TEMP_STALE_D) {
+      return { c: Math.round(c * 10) / 10, source: 'community' };
+    }
+    const sat = _satSeaTempNow();
+    if (sat != null) return { c: Math.round(sat * 10) / 10, source: 'satellite' };
+    // No satellite either (Open-Meteo down, or the matrix not built yet). The
+    // community number is still the best available, and Marco's call is that a
+    // couple of days of drift does not need announcing.
+    if (fresh) return { c: Math.round(c * 10) / 10, source: 'community' };
+    return null;
+  } catch (e) { return null; }
+}
+function paintSeaTemp() {
+  const r = resolveSeaTemp();
+  const txt = r ? r.c.toFixed(1) : null;
+  ['seaTempVal', 'seaTempValSlim'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el && txt) el.textContent = txt;
+  });
+  const src = document.getElementById('seaTempSrc');
+  if (src) src.hidden = !(r && r.source === 'satellite');
+  setSeaPenguin(r ? r.c : null);
+}
 function _sydTodayStr() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney',
     year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
@@ -11991,14 +12057,7 @@ async function fetchCommunitySeaTemp() {
     const val  = row ? Number(row.temp_c) : NaN;
     window._communitySeaTemp = (isFinite(val) && val > 1) ? val : null;
     window._communitySeaTempDay = (window._communitySeaTemp != null && row && row.day) ? String(row.day) : null;
-    if (window._communitySeaTemp != null) {
-      const txt = window._communitySeaTemp.toFixed(1);
-      const a = document.getElementById('seaTempVal');
-      const b = document.getElementById('seaTempValSlim');
-      if (a) a.textContent = txt;
-      if (b) b.textContent = txt;
-    }
-    setSeaPenguin(window._communitySeaTemp);
+    paintSeaTemp();
   } catch (_) { /* leave the last community value in place */ }
 }
 // Whole days between the reading's day and today, in Sydney. null when there is no
@@ -14787,14 +14846,15 @@ async function generateBannerSummaryLocal() {
   // Freshness ceiling for the community water reading. Two days: the scraper posts
   // most days, so one missed day is normal and two is the point where 'the water is
   // 17.8' stops being a statement about this morning.
-  const SEA_TEMP_MAX_AGE_D = 2;
   function _seaTempFact() {
     try {
-      const c = window._communitySeaTemp;
-      if (c == null || !(c > 1)) return null;
-      const age = communitySeaTempAgeDays();
-      if (age == null || age > SEA_TEMP_MAX_AGE_D) return null;
-      return { c: Math.round(c * 10) / 10, ageDays: age };
+      // Same resolver the tile uses, so the card and the prose cannot disagree.
+      // ageDays no longer travels: Marco does not want the reading dated, and the
+      // staleness question is answered by SWITCHING SOURCE rather than by hedging
+      // the wording.
+      const r = resolveSeaTemp();
+      if (!r) return null;
+      return { c: r.c, source: r.source };
     } catch (e) { return null; }
   }
   // TWO MOMENTS, read off the same hourly weather with different offsets:
@@ -14938,8 +14998,9 @@ async function generateBannerSummaryLocal() {
     },
     // WATER TEMPERATURE — the first thing anyone actually wants to know, and until
     // now the summariser had never seen it: it fed the tile and stopped there.
-    // Sent ONLY when it is fresh. One Facebook scraper is the only source (CLAUDE.md
-    // 'the most fragile thing in the app'), so a reading more than SEA_TEMP_MAX_AGE_D
+    // The swimmers' reading while it is current; a LABELLED satellite figure once it
+    // is two days old. One Facebook scraper is the preferred source (CLAUDE.md
+    // 'the most fragile thing in the app'), so once the community reading is more
     // days old is omitted rather than shrugged in — absent is absent, and the Oracle
     // is told nothing instead of something wrong. The age travels with it so the
     // prose can date it out loud.
@@ -14974,6 +15035,12 @@ async function generateBannerSummaryLocal() {
       shelteredContrast: shelteredContrast
     }
   };
+  // The tile is repainted HERE and not only from fetchCommunitySeaTemp, because on
+  // a cold load that fetch resolves before the forecast does: _satSeaTempNow() has
+  // no matrix to read, so a stale reading would paint as though it were current and
+  // stay that way until the five-minute interval came round.
+  paintSeaTemp();
+
   // WATER TEMPERATURE in the baseline too. The Worker writes this better, but the
   // baseline is what shows when the Worker is down, and "is it cold" is the first
   // thing anyone wants answered.
@@ -14984,9 +15051,8 @@ async function generateBannerSummaryLocal() {
   // sea-temp tile carries no date at all this line is the only thing left that
   // would say so (CLAUDE.md 8). Kept in step with the Worker prompt.
   if (_bannerFacts.seaTemp) {
-    const _a = _bannerFacts.seaTemp.ageDays;
-    const _when = _a >= 2 ? ' (' + _a + ' days ago)' : '';
-    wxText += ' The water is ' + _bannerFacts.seaTemp.c + '°' + _when + '.';
+    const _sat = _bannerFacts.seaTemp.source === 'satellite';
+    wxText += ' The water is ' + _bannerFacts.seaTemp.c + '°' + (_sat ? ' by satellite' : '') + '.';
   }
 
   // GETTING OUT — the baseline's version of after_text. Plainer than the
