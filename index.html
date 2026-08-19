@@ -3773,6 +3773,11 @@
       #featureCard .bd-abtn{flex:none;padding:6px 11px;border-radius:8px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .bd-abtn--send{background:var(--ocean);color:#fff;}
       #featureCard .bd-abtn--danger{border-color:var(--red);color:var(--red);}
+      /* The photo button is shared with the public reply composer, where it sits
+         beside a full-size Reply button. In the admin row its neighbours are the
+         smaller .bd-abtn chips, so match those metrics here rather than forking
+         the markup — otherwise it stands 8px taller than everything beside it. */
+      #featureCard .bd-admin-row .fr-photo-btn{padding:6px 11px;font-size:12px;border-color:var(--ocean);}
       /* User replies: softer left border + plain name, so Marco's ocean-blue reply stays visually distinct */
       #featureCard .bd-reply--user{border-left-color:rgba(17,53,65,0.18);}
       #featureCard .bd-uname{font-weight:700;color:var(--deep);font-size:13px;}
@@ -14989,7 +14994,15 @@ function submitFeedback(e) {
   // ---- Reply photos: one pending photo per open reply composer (keyed by post id) --
   var _replyPhotos = {};                     // { <postId>: { blob, url } }
 
-  function replyBox(id){ var l = $('frList'); return l ? l.querySelector('.bd-replybox[data-replybox="' + id + '"]') : null; }
+  // The two composers never coexist — the public one is suppressed in admin mode —
+  // so "the composer for this post" is whichever of the two is on the page. Both use
+  // the same photo classes and data-attributes, which is what lets the delegated
+  // pick/remove handlers and this reset serve them without knowing which is which.
+  function replyBox(id){
+    var l = $('frList'); if (!l) return null;
+    return l.querySelector('.bd-replybox[data-replybox="' + id + '"]')
+        || l.querySelector('.bd-admin[data-adminbox="' + id + '"]');
+  }
 
   function replyPhotoReset(id){
     var p = _replyPhotos[id];
@@ -15204,9 +15217,19 @@ function submitFeedback(e) {
     var hideBtn = p.hidden
       ? '<button type="button" class="bd-abtn" data-unhide="' + esc(p.id) + '">RESTORE</button>'
       : '<button type="button" class="bd-abtn bd-abtn--danger" data-hide="' + esc(p.id) + '">HIDE</button>';
-    return '<div class="bd-admin">' +
+    return '<div class="bd-admin" data-adminbox="' + esc(p.id) + '">' +
       '<textarea data-reply="' + esc(p.id) + '" placeholder="Reply as Marco…"></textarea>' +
+      // Deliberately the SAME classes and data-attributes as the public reply
+      // composer, so the delegated photo pick/remove handlers and replyPhotoReset
+      // work here with no extra wiring.
+      '<div class="fr-photo-wrap" data-rphotowrap="' + esc(p.id) + '" hidden>' +
+        '<img class="fr-photo-thumb" alt="Photo to attach">' +
+        '<button type="button" class="fr-photo-remove" data-rphotoremove="' + esc(p.id) + '" aria-label="Remove photo">&times;</button>' +
+      '</div>' +
       '<div class="bd-admin-row">' +
+        '<label class="fr-photo-btn" title="Add a photo"><span aria-hidden="true">&#128247;</span><span class="fr-photo-label">Photo</span>' +
+          '<input type="file" class="bd-rphoto" data-rphoto="' + esc(p.id) + '" accept="image/*" hidden>' +
+        '</label>' +
         '<button type="button" class="bd-abtn bd-abtn--send" data-send="' + esc(p.id) + '">SEND REPLY</button>' +
         '<button type="button" class="bd-abtn" data-pin="' + esc(p.id) + '">' + (p.pinned ? 'UNPIN' : 'PIN') + '</button>' +
         hideBtn +
@@ -15422,7 +15445,28 @@ function submitFeedback(e) {
     var ta = document.querySelector('#frList textarea[data-reply="' + id + '"]');
     var body = ta ? ta.value.trim() : '';
     if (!body){ setMsg('Write a reply first.'); return; }
-    try { await adminAction('/board-reply', { post_id: id, body: body }); setMsg(''); await refresh(); }
+    try {
+      var imageUrl = null;
+      var pend = _replyPhotos[id];
+      if (pend && pend.blob) {
+        setMsg('Uploading photo…');
+        imageUrl = await uploadPhoto(pend.blob);   // same bucket as every other board photo
+        setMsg('');
+      }
+      // image_url is ADDITIVE on the Worker route. If the deployed /board-reply
+      // predates it the field is ignored and the reply saves without the photo —
+      // which must not pass silently, so the landing check below says so outright.
+      // See worker-board-reply-image.js for the dashboard patch.
+      await adminAction('/board-reply', { post_id: id, body: body, image_url: imageUrl });
+      replyPhotoReset(id);
+      setMsg('');
+      await refresh();
+      if (imageUrl) {
+        var post = findPost(id), landed = false, rs = (post && post.replies) || [];
+        for (var i = 0; i < rs.length; i++) { if (rs[i] && rs[i].image_url === imageUrl) { landed = true; break; } }
+        if (!landed) setMsg('Reply posted, but the photo did not attach — /board-reply needs the image_url patch.');
+      }
+    }
     catch (e){ adminErr(e); }
   }
   async function doStatus(id, patch){
