@@ -2401,6 +2401,24 @@
   }
   .summary-item-btn:hover { background: rgba(74,143,173,0.05); }
   .summary-item-icon { font-size: 22px; flex-shrink: 0; line-height: 1.2; margin-top: 2px; }
+  /* The Oracle drops the left icon gutter and runs full width (Marco, 20 Aug
+     2026). At 375px that gutter cost 32px of every line — about four characters
+     per line across a summary that is now five paragraphs long. The safety tier
+     it carried is not lost: it moved inline beside the day label, where it still
+     reads at a glance but costs no width. */
+  .summary-item--flush { display: block; }
+  .summary-item--flush .summary-item-label { display: flex; align-items: center; gap: 7px; }
+  .summary-tier-icon { font-size: 17px; line-height: 1; }
+  /* Three sections, because a swimmer thinks in places and moments, not in data
+     types: where you are standing, what the water is doing, and getting out. */
+  .oracle-sec { margin-top: 13px; }
+  .oracle-sec:first-of-type { margin-top: 8px; }
+  .oracle-sec[hidden] { display: none; }
+  .oracle-h {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 15px; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--ocean); margin: 0 0 4px; font-weight: 700;
+  }
   .summary-item-body { flex: 1; min-width: 0; }
   .summary-item-label {
     font-family: 'Bebas Neue', sans-serif;
@@ -2417,6 +2435,7 @@
   }
   /* Leading the block now, so the gap belongs under it rather than above. */
   .summary-wx-row--lead { margin-top: 0; }
+  .oracle-sec .summary-viz-row:first-child { margin-top: 0; }
   .summary-water-follows { margin-top: 11px; }
   .summary-after-follows { margin-top: 11px; }
   .summary-viz-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 11px; }
@@ -3826,10 +3845,16 @@
            into two classifications nobody thinks in. The water paragraph stays
            FIRST: on a dangerous day that is where the call is made, and it must
            not be pushed below the sky report. -->
-      <div class="summary-item">
-        <div class="summary-item-icon" id="banner-water-icon">🏊</div>
+      <div class="summary-item summary-item--flush">
         <div class="summary-item-body">
-          <div class="summary-item-label" id="banner-water-label">CONDITIONS</div>
+          <div class="summary-item-label">
+            <span id="banner-water-label">CONDITIONS</span>
+            <!-- The safety tier, moved out of the left gutter. Same element and
+                 same id, so the one line that sets it needs no change. -->
+            <span class="summary-tier-icon" id="banner-water-icon">🏊</span>
+          </div>
+          <div class="oracle-sec">
+            <h4 class="oracle-h">At South Steyne</h4>
           <!-- ARRIVING first, then the water. Reversed 20 Aug 2026: a swimmer feels
                the air before they look at the bay, and the summary reads in that
                order now. The safety call still lands early — it opens the water
@@ -3841,10 +3866,13 @@
               <div class="banner-skeleton"></div>
             </div>
           </div>
-          <div class="summary-item-text summary-water-follows" id="banner-water-text">
-            <div class="banner-skeleton"></div>
-            <div class="banner-skeleton short"></div>
           </div>
+          <div class="oracle-sec">
+            <h4 class="oracle-h">In the water</h4>
+            <div class="summary-item-text" id="banner-water-text">
+              <div class="banner-skeleton"></div>
+              <div class="banner-skeleton short"></div>
+            </div>
           <!-- UNDERNEATH. Folded in from its own card 20 Aug 2026: it happens
                DURING the swim, so it belongs between the swim and getting out,
                not in a separate section after both. The VIZ credit travels with
@@ -3865,9 +3893,14 @@
               </div>
             </div>
           </div>
-          <!-- GETTING OUT, last in the arc. Hidden rather than emptied when
-               absent: an older cached row returns "". -->
-          <div class="summary-item-text summary-after-follows" id="banner-after-text" hidden></div>
+          </div>
+          <!-- WRAPPING UP. The SECTION carries the hidden flag, not just the text:
+               an older cached row returns "" for after_text, and a heading standing
+               over nothing is worse than no heading. -->
+          <div class="oracle-sec" id="oracle-sec-after" hidden>
+            <h4 class="oracle-h">Wrapping up</h4>
+            <div class="summary-item-text" id="banner-after-text"></div>
+          </div>
         </div>
       </div>
 
@@ -14115,6 +14148,18 @@ function forecastStaleLine() {
 // Water quality and the staleness note stay: both are about the swim itself.
 function appendCommunity(text) { return (text || '') + waterQualityLine() + forecastStaleLine(); }
 
+// The closing beat, shown or hidden as ONE unit — the heading and the text
+// together. Two writers reach it (the summariser and the local baseline) and both
+// used to toggle only the text node, which since the section headings arrived
+// would leave "Wrapping up" standing over an empty box.
+function renderAfterParagraph(html) {
+  const el = document.getElementById('banner-after-text');
+  const sec = document.getElementById('oracle-sec-after');
+  const has = !!(html && String(html).trim());
+  if (el) { el.innerHTML = has ? emphasise(html) : ''; }
+  if (sec) sec.hidden = !has;
+}
+
 // The app's OWN visibility and sightings, for the underwater beat. Marco, 20 Aug
 // 2026: use the visibility reported in the app — the community votes are the
 // figure that leads, and the VIZ prose underneath is the recent-dives narrative
@@ -14346,12 +14391,7 @@ async function generateBannerSummary() {
       waterEl.innerHTML = emphasise(appendCommunity(j.water_text));
     }
     renderUnderwaterCommunity();
-    if (afterEl) {
-      // Hidden rather than emptied when absent: an older cached row predates
-      // after_text and returns "", and so does the local baseline.
-      if (j.after_text) { afterEl.innerHTML = emphasise(j.after_text); afterEl.hidden = false; }
-      else { afterEl.textContent = ''; afterEl.hidden = true; }
-    }
+    renderAfterParagraph(j.after_text);
   } catch (e) { /* keep the local baseline */ }
 }
 
@@ -14911,11 +14951,7 @@ async function generateBannerSummaryLocal() {
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(appendCommunity(waterText));
   renderUnderwaterCommunity();
-  const _afterEl = document.getElementById('banner-after-text');
-  if (_afterEl) {
-    if (afterText) { _afterEl.innerHTML = emphasise(afterText); _afterEl.hidden = false; }
-    else { _afterEl.textContent = ''; _afterEl.hidden = true; }
-  }
+  renderAfterParagraph(afterText);
 
   // Mark as generated only now that the banner text has actually been written.
   // (Previously set near the top, so any mid-function throw left this true and
