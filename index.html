@@ -2418,6 +2418,8 @@
   /* Leading the block now, so the gap belongs under it rather than above. */
   .summary-wx-row--lead { margin-top: 0; }
   .summary-water-follows { margin-top: 11px; }
+  .summary-after-follows { margin-top: 11px; }
+  .summary-after-follows[hidden] { display: none; }
   .summary-wx-icon { flex: none; font-size: 15px; line-height: 1.55; }
   .summary-item-text {
     font-family: 'Inter', sans-serif;
@@ -3840,6 +3842,12 @@
             <div class="banner-skeleton"></div>
             <div class="banner-skeleton short"></div>
           </div>
+          <!-- GETTING OUT. Last in the arc, after the community sightings that
+               appendCommunity() puts on the end of the water paragraph. Starts
+               hidden and stays hidden unless the summariser sends one: the local
+               baseline has no equivalent, and an empty box under every summary
+               would be worse than no box. -->
+          <div class="summary-item-text summary-after-follows" id="banner-after-text" hidden></div>
         </div>
       </div>
 
@@ -11965,7 +11973,16 @@ function communitySeaTempAgeDays() {
   } catch (e) { return null; }
 }
 
-window.addEventListener('load', fetchCommunitySeaTemp);
+// Handle on the first fetch, so the summariser can WAIT for it rather than
+// building its facts a second too early. Without this the reading is fetched on
+// window load while generateBannerSummaryLocal runs off the forecast load, and
+// whichever lost the race decided whether the Oracle knew the water temperature
+// at all — on 20 Aug it sent seaTemp: null and the model wrote "water temp data
+// isn't current" about a reading taken that morning.
+window._communitySeaTempReady = null;
+window.addEventListener('load', function () {
+  window._communitySeaTempReady = fetchCommunitySeaTemp();
+});
 setInterval(fetchCommunitySeaTemp, 5 * 60 * 1000);
 const BB_COOLDOWN      = 4 * 60 * 60 * 1000; // 4 hours (stored locally per device)
 const BB_CACHE_TTL     = 5 * 60 * 1000;       // re-fetch from Supabase every 5 min
@@ -14275,14 +14292,26 @@ async function generateBannerSummary() {
     if (!res.ok) return;
     const j = await res.json();
     if (!j || !j.water_text) return;
-    const clash = summaryConflict(j.water_text, _bannerFacts);
+    // The getting-out paragraph goes through the SAME check as the swim one.
+    // Mitigation wording lands just as easily there — "wouldn't stay in long
+    // unless you're confident" is exactly that shape — and validating only
+    // water_text would leave the new paragraph unguarded on the client side
+    // even though the Worker now checks both.
+    const clash = summaryConflict((j.water_text || '') + ' ' + (j.after_text || ''), _bannerFacts);
     if (clash) { diag('Oracle: kept local baseline — LLM ' + clash); return; }
     const wxEl = document.getElementById('banner-wx-text');
     const waterEl = document.getElementById('banner-water-text');
+    const afterEl = document.getElementById('banner-after-text');
     if (j.wx_text && wxEl) wxEl.innerHTML = emphasise(j.wx_text);
     if (waterEl) {
       _bannerWaterBase = j.water_text;
       waterEl.innerHTML = emphasise(appendCommunity(j.water_text));
+    }
+    if (afterEl) {
+      // Hidden rather than emptied when absent: an older cached row predates
+      // after_text and returns "", and so does the local baseline.
+      if (j.after_text) { afterEl.innerHTML = emphasise(j.after_text); afterEl.hidden = false; }
+      else { afterEl.textContent = ''; afterEl.hidden = true; }
     }
   } catch (e) { /* keep the local baseline */ }
 }
@@ -14290,6 +14319,20 @@ async function generateBannerSummary() {
 async function generateBannerSummaryLocal() {
   if (_bannerGenerated) return;
   if (!_matrix || _matrix.length === 0) return;
+
+  // Wait for the community water reading, but never on it. 2.5s is long enough
+  // for a Supabase round trip and short enough that a dead endpoint costs the
+  // summary nothing: the facts builder simply omits seaTemp, which is exactly how
+  // a genuinely missing reading behaves.
+  if (window._communitySeaTemp == null) {
+    try {
+      if (!window._communitySeaTempReady) window._communitySeaTempReady = fetchCommunitySeaTemp();
+      await Promise.race([
+        window._communitySeaTempReady,
+        new Promise(function (r) { setTimeout(r, 2500); })
+      ]);
+    } catch (e) { /* no reading is a valid state, not an error */ }
+  }
 
   const timeCtx = getBannerTimeContext();
   let rows = getBannerHours(timeCtx);
@@ -14675,7 +14718,10 @@ async function generateBannerSummaryLocal() {
       return {
         hhmm: String(row.dateTime).substring(11, 16),
         airC: t,
-        feelsLike: (wx && wx.feels != null) ? Math.round(Number(wx.feels)) : null,
+        // The hourly rows call it feelsLike, not feels. Reading the wrong key sent
+        // arrival.feelsLike: null every time, and the model reached for the
+        // day-average feelsLike instead and attributed it to 07:00.
+        feelsLike: (wx && wx.feelsLike != null) ? Math.round(Number(wx.feelsLike)) : null,
         rainProb: (wx && wx.rainProb != null) ? Math.round(Number(wx.rainProb)) : null,
         windKmh: w,
         windDir: (row.windDir != null && typeof bearingName === 'function') ? bearingName(row.windDir) : null
