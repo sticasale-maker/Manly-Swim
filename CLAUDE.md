@@ -15,7 +15,7 @@ A Dangerous entry off South Steyne does **not** mean the bay is closed. It means
 try the sheltered ways in, and which one depends on surge. The exact sentence is
 computed client-side as `facts.siteCheck` (`index.html`, search `siteCheck:`):
 
-- Surge = Washy → "check on site for entry at Shelly Beach"
+- Surge = Surgy or Washy → "check on site for entry at Shelly Beach"
 - otherwise → "check on site for entry at Bower Lane or Shelly Beach"
 
 The Worker echoes that string **verbatim** and its validator **rejects** any
