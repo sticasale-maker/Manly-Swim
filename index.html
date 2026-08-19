@@ -2419,6 +2419,7 @@
   .summary-wx-row--lead { margin-top: 0; }
   .summary-water-follows { margin-top: 11px; }
   .summary-after-follows { margin-top: 11px; }
+  .summary-viz-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 11px; }
   .summary-after-follows[hidden] { display: none; }
   .summary-wx-icon { flex: none; font-size: 15px; line-height: 1.55; }
   .summary-item-text {
@@ -3842,27 +3843,25 @@
             <div class="banner-skeleton"></div>
             <div class="banner-skeleton short"></div>
           </div>
-          <!-- GETTING OUT. Last in the arc, after the community sightings that
-               appendCommunity() puts on the end of the water paragraph. Starts
-               hidden and stays hidden unless the summariser sends one: the local
-               baseline has no equivalent, and an empty box under every summary
-               would be worse than no box. -->
-          <div class="summary-item-text summary-after-follows" id="banner-after-text" hidden></div>
-        </div>
-      </div>
-
-      <!-- What's happening below? — expanded inline -->
-      <div class="summary-item">
-        <div class="summary-item-icon">🐠</div>
-        <div class="summary-item-body">
-          <div class="summary-item-label">WHAT'S HAPPENING BELOW</div>
-          <div class="summary-item-text">
-            <div id="db-sub" style="color:var(--dim);font-size:11px;margin-bottom:4px;">Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently</div>
-            <div id="db-inline-summary" style="line-height:1.5;">
-              <div class="banner-skeleton"></div>
-              <div class="banner-skeleton short"></div>
+          <!-- UNDERNEATH. Folded in from its own card 20 Aug 2026: it happens
+               DURING the swim, so it belongs between the swim and getting out,
+               not in a separate section after both. The VIZ credit travels with
+               it — the reports are theirs and the attribution is not ours to
+               drop. Ids kept (#db-sub, #db-inline-summary) so the dive-report
+               renderer needs no change. -->
+          <div class="summary-viz-row">
+            <span class="summary-wx-icon" aria-hidden="true">🐠</span>
+            <div class="summary-item-text">
+              <div id="db-sub" style="color:var(--dim);font-size:11px;margin-bottom:4px;">Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently</div>
+              <div id="db-inline-summary" style="line-height:1.5;">
+                <div class="banner-skeleton"></div>
+                <div class="banner-skeleton short"></div>
+              </div>
             </div>
           </div>
+          <!-- GETTING OUT, last in the arc. Hidden rather than emptied when
+               absent: an older cached row returns "". -->
+          <div class="summary-item-text summary-after-follows" id="banner-after-text" hidden></div>
         </div>
       </div>
 
@@ -14833,9 +14832,49 @@ async function generateBannerSummaryLocal() {
       shelteredContrast: shelteredContrast
     }
   };
+  // WATER TEMPERATURE in the baseline too. The Worker writes this better, but the
+  // baseline is what shows when the Worker is down, and "is it cold" is the first
+  // thing anyone wants answered. Dated out loud whenever it is not this morning.
+  if (_bannerFacts.seaTemp) {
+    const _a = _bannerFacts.seaTemp.ageDays;
+    const _when = _a >= 2 ? ' (' + _a + ' days ago)' : _a === 1 ? ' (yesterday\'s reading)' : '';
+    wxText += ' The water is ' + _bannerFacts.seaTemp.c + '°' + _when + '.';
+  }
+
+  // GETTING OUT — the baseline's version of after_text. Plainer than the
+  // summariser's, same beat: what the air is doing when you are back on the sand,
+  // wet. Wind is named because it matters more than the number on wet skin.
+  let afterText = '';
+  const _ex = _bannerFacts.exit;
+  if (_ex) {
+    const _feel = (_ex.feelsLike != null) ? _ex.feelsLike : _ex.airC;
+    afterText = 'Out at ' + _ex.hhmm;
+    if (_ex.airC != null)    afterText += ' it is ' + _ex.airC + '°';
+    if (_ex.windKmh != null) afterText += (_ex.airC != null ? ' with ' : ' there is ') + _ex.windKmh + ' km/h' + (_ex.windDir ? ' from the ' + _ex.windDir : '');
+    afterText += '. ';
+    if (_feel != null && _feel <= 12)      afterText += 'Cold on wet skin — towel first, and a hot drink will be very welcome.';
+    else if (_feel != null && _feel <= 16) afterText += 'You will feel it on wet skin, so keep the towel within reach; the coffee will earn its keep.';
+    else                                   afterText += 'Mild enough on the sand that you will not be rushing for the towel.';
+    // The feeling line closes GOOD days only (Marco, 20 Aug 2026). On caution or
+    // dangerous the paragraph ends on the conditions — a felt-experience line
+    // there reads as a reason to go, which CLAUDE.md §1 forbids.
+    if (_sv && _sv.safetyLevel === 'good') {
+      afterText += ' ' + pick([
+        'A clean start to the day.',
+        'The kind of swim you carry into the morning.',
+        'A good way to begin.'
+      ]);
+    }
+  }
+
   _bannerWaterBase = waterText;
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(appendCommunity(waterText));
+  const _afterEl = document.getElementById('banner-after-text');
+  if (_afterEl) {
+    if (afterText) { _afterEl.innerHTML = emphasise(afterText); _afterEl.hidden = false; }
+    else { _afterEl.textContent = ''; _afterEl.hidden = true; }
+  }
 
   // Mark as generated only now that the banner text has actually been written.
   // (Previously set near the top, so any mid-function throw left this true and
