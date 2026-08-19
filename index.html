@@ -2415,6 +2415,9 @@
   .summary-wx-row {
     display: flex; align-items: flex-start; gap: 8px; margin-top: 11px;
   }
+  /* Leading the block now, so the gap belongs under it rather than above. */
+  .summary-wx-row--lead { margin-top: 0; }
+  .summary-water-follows { margin-top: 11px; }
   .summary-wx-icon { flex: none; font-size: 15px; line-height: 1.55; }
   .summary-item-text {
     font-family: 'Inter', sans-serif;
@@ -3822,15 +3825,20 @@
         <div class="summary-item-icon" id="banner-water-icon">🏊</div>
         <div class="summary-item-body">
           <div class="summary-item-label" id="banner-water-label">CONDITIONS</div>
-          <div class="summary-item-text" id="banner-water-text">
-            <div class="banner-skeleton"></div>
-            <div class="banner-skeleton short"></div>
-          </div>
-          <div class="summary-wx-row">
+          <!-- ARRIVING first, then the water. Reversed 20 Aug 2026: a swimmer feels
+               the air before they look at the bay, and the summary reads in that
+               order now. The safety call still lands early — it opens the water
+               paragraph, and the block's icon and the answer line above the rails
+               both carry the verdict regardless of where the prose sits. -->
+          <div class="summary-wx-row summary-wx-row--lead">
             <span class="summary-wx-icon" id="banner-wx-icon">🌤</span>
             <div class="summary-item-text" id="banner-wx-text">
               <div class="banner-skeleton"></div>
             </div>
+          </div>
+          <div class="summary-item-text summary-water-follows" id="banner-water-text">
+            <div class="banner-skeleton"></div>
+            <div class="banner-skeleton short"></div>
           </div>
         </div>
       </div>
@@ -14329,11 +14337,26 @@ async function generateBannerSummaryLocal() {
   // question a summary answers is what the bay is like when they get in, not what
   // it is like at whatever moment the slider was left on. Deterministic, so the
   // same day summarises the same way no matter who triggers it or when.
-  const REF_HOUR = 8;
+  // WHEN THE MORNING HAPPENS DEPENDS ON THE DAY (Marco, 20 Aug 2026). A workday
+  // swim is in at 07:00 and out by 08:00; the weekend shifts an hour later. The
+  // arrival hour IS the hour every verdict is scored at — you are in the water
+  // during it — and the departure is the hour after.
+  //
+  //   Mon-Fri   arrive 07:00   swim scored 07:00   out 08:00
+  //   Sat-Sun   arrive 08:00   swim scored 08:00   out 09:00
+  //
+  // Keyed on the day being SUMMARISED, not today: a Friday evening reading
+  // TOMORROW must use Saturday's timetable, not Friday's.
+  function refHourForDay(dayStr) {
+    const dow = new Date(String(dayStr) + 'T00:00:00').getDay();   // 0 Sun .. 6 Sat
+    if (!isFinite(dow)) return 8;            // unparseable day: the safer, later hour
+    return (dow === 0 || dow === 6) ? 8 : 7;
+  }
+  const REF_HOUR = refHourForDay(rows.length ? String(rows[0].dateTime).slice(0, 10) : '');
   const _refRow = scored.find(r => parseInt(String(r.dateTime).substring(11, 13), 10) === REF_HOUR);
-  // No 08:00 in the window (rest-of-today, or a short/backfilled day) → the first
-  // hour the window does cover, which is the nearest thing to 'now'. Only if the
-  // window is somehow empty of both do we fall back to the day-dominant.
+  // No REF_HOUR row in the window (rest-of-today, or a short/backfilled day) → the
+  // first hour the window does cover, which is the nearest thing to 'now'. Only if
+  // the window is empty of both do we fall back to the day-dominant.
   const snapRes  = (_refRow && _refRow.result) ? _refRow.result
                  : (scored[0] && scored[0].result) ? scored[0].result : null;
   const domEntry = snapRes ? snapRes.entry.label : dominant(entryLabels);
@@ -14629,14 +14652,21 @@ async function generateBannerSummaryLocal() {
       return { c: Math.round(c * 10) / 10, ageDays: age };
     } catch (e) { return null; }
   }
-  // Air temperature and wind an hour after the reference hour — what the shower and
-  // the walk to coffee actually feel like. Wind matters more than the number here:
-  // 15 degrees with an offshore breeze on a wet swimmer is not 15 degrees.
-  function _exitFact(scoredRows) {
+  // TWO MOMENTS, read off the same hourly weather with different offsets:
+  //   offset 0   ARRIVING — REF_HOUR, walking down and getting in. The verdicts are
+  //              scored at this hour too, so the prose and the rails describe the
+  //              same instant rather than two neighbouring ones.
+  //   offset +1  GETTING OUT — back on the sand, wet, wanting a coffee.
+  // Day-level weather (tempRange and friends) stays as the day's average: that is
+  // the right thing for "10-21C" and the wrong thing for "what hits you at seven".
+  function _hourFact(scoredRows, offset) {
     try {
       if (!Array.isArray(scoredRows) || !scoredRows.length) return null;
       const refIdx = scoredRows.findIndex(r => parseInt(String(r.dateTime).substring(11, 13), 10) === REF_HOUR);
-      const row = scoredRows[(refIdx >= 0 ? refIdx : 0) + 1] || scoredRows[refIdx >= 0 ? refIdx : 0];
+      const base = refIdx >= 0 ? refIdx : 0;
+      // Clamp rather than wrap: at the edges of the window the nearest hour we do
+      // hold is a better answer than a row from the wrong end of the day.
+      const row = scoredRows[Math.max(0, Math.min(scoredRows.length - 1, base + offset))];
       if (!row) return null;
       const wx = (typeof wxLookup === 'function') ? wxLookup(row.dateTime) : null;
       const t = wx && wx.temp != null ? Math.round(Number(wx.temp)) : null;
@@ -14645,11 +14675,18 @@ async function generateBannerSummaryLocal() {
       return {
         hhmm: String(row.dateTime).substring(11, 16),
         airC: t,
+        feelsLike: (wx && wx.feels != null) ? Math.round(Number(wx.feels)) : null,
+        rainProb: (wx && wx.rainProb != null) ? Math.round(Number(wx.rainProb)) : null,
         windKmh: w,
         windDir: (row.windDir != null && typeof bearingName === 'function') ? bearingName(row.windDir) : null
       };
     } catch (e) { return null; }
   }
+  // Wind matters more than the number at both ends: a light offshore on a wet
+  // swimmer at 09:00 is colder than the thermometer says, and the same breeze at
+  // 07:00 is what decides whether you keep the jumper on until the last second.
+  function _arrivalFact(scoredRows) { return _hourFact(scoredRows,  0); }
+  function _exitFact(scoredRows)    { return _hourFact(scoredRows, +1); }
 
   const _sv = swimVerdict(domEntry, domSwim, domSurge);
 
@@ -14720,10 +14757,14 @@ async function generateBannerSummaryLocal() {
     // is told nothing instead of something wrong. The age travels with it so the
     // prose can date it out loud.
     seaTemp: _seaTempFact(),
-    // GETTING OUT — the beat the summary never had. Same day, one hour after the
-    // reference hour: the swimmer is back on the sand, wet, in whatever the air is
-    // doing. It is the towel-and-coffee question and it is answerable from the
-    // hourly weather we already hold.
+    // ARRIVING — an hour BEFORE the reference hour. The day-level weather above is
+    // an average across the whole window, which is the right thing for "10-21C" and
+    // the wrong thing for "what hits you walking down at seven". Both are sent: the
+    // range for the day, this for the moment.
+    arrival: _arrivalFact(scored),
+    // GETTING OUT — the beat the summary never had. One hour AFTER the reference
+    // hour: back on the sand, wet, in whatever the air is doing. The
+    // towel-and-coffee question, answerable from the hourly weather we already hold.
     exit: _exitFact(scored),
     // Two heights go to the summariser: the offshore swell, and the ramp
     // residual at South Steyne (the entry point). bayResidualH is STILL withheld —
