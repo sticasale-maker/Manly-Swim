@@ -2407,6 +2407,15 @@
     font-size: 18px; letter-spacing: 2px; text-transform: uppercase;
     color: var(--deep); font-weight: 700; margin-bottom: 4px;
   }
+  /* The weather paragraph sits INSIDE the conditions block rather than in a
+     section of its own (Marco, 20 Aug 2026: it is one experience, and dividing it
+     by classification is not how people think). Its own icon is kept as a sibling
+     of the text node, never a child — the text is written with innerHTML and would
+     wipe an icon nested inside it. */
+  .summary-wx-row {
+    display: flex; align-items: flex-start; gap: 8px; margin-top: 11px;
+  }
+  .summary-wx-icon { flex: none; font-size: 15px; line-height: 1.55; }
   .summary-item-text {
     font-family: 'Inter', sans-serif;
     font-size: 13px; color: var(--text); line-height: 1.65;
@@ -3804,14 +3813,24 @@
     </button>
     <div id="summary-body" class="summary-collapsed">
 
-      <!-- Swimming conditions -->
+      <!-- Conditions: the water AND the weather, one block. They were two
+           sections either side of the marine-life card, which split one morning
+           into two classifications nobody thinks in. The water paragraph stays
+           FIRST: on a dangerous day that is where the call is made, and it must
+           not be pushed below the sky report. -->
       <div class="summary-item">
         <div class="summary-item-icon" id="banner-water-icon">🏊</div>
         <div class="summary-item-body">
-          <div class="summary-item-label" id="banner-water-label">SWIMMING CONDITIONS</div>
+          <div class="summary-item-label" id="banner-water-label">CONDITIONS</div>
           <div class="summary-item-text" id="banner-water-text">
             <div class="banner-skeleton"></div>
             <div class="banner-skeleton short"></div>
+          </div>
+          <div class="summary-wx-row">
+            <span class="summary-wx-icon" id="banner-wx-icon">🌤</span>
+            <div class="summary-item-text" id="banner-wx-text">
+              <div class="banner-skeleton"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -3827,18 +3846,6 @@
               <div class="banner-skeleton"></div>
               <div class="banner-skeleton short"></div>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Today's / Tomorrow's weather -->
-      <div class="summary-item">
-        <div class="summary-item-icon" id="banner-wx-icon">🌤</div>
-        <div class="summary-item-body">
-          <div class="summary-item-label" id="banner-wx-label">TODAY'S WEATHER</div>
-          <div class="summary-item-text" id="banner-wx-text">
-            <div class="banner-skeleton"></div>
-            <div class="banner-skeleton short"></div>
           </div>
         </div>
       </div>
@@ -14362,10 +14369,15 @@ async function generateBannerSummaryLocal() {
 
   // Time label
   const labelMap = { 'today': 'TODAY', 'rest-of-today': 'THIS AFTERNOON', 'tomorrow': 'TOMORROW' };
-  document.getElementById('banner-wx-label').textContent = `${labelMap[timeCtx]}'S WEATHER`;
+  // banner-wx-label was removed when the two sections merged; the single label
+  // below now names the day for both paragraphs. labelMap is still used by other
+  // callers, so it stays.
+  const wxLabelEl = document.getElementById('banner-wx-label');
+  if (wxLabelEl) wxLabelEl.textContent = `${labelMap[timeCtx]}'S WEATHER`;
   const dayPhrase = { 'today': 'TODAY', 'rest-of-today': 'THIS AFTERNOON', 'tomorrow': 'TOMORROW' }[timeCtx];
   const waterLabelEl = document.getElementById('banner-water-label');
-  if (waterLabelEl) waterLabelEl.textContent = `SWIMMING CONDITIONS · ${dayPhrase}`;
+  // One label for the whole block now — the day, not a classification.
+  if (waterLabelEl) waterLabelEl.textContent = dayPhrase;
 
   // ── Generate colloquial summary locally
   const entryBad = ['Caution','Dangerous'].includes(domEntry);
