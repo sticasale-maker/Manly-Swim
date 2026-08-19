@@ -11899,6 +11899,11 @@ const BB_SUPABASE_KEY  = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
 // the sea-temp tile — WW/Open-Meteo is never used. The stored value stands until the
 // pipeline overwrites it, so yesterday's reading shows until today's is posted.
 window._communitySeaTemp = null;
+// The DAY the reading is for. It was already being selected from the API and then
+// dropped, which is how the tile once showed an 11 Aug reading as current for five
+// days. A number that can go stale has to carry its age (CLAUDE.md §8), and the
+// Oracle cannot be handed a water temperature without knowing how old it is.
+window._communitySeaTempDay = null;
 
 // Sea-temp mood penguin: six pixel-art states across 16→24 °C, shown on the right
 // of the Sea Temp card. Bands: ≤16 very cold, ≤18 cold, ≤20 cool, ≤22 mild,
@@ -11929,6 +11934,7 @@ async function fetchCommunitySeaTemp() {
     const row  = Array.isArray(rows) ? rows[0] : null;
     const val  = row ? Number(row.temp_c) : NaN;
     window._communitySeaTemp = (isFinite(val) && val > 1) ? val : null;
+    window._communitySeaTempDay = (window._communitySeaTemp != null && row && row.day) ? String(row.day) : null;
     if (window._communitySeaTemp != null) {
       const txt = window._communitySeaTemp.toFixed(1);
       const a = document.getElementById('seaTempVal');
@@ -11939,6 +11945,18 @@ async function fetchCommunitySeaTemp() {
     setSeaPenguin(window._communitySeaTemp);
   } catch (_) { /* leave the last community value in place */ }
 }
+// Whole days between the reading's day and today, in Sydney. null when there is no
+// reading or no date — absent is absent, never 'probably today'.
+function communitySeaTempAgeDays() {
+  try {
+    if (window._communitySeaTemp == null || !window._communitySeaTempDay) return null;
+    const a = Date.parse(window._communitySeaTempDay + 'T00:00:00');
+    const b = Date.parse(_sydTodayStr() + 'T00:00:00');
+    if (!isFinite(a) || !isFinite(b)) return null;
+    return Math.max(0, Math.round((b - a) / 86400000));
+  } catch (e) { return null; }
+}
+
 window.addEventListener('load', fetchCommunitySeaTemp);
 setInterval(fetchCommunitySeaTemp, 5 * 60 * 1000);
 const BB_COOLDOWN      = 4 * 60 * 60 * 1000; // 4 hours (stored locally per device)
@@ -14598,6 +14616,41 @@ async function generateBannerSummaryLocal() {
 
   // The one derivation of the verdict, shared by the icon below, _bannerFacts
   // further down, and the answer line above the rails.
+  // Freshness ceiling for the community water reading. Two days: the scraper posts
+  // most days, so one missed day is normal and two is the point where 'the water is
+  // 17.8' stops being a statement about this morning.
+  const SEA_TEMP_MAX_AGE_D = 2;
+  function _seaTempFact() {
+    try {
+      const c = window._communitySeaTemp;
+      if (c == null || !(c > 1)) return null;
+      const age = communitySeaTempAgeDays();
+      if (age == null || age > SEA_TEMP_MAX_AGE_D) return null;
+      return { c: Math.round(c * 10) / 10, ageDays: age };
+    } catch (e) { return null; }
+  }
+  // Air temperature and wind an hour after the reference hour — what the shower and
+  // the walk to coffee actually feel like. Wind matters more than the number here:
+  // 15 degrees with an offshore breeze on a wet swimmer is not 15 degrees.
+  function _exitFact(scoredRows) {
+    try {
+      if (!Array.isArray(scoredRows) || !scoredRows.length) return null;
+      const refIdx = scoredRows.findIndex(r => parseInt(String(r.dateTime).substring(11, 13), 10) === REF_HOUR);
+      const row = scoredRows[(refIdx >= 0 ? refIdx : 0) + 1] || scoredRows[refIdx >= 0 ? refIdx : 0];
+      if (!row) return null;
+      const wx = (typeof wxLookup === 'function') ? wxLookup(row.dateTime) : null;
+      const t = wx && wx.temp != null ? Math.round(Number(wx.temp)) : null;
+      const w = row.windKmh != null ? Math.round(Number(row.windKmh)) : null;
+      if (t == null && w == null) return null;
+      return {
+        hhmm: String(row.dateTime).substring(11, 16),
+        airC: t,
+        windKmh: w,
+        windDir: (row.windDir != null && typeof bearingName === 'function') ? bearingName(row.windDir) : null
+      };
+    } catch (e) { return null; }
+  }
+
   const _sv = swimVerdict(domEntry, domSwim, domSurge);
 
   // Water icon — was a verbatim copy of the safetyLevel expression, now reads it.
@@ -14659,6 +14712,19 @@ async function generateBannerSummaryLocal() {
       windChill: windChill, windKmh: avgWind, windDir: dominantWindDir,
       rainProb: avgRain, cloud: avgCloud, haveWx: haveWx
     },
+    // WATER TEMPERATURE — the first thing anyone actually wants to know, and until
+    // now the summariser had never seen it: it fed the tile and stopped there.
+    // Sent ONLY when it is fresh. One Facebook scraper is the only source (CLAUDE.md
+    // 'the most fragile thing in the app'), so a reading more than SEA_TEMP_MAX_AGE_D
+    // days old is omitted rather than shrugged in — absent is absent, and the Oracle
+    // is told nothing instead of something wrong. The age travels with it so the
+    // prose can date it out loud.
+    seaTemp: _seaTempFact(),
+    // GETTING OUT — the beat the summary never had. Same day, one hour after the
+    // reference hour: the swimmer is back on the sand, wet, in whatever the air is
+    // doing. It is the towel-and-coffee question and it is answerable from the
+    // hourly weather we already hold.
+    exit: _exitFact(scored),
     // Two heights go to the summariser: the offshore swell, and the ramp
     // residual at South Steyne (the entry point). bayResidualH is STILL withheld —
     // an in-the-bay height stated as a measurement is what made the app look
