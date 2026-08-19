@@ -23,9 +23,18 @@
 //   1. read the new field alongside the others
 //   2. include it in the insert
 //
-// The reply table needs the column. If it is not there yet, run this ONCE in the
-// Supabase SQL editor — it is the same column the public replies already use, so
-// on most deployments it already exists and this is a no-op:
+// NO DATABASE WORK IS NEEDED — verified read-only on 19 Aug 2026:
+//   * the table is public.feature_replies (probing the other candidate names
+//     returns PGRST205 "perhaps you meant ...", this one returns a permission
+//     error, which means it exists)
+//   * submit_feature_reply ALREADY takes p_image_url: a probe naming all five
+//     params reached the function's own validation (400 "body length" from a
+//     deliberately empty body) instead of 404/PGRST203, so the 5-arg overload is
+//     there. No row was written.
+//   * image_url is already populated and rendered for PUBLIC replies, so the
+//     column exists and the renderer reads it.
+// The gap is only this Worker route. If you want the belt-and-braces check anyway,
+// this is idempotent and safe to run in the Supabase SQL editor:
 //
 //     alter table public.feature_replies
 //       add column if not exists image_url text;
