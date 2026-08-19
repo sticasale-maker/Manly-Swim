@@ -13942,6 +13942,28 @@ function swimVerdict(entryLabel, swimLabel, surgeLabel) {
       : null
   };
 }
+// CHOP, WORDED THE SAME WAY EVERYWHERE (Marco, 20 Aug 2026). Chop no longer sets
+// the safety verdict — it is comfort, not safety — but it must NOT be dropped from
+// the prose because of that. It is the difference between a pleasant swim and a
+// fight, and it is the thing a swimmer deciding whether to bother wants to know.
+//
+//   Smooth  -> smooth surface
+//   Ripply  -> ripply surface
+//   Choppy  -> swim and breathing rhythm may be uncomfortable
+//   Messy   -> the same, stated harder
+//
+// One helper rather than wording it per template: the local baseline writes this
+// in two separate branches and the Worker prompt writes it a third way, and three
+// hand-written copies of the same mapping is exactly how the app ends up calling a
+// ripply morning glassy.
+function chopAdj(label) {
+  return label === 'Smooth' ? 'smooth'
+       : label === 'Ripply' ? 'ripply'
+       : String(label || '').toLowerCase();
+}
+// True where the surface is worth warning about for COMFORT, not safety.
+function chopIsUncomfortable(label) { return label === 'Choppy' || label === 'Messy'; }
+
 let _bannerWaterBase = '';
 let _bannerFacts = null;
 
@@ -14457,15 +14479,15 @@ async function generateBannerSummaryLocal() {
   if (allGood) {
     if (shelteredContrast) {
       waterText = pick([
-        `${shelteredOpener} Entry off the beach at South Steyne is ${entryAdj}, the surface is ${domSwim === 'Smooth' ? 'glassy' : 'smooth'}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
-        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — ${entryNoun} off the beach at South Steyne, ${domSwim === 'Smooth' ? 'a glassy surface' : 'barely any chop'}, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
-        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in off the beach at South Steyne is ${entryAdj}, the surface is ${domSwim === 'Smooth' ? 'glass' : 'smooth'}, and the bay isn't surging. Just about perfect.`,
+        `${shelteredOpener} Entry off the beach at South Steyne is ${entryAdj}, the surface is ${chopAdj(domSwim)}, and there's no real surge inside the bay. Don't let the swell number put you off — get in there and enjoy it.`,
+        `There's a big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell running offshore, but the headland takes most of the sting out of it before it reaches the bay. Inside Cabbage Tree Bay it's lovely — ${entryNoun} off the beach at South Steyne, a ${chopAdj(domSwim)} surface, and minimal surge. One of those days that looks intimidating on the forecast and turns out perfect in the water.`,
+        `Forecast shows a sizeable ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir}, but for South Steyne that's the good kind of swell — the bay is angled away from it and shelters the entry beautifully. Getting in off the beach at South Steyne is ${entryAdj}, the surface is ${chopAdj(domSwim)}, and the bay isn't surging. Just about perfect.`,
       ]);
     } else {
     waterText = pick([
-      `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach at South Steyne is ${entryAdj}, the surface is smooth, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
-      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry off the beach at South Steyne is ${entryAdj}, water surface is ${domSwim === 'Smooth' ? 'glassy and calm' : 'nice and smooth'}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
-      `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry off the beach at South Steyne is ${entrySimple}, there's barely any chop on the surface, and the bay isn't surging. One of those mornings where you just get in and swim.`,
+      `Conditions in Cabbage Tree Bay are looking great today — ${swellIntroStr}, but it's well-behaved and the bay is handling it nicely. Entry off the beach at South Steyne is ${entryAdj}, the surface is ${chopAdj(domSwim)}, and there's no significant surge to push you around near the Shelly headland. Get in there and enjoy it, it doesn't get much better than this.`,
+      `The bay is in lovely shape today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)}, which is giving a nice gentle rhythm to the swim without causing any trouble. Entry off the beach at South Steyne is ${entryAdj}, water surface is ${chopAdj(domSwim)}, and surge inside the bay is minimal. Perfect conditions for a relaxed lap or a solid training session.`,
+      `Clean and easy in Cabbage Tree Bay — ${swellIntroStr}. Nothing here to worry about. The entry off the beach at South Steyne is ${entrySimple}, the surface is ${chopAdj(domSwim)}, and the bay isn't surging. One of those mornings where you just get in and swim.`,
     ]);
     }
   } else {
@@ -14502,19 +14524,18 @@ async function generateBannerSummaryLocal() {
       }
     }
 
-    // Swim surface
-    if (domSwim === 'Messy') {
+    // Swim surface — comfort, in the agreed words (see chopAdj). Deliberately no
+    // 'good training day if you're up for it' any more: that is encouragement, and
+    // the line is here to describe the water, not to talk anyone into it.
+    if (chopIsUncomfortable(domSwim)) {
       parts.push(pick([
-        ` The surface is pretty messy today — wind chop from the ${dominantWindDir} is making it a scrappy swim with a lot of chop in your face. Sighting will be tricky and it'll feel like hard work. Good training day if you're up for it.`,
-        ` Surface conditions are rough — the ${dominantWindDir} wind is kicking up a real chop and it's in your face the whole way. Not the most enjoyable swim but you'll definitely feel like you've earned it.`,
-      ]));
-    } else if (domSwim === 'Choppy') {
-      parts.push(pick([
-        ` There's a decent bit of chop on the surface from the ${dominantWindDir} wind — you'll feel it during the swim, especially on any exposed sections. Nothing that'll stop you, but expect to swallow a bit of water.`,
-        ` The ${dominantWindDir} wind is putting some chop on the surface. It's manageable but not smooth sailing — good to be aware of if you're planning a longer set.`,
+        ` The surface is ${chopAdj(domSwim)} — wind chop from the ${dominantWindDir} means your swim and breathing rhythm may be uncomfortable, and sighting will take more effort than usual.`,
+        ` A ${chopAdj(domSwim)} surface, kicked up by the ${dominantWindDir} wind: swim and breathing rhythm may be uncomfortable the whole way across.`,
       ]));
     } else if (domSwim === 'Ripply') {
-      parts.push(` Light ripple on the surface — barely noticeable once you're in.`);
+      parts.push(` A ripply surface — barely noticeable once you're in.`);
+    } else if (domSwim === 'Smooth') {
+      parts.push(` A smooth surface across the bay.`);
     }
 
     // Surge
