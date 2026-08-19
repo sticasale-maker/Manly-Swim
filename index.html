@@ -2420,6 +2420,8 @@
   .summary-water-follows { margin-top: 11px; }
   .summary-after-follows { margin-top: 11px; }
   .summary-viz-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 11px; }
+  #db-app-vis { margin-bottom: 6px; }
+  #db-app-vis[hidden] { display: none; }
   .summary-after-follows[hidden] { display: none; }
   .summary-wx-icon { flex: none; font-size: 15px; line-height: 1.55; }
   .summary-item-text {
@@ -3852,6 +3854,10 @@
           <div class="summary-viz-row">
             <span class="summary-wx-icon" aria-hidden="true">🐠</span>
             <div class="summary-item-text">
+              <!-- The app's own visibility and sightings LEAD the beat, above the
+                   VIZ credit — the credit belongs to the dive-report prose below
+                   it, not to the community votes, which are the app's own. -->
+              <div id="db-app-vis" hidden></div>
               <div id="db-sub" style="color:var(--dim);font-size:11px;margin-bottom:4px;">Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently</div>
               <div id="db-inline-summary" style="line-height:1.5;">
                 <div class="banner-skeleton"></div>
@@ -14099,13 +14105,37 @@ function forecastStaleLine() {
 }
 // Water-quality caution first (safety), then the friendly community clause, then a
 // stale-forecast footnote if the underlying data is old.
-function appendCommunity(text) { return (text || '') + waterQualityLine() + communitySummaryLine() + forecastStaleLine(); }
+// The COMMUNITY line (visibility + sightings) is no longer appended here. It is
+// underwater news, and since 20 Aug 2026 the underwater beat has its own place in
+// the arc, directly above the VIZ dive reports. Leaving it on the end of the swim
+// paragraph put it immediately above the VIZ block saying the same thing twice —
+// and disagreeing, 6-8m against 3-8m, because one is the app's own visibility
+// votes and the other is a summary of recent dives.
+//
+// Water quality and the staleness note stay: both are about the swim itself.
+function appendCommunity(text) { return (text || '') + waterQualityLine() + forecastStaleLine(); }
+
+// The app's OWN visibility and sightings, for the underwater beat. Marco, 20 Aug
+// 2026: use the visibility reported in the app — the community votes are the
+// figure that leads, and the VIZ prose underneath is the recent-dives narrative
+// rather than a competing number.
+function renderUnderwaterCommunity() {
+  const el = document.getElementById('db-app-vis');
+  if (!el) return;
+  const line = (communitySummaryLine() || '').trim();
+  if (line) { el.innerHTML = emphasise(line); el.hidden = false; }
+  else { el.textContent = ''; el.hidden = true; }
+}
 // Re-append the community clause to the stored base text once reports arrive
 // (the summary itself only generates once, so we patch the water line in place).
 function refreshCommunitySummary() {
   if (!_bannerGenerated) return;
   const el = document.getElementById('banner-water-text');
   if (el) el.innerHTML = emphasise(appendCommunity(_bannerWaterBase));
+  // The visibility and sightings moved to the underwater beat, so a fresh vote has
+  // to repaint THAT too — repainting only the swim paragraph would leave the
+  // figure a swimmer actually reads frozen at whatever it was on load.
+  renderUnderwaterCommunity();
 }
 
 // SUMMARY section — collapsed by default, expands on tap
@@ -14306,6 +14336,7 @@ async function generateBannerSummary() {
       _bannerWaterBase = j.water_text;
       waterEl.innerHTML = emphasise(appendCommunity(j.water_text));
     }
+    renderUnderwaterCommunity();
     if (afterEl) {
       // Hidden rather than emptied when absent: an older cached row predates
       // after_text and returns "", and so does the local baseline.
@@ -14870,6 +14901,7 @@ async function generateBannerSummaryLocal() {
   _bannerWaterBase = waterText;
   document.getElementById('banner-wx-text').innerHTML    = emphasise(wxText);
   document.getElementById('banner-water-text').innerHTML = emphasise(appendCommunity(waterText));
+  renderUnderwaterCommunity();
   const _afterEl = document.getElementById('banner-after-text');
   if (_afterEl) {
     if (afterText) { _afterEl.innerHTML = emphasise(afterText); _afterEl.hidden = false; }
