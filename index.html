@@ -14549,11 +14549,7 @@ function summaryConflict(text, facts) {
   // a refusal into a briefing, and it reaches the swimmer most likely to
   // misjudge it. Checked here as well as in the Worker so a stale or
   // rolled-back Worker cannot put that sentence back on screen.
-  // Fires on a Washy surge too, not just the dangerous TIER: since 21 Aug 2026 a
-  // Washy surge under an Easy/Doable entry is scored 'caution', and the sentence
-  // this catches ("only get in if you're confident") is exactly as wrong there.
-  if (String(facts.safetyLevel || '').toLowerCase() === 'dangerous' ||
-      String(v.surge || '') === 'Washy') {
+  if (String(facts.safetyLevel || '').toLowerCase() === 'dangerous') {
     if (/\b(with a mate|with a buddy|with someone|bring a mate|stay close|only get in|only swim|if you'?re confident|if you are confident|experienced swimmers?|strong swimmers?)\b/.test(t))
       return 'offers a way to swim a dangerous day';
     if (/\b(doable|easy|manageable|no problem)\b/.test(t))
@@ -14574,6 +14570,18 @@ function summaryConflict(text, facts) {
     if (facts.siteCheck && t.indexOf(String(facts.siteCheck).toLowerCase()) < 0)
       return 'missing the site-check line: "' + facts.siteCheck + '"';
   }
+  // MITIGATION IS BANNED ON A WASHY SURGE WHATEVER TIER IT SCORES. Since 21 Aug
+  // 2026 a Washy surge under an Easy/Doable entry scores 'caution', not
+  // 'dangerous', so the block above stops covering it - but "only get in if
+  // you're confident" is exactly as wrong on a washed-out bay as on a red one
+  // (CLAUDE.md section 1).
+  // SCOPED TO THE MITIGATION PHRASES ONLY. The dangerous block also rejects
+  // "doable/easy", and on these mornings the entry genuinely IS Easy or Doable:
+  // reusing the whole block rejected the truthful sentence "the entry off South
+  // Steyne is easy" and sent every one of those days to the local baseline.
+  if (String(v.surge || '') === 'Washy' &&
+      /\b(with a mate|with a buddy|with someone|bring a mate|stay close|only get in|only swim|if you'?re confident|if you are confident|experienced swimmers?|strong swimmers?)\b/.test(t))
+    return 'offers a way to swim a washed-out bay';
   if (v.entry && v.entry !== 'Easy' && /\beasy\b/.test(t))
     return 'says "easy" but Entry=' + v.entry;
   if (v.entry === 'Easy' && /\b(dangerous|treacherous|do not swim)\b/.test(t))
