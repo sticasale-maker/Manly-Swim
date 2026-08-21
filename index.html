@@ -6760,6 +6760,22 @@ function windSeaBL(windKmh, deg) {
            survive: 1 };
 }
 
+// PHYSICAL SANITY CAP on the forecast sea partition (22 Aug 2026, per user).
+// A wind sea cannot be steeper than fully developed: with H = 0.243U²/g and
+// T = 8.134U/g, deep-water steepness tops out at 2π·0.243/8.134² ≈ 0.0231,
+// independent of wind speed. NS routinely returns (H,T) pairs above that line
+// — 23 Aug 08:00 came through as 0.4 m at 3 s from 65° (s = 0.0285) under
+// 10 km/h of OFFSHORE W wind — and chopSlapWeight reads those artifacts as
+// near-full slap, so CHOP called Choppy (18 cm) on a morning whose local wind
+// contributed 1.1 cm of it. Trim the HEIGHT back to what its own period can
+// physically carry. A real sea (0.8 m at 5 s → s = 0.0205) passes untouched.
+// CHOP ONLY — the Entry/Surge energy paths and the heave split are unchanged.
+const WINDSEA_FD_STEEP = 2 * Math.PI * 0.243 / (8.134 * 8.134);   // ≈ 0.02308
+function seaHeightCap(H, T) {
+  if (!(H > 0) || !(T > 0)) return H || 0;
+  return Math.min(H, WINDSEA_FD_STEEP * 9.81 * T * T / (2 * Math.PI));
+}
+
 function chopSlapWeight(H, T) {
   if (!(H > 0) || !(T > 0)) return 0;
   const s  = 2 * Math.PI * H / (9.81 * T * T);
@@ -7302,7 +7318,8 @@ function calcScore(d, modelOverride) {
   const _chopU    = (windKmh || 0) / 3.6 * chopLeeFactor(windDir);
   const _chopRes  = spmGrowth(_chopU, chopFetchFor(windDir));                              // sea over the directional fetch
   const _hWsFace  = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                // fetch wind-sea steep face (m)
-  const _hWwFace  = (windWaveH || 0) * chopSlapWeight(windWaveH || 0, _wwP_bl) * wwTxBL;   // wind-wave steep face (m)
+  const _hWwH     = seaHeightCap(windWaveH || 0, _wwP_bl);                                 // fully-developed steepness cap — see seaHeightCap()
+  const _hWwFace  = _hWwH * chopSlapWeight(_hWwH, _wwP_bl) * wwTxBL;                       // wind-wave steep face (m)
   const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);            // quadrature, cm
 
   return {
