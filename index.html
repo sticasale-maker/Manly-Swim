@@ -371,34 +371,73 @@
   /* ── The answer line ── the call itself, above the three rails.
      Colour comes from the SAME class names the metric blocks use (green /
      yellow / orange / red), so the line and the rail it is describing can never
-     disagree about which band they are in. Deliberately quiet furniture: no
-     background fill on a good day, because the whole point is that a good day
-     needs no announcement. */
+     disagree about which band they are in.
+     It was originally quiet furniture — near-black --deep ink on a 42%-white
+     wash. Over .metrics-panel (rgba(22,50,66,0.60), a dark navy) that wash
+     resolves to a murky grey and the type all but vanishes, which is what
+     "black on dark grey" was about. Each band now gets a SOLID fill and ink
+     chosen for contrast against that fill, so the call reads at a glance in
+     sunlight on the sand. Loudness still tracks severity, and the ordering is
+     unchanged: red is the most emphatic, not the flat-day green. */
   .answer-line {
     font-family:'Bebas Neue',sans-serif;
-    font-size:clamp(19px,5.4vw,25px); letter-spacing:1.1px; line-height:1.12;
-    color:var(--deep); text-transform:uppercase;
-    padding:9px 12px; margin-bottom:8px;
-    border-radius:10px; border:1px solid transparent;
+    font-size:clamp(21px,5.9vw,28px); letter-spacing:1.1px; line-height:1.12;
+    color:#fff; text-transform:uppercase;
+    padding:11px 14px; margin-bottom:8px;
+    border-radius:12px; border:1px solid transparent;
     background:rgba(255,255,255,0.42);
+    box-shadow:0 2px 10px rgba(0,0,0,0.22);
+    text-shadow:0 1px 2px rgba(0,0,0,0.28);
   }
-  /* The driver words stay the SAME ink as the rest of the sentence. They were
-     tinted with the band colour to match the rail, but --yellow (#e07c2a) on the
-     light card is genuinely hard to read at this size, and the metric name does
-     not need colour to be found — it is already the subject of the sentence.
-     Severity is carried by the border, the background and the leading word. */
-  .answer-line .al-driver { text-transform:uppercase; color:var(--deep); }
-  .answer-line.green  { border-color:rgba(43,67,71,0.30); }
-  .answer-line.yellow { border-color:rgba(224,124,42,0.65); background:rgba(255,255,255,0.62); }
-  .answer-line.orange { border-color:rgba(200,100,20,0.68); background:rgba(255,255,255,0.62); }
-  .answer-line.red    { border-color:rgba(192,57,43,0.75); background:rgba(255,255,255,0.72); }
+  /* The driver words take the line's own ink (currentColor) rather than a fixed
+     --deep: the fills below are dark, so a hard-coded dark tint would disappear.
+     Severity is carried by the fill and the leading word, not by tinting these. */
+  .answer-line .al-driver { text-transform:uppercase; color:currentColor; }
+  .answer-line.green  {
+    background:linear-gradient(180deg,#2f7d5b 0%,#215c43 100%);
+    border-color:rgba(255,255,255,0.22);
+  }
+  /* The flat-day treatment — the ONLY state that gets extra shine. It is a
+     description of the sea, not an invitation: brighter, but still just the
+     verdict. Must never be reachable on a caution/dangerous day (renderAnswerLine
+     only sets .flat inside the good branch). */
+  .answer-line.green.flat {
+    /* Top stop is #2e8a5c, not the brighter #3fa46f it started as: white on that
+       measured 3.11:1, which only just clears large-text AA. #2e8a5c is 4.28:1
+       and still reads as the brightest state on the page. */
+    background:linear-gradient(180deg,#2e8a5c 0%,#22795a 55%,#1b6349 100%);
+    border-color:rgba(255,255,255,0.42);
+    box-shadow:0 2px 14px rgba(46,138,92,0.45), inset 0 1px 0 rgba(255,255,255,0.30);
+    letter-spacing:1.6px;
+  }
+  /* Amber takes DARK ink — white on #e07c2a fails contrast at this weight. */
+  .answer-line.yellow {
+    background:linear-gradient(180deg,#f0912f 0%,#d2711c 100%);
+    border-color:rgba(255,255,255,0.28);
+    color:#2a1603; text-shadow:0 1px 0 rgba(255,255,255,0.22);
+  }
+  .answer-line.orange {
+    background:linear-gradient(180deg,#dd7a1c 0%,#b95c10 100%);
+    border-color:rgba(255,255,255,0.28);
+    color:#2a1603; text-shadow:0 1px 0 rgba(255,255,255,0.20);
+  }
+  .answer-line.red {
+    background:linear-gradient(180deg,#d2493a 0%,#a82f22 100%);
+    border-color:rgba(255,255,255,0.34);
+    box-shadow:0 2px 14px rgba(192,57,43,0.40);
+  }
   /* The site-check sentence is prose, not a label — it must stay readable as a
-     sentence rather than being shouted in Bebas caps like the rest of the line. */
+     sentence rather than being shouted in Bebas caps like the rest of the line.
+     It used to be --red ink, which is now invisible on the red fill it sits on;
+     it is near-white on a darkened inset instead, which also stops it reading as
+     part of the shouted headline. */
   .answer-line .al-site {
-    display:block; margin-top:5px;
+    display:block; margin-top:7px;
+    padding:6px 9px; border-radius:7px;
+    background:rgba(0,0,0,0.20);
     font-family:'Inter',sans-serif; font-weight:600;
     font-size:13px; letter-spacing:0.2px; line-height:1.4;
-    text-transform:none; color:var(--red);
+    text-transform:none; color:#fff6f4; text-shadow:none;
   }
   /* Marks the rail that set the day. Sits inside .metric-name, which is why it
      has to reset the Bebas letter-spacing it inherits — and why it sets its own
@@ -6917,7 +6956,7 @@ function blSwimWater(d, chop) {
            : rawBL <= t.drifty ? ['Drifty',  'amber']
            : rawBL <= t.surgy  ? ['Surgy',   'yellow']
            :                     ['Washy',   'red'];
-  return { label: z[0], cls: z[1], score: score, raw: rawBL,
+  return { label: z[0], cls: z[1], score: score, raw: rawBL, greenEdge: t.steady,
            parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, chop: chop_d, raw: rawBL } };
 }
 
@@ -6958,7 +6997,7 @@ function bowerSurgeWater(d) {
            :                  ['Washy',  'red'];
   // Envelope mapped to the live water shape so the Surge popup + calibration loggers
   // keep reading .raw / .parts. No wind-wave heave on the Bower path (chop excluded).
-  return { label: z[0], cls: z[1], score: v6, raw: p.raw,
+  return { label: z[0], cls: z[1], score: v6, raw: p.raw, greenEdge: 9.5,
            parts: { swell1: p.s1_d + p.s2_d, windWave: 0, tide: p.tide_d, chop: 0, raw: p.raw } };
 }
 
@@ -7255,7 +7294,7 @@ function calcScore(d, modelOverride) {
     entry: (() => {
       const t = SITE.entryThresholds;
       const s = Math.max(0, Math.round(60 - total));
-      if (total <= t.easy)    return { label:'Easy',      cls:'green',  score: s, raw: total };
+      if (total <= t.easy)    return { label:'Easy',      cls:'green',  score: s, raw: total, greenEdge: t.easy };
       if (total <= t.doable)  return { label:'Doable',    cls:'amber',  score: s, raw: total };
       if (total <= t.caution) return { label:'Caution',   cls:'yellow', score: s, raw: total };
       return                         { label:'Dangerous', cls:'red',     score: s, raw: total };
@@ -7271,7 +7310,7 @@ function calcScore(d, modelOverride) {
       // q7 (cm) is capped at the Messy edge for scale purposes (beyond that is fully Messy).
       const cap = t.scaleMax > 0 ? t.scaleMax : 45;
       const s60 = Math.max(0, Math.round(60 - Math.min(q7, cap) * (60 / cap)));
-      if (q7 <  t.glassy) return { label:'Smooth', cls:'green',  score: s60, raw: q7 };
+      if (q7 <  t.glassy) return { label:'Smooth', cls:'green',  score: s60, raw: q7, greenEdge: t.glassy };
       if (q7 <= t.ripply) return { label:'Ripply', cls:'amber',  score: s60, raw: q7 };
       if (q7 <= t.choppy) return { label:'Choppy', cls:'yellow', score: s60, raw: q7 };
       return                     { label:'Messy',  cls:'red',     score: s60, raw: q7 };
@@ -9544,11 +9583,25 @@ function renderAnswerLine(result) {
     // the bad days also makes the feature invisible on most mornings.
     // Affirmative, never encouraging: it states the verdict, it does not urge
     // anyone into the water (CLAUDE.md §1).
-    el.className = 'answer-line green';
-    el.textContent = 'Good — ';
+    // "Flat as a pancake" is a STRICTER claim than the green verdict itself.
+    // swimVerdict()'s 'good' level spans two bands per rail (Easy+Doable,
+    // Smooth+Ripply, Steady+Drifty), so a green day can still have visible
+    // texture on it. Calling that flat is the same class of error as quoting a
+    // modelled height: a swimmer standing on the sand can see it is not true.
+    // So the phrase is gated on all three rails being in the BOTTOM HALF of
+    // their own green band — raw demerits at or under greenEdge/2, where each
+    // classifier publishes the greenEdge it actually used (nothing re-derived
+    // here; the WW and NS surge paths carry different edges). Any rail missing
+    // a greenEdge fails the test, so the default stays the honest wording.
+    const deep = (m) => !!m && Number.isFinite(m.greenEdge) &&
+                        Number.isFinite(m.raw) && m.raw <= m.greenEdge / 2;
+    const pancake = deep(result.entry) && deep(result.swim) && deep(result.water);
+
+    el.className = 'answer-line green' + (pancake ? ' flat' : '');
+    el.textContent = pancake ? '' : 'Good — ';
     const d = document.createElement('span');
     d.className = 'al-driver';
-    d.textContent = 'all three clear';
+    d.textContent = pancake ? 'flat as a pancake' : 'all three clear';
     el.appendChild(d);
     el.hidden = false;
     return;
