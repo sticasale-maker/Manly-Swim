@@ -16026,13 +16026,28 @@ function submitFeedback(e) {
   function myPostIds(){ try { return JSON.parse(_pGet(MY_POSTS_KEY) || '[]') || []; } catch (e) { return []; } }
   function replySeenMap(){ try { return JSON.parse(_pGet(REPLY_SEEN_KEY) || '{}') || {}; } catch (e) { return {}; } }
   function newestReplyTs(p){ var t = 0; ((p && p.replies) || []).forEach(function(r){ var d = Date.parse(r.created_at) || 0; if (d > t) t = d; }); return t; }
-  // Record a just-submitted post as ours by matching the exact body in the fresh
-  // cache — the submit RPC predates this and its return shape isn't relied on.
-  function recordMyPost(body){
+  // While the board is OPEN, "which replies are new" must be judged against the
+  // seen-state from BEFORE it was opened: opening marks everything seen at once
+  // (so the dot clears), and the open-tap refetch then re-renders — recomputing
+  // the outlines from the just-updated state would erase them mid-read.
+  var _renderSeen = null;
+  function renderSeenMap(){ return _renderSeen || replySeenMap(); }
+  // Record a just-submitted post as ours. Prefer the id the submit RPC hands
+  // back; only fall back to matching our exact body among posts from the last
+  // two minutes — an unscoped body match can permanently claim a stranger's
+  // identical post ("Morning all") whenever our own row missed the read.
+  function recordMyPost(body, res){
     var match = null;
-    (_cache || []).forEach(function(p){
-      if (p.body === body && (!match || Date.parse(p.created_at) > Date.parse(match.created_at))) match = p;
-    });
+    var row = Array.isArray(res) ? res[0] : res;
+    var rid = (row && typeof row === 'object') ? row.id : (typeof row === 'number' ? row : null);
+    if (rid != null) match = findPost(rid) || { id: rid };
+    if (!match) {
+      var cutoff = Date.now() - 120000;
+      (_cache || []).forEach(function(p){
+        if (p.body !== body || (Date.parse(p.created_at) || 0) < cutoff) return;
+        if (!match || Date.parse(p.created_at) > Date.parse(match.created_at)) match = p;
+      });
+    }
     if (!match) return;
     var mine = myPostIds();
     if (mine.indexOf(match.id) === -1){ mine.push(match.id); _pSet(MY_POSTS_KEY, JSON.stringify(mine.slice(-20))); }
@@ -16053,13 +16068,18 @@ function submitFeedback(e) {
   }
   function markMyRepliesSeen(){
     var mine = myPostIds(); if (!mine.length) return;
-    var seen = replySeenMap(); var changed = false;
+    var seen = replySeenMap(), next = {}, changed = false;
+    // Rebuilt scoped to the ids we still own, so the map can't accumulate
+    // entries for posts that have rotated out of swim_my_posts (it rides a
+    // 400-day cookie, where unbounded growth eventually costs request headers).
+    mine.forEach(function(id){ if (seen[id] != null) next[id] = seen[id]; });
+    if (Object.keys(next).length !== Object.keys(seen).length) changed = true;
     (_cache || []).forEach(function(p){
       if (mine.indexOf(p.id) === -1) return;
       var t = newestReplyTs(p);
-      if (t > (seen[p.id] || 0)){ seen[p.id] = t; changed = true; }
+      if (t > (next[p.id] || 0)){ next[p.id] = t; changed = true; }
     });
-    if (changed) _pSet(REPLY_SEEN_KEY, JSON.stringify(seen));
+    if (changed) _pSet(REPLY_SEEN_KEY, JSON.stringify(next));
   }
 
   // ---- Shop window: the collapsed strip head proves the room is alive --------
@@ -16078,7 +16098,10 @@ function submitFeedback(e) {
     posts.forEach(function(p){ if (Date.parse(p.created_at) > Date.parse(newest.created_at)) newest = p; });
     var who = (newest.name && String(newest.name).trim()) ? frMask(String(newest.name).trim()) : 'Anonymous';
     var snip = frMask(String(newest.body || '')).replace(/\s+/g, ' ').trim();
-    if (snip.length > 58) snip = snip.slice(0, 57).replace(/\s+\S*$/, '') + '…';
+    // Array.from splits by code POINT — a plain slice can cut an emoji in half
+    // and leave a lone surrogate, which renders as a replacement character.
+    var chars = Array.from(snip);
+    if (chars.length > 58) snip = chars.slice(0, 57).join('').replace(/\s+\S*$/, '') + '…';
     var wkAgo = Date.now() - 7 * 24 * 3600 * 1000, np = 0, nr = 0;
     posts.forEach(function(p){
       if ((Date.parse(p.created_at) || 0) > wkAgo) np++;
@@ -16096,12 +16119,14 @@ function submitFeedback(e) {
     var body = $('boardBody');
     if (body && body.classList.contains('open')) {                 // open = they're reading it → seen
       try { localStorage.setItem(BOARD_SEEN_KEY, String(boardNewest())); } catch (e) {}
+      if (!_renderSeen) _renderSeen = replySeenMap();               // freeze BEFORE marking, so the outlines survive the re-render
       markMyRepliesSeen();
       dot.style.display = 'none';
       dot.classList.remove('board-newdot--reply');
       updateShopWindow();
       return;
     }
+    _renderSeen = null;                                            // closed → next open takes a fresh snapshot
     var replyNews = unseenReplyPosts().length > 0;
     dot.classList.toggle('board-newdot--reply', replyNews);        // amber (a reply to YOU) beats red (new posts)
     dot.style.display = (replyNews || boardNewest() > boardSeenAt()) ? 'block' : 'none';
@@ -16118,19 +16143,38 @@ function submitFeedback(e) {
         '</div>';
       return;
     }
-    var mineCtx = { ids: myPostIds(), seen: replySeenMap() };   // parsed once per render, not per card
+    var mineCtx = { ids: myPostIds(), seen: renderSeenMap() };   // parsed once per render, not per card
     box.innerHTML = posts.map(function(p){ return cardHTML(p, BOARD_ADMIN, mineCtx); }).join('');
   }
 
   var _lastFetchAt = 0;
   async function refresh(){
-    _lastFetchAt = Date.now();
-    try { _cache = await boardFetch(); renderList(); updateBoardDot(); }
+    try {
+      _cache = await boardFetch();
+      _lastFetchAt = Date.now();      // only a SUCCESSFUL read arms the throttle, or one failure blocks retries for a minute
+      renderList(); updateBoardDot();
+    }
     catch (e) { var box = $('frList'); if (box && !box.children.length) box.innerHTML = '<div class="fr-empty">Couldn’t load Bay Talk.</div>'; }
+  }
+  // A reply half-typed into a card composer lives only in the DOM, and renderList
+  // rebuilds #frList wholesale — so an opportunistic refetch must stand down
+  // rather than delete what someone is in the middle of writing.
+  function boardDrafting(){
+    var list = $('frList'); if (!list) return false;
+    var boxes = list.querySelectorAll('.bd-replybox:not([hidden])');
+    for (var i = 0; i < boxes.length; i++){
+      var ta = boxes[i].querySelector('.bd-rinput');
+      if (ta && ta.value.trim()) return true;
+    }
+    var admin = list.querySelector('.bd-admin textarea');
+    return !!(admin && admin.value.trim());
   }
   // Re-read on demand (strip opened / app foregrounded), throttled so toggling
   // the strip repeatedly can't hammer Supabase. Used by the global head handlers.
-  window.boardRefetch = function () { if (Date.now() - _lastFetchAt > 60000) refresh(); };
+  window.boardRefetch = function () {
+    if (boardDrafting()) return;
+    if (Date.now() - _lastFetchAt > 60000) refresh();
+  };
 
   async function doSubmit(){
     var inp = $('frInput'); if (!inp) return;
@@ -16148,7 +16192,7 @@ function submitFeedback(e) {
         imageUrl = await uploadPhoto(_pendingPhoto.blob);
         setMsg('');
       }
-      await featureSubmit(body, name, imageUrl);
+      var submitted = await featureSubmit(body, name, imageUrl);
       rememberName(name);
       notifyBoard(name, body);
       inp.value = ''; if (nameEl) nameEl.value = ''; photoReset(); updateCounter();
@@ -16156,7 +16200,7 @@ function submitFeedback(e) {
       var ab = $('frAddBtn'); if (ab) ab.hidden = false;
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
       await refresh();
-      recordMyPost(body);                      // the fresh cache holds our row — remember it as this device's
+      recordMyPost(body, submitted);           // prefer the id the RPC returned; body match is the fallback
       renderList(); updateBoardDot();          // re-render so the new card carries its "yours" chip
     } catch (e) {
       setMsg((e && /upload/.test(String(e.message))) ? 'Couldn’t upload the photo — try again.' : 'Couldn’t post — you may be posting too fast. Try again shortly.');
