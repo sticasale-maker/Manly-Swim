@@ -90,8 +90,12 @@ Whenever a LOCAL tune knob changes, write the value into the `SITE` defaults in
 
 ## 8. Absent data is grey, never green
 
-A missing reading must never be coloured as a good one (`.bbf-day-none` is the
-reference treatment). Related, and just as binding:
+A missing reading must never be coloured as a good one. The live reference
+treatment is `.bbf-chart-empty` (neutral blue-grey fill, `--dim` ink), rendered
+when the bluebottle wind forecast is unavailable. The older `.bbf-day-none` tile
+class this rule used to cite is now orphaned CSS — the per-day tiles it styled
+were replaced by the 4-hourly risk arc, so don't copy it as a pattern. Related,
+and just as binding:
 
 - **A model must never visually outrank a real observation.** A forecast cannot
   sit above a photo-backed sighting or a community report.
