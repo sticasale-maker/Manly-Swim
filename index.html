@@ -9546,44 +9546,93 @@ function renderBluebottleForecast(h){
 // own validator rejects, and it would be wrong anyway (a red entry off South
 // Steyne means try the sheltered ways in, not that the bay is shut).
 // ── The answer-line phrase book ────────────────────────────────────────────
-// One PRESET sentence per addressable state. Deliberately a lookup, not a
-// random pick: a verdict surface that re-words itself between two pulls of the
-// same forecast reads as broken, so there is exactly one sentence per state and
-// it is stable all day.
+// One PRESET sentence per band combination, authored by Marco. Deliberately a
+// lookup, not a random pick: a verdict surface that re-words itself between two
+// pulls of the same forecast reads as broken, so there is exactly one sentence
+// per state and it is stable all day.
 //
-// The 4x4x4 band space collapses here because swimVerdict() has already done the
-// collapsing — this table is keyed on what it RETURNS (roughLevel + roughSetBy),
-// never on the three band labels directly. That matters: re-deriving the verdict
-// from labels at the render site is the fifth-place drift CLAUDE.md §1 warns
-// about. The only band labels read below are the two GREEN ones, and only to
-// choose between wordings that all mean "clear".
+// KEYED ON THE BAND TRIPLE 'Entry|Chop|Surge' (plus PANCAKE, see below) because
+// the copy genuinely varies that finely — Easy/Choppy/Steady and Doable/Choppy/
+// Steady are the same driver combination but read differently on purpose.
 //
-// Caution heads must NOT name a rail — the sentence continues
-// "— <drivers> is/are what's setting it", which names them already.
-const AL_CAUTION_HEADS = {
-  'entry':            'Tricky one',
-  'surge':            'The bay’s breathing',
-  'swim':             'Bit of slop',
-  'entry|surge':      'Lumpy',
-  'entry|swim':       'Sporty',
-  'surge|swim':       'Washing machine’s on',
-  'entry|surge|swim': 'Mixed bag',
+// THIS TABLE SUPPLIES WORDS ONLY. The colour, and the site-check sentence, still
+// come from swimVerdict() exactly as before — this is not a second place the
+// verdict is decided (CLAUDE.md §1). A key that somehow misses falls through to
+// the generic wording rather than printing nothing.
+//
+// PANCAKE is the one entry not keyed on labels: it needs all three rails in the
+// BOTTOM HALF of their green band, which is a raw-vs-greenEdge test, not a band.
+const AL_SENTENCES = {
+  'PANCAKE':                   'flat as a pancake',
+  'Easy|Smooth|Steady':        'Bathtub stuff',
+  'Easy|Smooth|Drifty':        'A gentle push on — otherwise all clear',
+  'Easy|Smooth|Surgy':         'The bay’s breathing',
+  'Easy|Smooth|Washy':         'Rough in the bay',
+  'Easy|Ripply|Steady':        'Bit of a ripple — otherwise all clear',
+  'Easy|Ripply|Drifty':        'Bit of texture',
+  'Easy|Ripply|Surgy':         'The bay’s breathing',
+  'Easy|Ripply|Washy':         'Rough in the bay',
+  'Easy|Choppy|Steady':        'Blame the wind',
+  'Easy|Choppy|Drifty':        'Bit of slop — chop is what’s setting it',
+  'Easy|Choppy|Surgy':         'Washing machine’s on',
+  'Easy|Choppy|Washy':         'Rough in the bay',
+  'Easy|Messy|Steady':         'Blame the wind',
+  'Easy|Messy|Drifty':         'Blame the wind',
+  'Easy|Messy|Surgy':          'Rough in the bay',
+  'Easy|Messy|Washy':          'Rough in the bay',
+  'Doable|Smooth|Steady':      'A step to negotiate',
+  'Doable|Smooth|Drifty':      'Bit of texture',
+  'Doable|Smooth|Surgy':       'The bay’s breathing',
+  'Doable|Smooth|Washy':       'Rough in the bay',
+  'Doable|Ripply|Steady':      'Bit of texture',
+  'Doable|Ripply|Drifty':      'Bit of texture',
+  'Doable|Ripply|Surgy':       'The bay’s breathing',
+  'Doable|Ripply|Washy':       'Rough in the bay',
+  'Doable|Choppy|Steady':      'Bit of slop',
+  'Doable|Choppy|Drifty':      'Bit of slop',
+  'Doable|Choppy|Surgy':       'Washing machine’s on',
+  'Doable|Choppy|Washy':       'Rough in the bay',
+  'Doable|Messy|Steady':       'Blame the wind',
+  'Doable|Messy|Drifty':       'Blame the wind',
+  'Doable|Messy|Surgy':        'Rough in the bay',
+  'Doable|Messy|Washy':        'Rough in the bay',
+  'Caution|Smooth|Steady':     'Tricky one, consider halfway',
+  'Caution|Smooth|Drifty':     'Tricky one, consider halfway',
+  'Caution|Smooth|Surgy':      'Tricky one, consider Shelly',
+  'Caution|Smooth|Washy':      'Tricky one, consider Shelly',
+  'Caution|Ripply|Steady':     'Tricky one, consider halfway',
+  'Caution|Ripply|Drifty':     'Tricky one, consider halfway',
+  'Caution|Ripply|Surgy':      'Tricky one, consider Shelly',
+  'Caution|Ripply|Washy':      'Consider Shelly',
+  'Caution|Choppy|Steady':     'Tricky one, consider halfway',
+  'Caution|Choppy|Drifty':     'Tricky one, consider halfway',
+  'Caution|Choppy|Surgy':      'Tricky one, consider Shelly',
+  'Caution|Choppy|Washy':      'Consider Shelly',
+  'Caution|Messy|Steady':      'Rough and choppy',
+  'Caution|Messy|Drifty':      'Tricky one, consider halfway',
+  'Caution|Messy|Surgy':       'Consider Shelly',
+  'Caution|Messy|Washy':       'Consider Shelly',
+  'Dangerous|Smooth|Steady':   'Consider halfway',
+  'Dangerous|Smooth|Drifty':   'Consider halfway',
+  'Dangerous|Smooth|Surgy':    'Consider Shelly',
+  'Dangerous|Smooth|Washy':    'Consider Shelly',
+  'Dangerous|Ripply|Steady':   'Consider halfway',
+  'Dangerous|Ripply|Drifty':   'Consider halfway',
+  'Dangerous|Ripply|Surgy':    'Consider Shelly',
+  'Dangerous|Ripply|Washy':    'Consider Shelly',
+  'Dangerous|Choppy|Steady':   'Consider halfway',
+  'Dangerous|Choppy|Drifty':   'Consider halfway',
+  'Dangerous|Choppy|Surgy':    'Consider Shelly',
+  'Dangerous|Choppy|Washy':    'Consider Shelly',
+  'Dangerous|Messy|Steady':    'Consider halfway',
+  'Dangerous|Messy|Drifty':    'Consider halfway',
+  'Dangerous|Messy|Surgy':     'Consider Shelly',
+  'Dangerous|Messy|Washy':     'Consider Shelly',
 };
-// Green wordings. [head, driver] — the driver half is what gets the .al-driver
-// emphasis, so it carries the "clear" claim in every one of them.
-const AL_GREEN = {
-  pancake: ['',                     'flat as a pancake'],
-  pristine:['Bathtub stuff',        'all three clear'],
-  entry:   ['A step to negotiate',  'otherwise all clear'],
-  swim:    ['Bit of a ripple',      'otherwise all clear'],
-  surge:   ['A gentle push on',     'otherwise all clear'],
-  several: ['Bit of texture',       'all three still clear'],
-};
-// NOT a table. Every top-of-scale day — a dangerous entry or surge, or a messy
-// surface — keeps the one flat word. A phrase with character on a red morning
-// does the work of "it's not that bad", which is the mitigation ban (CLAUDE.md
-// §1), and it would sit directly above the verbatim site-check sentence.
-const AL_ROUGH_HEAD = 'Rough';
+// Split point for the emphasised half. A sentence with ' — ' renders as
+// head + <span class="al-driver">rest</span>; a single-clause sentence is all
+// driver, which is how the flat-day line has always rendered.
+const AL_SPLIT = ' — ';
 
 function renderAnswerLine(result) {
   const el = document.getElementById('answerLine');
@@ -9637,60 +9686,48 @@ function renderAnswerLine(result) {
                         Number.isFinite(m.raw) && m.raw <= m.greenEdge / 2;
     const pancake = deep(result.entry) && deep(result.swim) && deep(result.water);
 
-    // Which rails are in the SECOND green band (Doable / Ripply / Drifty)? On a
-    // good day those are the only two bands any rail can be in, so this is the
-    // whole of the remaining variation — no thresholds re-read, just the labels
-    // the classifiers already returned.
-    const textured = [];
-    if (result.entry.label === 'Doable') textured.push('entry');
-    if (result.swim.label  === 'Ripply') textured.push('swim');
-    if (result.water.label === 'Drifty') textured.push('surge');
-
-    const key = pancake            ? 'pancake'
-              : textured.length === 0 ? 'pristine'
-              : textured.length === 1 ? textured[0]
-              :                         'several';
-    const [head, driver] = AL_GREEN[key] || AL_GREEN.pristine;
-
-    el.className = 'answer-line green' + (pancake ? ' flat' : '');
-    el.textContent = head ? head + ' — ' : '';
-    const d = document.createElement('span');
-    d.className = 'al-driver';
-    d.textContent = driver;
-    el.appendChild(d);
-    el.hidden = false;
+    alWrite(el, 'green' + (pancake ? ' flat' : ''),
+            alSentence(result, pancake, v, 'all three clear'), null);
     return;
   }
 
-  const cls = v.safetyLevel === 'dangerous' ? 'red' : 'yellow';
+  // Fallback wording only — used if the band triple is somehow not in the table.
   const words = v.roughSetBy.map(s => s.word);
   const drivers = words.length > 1
     ? words.slice(0, -1).join(', ') + ' and ' + words[words.length - 1]
     : words[0];
-  const verb = words.length > 1 ? 'are' : 'is';
-  // 'Rough' for the top of either scale — a dangerous entry/surge OR a messy
-  // surface. The colour above still separates the two. Below that, the caution
-  // tier gets its own preset per driver combination; an unrecognised key falls
-  // back to the plain word rather than printing undefined.
   const topOfScale = (v.safetyLevel === 'dangerous' || v.roughLevel === 'rough');
-  const comboKey = v.roughSetBy.map(sb => sb.key).sort().join('|');
-  const head = topOfScale ? AL_ROUGH_HEAD : (AL_CAUTION_HEADS[comboKey] || 'Caution');
+  const fallback = (topOfScale ? 'Rough' : 'Caution') + ' — ' + drivers +
+                   ' ' + (words.length > 1 ? 'are' : 'is') + ' what’s setting it';
 
-  // Built as nodes with textContent rather than an innerHTML string: there is no
-  // global esc() in this scope, and a verdict surface is the last place to start
-  // concatenating markup.
+  alWrite(el, v.safetyLevel === 'dangerous' ? 'red' : 'yellow',
+          alSentence(result, false, v, fallback), v.siteCheck);
+}
+
+// Look up the authored sentence for this band triple. PANCAKE wins when all three
+// rails sit in the bottom half of their own green band.
+function alSentence(result, pancake, v, fallback) {
+  const key = pancake ? 'PANCAKE'
+            : [result.entry.label, result.swim.label, result.water.label].join('|');
+  return AL_SENTENCES[key] || fallback;
+}
+
+// Paint the line. Built as nodes with textContent rather than an innerHTML string:
+// there is no global esc() in this scope, and a verdict surface is the last place
+// to start concatenating markup.
+function alWrite(el, cls, sentence, siteCheck) {
   el.className = 'answer-line ' + cls;
-  el.textContent = head + ' — ';
+  const cut = sentence.indexOf(AL_SPLIT);
+  el.textContent = cut > -1 ? sentence.slice(0, cut) + AL_SPLIT : '';
   const drv = document.createElement('span');
   drv.className = 'al-driver';
-  drv.textContent = drivers;
+  drv.textContent = cut > -1 ? sentence.slice(cut + AL_SPLIT.length) : sentence;
   el.appendChild(drv);
-  el.appendChild(document.createTextNode(' ' + verb + ' what’s setting it'));
   // VERBATIM. Do not summarise, truncate or re-word this string.
-  if (v.siteCheck) {
+  if (siteCheck) {
     const site = document.createElement('span');
     site.className = 'al-site';
-    site.textContent = v.siteCheck;
+    site.textContent = siteCheck;
     el.appendChild(site);
   }
   el.hidden = false;
