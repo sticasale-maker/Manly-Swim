@@ -439,6 +439,9 @@
     font-size:13px; letter-spacing:0.2px; line-height:1.4;
     text-transform:none; color:#fff6f4; text-shadow:none;
   }
+  /* [hidden] must beat the display:block above (higher-specificity attr selector).
+     Set by alSyncSiteCheck when the Oracle prose already carries the sentence. */
+  .answer-line .al-site[hidden] { display:none; }
   /* Marks the rail that set the day. Sits inside .metric-name, which is why it
      has to reset the Bebas letter-spacing it inherits — and why it sets its own
      colour rather than taking currentColor: .metric-name is band-tinted, and on a
@@ -9738,6 +9741,7 @@ function alSentence(result, pancake, v, fallback) {
 // Paint the line. Built as nodes with textContent rather than an innerHTML string:
 // there is no global esc() in this scope, and a verdict surface is the last place
 // to start concatenating markup.
+let _alSiteCheck = null;   // the sentence currently on the answer line, for alSyncSiteCheck
 function alWrite(el, cls, sentence, siteCheck) {
   el.className = 'answer-line ' + cls;
   const cut = sentence.indexOf(AL_SPLIT);
@@ -9754,6 +9758,30 @@ function alWrite(el, cls, sentence, siteCheck) {
     el.appendChild(site);
   }
   el.hidden = false;
+  _alSiteCheck = siteCheck || null;
+  alSyncSiteCheck();
+}
+
+// ── De-duplicate the site-check sentence ───────────────────────────────────
+// On a dangerous day the sentence has TWO carriers: this line (computed locally
+// by swimVerdict, so it survives a dead connection) and the Oracle's water
+// paragraph (which the Worker validator forces to echo it verbatim). Both on
+// screen at once reads as a stutter.
+//
+// The answer-line copy is the one that must never be deleted outright: the LOCAL
+// baseline prose does NOT contain the sentence, so with the Worker unreachable,
+// slow, or its draft rejected by summaryConflict, this line is the ONLY place a
+// swimmer is told which way in. So hide it only when the Oracle paragraph is
+// actually rendered AND actually carries the sentence — never pre-emptively.
+// Re-runs whenever either side changes, because the Oracle lands asynchronously
+// and can arrive before or after the answer line is painted.
+function alSyncSiteCheck() {
+  const site = document.querySelector('#answerLine .al-site');
+  if (!site || !_alSiteCheck) return;
+  const water = document.getElementById('banner-water-text');
+  const prose = (water && !water.hidden) ? (water.textContent || '') : '';
+  const echoed = prose.toLowerCase().indexOf(String(_alSiteCheck).toLowerCase()) > -1;
+  site.hidden = echoed;
 }
 
 function renderSnapshot(h, wx) {
@@ -14883,6 +14911,7 @@ async function generateBannerSummary() {
     }
     renderUnderwaterCommunity();
     renderAfterParagraph(j.after_text);
+    alSyncSiteCheck();   // Oracle prose now carries the sentence — drop the duplicate
   } catch (e) { /* keep the local baseline */ }
 }
 
