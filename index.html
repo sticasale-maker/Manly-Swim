@@ -1327,8 +1327,18 @@
     margin: -4px 0 10px; text-align: center;
   }
   .bb-notify-note[hidden] { display: none; }
-  .bb-strip.bb-alert-1 { border-color: var(--yellow); }
-  .bb-strip.bb-alert-2 { border-color: var(--red); }
+  /* QUIET STATE — nothing reported in the window. The strip is the ONLY way to
+     start a warning, so it stays in the flow and stays tappable; it just stops
+     competing for attention: no card fill, no ocean accent, greyed icon and
+     title. The buttons are deliberately left at full contrast — receding is
+     about the tile, not about making Report hard to hit. */
+  .bb-strip.bb-quiet { background: transparent; box-shadow: none; border-color: rgba(17,53,65,0.16); }
+  .bb-strip.bb-quiet .bb-icon { filter: grayscale(1); opacity: 0.45; }
+  .bb-strip.bb-quiet .bb-status, .bb-strip.bb-quiet .bb-sub { color: var(--dim); }
+  /* ACTIVE — a coloured border alone did not register at a glance against the
+     community blue-grey, so the fill carries the state too. */
+  .bb-strip.bb-alert-1 { border-color: var(--yellow); background: rgba(224,124,42,0.14); }
+  .bb-strip.bb-alert-2 { border-color: var(--red);    background: rgba(192,57,43,0.14); }
   .bb-icon { font-size: 26px; flex-shrink: 0; line-height: 1; }
   .bb-body { flex: 1; min-width: 0; }
   .bb-status {
@@ -1355,7 +1365,7 @@
   @keyframes boardDotPulseAmber { 0%,100%{ box-shadow:0 0 0 0 rgba(232,163,61,0.55); } 50%{ box-shadow:0 0 0 7px rgba(232,163,61,0); } }
   /* Bluebottle title matches too — but ONLY when there's no alert, so the
      bb-alert-1/2 yellow/red title colour still wins when reports exist. */
-  #bbStrip:not(.bb-alert-1):not(.bb-alert-2) #bbStatus { color: var(--deep); }
+  #bbStrip:not(.bb-alert-1):not(.bb-alert-2):not(.bb-quiet) #bbStatus { color: var(--deep); }
   .bb-strip.bb-alert-1 .bb-status { color: var(--yellow); }
   .bb-strip.bb-alert-2 .bb-status { color: var(--red); }
   .bb-sub {
@@ -12328,7 +12338,10 @@ async function bbInsert(_deviceId, keepalive, photoUrl) {
 // board's public 'board-images' bucket + the same compress/upload approach.
 const BB_PHOTO_BUCKET = 'board-images';
 const BB_PHOTO_PREFIX = `${BB_SUPABASE_URL}/storage/v1/object/public/${BB_PHOTO_BUCKET}/`;
-let _bbPhoto = null;   // { blob, url } while a photo is staged, else null
+let _bbPhoto = null;   // { blob, url, shotAt } while a photo is staged, else null
+// True when the staged photo carries no usable EXIF date. Such a photo may
+// corroborate a warning that is already running, but may never start one.
+let _bbPhotoUndated = false;
 // A warning is "active" when there's at least one photo-backed report in the
 // window. Starting a warning REQUIRES a photo; once active, others may confirm
 // with a bare tap. Kept in sync by bbRenderFromData.
@@ -12342,6 +12355,7 @@ function bbPhotoPick() {
 function bbPhotoReset() {
   if (_bbPhoto && _bbPhoto.url) { try { URL.revokeObjectURL(_bbPhoto.url); } catch(e){} }
   _bbPhoto = null;
+  _bbPhotoUndated = false;
   const inp   = document.getElementById('bbPhotoInput'); if (inp)   inp.value = '';
   const wrap  = document.getElementById('bbPhotoWrap');  if (wrap)  wrap.hidden = true;
   const pbtn  = document.getElementById('bbPhotoBtn');   if (pbtn)  pbtn.hidden = false;
@@ -12370,21 +12384,163 @@ function bbCompressImage(file) {
   });
 }
 
+// ── Photo freshness (EXIF) ───────────────────────────────────────────────────
+// A photo is what lets one swimmer START a bluebottle warning, and a warning
+// pushes a notification to everyone. Now that the picker offers the camera roll
+// as well as the camera, "there is a photo" no longer implies "this happened
+// just now" — last summer's bluebottle, or one forwarded from a mate, would
+// read identically on the strip. So we date it.
+//
+// EXIF only, and read from the ORIGINAL file: bbCompressImage re-encodes through
+// a canvas, which strips metadata, so this has to run before the photo is staged
+// and the answer carried alongside it. What EXIF gives is the camera's own local
+// wall clock with no zone (unless OffsetTimeOriginal is there), which is exactly
+// right here — the swimmer photographing the bay and the phone reading it back
+// are in the same zone.
+const BB_PHOTO_MAX_AGE_MS = 6 * 3600 * 1000;  // "this morning", not "this week"
+const BB_PHOTO_SKEW_MS    = 60 * 60 * 1000;   // tolerate an hour of clock skew
+
+// Minimal JPEG APP1/TIFF walk. Returns a Date, or null when the file carries no
+// usable timestamp — screenshots, downloads, and anything re-saved by a
+// messaging app all land here. Null is NOT read as fresh; see bbPhotoPicked.
+function bbExifShotAt(buf) {
+  const dv = new DataView(buf);
+  if (dv.byteLength < 4 || dv.getUint16(0) !== 0xFFD8) return null;   // not a JPEG
+
+  // Walk the marker segments looking for APP1 holding "Exif\0\0".
+  let p = 2, tiff = -1;
+  while (p + 4 <= dv.byteLength) {
+    if (dv.getUint8(p) !== 0xFF) break;                 // desynced — give up
+    const marker = dv.getUint8(p + 1);
+    if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD9)) { p += 2; continue; }
+    if (marker === 0xDA) break;                         // start of scan: no EXIF
+    const len = dv.getUint16(p + 2);
+    if (len < 2) break;
+    if (marker === 0xE1 && p + 10 <= dv.byteLength &&
+        dv.getUint32(p + 4) === 0x45786966 && dv.getUint16(p + 8) === 0x0000) {
+      tiff = p + 10; break;
+    }
+    p += 2 + len;
+  }
+  if (tiff < 0 || tiff + 8 > dv.byteLength) return null;
+
+  // TIFF header: byte order, magic 42, offset to IFD0 (all offsets from `tiff`).
+  const bom = dv.getUint16(tiff);
+  if (bom !== 0x4949 && bom !== 0x4D4D) return null;
+  const LE = bom === 0x4949;
+  if (dv.getUint16(tiff + 2, LE) !== 0x002A) return null;
+
+  const str = (off, len) => {
+    let s = '';
+    for (let i = 0; i < len && tiff + off + i < dv.byteLength; i++) {
+      const c = dv.getUint8(tiff + off + i);
+      if (!c) break;
+      s += String.fromCharCode(c);
+    }
+    return s;
+  };
+
+  // Pull the handful of tags we care about out of one IFD.
+  const want = {};
+  function readIFD(ifdOff, tags) {
+    if (ifdOff <= 0 || tiff + ifdOff + 2 > dv.byteLength) return;
+    const n = dv.getUint16(tiff + ifdOff, LE);
+    if (n > 512) return;                                 // implausible — bail
+    for (let i = 0; i < n; i++) {
+      const e = ifdOff + 2 + i * 12;
+      if (tiff + e + 12 > dv.byteLength) return;
+      const tag = dv.getUint16(tiff + e, LE);
+      if (tags.indexOf(tag) < 0) continue;
+      if (tag === 0x8769) { want.sub = dv.getUint32(tiff + e + 8, LE); continue; }
+      const type  = dv.getUint16(tiff + e + 2, LE);
+      const count = dv.getUint32(tiff + e + 4, LE);
+      if (type !== 2 || count > 64) continue;            // ASCII only
+      // <=4 bytes live inline in the value field; anything longer is a pointer.
+      const off = count <= 4 ? e + 8 : dv.getUint32(tiff + e + 8, LE);
+      want[tag] = str(off, count);
+    }
+  }
+  readIFD(dv.getUint32(tiff + 4, LE), [0x8769, 0x0132]);              // IFD0
+  if (want.sub) readIFD(want.sub, [0x9003, 0x9004, 0x9011, 0x9012]);  // Exif SubIFD
+
+  // Preference order: when it was shot, when it was digitised, when the file was
+  // last written. The first two have a matching offset tag.
+  const pick = want[0x9003] || want[0x9004] || want[0x0132];
+  if (!pick) return null;
+  const offs = (want[0x9003] ? want[0x9011] : want[0x9004] ? want[0x9012] : '') || '';
+
+  // "YYYY:MM:DD HH:MM:SS" — a zoneless local wall clock.
+  const m = /^(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d):(\d\d)/.exec(pick.trim());
+  if (!m) return null;
+  const Y = +m[1], Mo = +m[2], D = +m[3], H = +m[4], Mi = +m[5], S = +m[6];
+  if (Y < 1990 || Mo < 1 || Mo > 12 || D < 1 || D > 31 || H > 23 || Mi > 59 || S > 60) return null;
+
+  // An explicit offset ("+10:00") makes the instant unambiguous; without one,
+  // read the wall clock as the phone's own local time.
+  const mo = /^([+-])(\d\d):(\d\d)$/.exec(offs.trim());
+  if (mo) {
+    const sign = mo[1] === '-' ? -1 : 1;
+    return new Date(Date.UTC(Y, Mo - 1, D, H, Mi, S) - sign * ((+mo[2]) * 60 + (+mo[3])) * 60000);
+  }
+  return new Date(Y, Mo - 1, D, H, Mi, S);
+}
+
+// Read only the head of the file — EXIF sits in the first segments, and a 12MP
+// photo isn't worth pulling into memory whole.
+async function bbPhotoShotAt(file) {
+  try {
+    const head = file.slice(0, 256 * 1024);
+    const buf  = await (head.arrayBuffer ? head.arrayBuffer() : new Response(head).arrayBuffer());
+    const d    = bbExifShotAt(buf);
+    if (!d || isNaN(d.getTime())) return null;
+    // A timestamp in the future is a wrong clock, not a fresh photo — undated.
+    if (d.getTime() - Date.now() > BB_PHOTO_SKEW_MS) return null;
+    return d;
+  } catch (e) { return null; }
+}
+
+// An undated photo confirms; a dated one can raise the alarm. Say which.
+function bbPhotoHint() {
+  return _bbPhotoUndated
+    ? 'Photo attached — tap Send to confirm the warning'
+    : 'Photo attached — tap Send to alert other swimmers';
+}
+
 async function bbPhotoPicked(ev) {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
   const sub = document.getElementById('bbSub');
   if (!/^image\//.test(file.type || '')) { ev.target.value = ''; if (sub) sub.textContent = 'That file isn’t an image.'; return; }
   if (file.size > 15 * 1024 * 1024) { ev.target.value = ''; if (sub) sub.textContent = 'That photo is too large (max 15MB).'; return; }
+
+  // Date it BEFORE compressing: bbCompressImage re-encodes through a canvas,
+  // which drops EXIF, so after that point the age is unknowable.
+  const shotAt = await bbPhotoShotAt(file);
+  if (shotAt && Date.now() - shotAt.getTime() > BB_PHOTO_MAX_AGE_MS) {
+    ev.target.value = '';
+    const t = shotAt.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+    if (sub) sub.textContent = `That photo was taken ${bbRelDay(shotAt)} at ${t} — a warning needs one from this morning.`;
+    return;
+  }
+  // Undated — a screenshot, a download, one forwarded by a mate. It can back up
+  // a warning that is already running, but it cannot start one: nothing in it
+  // says this is happening now, and starting a warning pushes a notification.
+  if (!shotAt && !_bbWarningActive) {
+    ev.target.value = '';
+    if (sub) sub.textContent = 'Can’t tell when that photo was taken — take one now to start a warning.';
+    return;
+  }
+
   try {
     const blob = await bbCompressImage(file);
     bbPhotoReset();
     const url = URL.createObjectURL(blob);
-    _bbPhoto = { blob, url };
+    _bbPhoto = { blob, url, shotAt };
+    _bbPhotoUndated = !shotAt;
     const thumb = document.getElementById('bbPhotoThumb'); if (thumb) thumb.src = url;
     const wrap  = document.getElementById('bbPhotoWrap');  if (wrap)  wrap.hidden = false;
     const pbtn  = document.getElementById('bbPhotoBtn');   if (pbtn)  pbtn.hidden = true;
-    if (sub) sub.textContent = 'Photo attached — tap Report to alert other swimmers';
+    if (sub) sub.textContent = bbPhotoHint();
   } catch (e) {
     if (sub) sub.textContent = 'Couldn’t process that photo — try another.';
   }
@@ -12526,7 +12682,7 @@ function bbRenderFromData(reports) {
 
   // Status
   if (count === 0) {
-    strip.className  = 'bb-strip community';
+    strip.className  = 'bb-strip community bb-quiet';
     status.textContent = 'No blue bottles · last 48h';
     sub.textContent  = '📷 Photo required to start a warning';
   } else {
@@ -12539,7 +12695,7 @@ function bbRenderFromData(reports) {
   }
   // A staged photo's hint must survive refresh ticks (and mid-confirm/undo states).
   if (_bbPhoto && !_bbPending) {
-    sub.textContent = 'Photo attached — tap Send to alert other swimmers';
+    sub.textContent = bbPhotoHint();
   }
 
   // Gallery: photo-backed reports (newest first). The strip is only tap-to-expand
@@ -12617,6 +12773,10 @@ async function bbLoad() {
     _bbCache   = reports;
     _bbCacheAt = Date.now();
     bbRenderFromData(reports);
+    // The summary generates ONCE, and this fetch usually lands after it. Without
+    // this repaint the bluebottle line would not show until the next cold load —
+    // which for a same-morning report is exactly too late to be worth saying.
+    try { refreshCommunitySummary(); } catch (e) {}
   } catch(e) {
     console.warn('Bluebottle fetch failed:', e.message);
     bbRenderFromData(_bbCache || []);
@@ -12643,10 +12803,12 @@ function bbReport() {
 
   // Starting a NEW warning requires a photo; confirming an active one does not.
   // No photo staged + no active warning → open the camera instead of reporting.
-  if (!_bbPhoto && !_bbWarningActive) {
+  if ((!_bbPhoto || _bbPhotoUndated) && !_bbWarningActive) {
     bbCancelConfirm();
     const sub = document.getElementById('bbSub');
-    if (sub) sub.textContent = '📷 Add a photo to start a bluebottle warning';
+    if (sub) sub.textContent = _bbPhotoUndated
+      ? '📷 That photo is undated — take one now to start a warning'
+      : '📷 Add a photo to start a bluebottle warning';
     bbPhotoPick();
     return;
   }
@@ -14405,7 +14567,44 @@ function forecastStaleLine() {
 // votes and the other is a summary of recent dives.
 //
 // Water quality and the staleness note stay: both are about the swim itself.
-function appendCommunity(text) { return (text || '') + waterQualityLine() + forecastStaleLine(); }
+// BLUEBOTTLES IN THE LAST 24 H — read straight off the strip's own cache, so the
+// Oracle and the strip can never disagree about whether anything was reported.
+// Null when nothing was (absent is absent: the Oracle is told nothing rather than
+// told 'no bluebottles', which is a claim the app cannot actually make — nobody
+// reporting is not the same as nothing out there).
+function _bluebottleFact() {
+  try {
+    if (!Array.isArray(_bbCache) || !_bbCache.length) return null;
+    const since  = Date.now() - 24 * 3600 * 1000;
+    const recent = _bbCache.filter(r => {
+      const t = new Date(r.reported_at).getTime();
+      return Number.isFinite(t) && t >= since;
+    });
+    if (!recent.length) return null;
+    const last = new Date(recent[recent.length - 1].reported_at);   // rows are ascending
+    return {
+      count: recent.length,
+      photoBacked: recent.some(r => bbSafePhoto(r.photo_url)),
+      lastDay: bbRelDay(last),
+      lastTime: last.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+    };
+  } catch (e) { return null; }
+}
+// Appended client-side for the same reasons as the Beachwatch line above: it must
+// be GUARANTEED on screen rather than left to whether the summariser chose to
+// weave it in, and the wording stays controlled here. It REPORTS and does not
+// advise — what swimmers reported and when, never whether to get in — so it adds
+// no verdict of its own and cannot contradict the one above it. Dated out loud
+// (CLAUDE.md §8: nothing undated).
+function bluebottleLine() {
+  const f = _bluebottleFact();
+  if (!f) return '';
+  const who  = f.count === 1 ? 'A bluebottle was reported' : f.count + ' bluebottle reports came in';
+  const when = f.lastDay === 'today' ? 'today' : f.lastDay;
+  const tail = f.count === 1 ? ' at ' + f.lastTime : ', the last at ' + f.lastTime;
+  return ' ' + who + ' ' + when + tail + '.';
+}
+function appendCommunity(text) { return (text || '') + waterQualityLine() + bluebottleLine() + forecastStaleLine(); }
 
 // The closing beat, shown or hidden as ONE unit — the heading and the text
 // together. Two writers reach it (the summariser and the local baseline) and both
@@ -15215,6 +15414,12 @@ async function generateBannerSummaryLocal() {
     // is told nothing instead of something wrong. The age travels with it so the
     // prose can date it out loud.
     seaTemp: _seaTempFact(),
+    // Reported bluebottles, so the Worker's prose can acknowledge them instead of
+    // describing a lovely morning directly above a live sighting. The GUARANTEE
+    // that they get mentioned is bluebottleLine(), appended client-side — this
+    // field only lets the summariser tell it in its own voice. Null when there is
+    // nothing to report, and the Worker must treat null as silence, not as 'none'.
+    bluebottle: _bluebottleFact(),
     // ARRIVING — an hour BEFORE the reference hour. The day-level weather above is
     // an average across the whole window, which is the right thing for "10-21C" and
     // the wrong thing for "what hits you walking down at seven". Both are sent: the
