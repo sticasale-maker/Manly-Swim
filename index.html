@@ -1349,6 +1349,10 @@
   .board-newdot { display:none; width:9px; height:9px; border-radius:50%; background:var(--red); flex:0 0 auto; margin-right:2px; animation:boardDotPulse 1.2s ease-in-out infinite; }
   @keyframes boardDotPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(192,57,43,0.55); } 50%{ box-shadow:0 0 0 7px rgba(192,57,43,0); } }
   @media (prefers-reduced-motion: reduce){ .board-newdot { animation:none; } }
+  /* Amber variant: someone replied to one of THIS device's own posts — more
+     personal than "there are new posts", so it wins over the red dot. */
+  .board-newdot--reply { background:#e8a33d; animation-name:boardDotPulseAmber; }
+  @keyframes boardDotPulseAmber { 0%,100%{ box-shadow:0 0 0 0 rgba(232,163,61,0.55); } 50%{ box-shadow:0 0 0 7px rgba(232,163,61,0); } }
   /* Bluebottle title matches too — but ONLY when there's no alert, so the
      bb-alert-1/2 yellow/red title colour still wins when reports exist. */
   #bbStrip:not(.bb-alert-1):not(.bb-alert-2) #bbStatus { color: var(--deep); }
@@ -3511,8 +3515,10 @@
           <div class="bb-icon">&#128172;</div>
           <div class="bb-body">
             <div class="bb-status">Bay Talk</div>
-            <div class="bb-sub">Community chat — ask, comment, say hi, whatever you fancy</div>
+            <!-- Live "shop window": JS swaps this for the newest post + weekly counts once the board loads -->
+            <div class="bb-sub" id="boardSub">Community chat — ask, comment, say hi, whatever you fancy</div>
           </div>
+          <button class="bb-btn sight-btn" id="boardPostBtn" type="button" onclick="boardPostOpen(event)">Post</button>
           <span class="board-newdot" id="boardNewDot" aria-hidden="true"></span>
           <span class="sight-chev" id="boardChev">&#9662;</span>
         </div>
@@ -3521,7 +3527,7 @@
             <button type="button" id="frAddBtn" class="fr-addbtn"><span aria-hidden="true">&#9998;</span> Add your post</button>
             <div class="bd-compose" id="frCompose" hidden>
               <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)">
-              <textarea id="frInput" class="fr-input" maxlength="200" rows="3" placeholder="Ask a question or request a feature&hellip;"></textarea>
+              <textarea id="frInput" class="fr-input" maxlength="200" rows="3" placeholder="Say hi, ask a question, share something from the bay&hellip;"></textarea>
               <div id="frPhotoWrap" class="fr-photo-wrap" hidden>
                 <img id="frPhotoImg" class="fr-photo-thumb" alt="Photo to attach">
                 <button id="frPhotoRemove" class="fr-photo-remove" type="button" aria-label="Remove photo">&times;</button>
@@ -3863,6 +3869,10 @@
       /* User replies: softer left border + plain name, so Marco's ocean-blue reply stays visually distinct */
       #featureCard .bd-reply--user{border-left-color:rgba(17,53,65,0.18);}
       #featureCard .bd-uname{font-weight:700;color:var(--deep);font-size:13px;}
+      /* "yours" chip on posts made from this device, so a returning poster spots their thread */
+      #featureCard .bd-mine-tag{flex:none;font-size:10px;letter-spacing:.5px;font-weight:600;color:var(--ocean);border:1px solid var(--ocean);border-radius:6px;padding:1px 5px;line-height:1.3;}
+      /* A reply that landed on one of this device's posts since it last looked (after .bd-reply--user so the amber border wins) */
+      #featureCard .bd-reply--new{border-left-color:#e8a33d;background:rgba(232,163,61,0.08);border-radius:0 8px 8px 0;}
       /* Everyone-can-reply composer, revealed by the per-card "Reply" toggle */
       #featureCard .bd-replybtn{align-self:flex-start;margin-top:8px;background:none;border:none;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;padding:2px 0;-webkit-tap-highlight-color:transparent;}
       #featureCard .bd-replybox{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
@@ -12863,12 +12873,31 @@ function sightToggle(ev) {
 
 // THE BOARD collapse toggle (collapsed by default), same pattern as the other corner strips.
 function boardToggle(ev) {
+  if (ev && ev.target.closest && ev.target.closest('.bb-btn, .sight-btn')) return;   // the Post pill has its own handler
   const body = document.getElementById('boardBody');
   const chev = document.getElementById('boardChev');
   if (!body) return;
   const open = body.classList.toggle('open');
   if (chev) chev.style.transform = open ? 'rotate(180deg)' : '';
+  if (open && window.boardRefetch) window.boardRefetch();          // a resident PWA can sit for days — re-read on open
   if (window.updateBoardDot) window.updateBoardDot();   // opening marks Bay Talk seen (clears the dot)
+}
+
+// The head's Post pill: one tap = strip open + composer open + cursor in the box
+// (the old path was expand, then find "Add your post", then tap again).
+function boardPostOpen(ev) {
+  if (ev) ev.stopPropagation();
+  const body = document.getElementById('boardBody');
+  const chev = document.getElementById('boardChev');
+  if (body && !body.classList.contains('open')) {
+    body.classList.add('open');
+    if (chev) chev.style.transform = 'rotate(180deg)';
+    if (window.boardRefetch) window.boardRefetch();
+  }
+  const c = document.getElementById('frCompose'); if (c) c.hidden = false;
+  const ab = document.getElementById('frAddBtn'); if (ab) ab.hidden = true;
+  const i = document.getElementById('frInput'); if (i) i.focus();
+  if (window.updateBoardDot) window.updateBoardDot();
 }
 
 // ── report bottom-sheet ──
@@ -15861,10 +15890,13 @@ function submitFeedback(e) {
     }).join('') + '</div>';
   }
 
-  function replyHTML(r, postId, adminOn){
+  function replyHTML(r, postId, adminOn, newSince){
     var trash = adminOn
       ? '<button type="button" class="bd-reply-trash" data-post="' + esc(postId) + '" data-del="' + esc(r.id) + '" aria-label="Delete reply">\u{1F5D1}</button>'
       : '';
+    // Amber-mark replies this device's poster hasn't looked at yet (newSince is
+    // null on everyone else's posts, so nothing highlights there).
+    var fresh = (newSince != null && (Date.parse(r.created_at) || 0) > newSince) ? ' bd-reply--new' : '';
     // User replies: plain name (masked) + softened border. Body is masked too,
     // since a visitor wrote it. Marco's replies (author_role 'admin', the column
     // default) keep the avatar/VIZ badge and an unmasked, trusted body.
@@ -15872,7 +15904,7 @@ function submitFeedback(e) {
     var rphoto = rph ? '<img class="bd-photo" src="' + esc(rph) + '" alt="Photo attached to this reply" loading="lazy" onclick="window.open(this.src,\'_blank\',\'noopener\')">' : '';
     if (r.author_role === 'user'){
       var un = (r.name && String(r.name).trim()) ? esc(frMask(String(r.name).trim())) : 'Anonymous';
-      return '<div class="bd-reply bd-reply--user">' +
+      return '<div class="bd-reply bd-reply--user' + fresh + '">' +
         '<div class="bd-reply-head">' +
           '<span class="bd-uname">' + un + '</span>' +
           '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
@@ -15880,7 +15912,7 @@ function submitFeedback(e) {
         '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' + rphoto + replyReactHTML(r) +
       '</div>';
     }
-    return '<div class="bd-reply">' +
+    return '<div class="bd-reply' + fresh + '">' +
       '<div class="bd-reply-head">' +
         '<img class="bd-avatar" src="images/marco2.png" alt="Marco" width="26" height="26">' +
         '<span class="bd-marco">MARCO</span>' +
@@ -15915,11 +15947,13 @@ function submitFeedback(e) {
     '</div>';
   }
 
-  function cardHTML(p, adminOn){
+  function cardHTML(p, adminOn, mineCtx){
+    var isMine = !!(mineCtx && mineCtx.ids && mineCtx.ids.indexOf(p.id) !== -1);
+    var newSince = isMine ? ((mineCtx.seen && mineCtx.seen[p.id]) || 0) : null;   // null = not mine, no reply highlighting
     var nm = (p.name && String(p.name).trim()) ? esc(frMask(String(p.name).trim())) : 'Anonymous';
     var pin = p.pinned ? '<span class="bd-pin" aria-label="Pinned">\u{1F4CC}</span>' : '';
     var replies = (p.replies && p.replies.length)
-      ? '<div class="bd-replies">' + p.replies.map(function(r){ return replyHTML(r, p.id, adminOn); }).join('') + '</div>'
+      ? '<div class="bd-replies">' + p.replies.map(function(r){ return replyHTML(r, p.id, adminOn, newSince); }).join('') + '</div>'
       : '';
     var ph = safePhoto(p.image_url);
     var photo = ph ? '<img class="bd-photo" src="' + esc(ph) + '" alt="Photo attached to this post" loading="lazy" onclick="window.open(this.src,\'_blank\',\'noopener\')">' : '';
@@ -15966,6 +16000,7 @@ function submitFeedback(e) {
       '<div class="bd-meta">' + pin +
         (p.hidden ? '<span class="bd-hidden-tag">Hidden</span>' : '') +
         '<span class="bd-name">' + nm + '</span>' +
+        (isMine ? '<span class="bd-mine-tag">yours</span>' : '') +
         '<span class="bd-time">' + esc(relTime(p.created_at)) + '</span>' +
       '</div>' +
       '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + photo +
@@ -15980,14 +16015,97 @@ function submitFeedback(e) {
   var BOARD_SEEN_KEY = 'swim_baytalk_seen';
   function boardNewest(){ var t = 0; (_cache || []).forEach(function(p){ var d = Date.parse(p.created_at) || 0; if (d > t) t = d; }); return t; }
   function boardSeenAt(){ try { return parseInt(localStorage.getItem(BOARD_SEEN_KEY) || '0', 10) || 0; } catch (e) { return 0; } }
+
+  // ---- "Someone answered you": which posts are THIS device's, and the newest
+  // reply timestamp it has seen on each. Ownership lives only on this device
+  // (no accounts); mirrored through persistSet so Safari ITP can't forget it. --
+  var MY_POSTS_KEY = 'swim_my_posts';
+  var REPLY_SEEN_KEY = 'swim_reply_seen';
+  var _pGet = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var _pSet = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
+  function myPostIds(){ try { return JSON.parse(_pGet(MY_POSTS_KEY) || '[]') || []; } catch (e) { return []; } }
+  function replySeenMap(){ try { return JSON.parse(_pGet(REPLY_SEEN_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function newestReplyTs(p){ var t = 0; ((p && p.replies) || []).forEach(function(r){ var d = Date.parse(r.created_at) || 0; if (d > t) t = d; }); return t; }
+  // Record a just-submitted post as ours by matching the exact body in the fresh
+  // cache — the submit RPC predates this and its return shape isn't relied on.
+  function recordMyPost(body){
+    var match = null;
+    (_cache || []).forEach(function(p){
+      if (p.body === body && (!match || Date.parse(p.created_at) > Date.parse(match.created_at))) match = p;
+    });
+    if (!match) return;
+    var mine = myPostIds();
+    if (mine.indexOf(match.id) === -1){ mine.push(match.id); _pSet(MY_POSTS_KEY, JSON.stringify(mine.slice(-20))); }
+    markReplySeen(match.id);
+  }
+  function markReplySeen(id){
+    var seen = replySeenMap();
+    seen[id] = newestReplyTs(findPost(id));
+    _pSet(REPLY_SEEN_KEY, JSON.stringify(seen));
+  }
+  // Posts of mine whose newest reply is newer than the last one I looked at.
+  function unseenReplyPosts(){
+    var mine = myPostIds(); if (!mine.length) return [];
+    var seen = replySeenMap();
+    return (_cache || []).filter(function(p){
+      return mine.indexOf(p.id) !== -1 && !p.hidden && newestReplyTs(p) > (seen[p.id] || 0);
+    });
+  }
+  function markMyRepliesSeen(){
+    var mine = myPostIds(); if (!mine.length) return;
+    var seen = replySeenMap(); var changed = false;
+    (_cache || []).forEach(function(p){
+      if (mine.indexOf(p.id) === -1) return;
+      var t = newestReplyTs(p);
+      if (t > (seen[p.id] || 0)){ seen[p.id] = t; changed = true; }
+    });
+    if (changed) _pSet(REPLY_SEEN_KEY, JSON.stringify(seen));
+  }
+
+  // ---- Shop window: the collapsed strip head proves the room is alive --------
+  // Sub line = newest post (masked, truncated) + this week's counts; an unseen
+  // reply to one of this device's posts takes the line over entirely.
+  var BOARD_SUB_DEFAULT = 'Community chat — ask, comment, say hi, whatever you fancy';
+  function updateShopWindow(){
+    var sub = $('boardSub'); if (!sub) return;
+    if (unseenReplyPosts().length){
+      sub.innerHTML = '<strong>Someone replied to you</strong> — tap to read';
+      return;
+    }
+    var posts = (_cache || []).filter(function(p){ return !p.hidden; });
+    if (!posts.length){ sub.textContent = BOARD_SUB_DEFAULT; return; }
+    var newest = posts[0];
+    posts.forEach(function(p){ if (Date.parse(p.created_at) > Date.parse(newest.created_at)) newest = p; });
+    var who = (newest.name && String(newest.name).trim()) ? frMask(String(newest.name).trim()) : 'Anonymous';
+    var snip = frMask(String(newest.body || '')).replace(/\s+/g, ' ').trim();
+    if (snip.length > 58) snip = snip.slice(0, 57).replace(/\s+\S*$/, '') + '…';
+    var wkAgo = Date.now() - 7 * 24 * 3600 * 1000, np = 0, nr = 0;
+    posts.forEach(function(p){
+      if ((Date.parse(p.created_at) || 0) > wkAgo) np++;
+      (p.replies || []).forEach(function(r){ if ((Date.parse(r.created_at) || 0) > wkAgo) nr++; });
+    });
+    var bits = [];
+    if (np) bits.push(np + (np === 1 ? ' post' : ' posts'));
+    if (nr) bits.push(nr + (nr === 1 ? ' reply' : ' replies'));
+    sub.innerHTML = '&ldquo;' + esc(snip) + '&rdquo; &mdash; ' + esc(who) + ', ' + esc(relTime(newest.created_at)) +
+      (bits.length ? ' &middot; ' + bits.join(' &middot; ') + ' this week' : '');
+  }
+
   function updateBoardDot(){
     var dot = $('boardNewDot'); if (!dot) return;
     var body = $('boardBody');
     if (body && body.classList.contains('open')) {                 // open = they're reading it → seen
       try { localStorage.setItem(BOARD_SEEN_KEY, String(boardNewest())); } catch (e) {}
-      dot.style.display = 'none'; return;
+      markMyRepliesSeen();
+      dot.style.display = 'none';
+      dot.classList.remove('board-newdot--reply');
+      updateShopWindow();
+      return;
     }
-    dot.style.display = (boardNewest() > boardSeenAt()) ? 'block' : 'none';
+    var replyNews = unseenReplyPosts().length > 0;
+    dot.classList.toggle('board-newdot--reply', replyNews);        // amber (a reply to YOU) beats red (new posts)
+    dot.style.display = (replyNews || boardNewest() > boardSeenAt()) ? 'block' : 'none';
+    updateShopWindow();
   }
   window.updateBoardDot = updateBoardDot;
 
@@ -16000,13 +16118,19 @@ function submitFeedback(e) {
         '</div>';
       return;
     }
-    box.innerHTML = posts.map(function(p){ return cardHTML(p, BOARD_ADMIN); }).join('');
+    var mineCtx = { ids: myPostIds(), seen: replySeenMap() };   // parsed once per render, not per card
+    box.innerHTML = posts.map(function(p){ return cardHTML(p, BOARD_ADMIN, mineCtx); }).join('');
   }
 
+  var _lastFetchAt = 0;
   async function refresh(){
+    _lastFetchAt = Date.now();
     try { _cache = await boardFetch(); renderList(); updateBoardDot(); }
     catch (e) { var box = $('frList'); if (box && !box.children.length) box.innerHTML = '<div class="fr-empty">Couldn’t load Bay Talk.</div>'; }
   }
+  // Re-read on demand (strip opened / app foregrounded), throttled so toggling
+  // the strip repeatedly can't hammer Supabase. Used by the global head handlers.
+  window.boardRefetch = function () { if (Date.now() - _lastFetchAt > 60000) refresh(); };
 
   async function doSubmit(){
     var inp = $('frInput'); if (!inp) return;
@@ -16032,6 +16156,8 @@ function submitFeedback(e) {
       var ab = $('frAddBtn'); if (ab) ab.hidden = false;
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
       await refresh();
+      recordMyPost(body);                      // the fresh cache holds our row — remember it as this device's
+      renderList(); updateBoardDot();          // re-render so the new card carries its "yours" chip
     } catch (e) {
       setMsg((e && /upload/.test(String(e.message))) ? 'Couldn’t upload the photo — try again.' : 'Couldn’t post — you may be posting too fast. Try again shortly.');
       updateCounter();
@@ -16107,6 +16233,7 @@ function submitFeedback(e) {
       rememberName(name);
       try { if (window.track) window.track('feedback', {}); } catch (e) {}
       await refresh();                         // rebuilds the card → composer collapses, reply shows
+      if (myPostIds().indexOf(id) !== -1) { markReplySeen(id); updateBoardDot(); }   // your own reply on your own post isn't "news"
     } catch (e) {
       setMsg((e && /upload/.test(String(e.message))) ? 'Couldn’t upload the photo — try again.' : 'Couldn’t post your reply — you may be replying too fast. Try again shortly.');
       if (sendBtn) sendBtn.disabled = false;
@@ -16223,6 +16350,11 @@ function submitFeedback(e) {
         if (f) onReplyPhotoPick(f);
       });
     }
+    // A resident PWA can sit in the app switcher for days — re-read the board
+    // whenever the app comes back to the foreground (throttled in boardRefetch).
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && window.boardRefetch) window.boardRefetch();
+    });
     updateCounter();
     refresh();                                 // render the board first…
     if (BOARD_ADMIN) ensurePassValidated();     // …then prompt + validate on entry
@@ -17478,6 +17610,10 @@ if ('serviceWorker' in navigator) {
 
   var SW_TOAST_SHOWN = false;          // once per session (per page load)
   var SW_SNOOZE_MS = 4 * 60 * 1000;    // stay quiet this long after a dismiss
+  function swSnoozedUntil() {
+    try { return parseInt(sessionStorage.getItem('sw_toast_snooze') || '0', 10) || 0; }
+    catch (e) { return 0; }
+  }
   // ── Don't announce routine deploys ─────────────────────────────────────────
   // The shell is fetched NETWORK-FIRST (sw.js), so a cold open with a working
   // connection is ALREADY running the newest index.html. The toast fired seconds
