@@ -9618,7 +9618,7 @@ const AL_SENTENCES = {
   'Dangerous|Smooth|Washy':    'Consider Shelly',
   'Dangerous|Ripply|Steady':   'Consider halfway',
   'Dangerous|Ripply|Drifty':   'Consider halfway',
-  'Dangerous|Ripply|Surgy':    'Consider Shelly',
+  'Dangerous|Ripply|Surgy':    'Consider halfway',
   'Dangerous|Ripply|Washy':    'Consider Shelly',
   'Dangerous|Choppy|Steady':   'Consider halfway',
   'Dangerous|Choppy|Drifty':   'Consider halfway',
@@ -14197,11 +14197,28 @@ function swimVerdict(entryLabel, swimLabel, surgeLabel) {
   // out, not about how the swim feels.
   const dangerous = [];
   if (entryLabel === 'Dangerous') dangerous.push({ key: 'entry', word: 'entry' });
-  if (surgeLabel === 'Washy')     dangerous.push({ key: 'surge', word: 'surge' });
 
   const caution = [];
   if (entryLabel === 'Caution') caution.push({ key: 'entry', word: 'entry' });
   if (surgeLabel === 'Surgy')   caution.push({ key: 'surge', word: 'surge' });
+
+  // WASHY IS CONDITIONAL (Marco, 21 Aug 2026). Surge sits in the safety tier for
+  // one reason — it changes the entry advice itself — so it can only be a safety
+  // call when there is entry advice to change. On an Easy or Doable entry a Washy
+  // surge is a rough SWIM, not a dangerous way in, and it now lands in caution.
+  // Once the entry is Caution or worse the two compound and it is dangerous again.
+  //
+  // This deliberately moves more than the answer line: the ⚠️ icon, the
+  // safetyLevel sent to the Worker, and the Oracle's "say so plainly and early"
+  // all follow from here. That is the point — one tier, read everywhere, is what
+  // CLAUDE.md §1 asks for. The local baseline's surge prose is untouched because
+  // it keys off the Washy LABEL, not the tier, and still describes it in full.
+  // summaryConflict()'s mitigation guard is separately pinned to the Washy label
+  // so demoting the tier cannot unblock "only if you're confident".
+  if (surgeLabel === 'Washy') {
+    (entryLabel === 'Dangerous' || entryLabel === 'Caution' ? dangerous : caution)
+      .push({ key: 'surge', word: 'surge' });
+  }
 
   const level = dangerous.length ? 'dangerous' : caution.length ? 'caution' : 'good';
 
@@ -14532,7 +14549,11 @@ function summaryConflict(text, facts) {
   // a refusal into a briefing, and it reaches the swimmer most likely to
   // misjudge it. Checked here as well as in the Worker so a stale or
   // rolled-back Worker cannot put that sentence back on screen.
-  if (String(facts.safetyLevel || '').toLowerCase() === 'dangerous') {
+  // Fires on a Washy surge too, not just the dangerous TIER: since 21 Aug 2026 a
+  // Washy surge under an Easy/Doable entry is scored 'caution', and the sentence
+  // this catches ("only get in if you're confident") is exactly as wrong there.
+  if (String(facts.safetyLevel || '').toLowerCase() === 'dangerous' ||
+      String(v.surge || '') === 'Washy') {
     if (/\b(with a mate|with a buddy|with someone|bring a mate|stay close|only get in|only swim|if you'?re confident|if you are confident|experienced swimmers?|strong swimmers?)\b/.test(t))
       return 'offers a way to swim a dangerous day';
     if (/\b(doable|easy|manageable|no problem)\b/.test(t))
