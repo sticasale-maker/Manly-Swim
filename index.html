@@ -19480,12 +19480,17 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     sc._dashBound = true;
     var repaint = function () { if (document.body.contains(sc)) fill(sc); };
 
-    // Anything inside the dashboard is a control, not "tap to dismiss".
+    // Only a real CONTROL swallows the tap. This used to guard the whole
+    // '[data-ssd]' block, which meant a dashboard announcement filling the
+    // screen ate every tap and could not be dismissed at all — the complaint
+    // that prompted this. Inert tiles, numbers and charts fall through to the
+    // overlay's tap-to-close, exactly like the text cards next to them.
+    var CTRL = 'a,button,input,select,textarea,label,[role="button"],[data-ssd-ctrl]';
     sc.addEventListener('click', function (e) {
-      if (e.target.closest && e.target.closest('[data-ssd]')) e.stopPropagation();
+      if (e.target.closest && e.target.closest(CTRL)) e.stopPropagation();
     });
     sc.addEventListener('pointerdown', function (e) {
-      if (e.target.closest && e.target.closest('[data-ssd]')) e.stopPropagation();
+      if (e.target.closest && e.target.closest(CTRL)) e.stopPropagation();
     });
 
   }
@@ -19797,10 +19802,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       "#annWhatsNew{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
       "#annWhatsNew.show{display:inline-flex;}" +
       "#annWhatsNew .ann-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red,#c0392b);}" +
-      "#annWhatsNew.unseen .ann-dot{display:inline-block;}";
+      "#annWhatsNew.unseen .ann-dot{display:inline-block;}" +
+      // Sits on the OVERLAY, not the card: the card can be a full-bleed image
+      // or a full-screen dashboard with overflow:hidden, which would clip it.
+      "#annClose{position:absolute;top:calc(env(safe-area-inset-top, 0px) + 10px);right:10px;z-index:2;width:40px;height:40px;padding:0;border:none;border-radius:50%;background:rgba(6,30,46,0.62);color:#fff;font-size:22px;line-height:40px;text-align:center;cursor:pointer;box-shadow:0 2px 10px rgba(6,30,46,.34);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}" +
+      "#annClose:focus-visible{outline:2px solid #fff;outline-offset:2px;}";
     document.head.appendChild(css);
     var ov = document.createElement('div'); ov.id = 'annOverlay';
     ov.innerHTML =
+      '<button id="annClose" type="button" aria-label="Close announcement">×</button>' +
       '<div id="annPopup" role="dialog" aria-modal="true" aria-label="Announcement">' +
         '<img id="annImg" alt="">' +
         '<div id="annBody"><div id="annTitle"></div><div id="annText"></div></div>' +
@@ -19814,8 +19824,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // back was to hit Preview again. In preview only the BACKDROP closes it,
     // matching how every other sheet in this app behaves.
     ov.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('#annClose')) { dismissPopup(); return; }
       if (_preview && e.target !== ov) return;
       dismissPopup();
+    });
+    // Escape closes too — the button and the tap are for thumbs, this is for
+    // anyone on a desktop who reached for the key every other sheet answers to.
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      var o = $('annOverlay');
+      if (o && o.classList.contains('show')) dismissPopup();
     });
     document.body.appendChild(ov);
   }
