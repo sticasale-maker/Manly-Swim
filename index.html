@@ -5718,6 +5718,24 @@ const SITE_DEFAULTS = {
   chopLeeFrom:   180,   // core arc start (deg, wind FROM)
   chopLeeTo:     280,   // core arc end
   chopLeeTaper:  20,    // taper width (deg) outside each edge, back to no shelter
+  // ── Global wind gain for CHOP (23 Aug 2026) ────────────────────────────────────
+  // Same lever as chopLeeFactor — a multiplier on the wind the CHOP fetch sea is grown
+  // from — but at EVERY bearing, not just the land arc. It exists because the two
+  // halves of chopCm stopped being on the same footing: the forecast partition now
+  // passes through seaHeightCap, which pins it below the fully-developed steepness
+  // ceiling (0.0231) and so caps its slap weight at 0.264, while the locally grown sea
+  // is uncapped and sits at slap weight 1.000 across almost the whole rose. That is
+  // physically defensible — a young short-fetch sea really is steeper than a fully
+  // developed one — but it leaves the local wind driving chop close to single-handedly.
+  // This is the dial for that. hs is linear in U in the fetch-limited branch (hs ∝ U·√F)
+  // and the slap weight is already pinned at 1, so the gain lands ~linearly on the face:
+  // 0.85 ≈ 15% off the wind's contribution. Multiplies chopLeeFactor, does not replace it.
+  //
+  // NOT a gain on chopCm. chopCm is a physical height and must stay one — this is a
+  // claim about the wind AT THE WATER versus the 10 m forecast, which is the same kind
+  // of claim chopLeeFactor already makes. CHOP ONLY: Entry grows its wind sea at the SS
+  // corner and Surge never reads wind, so neither can see this.
+  chopWindGain:  1,     // 1 = off (ships as a no-op; tune it live, then bake it here)
   // ── Observed-wind nowcast blend (16 Aug 2026) ───────────────────────────────────
   // The BOM North Head reading is the only real anemometer near the bay, and near the
   // present hour it beats the model. So the CURRENT hour is nudged toward it and the
@@ -6859,6 +6877,14 @@ function chopLeeFactor(windFromDeg) {
   return 1 - (1 - f) * w;
 }
 
+// Global (all-bearing) wind multiplier for the CHOP fetch sea — see SITE.chopWindGain.
+// Separate from chopLeeFactor because they answer different questions: the lee factor is
+// about WHERE the wind came from, this is about how hard the whole rose blows the bay.
+function chopWindGain() {
+  const g = (SITE.chopWindGain != null) ? SITE.chopWindGain : 1;
+  return (isFinite(g) && g > 0) ? g : 1;
+}
+
 function chopTransmit(deg) {
   return openWeight(SITE.fetchMaskBL, deg);
 }
@@ -7339,7 +7365,7 @@ function calcScore(d, modelOverride) {
   // fetch-limited SPM branch hs ∝ U·√F, so a 0.75 wind factor is identical to scaling
   // fetch by 0.56. CHOP ONLY: the Entry wind-sea is grown at the SS corner, which these
   // buildings do not shelter, and Surge never reads wind.
-  const _chopU    = (windKmh || 0) / 3.6 * chopLeeFactor(windDir);
+  const _chopU    = (windKmh || 0) / 3.6 * chopLeeFactor(windDir) * chopWindGain();
   const _chopRes  = spmGrowth(_chopU, chopFetchFor(windDir));                              // sea over the directional fetch
   const _hWsFace  = _chopRes.hs * chopSlapWeight(_chopRes.hs, _chopRes.tp);                // fetch wind-sea steep face (m)
   const _hWwH     = seaHeightCap(windWaveH || 0, _wwP_bl);                                 // fully-developed steepness cap — see seaHeightCap()
@@ -13406,6 +13432,7 @@ const TUNE_PARAMS = [
   { key:'chopRefFetchM', label:'CHOP · Chop strength (chop_ref_fetch_m)', min:500, max:12000, step:100, hint:'New NS C4 — COPY tuned value here. Effective wind fetch (m) over the bay = THE Chop gain (feeds chopCm). Higher = bigger chop. (The old bl_chop_impact only scaled a readout, never a score.) Default 5000.' },
   // Lee shelter (11 Aug 2026). LOCAL — no sheet cell; SITE is the only home.
   { key:'chopLeeFactor', label:'CHOP · Lee shelter, S→W wind (×)', min:0.3, max:1, step:0.05, hint:'LOCAL — no sheet cell. Wind-speed multiplier for chop when the wind comes over the land/buildings arc. 1 = off (old behaviour), 0.75 = quarter off the speed. hs ∝ U·√F, so 0.75 ≈ scaling the fetch by 0.56. CHOP ONLY — Entry and Surge unaffected.' },
+  { key:'chopWindGain', label:'CHOP · Wind gain, all bearings (×)', min:0.5, max:1.5, step:0.05, hint:'LOCAL — no sheet cell. Multiplies the wind the chop fetch sea is grown from, at EVERY bearing (the lee factor is the same lever but only through the land arc, and the two multiply). hs ∝ U·√F and the slap weight is already pinned at 1, so this is ~linear on the face: 0.85 ≈ 15% less chop from wind. CHOP ONLY — Entry and Surge unaffected. Default 1 = off.' },
   { key:'chopLeeFrom',   label:'CHOP · Lee arc from (deg)',        min:90,  max:270, step:5, hint:'LOCAL — start of the sheltered arc (wind FROM). Default 180.' },
   { key:'chopLeeTo',     label:'CHOP · Lee arc to (deg)',          min:180, max:359, step:5, hint:'LOCAL — end of the sheltered arc. Default 280. Beyond it the wind is coming down the beach/off the water and the shelter should not apply.' },
   { key:'swimThresholds.glassy', label:'CHOP · Smooth edge (cm)', min:0, max:30, step:0.5, hint:'New NS AQ6 — COPY here (ALL of AQ6:AQ9 must be filled or CHOP reverts to default). Steep-face height (cm) below this = Smooth.' },
@@ -13449,7 +13476,7 @@ const TUNE_PARAMS = [
 // be a second one that silently disagrees on the next sheet load.
 const TUNE_LIVE_KEYS = [
   'offshorePts', 'offshoreArc', 'offshoreMaxPts', 'offshoreMaxFrac', 'offshoreFloorKmh',
-  'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo',
+  'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
 ];
 const TUNE_LIVE_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/tune';
 const TUNE_LIVE_CACHE = 'swim_tune_live_v1';   // last-known live values, so a cold/offline boot still scores right
@@ -13576,6 +13603,7 @@ const TW_GROUPS = [
     knobs:[
       { key:'chopRefFetchM', name:'Chop strength', tag:'LIVE', desc:'Wind’s runway over the bay — higher = bigger chop. The real Chop gain (feeds chopCm).', cell:'chop_ref_fetch_m · C4', prov:'wired', provTxt:'STEP A · wired · C4' },
       { key:'chopLeeFactor', name:'Lee shelter (S→W)', tag:'LIVE', desc:'Wind off the land and the buildings west of the swim patch grows less sea than its raw speed. Multiplies the wind for the <b>chop fetch sea only</b>. 1 = off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'chopWindGain',  name:'Wind gain (all bearings)', tag:'LIVE', desc:'How hard the wind blows the bay, everywhere — the lee factor is the same lever restricted to the land arc, and the two multiply. Grows the <b>chop fetch sea only</b>. ~linear on the face: 0.85 ≈ 15% less. 1 = off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'chopLeeFrom',   name:'Lee arc from (°)',              desc:'Start of the sheltered arc (wind FROM).',                                                                                                                       cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'chopLeeTo',     name:'Lee arc to (°)',                desc:'End of the arc. Cosine-tapers back to no shelter over 20° outside each edge.',                                                                                   cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
