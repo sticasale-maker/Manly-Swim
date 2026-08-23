@@ -5735,7 +5735,14 @@ const SITE_DEFAULTS = {
   // claim about the wind AT THE WATER versus the 10 m forecast, which is the same kind
   // of claim chopLeeFactor already makes. CHOP ONLY: Entry grows its wind sea at the SS
   // corner and Surge never reads wind, so neither can see this.
-  chopWindGain:  1,     // 1 = off (ships as a no-op; tune it live, then bake it here)
+  // BAKED 0.75 (23 Aug 2026, per user - chop reading too high on NE afternoons).
+  // Extra justification beyond the seaHeightCap asymmetry above: the nowcast blend
+  // pulls the model wind toward BOM North Head, which is a CLIFFTOP station ~1.5 km
+  // away. Clifftop wind is systematically stronger than the wind at water level in a
+  // sheltered bay, so feeding it straight into the fetch sea over-grows the chop -
+  // 23 Aug 17:00 came through at 17 km/h NE and scored 17.0 cm, Messy, on water the
+  // user reads as short of that. 0.75 puts it at 11.3 cm, Choppy.
+  chopWindGain:  0.75,  // 1 = off. Live-overridable via /tune KV; this is the floor everyone gets.
   // ── Observed-wind nowcast blend (16 Aug 2026) ───────────────────────────────────
   // The BOM North Head reading is the only real anemometer near the bay, and near the
   // present hour it beats the model. So the CURRENT hour is nudged toward it and the
