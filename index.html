@@ -2204,7 +2204,7 @@
     transition:max-height 0.35s ease, opacity 0.3s ease;
     padding:0 clamp(12px,4vw,16px);
   }
-  .radar-body.radar-open { max-height:900px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(8px,2.5vw,10px); }
+  .radar-body.radar-open { max-height:1200px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(8px,2.5vw,10px); }
 
   .radar-map {
     position:relative; width:100%; aspect-ratio:4/3; overflow:hidden;
@@ -2275,6 +2275,26 @@
   .radar-key-cap {
     font-family:'Inter',sans-serif; font-size:10px; line-height:1.4; color:var(--dim); margin-top:3px;
   }
+  /* Rain-at-Manly chart. The same BOM field the map draws, sampled at the bay,
+     so the chart and the map are the same numbers and cannot disagree. It still
+     gets its own heading: a point reading and a map of a region are different
+     claims even when they come from one source. */
+  .radar-mm { margin-top:12px; border-top:1px solid rgba(17,53,65,0.10); padding-top:9px; }
+  .radar-mm-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .radar-mm-title {
+    font-family:'Bebas Neue',sans-serif; font-size:13px; letter-spacing:1.2px;
+    text-transform:uppercase; color:var(--deep);
+  }
+  .radar-mm-src { font-family:'Inter',sans-serif; font-size:9px; letter-spacing:0.4px; color:var(--dim); }
+  .radar-mm-lead {
+    font-family:'Inter',sans-serif; font-size:11.5px; font-weight:600; color:var(--deep);
+    margin-top:2px;
+  }
+  /* No reading yet, or the fetch failed: grey, and it says so. Never an empty
+     chart, which reads as a confident "no rain". */
+  .radar-mm-lead.is-none { font-weight:500; color:var(--dim); }
+  .radar-mm-svg { width:100%; height:auto; display:block; margin-top:4px; }
+  .radar-mm-foot { font-family:'Inter',sans-serif; font-size:9.5px; color:var(--dim); margin-top:1px; }
   .radar-legend {
     font-family:'Inter',sans-serif; font-size:10px; line-height:1.45; color:var(--dim);
     margin-top:7px;
@@ -3641,6 +3661,17 @@
           </div>
           <div class="radar-key-labels" id="radarKeyLabels"></div>
           <div class="radar-key-cap" id="radarKeyCap">&nbsp;</div>
+        </div>
+        <div class="radar-mm">
+          <div class="radar-mm-head">
+            <span class="radar-mm-title">Rain at Manly &middot; next 24 h</span>
+            <span class="radar-mm-src">bureau of meteorology</span>
+          </div>
+          <div class="radar-mm-lead is-none" id="radarMmLead">Reading the bay&hellip;</div>
+          <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 92"
+               preserveAspectRatio="xMidYMid meet"
+               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks over the next 24 hours"></svg>
+          <div class="radar-mm-foot" id="radarMmFoot"></div>
         </div>
         <div class="radar-legend">
           Left of the <em>now</em> mark is the <strong>radar rain rate</strong> &mdash; what the
@@ -23079,6 +23110,153 @@ else theftLoad();
     keyCap.textContent = k.cap;
   }
 
+  /* ── rain at Manly, the next 24 hours ──────────────────────────────────────
+     The same BOM field the map is drawing, sampled at the bay. Not a second
+     forecast: the bar for a given hour is literally the pixel under the pin in
+     that frame, so the chart and the map cannot disagree.
+
+     Why it needs a proxy: BOM's tile host sends no Access-Control-Allow-Origin,
+     so a canvas that has drawn one of its tiles is tainted and getImageData()
+     throws — and BOM exposes neither `identify` nor `exportImage` through its
+     gateway, so there is no point query to ask instead. bom-tile-proxy is a
+     standalone Worker that fetches one tile and adds the CORS header. It is
+     deliberately not a route on bold-rain-6ded, which is shared with the
+     Forecast App and has twice lost a cron to a careless redeploy.
+
+     BOM publishes BANDS, not values — "1 - 2 mm" — so that is what is drawn and
+     said. Each bar is one band tall and carries BOM's own colour for it, which
+     is why the bar matches the wash on the map above. Inventing a midpoint to
+     plot would be precision the source does not have. */
+  var MM_PROXY = 'https://bom-tile-proxy.sticasale.workers.dev/tile';
+  var MM_BANDS = ['0 – 0.5', '0.5 – 1', '1 – 2', '2 – 3', '3 – 5',
+                  '5 – 10', '10 – 20', '20 – 50', '50 – 100', 'over 100'];
+  var mmLead = document.getElementById('radarMmLead');
+  var mmSvg  = document.getElementById('radarMmSvg');
+  var mmFoot = document.getElementById('radarMmFoot');
+
+  // Manly's tile, and the pixel within it, on the forecast grid at zoom 8.
+  var _mmSpan = 256 * RES;
+  var _mmFc = (C.x - GRIDS.fcst.ox) / _mmSpan, _mmFr = (GRIDS.fcst.oy - C.y) / _mmSpan;
+  var MM_COL = Math.floor(_mmFc), MM_ROW = Math.floor(_mmFr);
+  var MM_PX  = Math.floor((_mmFc - MM_COL) * 256), MM_PY = Math.floor((_mmFr - MM_ROW) * 256);
+
+  // Nearest of BOM's ten class colours. Tiles are flat-filled from a remap
+  // raster function, but resampling can soften a class edge by a shade or two,
+  // so match nearest rather than exact — and refuse anything genuinely far off.
+  var _mmRGB = KEY_FCST.colours.map(function (h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  });
+  function mmBandOf(r, g, b) {
+    var best = -1, bestD = 1e9;
+    for (var i = 0; i < _mmRGB.length; i++) {
+      var c = _mmRGB[i];
+      var d = (r - c[0]) * (r - c[0]) + (g - c[1]) * (g - c[1]) + (b - c[2]) * (b - c[2]);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return bestD > 3000 ? null : best;
+  }
+
+  var _mmCv = document.createElement('canvas');
+  _mmCv.width = _mmCv.height = 1;
+  var _mmCtx = _mmCv.getContext('2d', { willReadFrequently: true });
+
+  // Resolves to a band index, null for "covered but no class matched / outside
+  // the grid", or false when the tile could not be fetched at all. Those three
+  // are different things and the chart says so.
+  function mmSample(iso) {
+    return new Promise(function (resolve) {
+      var im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = function () {
+        try {
+          _mmCtx.clearRect(0, 0, 1, 1);
+          _mmCtx.drawImage(im, MM_PX, MM_PY, 1, 1, 0, 0, 1, 1);
+          var d = _mmCtx.getImageData(0, 0, 1, 1).data;
+          resolve(d[3] < 8 ? null : mmBandOf(d[0], d[1], d[2]));
+        } catch (e) { resolve(false); }
+      };
+      im.onerror = function () { resolve(false); };
+      im.src = MM_PROXY + '?layer=' + FUT_LAYER + '&tms=' + GRIDS.fcst.tms
+             + '&time=' + iso + '&row=' + MM_ROW + '&col=' + MM_COL;
+    });
+  }
+
+  var mmHour = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney', hour: 'numeric', hour12: true
+  });
+
+  function drawMm(rows) {
+    var W = 360, H = 92, PAD_L = 26, PAD_B = 14, PAD_T = 6;
+    var x0 = PAD_L, x1 = W - 4, yB = H - PAD_B, plot = yB - PAD_T;
+    var n = rows.length, bw = (x1 - x0) / n, p = [];
+
+    // Axis ticks sit on the class boundaries, and carry the same numbers as the
+    // map's forecast key — the two are the same scale.
+    [[1, '0.5'], [3, '2'], [5, '5'], [7, '20'], [9, '100']].forEach(function (t) {
+      var y = yB - (t[0] / 10) * plot;
+      p.push('<line x1="' + x0 + '" y1="' + y.toFixed(1) + '" x2="' + x1 + '" y2="' + y.toFixed(1) +
+             '" stroke="rgba(17,53,65,0.08)" stroke-width="1"/>');
+      p.push('<text x="' + (PAD_L - 4) + '" y="' + (y + 3).toFixed(1) +
+             '" font-size="8.5" fill="#4a5f6e" text-anchor="end">' + t[1] + '</text>');
+    });
+    p.push('<line x1="' + x0 + '" y1="' + yB + '" x2="' + x1 + '" y2="' + yB +
+           '" stroke="rgba(17,53,65,0.25)" stroke-width="1"/>');
+
+    rows.forEach(function (row, i) {
+      var bx = x0 + i * bw + 1.5, w = bw - 3;
+      if (row.band === false || row.band === null) {
+        // No reading is not a small reading. Grey, on the baseline, never a
+        // colour from the ramp.
+        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 4) + '" width="' + w.toFixed(1) +
+               '" height="4" fill="#c4c4c4"/>');
+      } else {
+        var h = ((row.band + 1) / 10) * plot;
+        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - h).toFixed(1) + '" width="' + w.toFixed(1) +
+               '" height="' + h.toFixed(1) + '" rx="1" fill="' + KEY_FCST.colours[row.band] +
+               '" stroke="rgba(17,53,65,0.18)" stroke-width="0.5"/>');
+      }
+      if (i % 2 === 0) {
+        p.push('<text x="' + (bx + w / 2).toFixed(1) + '" y="' + (H - 3) +
+               '" font-size="8.5" fill="#4a5f6e" text-anchor="middle">' +
+               mmHour.format(row.t).replace(/\s/g, '') + '</text>');
+      }
+    });
+    mmSvg.innerHTML = p.join('');
+
+    var got = rows.filter(function (r) { return typeof r.band === 'number'; });
+    if (!got.length) {
+      mmLead.className = 'radar-mm-lead is-none';
+      mmLead.textContent = 'No reading from the Bureau for the bay.';
+      mmFoot.textContent = '';
+      return;
+    }
+    var worst = got.reduce(function (a, b) { return b.band > a.band ? b : a; });
+    if (worst.band === 0) {
+      mmLead.className = 'radar-mm-lead is-none';
+      mmLead.textContent = 'Under 0.5 mm in every 3-hour block out to ' + mmHour.format(rows[rows.length - 1].t) + '.';
+    } else {
+      mmLead.className = 'radar-mm-lead';
+      // BOM does not state whether a 3-hourly step is period-beginning or
+      // period-ending, so the wording does not claim either.
+      mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' + mmHour.format(worst.t) + '.';
+    }
+    mmFoot.textContent = 'Each bar is one 3-hour block, coloured as on the map. '
+      + (got.length < rows.length ? (rows.length - got.length) + ' block(s) had no reading. ' : '')
+      + 'The Bureau publishes bands, not exact totals.';
+  }
+
+  function loadMm() {
+    var fut = frames.filter(function (f) { return f.fcst; });
+    Promise.all(fut.map(function (f) {
+      return mmSample(isoZ(f.t)).then(function (band) { return { t: f.t, band: band }; });
+    })).then(drawMm).catch(function () {
+      mmLead.className = 'radar-mm-lead is-none';
+      mmLead.textContent = 'Rain outlook unavailable.';
+      mmSvg.innerHTML = '';
+      mmFoot.textContent = '';
+    });
+  }
+
   /* ── display ───────────────────────────────────────────────────────────── */
   var idx = NOW_IDX;
   function show(i) {
@@ -23164,6 +23342,7 @@ else theftLoad();
 
     buildBase();
     show(NOW_IDX);
+    loadMm();
 
     // Pre-build the rest in the background so the loop plays without gaps.
     var q = 0;

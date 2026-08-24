@@ -46,6 +46,9 @@ const PASSTHROUGH_HOSTS = [
   // radar frame is stamped with a time, and a network-first SW would happily
   // serve a 40-minute-old echo under a fresh timestamp.
   'api.bom.gov.au',
+  // …and the standalone Worker that re-serves one BOM tile with CORS so the
+  // page can read the forecast pixel over the bay. Same reasoning: timestamped.
+  'bom-tile-proxy.sticasale.workers.dev',
 ];
 
 // ── Install: pre-cache shell assets ──────────────────────────
