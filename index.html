@@ -3643,10 +3643,11 @@
           <div class="radar-key-cap" id="radarKeyCap">&nbsp;</div>
         </div>
         <div class="radar-legend">
-          Left of the <em>now</em> mark is <strong>radar echo</strong> &mdash; what the Bureau's radars
-          actually saw, every 5 minutes. Right of it is <span class="rd-fcst-cap">forecast rain</span>,
-          a 3-hourly model field, shown faded because it is a model and not an observation.
-          Source: Bureau of Meteorology.
+          Left of the <em>now</em> mark is the <strong>radar rain rate</strong> &mdash; what the
+          Bureau's radars actually saw, every 5 minutes, in millimetres per hour. Right of it is
+          <span class="rd-fcst-cap">forecast rain</span>, a 3-hourly model field in total millimetres,
+          shown faded because it is a model and not an observation. The two scales measure different
+          things, so the key changes with the frame. Source: Bureau of Meteorology.
         </div>
       </div>
     </div>
@@ -22895,7 +22896,13 @@ else theftLoad();
     fcst:  { tms:'GoogleMapsCompatible_BoM_ADFD', ox:12462758.1832, oy:-772622.106331, mw:31, mh:31 }
   };
   var BASE_Z = 10, BASE_RES = 152.87405657041106;  // the ArcGIS basemap goes finer than the radar
-  var PAST_LAYER = 'atm_surf_air_precip_reflectivity_dbz';
+  var PAST_LAYER = 'atm_surf_air_precip_rate_1hr_total_mm_h';  // 5-minutely radar rain rate
+  // Rain RATE, not reflectivity. The two layers are the same picture on the same
+  // 15-colour ramp — BOM defines both attribute tables over it — but this one is
+  // scaled in mm/h, so the key can carry numbers a swimmer can act on instead of
+  // dBZ. Swapping back is a one-line change to atm_surf_air_precip_reflectivity_dbz,
+  // but then KEY_RADAR must go back to Light / Moderate / Heavy: never label a
+  // reflectivity layer in millimetres.
   var FUT_LAYER  = 'atm_surf_air_precip_exceeding_50percentchance_total_mm_3hourly';
   var PAST_N  = 9;         // BOM keeps ~45 min of 5-minute frames
   var FUT_N   = 8;         // 3-hourly steps → 24 h ahead
@@ -23036,14 +23043,17 @@ else theftLoad();
   var KEY_RADAR = {
     colours: ['#f5f5ff','#b4b4ff','#7878ff','#1414ff','#00d8c3','#009690','#006666',
               '#ffff00','#ffc800','#ff9600','#ff6400','#ff0000','#c80000','#780000','#280000'],
-    labels: [[17,'Light'], [50,'Moderate'], [83,'Heavy']],
-    cap: 'Rain falling now, as the radar sees it — colour is how hard.'
+    // BOM's own class bounds for this layer, at the right-hand edge of each of the
+    // 15 bands: <2, 2-3, 3-5, 5-7, 7-10, 10-15, 15-25, 25-35, 35-55, 55-80, 80-120,
+    // 120-180, 180-270, 270-400, 400+. Five are labelled; more will not fit.
+    labels: [[6.7,'2'], [33.3,'10'], [53.3,'35'], [73.3,'120'], [93.3,'400']],
+    cap: 'Rain falling now, as the radar sees it — millimetres per hour.'
   };
   var KEY_FCST = {
     colours: ['#ffffd9','#edf8b1','#c7e9b4','#89d6c4','#65bcc6','#4ca5dd',
               '#2787cd','#1859aa','#022484','#000000'],
     labels: [[10,'0.5'], [30,'2'], [50,'5'], [70,'20'], [90,'100']],
-    cap: 'Modelled rain for that 3 hours, in millimetres.'
+    cap: 'Rain modelled for that 3 hours — millimetres in total.'
   };
   var keyBar = document.getElementById('radarKeyBar');
   var keyLab = document.getElementById('radarKeyLabels');
