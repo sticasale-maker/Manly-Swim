@@ -2253,6 +2253,28 @@
     display:flex; justify-content:space-between; font-family:'Inter',sans-serif;
     font-size:9px; letter-spacing:0.4px; color:var(--dim); margin-top:6px;
   }
+  /* Colour key. Two scales, because the two halves of the loop measure different
+     things — dBZ echo strength vs modelled millimetres — and that is precisely
+     what makes the colours hard to read. It swaps with the frame. */
+  .radar-key { margin-top:9px; }
+  .radar-key-row { display:flex; align-items:center; gap:8px; }
+  .radar-key-bar { display:flex; flex:1; height:9px; border-radius:3px; overflow:hidden; min-width:0; }
+  .radar-key-bar i { flex:1; display:block; }
+  .radar-key-nodata { display:flex; align-items:center; gap:4px; flex:none; }
+  .radar-key-nodata b {
+    width:11px; height:9px; border-radius:2px; display:block;
+    /* The same hatch BOM uses for "no data" — never a colour from the ramp. */
+    background:repeating-linear-gradient(135deg,#c4c4c4 0 2px,#fff 2px 4px);
+  }
+  .radar-key-nodata span { font-family:'Inter',sans-serif; font-size:9px; color:var(--dim); white-space:nowrap; }
+  .radar-key-labels { position:relative; height:12px; margin-top:2px; }
+  .radar-key-labels span {
+    position:absolute; transform:translateX(-50%); white-space:nowrap;
+    font-family:'Inter',sans-serif; font-size:9px; letter-spacing:0.3px; color:var(--dim);
+  }
+  .radar-key-cap {
+    font-family:'Inter',sans-serif; font-size:10px; line-height:1.4; color:var(--dim); margin-top:3px;
+  }
   .radar-legend {
     font-family:'Inter',sans-serif; font-size:10px; line-height:1.45; color:var(--dim);
     margin-top:7px;
@@ -3611,6 +3633,14 @@
             <span class="radar-nowtick" id="radarNowTick"></span>
             <div class="radar-ticklabels"><span id="radarTickA">&nbsp;</span><span>now</span><span id="radarTickB">&nbsp;</span></div>
           </div>
+        </div>
+        <div class="radar-key">
+          <div class="radar-key-row">
+            <div class="radar-key-bar" id="radarKeyBar"></div>
+            <div class="radar-key-nodata"><b></b><span>no data</span></div>
+          </div>
+          <div class="radar-key-labels" id="radarKeyLabels"></div>
+          <div class="radar-key-cap" id="radarKeyCap">&nbsp;</div>
         </div>
         <div class="radar-legend">
           Left of the <em>now</em> mark is <strong>radar echo</strong> &mdash; what the Bureau's radars
@@ -22993,6 +23023,52 @@ else theftLoad();
     return el;
   }
 
+  /* ── colour key ────────────────────────────────────────────────────────────
+     Both ramps are BOM's own, read off
+       /mapping/{observations|forecasts}/{layer}/ImageServer/rasterAttributeTable
+     which is what their map viewer builds its legend from. Hard-coded because
+     the tables are static and that host sends no CORS header.
+
+     The dBZ numbers are not shown. Reflectivity is a radar quantity, not
+     something a swimmer can act on, and printing "46 dBZ" would be precision
+     without meaning — BOM's own viewer labels this ramp Light / Moderate /
+     Heavy for the same reason, and those are their words. */
+  var KEY_RADAR = {
+    colours: ['#f5f5ff','#b4b4ff','#7878ff','#1414ff','#00d8c3','#009690','#006666',
+              '#ffff00','#ffc800','#ff9600','#ff6400','#ff0000','#c80000','#780000','#280000'],
+    labels: [[17,'Light'], [50,'Moderate'], [83,'Heavy']],
+    cap: 'Rain falling now, as the radar sees it — colour is how hard.'
+  };
+  var KEY_FCST = {
+    colours: ['#ffffd9','#edf8b1','#c7e9b4','#89d6c4','#65bcc6','#4ca5dd',
+              '#2787cd','#1859aa','#022484','#000000'],
+    labels: [[10,'0.5'], [30,'2'], [50,'5'], [70,'20'], [90,'100']],
+    cap: 'Modelled rain for that 3 hours, in millimetres.'
+  };
+  var keyBar = document.getElementById('radarKeyBar');
+  var keyLab = document.getElementById('radarKeyLabels');
+  var keyCap = document.getElementById('radarKeyCap');
+  var keyShown = null;
+  function drawKey(fcst) {
+    var k = fcst ? KEY_FCST : KEY_RADAR;
+    if (keyShown === k) return;
+    keyShown = k;
+    keyBar.textContent = '';
+    k.colours.forEach(function (c) {
+      var i = document.createElement('i');
+      i.style.background = c;
+      keyBar.appendChild(i);
+    });
+    keyLab.textContent = '';
+    k.labels.forEach(function (p) {
+      var s = document.createElement('span');
+      s.style.left = p[0] + '%';
+      s.textContent = p[1];
+      keyLab.appendChild(s);
+    });
+    keyCap.textContent = k.cap;
+  }
+
   /* ── display ───────────────────────────────────────────────────────────── */
   var idx = NOW_IDX;
   function show(i) {
@@ -23008,6 +23084,7 @@ else theftLoad();
       : fmtTime.format(f.t) + (idx === NOW_IDX ? ' · latest' : '');
     badgeEl.hidden = false;
     badgeEl.textContent = f.fcst ? 'Forecast' : 'Observed';
+    drawKey(f.fcst);
     badgeEl.className = 'radar-badge ' + (f.fcst ? 'is-fcst' : 'is-obs');
     if (scrubEl.value !== String(idx)) scrubEl.value = String(idx);
   }
