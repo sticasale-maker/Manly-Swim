@@ -3664,13 +3664,13 @@
         </div>
         <div class="radar-mm">
           <div class="radar-mm-head">
-            <span class="radar-mm-title">Rain at Manly &middot; next 24 h</span>
-            <span class="radar-mm-src">bureau of meteorology</span>
+            <span class="radar-mm-title">Rain at Manly &middot; the week</span>
+            <span class="radar-mm-src">Bureau of Meteorology</span>
           </div>
           <div class="radar-mm-lead is-none" id="radarMmLead">Reading the bay&hellip;</div>
-          <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 92"
+          <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 100"
                preserveAspectRatio="xMidYMid meet"
-               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks over the next 24 hours"></svg>
+               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, for as far ahead as the Bureau forecasts"></svg>
           <div class="radar-mm-foot" id="radarMmFoot"></div>
         </div>
         <div class="radar-legend">
@@ -23184,9 +23184,20 @@ else theftLoad();
   var mmHour = new Intl.DateTimeFormat('en-AU', {
     timeZone: 'Australia/Sydney', hour: 'numeric', hour12: true
   });
+  var mmDay = new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', weekday: 'short' });
+  var mmWhen = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney', weekday: 'short', hour: 'numeric', hour12: true
+  });
+  var mmDate = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney', weekday: 'short', day: 'numeric', month: 'short'
+  });
+  // Sydney-local calendar day, for spotting midnight between two bars.
+  var mmYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit'
+  });
 
   function drawMm(rows) {
-    var W = 360, H = 92, PAD_L = 26, PAD_B = 14, PAD_T = 6;
+    var W = 360, H = 100, PAD_L = 26, PAD_B = 22, PAD_T = 6;
     var x0 = PAD_L, x1 = W - 4, yB = H - PAD_B, plot = yB - PAD_T;
     var n = rows.length, bw = (x1 - x0) / n, p = [];
 
@@ -23202,23 +23213,31 @@ else theftLoad();
     p.push('<line x1="' + x0 + '" y1="' + yB + '" x2="' + x1 + '" y2="' + yB +
            '" stroke="rgba(17,53,65,0.25)" stroke-width="1"/>');
 
+    var prevDay = null;
     rows.forEach(function (row, i) {
-      var bx = x0 + i * bw + 1.5, w = bw - 3;
+      var bx = x0 + i * bw, w = Math.max(1.5, bw - 1.2);
       if (row.band === false || row.band === null) {
         // No reading is not a small reading. Grey, on the baseline, never a
         // colour from the ramp.
-        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 4) + '" width="' + w.toFixed(1) +
-               '" height="4" fill="#c4c4c4"/>');
+        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 3) + '" width="' + w.toFixed(1) +
+               '" height="3" fill="#c4c4c4"/>');
       } else {
         var h = ((row.band + 1) / 10) * plot;
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - h).toFixed(1) + '" width="' + w.toFixed(1) +
-               '" height="' + h.toFixed(1) + '" rx="1" fill="' + KEY_FCST.colours[row.band] +
-               '" stroke="rgba(17,53,65,0.18)" stroke-width="0.5"/>');
+               '" height="' + h.toFixed(1) + '" fill="' + KEY_FCST.colours[row.band] +
+               '" stroke="rgba(17,53,65,0.16)" stroke-width="0.4"/>');
       }
-      if (i % 2 === 0) {
-        p.push('<text x="' + (bx + w / 2).toFixed(1) + '" y="' + (H - 3) +
-               '" font-size="8.5" fill="#4a5f6e" text-anchor="middle">' +
-               mmHour.format(row.t).replace(/\s/g, '') + '</text>');
+      // A week of 3-hour bars is unreadable without the days marked. The rule
+      // goes in at local midnight; the name sits after it.
+      var day = mmYmd.format(row.t);
+      if (day !== prevDay) {
+        if (prevDay !== null) {
+          p.push('<line x1="' + bx.toFixed(1) + '" y1="' + PAD_T + '" x2="' + bx.toFixed(1) +
+                 '" y2="' + (yB + 3) + '" stroke="rgba(17,53,65,0.20)" stroke-width="1"/>');
+        }
+        p.push('<text x="' + (bx + 2).toFixed(1) + '" y="' + (H - 11) +
+               '" font-size="8.5" fill="#4a5f6e">' + mmDay.format(row.t) + '</text>');
+        prevDay = day;
       }
     });
     mmSvg.innerHTML = p.join('');
@@ -23230,26 +23249,66 @@ else theftLoad();
       mmFoot.textContent = '';
       return;
     }
+    var last = rows[rows.length - 1];
     var worst = got.reduce(function (a, b) { return b.band > a.band ? b : a; });
     if (worst.band === 0) {
       mmLead.className = 'radar-mm-lead is-none';
-      mmLead.textContent = 'Under 0.5 mm in every 3-hour block out to ' + mmHour.format(rows[rows.length - 1].t) + '.';
+      mmLead.textContent = 'Under 0.5 mm in every 3-hour block out to ' + mmDate.format(last.t) + '.';
     } else {
       mmLead.className = 'radar-mm-lead';
       // BOM does not state whether a 3-hourly step is period-beginning or
       // period-ending, so the wording does not claim either.
-      mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' + mmHour.format(worst.t) + '.';
+      mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' +
+                           mmWhen.format(worst.t) + '.';
     }
-    mmFoot.textContent = 'Each bar is one 3-hour block, coloured as on the map. '
-      + (got.length < rows.length ? (rows.length - got.length) + ' block(s) had no reading. ' : '')
+    mmFoot.textContent = '3-hour blocks to ' + mmDate.format(last.t) + ', coloured as on the map. '
+      + (got.length < rows.length ? (rows.length - got.length) + ' had no reading. ' : '')
       + 'The Bureau publishes bands, not exact totals.';
   }
 
+  /* Ask for the Bureau's whole published run rather than a fixed window. The
+     capabilities document that states the extent is not readable from here (no
+     CORS), so instead we walk 3-hourly steps to a hard ceiling of eight days and
+     let the far end fall off: a step BOM has not published 404s, which arrives
+     as band === false, and trailing false values are trimmed. Requests go out
+     in small batches — this is up to 60 of them and a phone on a car-park
+     connection should not open 60 sockets at once. */
+  var MM_MAX_STEPS = 64;
+  var MM_BATCH = 6;
+
   function loadMm() {
-    var fut = frames.filter(function (f) { return f.fcst; });
-    Promise.all(fut.map(function (f) {
-      return mmSample(isoZ(f.t)).then(function (band) { return { t: f.t, band: band }; });
-    })).then(drawMm).catch(function () {
+    var t0 = Math.ceil(Date.now() / 10800000) * 10800000;
+    var times = [];
+    for (var i = 0; i < MM_MAX_STEPS; i++) times.push(t0 + i * 10800000);
+
+    var rows = new Array(times.length), at = 0;
+    function nextBatch() {
+      if (at >= times.length) return Promise.resolve();
+      var slice = times.slice(at, at + MM_BATCH), base = at;
+      at += MM_BATCH;
+      return Promise.all(slice.map(function (t, k) {
+        return mmSample(isoZ(t)).then(function (band) { rows[base + k] = { t: t, band: band }; });
+      })).then(function () {
+        // Stop as soon as a whole batch comes back unpublished — that is the
+        // end of the run, not a bad connection, because earlier ones answered.
+        var dead = slice.every(function (_, k) { return rows[base + k].band === false; });
+        if (dead && base > 0) return;
+        return nextBatch();
+      });
+    }
+
+    nextBatch().then(function () {
+      var out = rows.filter(Boolean);
+      while (out.length && out[out.length - 1].band === false) out.pop();
+      if (!out.length) {
+        mmLead.className = 'radar-mm-lead is-none';
+        mmLead.textContent = 'Rain outlook unavailable.';
+        mmSvg.innerHTML = '';
+        mmFoot.textContent = '';
+        return;
+      }
+      drawMm(out);
+    }).catch(function () {
       mmLead.className = 'radar-mm-lead is-none';
       mmLead.textContent = 'Rain outlook unavailable.';
       mmSvg.innerHTML = '';
