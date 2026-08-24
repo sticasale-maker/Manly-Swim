@@ -2183,19 +2183,39 @@
   }
   .radar-head:hover { background:rgba(74,143,173,0.05); }
   .radar-titlewrap { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; }
+  /* A touch tighter than the other card titles: this one is a long line and
+     has to clear the chevron on a 320px phone. */
   .radar-title {
-    font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px;
-    font-size:clamp(16px,4.8vw,20px); color:var(--deep); text-transform:uppercase;
+    font-family:'Bebas Neue',sans-serif; letter-spacing:1.2px;
+    font-size:clamp(15px,4.5vw,19px); color:var(--deep); text-transform:uppercase;
+    line-height:1.15;
   }
   .radar-when { font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.4px; color:var(--dim); }
-  .radar-badge {
-    font-family:'Inter',sans-serif; font-size:9px; font-weight:700; letter-spacing:1px;
-    text-transform:uppercase; padding:3px 7px; border-radius:6px; white-space:nowrap; flex:none;
-    margin-left:auto;
+  /* Temporary launch flag. Delete this span in the markup when the card stops
+     being news — a permanent NEW! is worse than none. */
+  .radar-new {
+    display:inline-block; margin-left:7px; vertical-align:2px;
+    font-family:'Inter',sans-serif; font-size:9px; font-weight:800; letter-spacing:0.8px;
+    color:#fff; background:var(--red); padding:2px 5px; border-radius:5px;
+    animation:radarNewPulse 1.6s ease-in-out infinite;
   }
-  .radar-badge[hidden] { display:none; }
-  .radar-badge.is-obs  { background:rgba(74,143,173,0.20); color:var(--deep); }
-  .radar-badge.is-fcst { background:rgba(122,80,0,0.14);  color:var(--amber); }
+  @keyframes radarNewPulse {
+    0%, 100% { opacity:1;    transform:scale(1); }
+    50%      { opacity:0.55; transform:scale(0.93); }
+  }
+  /* Never animate at someone who has asked the OS for less motion. */
+  @media (prefers-reduced-motion: reduce) { .radar-new { animation:none; } }
+  /* The badge sits ON the map, not in the header: it describes the frame, the
+     frame is the map, and in the header it squeezed a long title onto two lines
+     the moment it appeared — so the header grew as you opened the card. */
+  .radar-badge {
+    position:absolute; top:6px; left:6px; z-index:3;
+    font-family:'Inter',sans-serif; font-size:9px; font-weight:700; letter-spacing:1px;
+    text-transform:uppercase; padding:3px 7px; border-radius:6px; white-space:nowrap;
+    box-shadow:0 1px 3px rgba(17,53,65,0.18);
+  }
+  .radar-badge.is-obs  { background:rgba(233,242,246,0.92); color:var(--deep); }
+  .radar-badge.is-fcst { background:rgba(250,238,214,0.94); color:var(--amber); }
   .radar-chevron { font-size:26px; color:var(--ocean); transition:transform 0.3s ease; flex:none; line-height:1; }
   .radar-head[aria-expanded="true"] .radar-chevron { transform:rotate(180deg); }
 
@@ -3631,10 +3651,9 @@
     <div class="radar-wrap" id="radarCard">
       <button type="button" class="radar-head" id="radarToggle" aria-expanded="false" aria-controls="radarBody">
         <span class="radar-titlewrap">
-          <span class="radar-title">Rain forecast by BOM</span>
+          <span class="radar-title">Rain radar + forecast &middot; BOM<span class="radar-new">New!</span></span>
           <span class="radar-when" id="radarWhen">Radar, then the week &middot; tap to open</span>
         </span>
-        <span class="radar-badge is-obs" id="radarBadge" hidden>Observed</span>
         <span class="radar-chevron" aria-hidden="true">&#9662;</span>
       </button>
       <div class="radar-body" id="radarBody">
@@ -3642,6 +3661,7 @@
           <div class="radar-layer" id="radarBase" aria-hidden="true"></div>
           <div class="radar-layer" id="radarFrames" aria-label="Rain radar and forecast rain over Sydney"></div>
           <div class="radar-pin" id="radarPin" title="Cabbage Tree Bay"></div>
+          <span class="radar-badge is-obs" id="radarBadge">Observed</span>
           <button type="button" class="radar-expand" id="radarZoom" aria-expanded="false" title="Enlarge the map" aria-label="Enlarge the rain map">&#10530;</button>
           <div class="radar-msg" id="radarMsg">Loading radar&hellip;</div>
         </div>
@@ -18426,7 +18446,7 @@ if ('serviceWorker' in navigator) {
     { key:'daylines', label:"Day View Lines",  sel:'#dayLinesCard',  complete:1, custom:1 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
-    { key:'radar', label:"Rain forecast by BOM (radar + week)", sel:'#radarCard', complete:1, custom:1 },
+    { key:'radar', label:"Rain radar + forecast (BOM)", sel:'#radarCard', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1, custom:1 },
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 }
@@ -23300,10 +23320,12 @@ else theftLoad();
       mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' +
                            mmWhen.format(worst.t) + '.';
     }
-    mmFoot.textContent = '3-hour blocks, coloured as on the map. The next 18 h are drawn wide; '
-      + 'the rest of the week to ' + mmDate.format(last.t) + ' is compressed. '
-      + (got.length < rows.length ? (rows.length - got.length) + ' had no reading. ' : '')
-      + 'The Bureau publishes bands, not exact totals.';
+    // The explanatory footnote was removed on request. Only the absence signal
+    // is still worth words: a block the Bureau had no reading for is drawn grey
+    // on the baseline, and grey stubs alone are easy to miss.
+    mmFoot.textContent = got.length < rows.length
+      ? (rows.length - got.length) + ' block(s) had no reading from the Bureau.'
+      : '';
   }
 
   /* Ask for the Bureau's whole published run rather than a fixed window. The
@@ -23369,7 +23391,6 @@ else theftLoad();
     whenEl.textContent = f.fcst
       ? fmtDayTime.format(f.t) + ' · 3-hourly rain'
       : fmtTime.format(f.t) + (idx === NOW_IDX ? ' · latest' : '');
-    badgeEl.hidden = false;
     badgeEl.textContent = f.fcst ? 'Forecast' : 'Observed';
     drawKey(f.fcst);
     badgeEl.className = 'radar-badge ' + (f.fcst ? 'is-fcst' : 'is-obs');
@@ -23465,7 +23486,6 @@ else theftLoad();
   headEl.addEventListener('click', function () {
     var open = bodyEl.classList.toggle('radar-open');
     headEl.setAttribute('aria-expanded', open ? 'true' : 'false');
-    badgeEl.hidden = !open;
     if (open) { start(); } else { stop(); }
   });
 })();
