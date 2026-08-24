@@ -2158,9 +2158,10 @@
   }
 
   /* ── Rain radar (BOM) ──────────────────────────────────────────────────────
-     Same frame furniture as the Swell + Wind map so the two read as one family.
-     The map itself is a plain stack of absolutely-positioned <img> tiles — no
-     map library, no pan/zoom. See the radar IIFE for the tile maths.
+     Collapsed by default, on the same disclosure pattern as Forecasted values:
+     the head is the button, the body animates its max-height. Nothing is fetched
+     until it is opened for the first time — this card is ~100 tiles and it must
+     not compete with the numbers a swimmer actually opened the app for.
 
      PAST and FUTURE are deliberately NOT styled alike. The past frames are radar
      echo (an observation); the future frames are model output. Rule: a model must
@@ -2171,46 +2172,64 @@
     backdrop-filter:blur(12px);
     border:1px solid var(--border);
     border-radius:var(--radius);
-    padding:clamp(12px,4vw,16px) clamp(12px,4vw,16px) clamp(8px,2.5vw,10px);
     margin-bottom:10px;
+    overflow:hidden;
   }
-  .radar-head { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:8px; }
-  .radar-titlewrap { display:flex; flex-direction:column; min-width:0; }
+  .radar-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    width:100%; box-sizing:border-box;
+    background:none; border:none; cursor:pointer; text-align:left;
+    font-family:inherit; padding:13px clamp(12px,4vw,16px);
+  }
+  .radar-head:hover { background:rgba(74,143,173,0.05); }
+  .radar-titlewrap { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; }
   .radar-title {
     font-family:'Bebas Neue',sans-serif; letter-spacing:1.5px;
     font-size:clamp(16px,4.8vw,20px); color:var(--deep); text-transform:uppercase;
   }
-  .radar-when { font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.4px; color:var(--dim); margin-top:2px; }
+  .radar-when { font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.4px; color:var(--dim); }
   .radar-badge {
     font-family:'Inter',sans-serif; font-size:9px; font-weight:700; letter-spacing:1px;
     text-transform:uppercase; padding:3px 7px; border-radius:6px; white-space:nowrap; flex:none;
+    margin-left:auto;
   }
+  .radar-badge[hidden] { display:none; }
   .radar-badge.is-obs  { background:rgba(74,143,173,0.20); color:var(--deep); }
   .radar-badge.is-fcst { background:rgba(122,80,0,0.14);  color:var(--amber); }
-  .radar-zoom {
-    border:1px solid var(--border); background:rgba(255,255,255,0.5); color:var(--deep);
-    border-radius:8px; cursor:pointer; padding:3px 7px; line-height:1; font-size:13px; flex:none;
+  .radar-chevron { font-size:26px; color:var(--ocean); transition:transform 0.3s ease; flex:none; line-height:1; }
+  .radar-head[aria-expanded="true"] .radar-chevron { transform:rotate(180deg); }
+
+  .radar-body {
+    overflow:hidden; max-height:0; opacity:0;
+    transition:max-height 0.35s ease, opacity 0.3s ease;
+    padding:0 clamp(12px,4vw,16px);
   }
-  .radar-zoom:hover { background:rgba(255,255,255,0.85); }
+  .radar-body.radar-open { max-height:900px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(8px,2.5vw,10px); }
 
   .radar-map {
     position:relative; width:100%; aspect-ratio:4/3; overflow:hidden;
     border-radius:8px; background:#dfe8ec;
   }
   .radar-layer { position:absolute; inset:0; }
-  .radar-layer img { position:absolute; display:block; image-rendering:auto; }
+  .radar-layer img { position:absolute; display:block; }
   /* Radar echo sits over the basemap at full strength — it is the observation. */
   .radar-frame { position:absolute; inset:0; opacity:0; transition:opacity 90ms linear; }
   .radar-frame.is-on { opacity:1; }
-  /* …the model does not. Dimmer, and it never gets the sharp edge treatment. */
+  /* …the model does not. */
   .radar-frame.is-fcst.is-on { opacity:0.62; }
   .radar-pin {
     position:absolute; left:50%; top:50%; width:11px; height:11px; margin:-5.5px 0 0 -5.5px;
     border-radius:50%; border:2px solid #fff; background:var(--deep);
     box-shadow:0 0 0 1px rgba(17,53,65,0.5); pointer-events:none;
   }
+  .radar-expand {
+    position:absolute; top:6px; right:6px; z-index:3;
+    border:1px solid var(--border); background:rgba(255,255,255,0.72); color:var(--deep);
+    border-radius:8px; cursor:pointer; padding:3px 7px; line-height:1; font-size:13px;
+  }
+  .radar-expand:hover { background:#fff; }
   .radar-msg {
-    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    position:absolute; inset:0; z-index:2; display:flex; align-items:center; justify-content:center;
     text-align:center; padding:12px; font-family:'Inter',sans-serif; font-size:12px;
     /* Absent data is GREY, never green. */
     color:var(--dim); background:rgba(223,232,236,0.92);
@@ -2240,8 +2259,8 @@
   }
   .radar-legend .rd-fcst-cap { color:var(--amber); font-weight:600; }
 
-  /* Enlarge — same contract as the Swell + Wind map: the WRAP goes fullscreen and
-     the tiles are re-laid-out at the new size, rather than an upscaled bitmap. */
+  /* Enlarge — the WRAP goes fullscreen and the tiles are re-laid-out at the new
+     size, rather than an upscaled bitmap. Same contract as the Swell + Wind map. */
   body.radar-zoomed { overflow:hidden; }
   .radar-wrap.radar-zoom {
     position:fixed; inset:0; z-index:9000; margin:0; border-radius:0; border:none;
@@ -2250,7 +2269,9 @@
     display:flex; flex-direction:column; justify-content:center; gap:6px;
     overflow:auto; -webkit-overflow-scrolling:touch;
   }
+  .radar-wrap.radar-zoom .radar-body { max-height:none; flex:1; display:flex; flex-direction:column; min-height:0; }
   .radar-wrap.radar-zoom .radar-map { aspect-ratio:auto; flex:1; min-height:0; border-radius:10px; }
+  .radar-wrap.radar-zoom .radar-chevron { display:none; }
   .chop-graph-legend {
     display:flex; align-items:center; gap:8px; margin-top:8px;
     font-family:'Inter',sans-serif; font-size:clamp(8px,2.4vw,10px); color:var(--dim);
@@ -3563,36 +3584,40 @@
       </div>
     </div>
 
-    <!-- Rain radar — BOM tiles, past echo then forecast rain. See the radar IIFE. -->
+    <!-- Rain radar — BOM tiles, past echo then forecast rain. Collapsed by
+         default; nothing is fetched until it is opened. See the radar IIFE. -->
     <div class="radar-wrap" id="radarCard">
-      <div class="radar-head">
-        <div class="radar-titlewrap">
+      <button type="button" class="radar-head" id="radarToggle" aria-expanded="false" aria-controls="radarBody">
+        <span class="radar-titlewrap">
           <span class="radar-title">Rain radar</span>
-          <div class="radar-when" id="radarWhen">Loading&hellip;</div>
+          <span class="radar-when" id="radarWhen">Bureau of Meteorology &middot; tap to open</span>
+        </span>
+        <span class="radar-badge is-obs" id="radarBadge" hidden>Observed</span>
+        <span class="radar-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="radar-body" id="radarBody">
+        <div class="radar-map" id="radarMap">
+          <div class="radar-layer" id="radarBase" aria-hidden="true"></div>
+          <div class="radar-layer" id="radarFrames" aria-label="Rain radar over Sydney"></div>
+          <div class="radar-pin" id="radarPin" title="Cabbage Tree Bay"></div>
+          <button type="button" class="radar-expand" id="radarZoom" aria-expanded="false" title="Enlarge the radar" aria-label="Enlarge the rain radar map">&#10530;</button>
+          <div class="radar-msg" id="radarMsg">Loading radar&hellip;</div>
         </div>
-        <span class="radar-badge is-obs" id="radarBadge">Observed</span>
-        <button type="button" class="radar-zoom" id="radarZoom" aria-expanded="false" title="Enlarge the radar" aria-label="Enlarge the rain radar map">&#10530;</button>
-      </div>
-      <div class="radar-map" id="radarMap">
-        <div class="radar-layer" id="radarBase" aria-hidden="true"></div>
-        <div class="radar-layer" id="radarFrames" aria-label="Rain radar over Sydney"></div>
-        <div class="radar-pin" id="radarPin" title="Cabbage Tree Bay"></div>
-        <div class="radar-msg" id="radarMsg">Loading radar&hellip;</div>
-      </div>
-      <div class="radar-ctrls">
-        <button type="button" class="radar-play" id="radarPlay" aria-label="Play the radar loop">&#9654;</button>
-        <div class="radar-scrubwrap">
-          <input type="range" class="radar-scrub" id="radarScrub" min="0" max="0" step="1" value="0"
-                 aria-label="Radar time" title="Radar time">
-          <span class="radar-nowtick" id="radarNowTick"></span>
-          <div class="radar-ticklabels"><span id="radarTickA">&nbsp;</span><span>now</span><span id="radarTickB">&nbsp;</span></div>
+        <div class="radar-ctrls">
+          <button type="button" class="radar-play" id="radarPlay" aria-label="Play the radar loop">&#9654;</button>
+          <div class="radar-scrubwrap">
+            <input type="range" class="radar-scrub" id="radarScrub" min="0" max="0" step="1" value="0"
+                   aria-label="Radar time" title="Radar time">
+            <span class="radar-nowtick" id="radarNowTick"></span>
+            <div class="radar-ticklabels"><span id="radarTickA">&nbsp;</span><span>now</span><span id="radarTickB">&nbsp;</span></div>
+          </div>
         </div>
-      </div>
-      <div class="radar-legend">
-        Left of the <em>now</em> mark is <strong>radar echo</strong> &mdash; what the Bureau's radars
-        actually saw, every 5 minutes. Right of it is <span class="rd-fcst-cap">forecast rain</span>,
-        a 3-hourly model field, shown faded because it is a model and not an observation.
-        Source: Bureau of Meteorology.
+        <div class="radar-legend">
+          Left of the <em>now</em> mark is <strong>radar echo</strong> &mdash; what the Bureau's radars
+          actually saw, every 5 minutes. Right of it is <span class="rd-fcst-cap">forecast rain</span>,
+          a 3-hourly model field, shown faded because it is a model and not an observation.
+          Source: Bureau of Meteorology.
+        </div>
       </div>
     </div>
 
@@ -22845,9 +22870,15 @@ else theftLoad();
   var PAST_N  = 9;         // BOM keeps ~45 min of 5-minute frames
   var FUT_N   = 8;         // 3-hourly steps → 24 h ahead
   var LAG_MS  = 6 * 60000; // compositing lag: don't ask for a frame that isn't published yet
-  var COVER_M = 110000;    // ground width of the map — the Sydney basin, and no wider
+  var COVER_M = 27500;     // ground width of the map — Manly, tight in.
+                           // BOM's weather tiles stop at 611 m/px and the basemap at
+                           // 153 m/px, so at 27.5 km the echo is ~8x upscaled and the
+                           // basemap ~2x. That is the sharpest data that exists, drawn
+                           // bigger — zooming further adds size, never detail.
   var STEP_MS = 420, HOLD_MS = 1500;
 
+  var bodyEl   = document.getElementById('radarBody');
+  var headEl   = document.getElementById('radarToggle');
   var mapEl    = document.getElementById('radarMap');
   var baseEl   = document.getElementById('radarBase');
   var framesEl = document.getElementById('radarFrames');
@@ -22973,6 +23004,7 @@ else theftLoad();
     whenEl.textContent = f.fcst
       ? fmtDayTime.format(f.t) + ' · 3-hourly rain'
       : fmtTime.format(f.t) + (idx === NOW_IDX ? ' · latest' : '');
+    badgeEl.hidden = false;
     badgeEl.textContent = f.fcst ? 'Forecast' : 'Observed';
     badgeEl.className = 'radar-badge ' + (f.fcst ? 'is-fcst' : 'is-obs');
     if (scrubEl.value !== String(idx)) scrubEl.value = String(idx);
@@ -23015,7 +23047,8 @@ else theftLoad();
     }).observe(mapEl);
   }
 
-  zoomEl.addEventListener('click', function () {
+  zoomEl.addEventListener('click', function (e) {
+    e.stopPropagation();
     var on = card.classList.toggle('radar-zoom');
     document.body.classList.toggle('radar-zoomed', on);
     zoomEl.setAttribute('aria-expanded', on ? 'true' : 'false');
@@ -23025,9 +23058,10 @@ else theftLoad();
     if (e.key === 'Escape' && card.classList.contains('radar-zoom')) zoomEl.click();
   });
 
-  /* ── start ─────────────────────────────────────────────────────────────────
-     Deferred until the card is near the viewport: this is ~100 small tiles and
-     it must not compete with the numbers a swimmer actually opened the app for. */
+  /* ── open / start ──────────────────────────────────────────────────────────
+     The card is collapsed on load and nothing is fetched until it is opened:
+     this is ~100 small tiles and it must not compete with the numbers a swimmer
+     actually opened the app for. */
   var started = false;
   function start() {
     if (started) return;
@@ -23061,14 +23095,12 @@ else theftLoad();
     }, 12000);
   }
 
-  if (window.IntersectionObserver) {
-    var io = new IntersectionObserver(function (es) {
-      if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); start(); }
-    }, { rootMargin: '300px' });
-    io.observe(card);
-  } else {
-    start();
-  }
+  headEl.addEventListener('click', function () {
+    var open = bodyEl.classList.toggle('radar-open');
+    headEl.setAttribute('aria-expanded', open ? 'true' : 'false');
+    badgeEl.hidden = !open;
+    if (open) { start(); } else { stop(); }
+  });
 })();
 </script>
 
