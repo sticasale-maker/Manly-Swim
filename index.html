@@ -3631,8 +3631,8 @@
     <div class="radar-wrap" id="radarCard">
       <button type="button" class="radar-head" id="radarToggle" aria-expanded="false" aria-controls="radarBody">
         <span class="radar-titlewrap">
-          <span class="radar-title">Rain radar</span>
-          <span class="radar-when" id="radarWhen">Bureau of Meteorology &middot; tap to open</span>
+          <span class="radar-title">Rain forecast by BOM</span>
+          <span class="radar-when" id="radarWhen">Radar, then the week &middot; tap to open</span>
         </span>
         <span class="radar-badge is-obs" id="radarBadge" hidden>Observed</span>
         <span class="radar-chevron" aria-hidden="true">&#9662;</span>
@@ -3640,9 +3640,9 @@
       <div class="radar-body" id="radarBody">
         <div class="radar-map" id="radarMap">
           <div class="radar-layer" id="radarBase" aria-hidden="true"></div>
-          <div class="radar-layer" id="radarFrames" aria-label="Rain radar over Sydney"></div>
+          <div class="radar-layer" id="radarFrames" aria-label="Rain radar and forecast rain over Sydney"></div>
           <div class="radar-pin" id="radarPin" title="Cabbage Tree Bay"></div>
-          <button type="button" class="radar-expand" id="radarZoom" aria-expanded="false" title="Enlarge the radar" aria-label="Enlarge the rain radar map">&#10530;</button>
+          <button type="button" class="radar-expand" id="radarZoom" aria-expanded="false" title="Enlarge the map" aria-label="Enlarge the rain map">&#10530;</button>
           <div class="radar-msg" id="radarMsg">Loading radar&hellip;</div>
         </div>
         <div class="radar-ctrls">
@@ -18426,7 +18426,7 @@ if ('serviceWorker' in navigator) {
     { key:'daylines', label:"Day View Lines",  sel:'#dayLinesCard',  complete:1, custom:1 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
-    { key:'radar', label:"Rain radar (BOM)", sel:'#radarCard', complete:1, custom:1 },
+    { key:'radar', label:"Rain forecast by BOM (radar + week)", sel:'#radarCard', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1, custom:1 },
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 }
@@ -23196,10 +23196,38 @@ else theftLoad();
     timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit'
   });
 
+  /* The next 18 hours are the part a swimmer acts on, so they get 42% of the
+     width — six fat bars with the hour under them — and the remaining six days
+     share the rest at about a quarter the width each.
+
+     A chart with two x-scales can mislead about how long something lasts, so it
+     is not left to be noticed: the near zone sits on its own tint, a rule marks
+     the change, and the footnote says it in words. */
+  var MM_NEAR_N = 6;        // 6 x 3 h = the next 18 hours
+  var MM_NEAR_FRAC = 0.42;  // ...drawn across this share of the plot
+
   function drawMm(rows) {
     var W = 360, H = 100, PAD_L = 26, PAD_B = 22, PAD_T = 6;
     var x0 = PAD_L, x1 = W - 4, yB = H - PAD_B, plot = yB - PAD_T;
-    var n = rows.length, bw = (x1 - x0) / n, p = [];
+    var n = rows.length, span = x1 - x0, p = [];
+
+    // Bar widths: fat near, thin far. If the run is short enough to be all
+    // "near", every bar is simply equal.
+    var near = Math.min(MM_NEAR_N, n), far = n - near;
+    var wNear = far > 0 ? (span * MM_NEAR_FRAC) / near : span / near;
+    var wFar  = far > 0 ? (span * (1 - MM_NEAR_FRAC)) / far : 0;
+    var xs = [], ws = [], acc = x0;
+    for (var i = 0; i < n; i++) {
+      var w = i < near ? wNear : wFar;
+      xs.push(acc); ws.push(w); acc += w;
+    }
+    var xSplit = far > 0 ? xs[near] : x1;
+
+    // Tint under the near zone, so the scale change is visible before it is read.
+    if (far > 0) {
+      p.push('<rect x="' + x0 + '" y="' + PAD_T + '" width="' + (xSplit - x0).toFixed(1) +
+             '" height="' + plot.toFixed(1) + '" fill="rgba(74,143,173,0.06)"/>');
+    }
 
     // Axis ticks sit on the class boundaries, and carry the same numbers as the
     // map's forecast key — the two are the same scale.
@@ -23215,7 +23243,7 @@ else theftLoad();
 
     var prevDay = null;
     rows.forEach(function (row, i) {
-      var bx = x0 + i * bw, w = Math.max(1.5, bw - 1.2);
+      var bx = xs[i], w = Math.max(1.5, ws[i] - (i < near ? 2.5 : 1.2));
       if (row.band === false || row.band === null) {
         // No reading is not a small reading. Grey, on the baseline, never a
         // colour from the ramp.
@@ -23224,22 +23252,33 @@ else theftLoad();
       } else {
         var h = ((row.band + 1) / 10) * plot;
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - h).toFixed(1) + '" width="' + w.toFixed(1) +
-               '" height="' + h.toFixed(1) + '" fill="' + KEY_FCST.colours[row.band] +
-               '" stroke="rgba(17,53,65,0.16)" stroke-width="0.4"/>');
+               '" height="' + h.toFixed(1) + '" rx="' + (i < near ? 1.5 : 0) + '" fill="' +
+               KEY_FCST.colours[row.band] + '" stroke="rgba(17,53,65,0.16)" stroke-width="0.4"/>');
       }
-      // A week of 3-hour bars is unreadable without the days marked. The rule
-      // goes in at local midnight; the name sits after it.
+      // Near zone gets clock times, every second bar so they do not collide.
+      if (i < near && i % 2 === 0) {
+        p.push('<text x="' + (bx + w / 2).toFixed(1) + '" y="' + (H - 12) +
+               '" font-size="8.5" fill="#4a5f6e" text-anchor="middle">' +
+               mmHour.format(row.t).replace(/\s/g, '') + '</text>');
+      }
+      // Days are ruled and named across the whole chart, or a week of 3-hour
+      // bars is unreadable.
       var day = mmYmd.format(row.t);
       if (day !== prevDay) {
         if (prevDay !== null) {
           p.push('<line x1="' + bx.toFixed(1) + '" y1="' + PAD_T + '" x2="' + bx.toFixed(1) +
                  '" y2="' + (yB + 3) + '" stroke="rgba(17,53,65,0.20)" stroke-width="1"/>');
         }
-        p.push('<text x="' + (bx + 2).toFixed(1) + '" y="' + (H - 11) +
+        p.push('<text x="' + (bx + 2).toFixed(1) + '" y="' + (H - 2) +
                '" font-size="8.5" fill="#4a5f6e">' + mmDay.format(row.t) + '</text>');
         prevDay = day;
       }
     });
+    // The scale change itself.
+    if (far > 0) {
+      p.push('<line x1="' + xSplit.toFixed(1) + '" y1="' + PAD_T + '" x2="' + xSplit.toFixed(1) +
+             '" y2="' + (yB + 3) + '" stroke="rgba(17,53,65,0.35)" stroke-width="1" stroke-dasharray="2 2"/>');
+    }
     mmSvg.innerHTML = p.join('');
 
     var got = rows.filter(function (r) { return typeof r.band === 'number'; });
@@ -23261,7 +23300,8 @@ else theftLoad();
       mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' +
                            mmWhen.format(worst.t) + '.';
     }
-    mmFoot.textContent = '3-hour blocks to ' + mmDate.format(last.t) + ', coloured as on the map. '
+    mmFoot.textContent = '3-hour blocks, coloured as on the map. The next 18 h are drawn wide; '
+      + 'the rest of the week to ' + mmDate.format(last.t) + ' is compressed. '
       + (got.length < rows.length ? (rows.length - got.length) + ' had no reading. ' : '')
       + 'The Bureau publishes bands, not exact totals.';
   }
