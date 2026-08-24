@@ -7857,6 +7857,33 @@ async function fetchNearshore() {
   }
 }
 
+// ── Sydney time zone (AEST +10 / AEDT +11) ───────────────────────────────────
+// DST runs 1st Sunday Oct 02:00 AEST → 1st Sunday Apr 03:00 AEDT. BOTH switch
+// instants are 16:00 UTC on the SATURDAY BEFORE that Sunday — 02:00 local less the
+// +10 offset and 03:00 local less the +11 offset land on the same clock face.
+//
+// The backtest module used to carry its own copy of this rule that put both edges
+// at 16:00 UTC on the Sunday ITSELF: a full day late, so it returned the wrong
+// offset for the 24 h after each changeover. That copy is gone and everything now
+// shares this one. Checked against the runtime tz database at the 2026 and 2027
+// transitions, both directions.
+function firstSundayUTC(year, month) {          // month is 0-indexed
+  const d = new Date(Date.UTC(year, month, 1));
+  return new Date(Date.UTC(year, month, 1 + ((7 - d.getUTCDay()) % 7)));
+}
+function sydneyDstEdgeUTC(year, month) {        // 16:00 UTC the day before that Sunday
+  const s = firstSundayUTC(year, month);
+  s.setUTCDate(s.getUTCDate() - 1);
+  s.setUTCHours(16, 0, 0, 0);
+  return s.getTime();
+}
+function isSydneyDST(utcMs) {
+  const y = new Date(utcMs).getUTCFullYear();
+  return utcMs >= sydneyDstEdgeUTC(y, 9) || utcMs < sydneyDstEdgeUTC(y, 3);
+}
+// Hours to ADD to a UTC instant to get Sydney wall-clock time.
+function sydneyOffsetHrs(utcMs) { return isSydneyDST(utcMs) ? 11 : 10; }
+
 // Accepts either the static-json shape ({hours:{...}}) OR the raw NSW API shape
 // ({payload:{data:{wave_summary:{dims,series}}}}), so the same parser works when
 // the Worker starts returning the upstream payload verbatim.
@@ -7868,7 +7895,7 @@ function parseNearshore(j) {
     return j.hours;
   }
 
-  // Shape B: raw NSW API payload — map + shift UTC→AEST (+10, no DST here)
+  // Shape B: raw NSW API payload — map + shift UTC→Sydney local (AEST +10 / AEDT +11)
   const ws = j?.payload?.data?.wave_summary;
   if (!ws || !ws.dims || !ws.series) return null;
   const times = ws.dims.time || [];
@@ -7877,10 +7904,16 @@ function parseNearshore(j) {
 
   const map = {};
   for (let i = 0; i < times.length; i++) {
-    // times[i] like '2026-06-30 12:00:00' in UTC → +10h AEST
+    // times[i] like '2026-06-30 12:00:00' in UTC → Sydney wall clock.
+    // MUST be DST-aware. This was a hard-coded +10 with the note "no DST here",
+    // which is true only from April to October. The matrix keys these rows are
+    // matched against come from WillyWeather's `dateTime`, which IS local and DST
+    // aware, so from the first Sunday in October every NS row would have landed on
+    // the key an hour early — the whole swell/sea series shifted one hour against
+    // a wind and tide that were correct, for the entire summer season.
     const t = new Date(times[i].replace(' ', 'T') + 'Z');
     if (isNaN(t)) continue;
-    const a = new Date(t.getTime() + 10 * 3600 * 1000);
+    const a = new Date(t.getTime() + sydneyOffsetHrs(t.getTime()) * 3600 * 1000);
     const key = a.toISOString().replace('T', ' ').substring(0, 13) + ':00:00';
     const g = (n) => (byName[n] && byName[n][i] != null) ? Math.round(byName[n][i] * 1000) / 1000 : 0;
     map[key] = {
@@ -20681,18 +20714,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return norm(headers[timeIdx]).indexOf('utc') > -1 ? 'utc' : 'syd';
   }
 
-  // ── Sydney DST (1st Sun Oct 02:00 -> 1st Sun Apr 03:00) for tz conversion ──
-  function firstSundayUTC(year, month) { // month: 0-indexed
-    var d = new Date(Date.UTC(year, month, 1));
-    var add = (7 - d.getUTCDay()) % 7;
-    return new Date(Date.UTC(year, month, 1 + add));
-  }
-  function isSydneyDST(utcMs) {
-    var y = new Date(utcMs).getUTCFullYear();
-    var start = firstSundayUTC(y, 9);  start.setUTCHours(16);  // 1st Sun Oct, 02:00 local(+11 not yet)~=16:00 UTC prev
-    var end   = firstSundayUTC(y, 3);  end.setUTCHours(16);    // 1st Sun Apr
-    return utcMs >= start.getTime() || utcMs < end.getTime();
-  }
+  // Sydney DST: uses the shared top-level isSydneyDST / sydneyOffsetHrs. The local
+  // copy that lived here had both boundaries a day late — see the helper's comment.
   // Parse a 'YYYY-MM-DD HH:MM[:SS]' string as either UTC or Sydney-local wall time -> epoch ms UTC.
   function rowTimeToUtcMs(str, tz) {
     var s = String(str).trim().replace(' ', 'T');
