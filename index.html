@@ -23223,6 +23223,7 @@ else theftLoad();
      the change, and the footnote says it in words. */
   var MM_NEAR_N = 6;        // 6 x 3 h = the next 18 hours
   var MM_NEAR_FRAC = 0.42;  // ...drawn across this share of the plot
+  var MM_MIN_H = 5;         // shortest a real reading may be drawn, in px
 
   function drawMm(rows) {
     var W = 360, H = 100, PAD_L = 26, PAD_B = 22, PAD_T = 6;
@@ -23241,10 +23242,17 @@ else theftLoad();
     }
     var xSplit = far > 0 ? xs[near] : x1;
 
+    // The plot gets a ground. BOM's lightest class is #ffffd9 — cream on white —
+    // and at 2.7px wide in the compressed half those bars disappeared entirely,
+    // so a week of real "under 0.5 mm" readings looked like a week of no data.
+    // That is the app's worst failure mode running backwards, so it is fixed with
+    // contrast rather than by recolouring BOM's classes.
+    p.push('<rect x="' + x0 + '" y="' + PAD_T + '" width="' + (x1 - x0).toFixed(1) +
+           '" height="' + plot.toFixed(1) + '" fill="rgba(17,53,65,0.04)"/>');
     // Tint under the near zone, so the scale change is visible before it is read.
     if (far > 0) {
       p.push('<rect x="' + x0 + '" y="' + PAD_T + '" width="' + (xSplit - x0).toFixed(1) +
-             '" height="' + plot.toFixed(1) + '" fill="rgba(74,143,173,0.06)"/>');
+             '" height="' + plot.toFixed(1) + '" fill="rgba(74,143,173,0.07)"/>');
     }
 
     // Axis ticks sit on the class boundaries, and carry the same numbers as the
@@ -23268,10 +23276,12 @@ else theftLoad();
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 3) + '" width="' + w.toFixed(1) +
                '" height="3" fill="#c4c4c4"/>');
       } else {
-        var h = ((row.band + 1) / 10) * plot;
+        // MM_MIN_H is a floor, not a fudge: the smallest real reading must still
+        // read as a bar. It only ever bites on a very short plot.
+        var h = Math.max(MM_MIN_H, ((row.band + 1) / 10) * plot);
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - h).toFixed(1) + '" width="' + w.toFixed(1) +
                '" height="' + h.toFixed(1) + '" rx="' + (i < near ? 1.5 : 0) + '" fill="' +
-               KEY_FCST.colours[row.band] + '" stroke="rgba(17,53,65,0.16)" stroke-width="0.4"/>');
+               KEY_FCST.colours[row.band] + '" stroke="rgba(17,53,65,0.38)" stroke-width="0.5"/>');
       }
       // Near zone gets clock times, every second bar so they do not collide.
       if (i < near && i % 2 === 0) {
