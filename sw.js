@@ -42,6 +42,10 @@ const PASSTHROUGH_HOSTS = [
   // connection — a stale photo presented as "right now" is the worst kind of
   // wrong this app can be. Never cache a frame that claims to be live.
   'camstills.cdn-surfline.com',
+  // BOM radar/forecast tiles. Passthrough for the same reason as the cams: a
+  // radar frame is stamped with a time, and a network-first SW would happily
+  // serve a 40-minute-old echo under a fresh timestamp.
+  'api.bom.gov.au',
 ];
 
 // ── Install: pre-cache shell assets ──────────────────────────
