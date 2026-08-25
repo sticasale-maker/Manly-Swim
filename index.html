@@ -3688,9 +3688,9 @@
             <span class="radar-mm-src">Bureau of Meteorology</span>
           </div>
           <div class="radar-mm-lead is-none" id="radarMmLead">Reading the bay&hellip;</div>
-          <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 100"
+          <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 118"
                preserveAspectRatio="xMidYMid meet"
-               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, today and the next three days"></svg>
+               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, today and the next three days: amount bands and chance of any rain"></svg>
           <div class="radar-mm-foot" id="radarMmFoot"></div>
         </div>
         <div class="radar-legend">
@@ -23128,26 +23128,36 @@ else theftLoad();
     keyCap.textContent = k.cap;
   }
 
-  /* ── rain at Manly, the next 24 hours ──────────────────────────────────────
-     The same BOM field the map is drawing, sampled at the bay. Not a second
-     forecast: the bar for a given hour is literally the pixel under the pin in
-     that frame, so the chart and the map cannot disagree.
+  /* ── rain at Manly, today and the next three days ─────────────────────────
+     The same BOM fields the map draws, sampled at the bay. Not a second
+     forecast: each bar is literally the pixel under the pin in that frame, so
+     the chart and the map cannot disagree.
 
-     Why it needs a proxy: BOM's tile host sends no Access-Control-Allow-Origin,
-     so a canvas that has drawn one of its tiles is tainted and getImageData()
-     throws — and BOM exposes neither `identify` nor `exportImage` through its
-     gateway, so there is no point query to ask instead. bom-tile-proxy is a
-     standalone Worker that fetches one tile and adds the CORS header. It is
-     deliberately not a route on bold-rain-6ded, which is shared with the
-     Forecast App and has twice lost a cron to a careless redeploy.
+     TWO fields, because one is not enough to answer the question. The rain
+     amount layer's lowest class is "0 - 0.5 mm", which lumps a dry day in with
+     a passing drizzle — so a week of tiny bars could mean either, and did read
+     that way. BOM's chance-of-rain layer separates them: 0-10% is dry, 50-75%
+     is "expect to get wet". The strip under the bars carries it.
 
-     BOM publishes BANDS, not values — "1 - 2 mm" — so that is what is drawn and
-     said. Each bar is one band tall and carries BOM's own colour for it, which
-     is why the bar matches the wash on the map above. Inventing a midpoint to
-     plot would be precision the source does not have. */
+     Why a proxy: BOM's tile host sends no Access-Control-Allow-Origin, so a
+     canvas that has drawn one of its tiles is tainted and getImageData() throws
+     — and the gateway exposes neither `identify` nor `exportImage`, so there is
+     no point query to ask instead. bom-tile-proxy is a standalone Worker that
+     fetches one tile and adds the header. It is deliberately not a route on
+     bold-rain-6ded, which is shared with the Forecast App.
+
+     BOM publishes BANDS, not values, for both fields. That is what is drawn and
+     said — the axis is labelled with the bands themselves ("<0.5", "1-2") and
+     not with boundary numbers, which read as a continuous scale and made a
+     lowest-band bar look like a confident "0.5 mm". */
   var MM_PROXY = 'https://bom-tile-proxy.sticasale.workers.dev/tile';
+  var CHANCE_LAYER = 'atm_surf_air_precip_any_probability_percent_3hourly';
   var MM_BANDS = ['0 – 0.5', '0.5 – 1', '1 – 2', '2 – 3', '3 – 5',
                   '5 – 10', '10 – 20', '20 – 50', '50 – 100', 'over 100'];
+  // BOM's chance-of-any-rain classes, from the same attribute-table endpoint.
+  var CH_COLOURS = ['#e5f2fa', '#cce6f7', '#99ceee', '#67b5e6', '#349ddd', '#0184d5'];
+  var CH_BANDS   = ['0–10', '10–25', '25–50', '50–75', '75–90', '90–100'];
+
   var mmLead = document.getElementById('radarMmLead');
   var mmSvg  = document.getElementById('radarMmSvg');
   var mmFoot = document.getElementById('radarMmFoot');
@@ -23158,16 +23168,20 @@ else theftLoad();
   var MM_COL = Math.floor(_mmFc), MM_ROW = Math.floor(_mmFr);
   var MM_PX  = Math.floor((_mmFc - MM_COL) * 256), MM_PY = Math.floor((_mmFr - MM_ROW) * 256);
 
-  // Nearest of BOM's ten class colours. Tiles are flat-filled from a remap
-  // raster function, but resampling can soften a class edge by a shade or two,
-  // so match nearest rather than exact — and refuse anything genuinely far off.
-  var _mmRGB = KEY_FCST.colours.map(function (h) {
-    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
-  });
-  function mmBandOf(r, g, b) {
+  function _rgb(list) {
+    return list.map(function (h) {
+      return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+    });
+  }
+  var _mmRGB = _rgb(KEY_FCST.colours), _chRGB = _rgb(CH_COLOURS);
+
+  // Nearest of BOM's class colours. Tiles are flat-filled from a remap raster
+  // function, but resampling can soften a class edge by a shade or two, so match
+  // nearest rather than exact — and refuse anything genuinely far off.
+  function nearestBand(pal, r, g, b) {
     var best = -1, bestD = 1e9;
-    for (var i = 0; i < _mmRGB.length; i++) {
-      var c = _mmRGB[i];
+    for (var i = 0; i < pal.length; i++) {
+      var c = pal[i];
       var d = (r - c[0]) * (r - c[0]) + (g - c[1]) * (g - c[1]) + (b - c[2]) * (b - c[2]);
       if (d < bestD) { bestD = d; best = i; }
     }
@@ -23181,7 +23195,7 @@ else theftLoad();
   // Resolves to a band index, null for "covered but no class matched / outside
   // the grid", or false when the tile could not be fetched at all. Those three
   // are different things and the chart says so.
-  function mmSample(iso) {
+  function mmSample(layer, pal, iso) {
     return new Promise(function (resolve) {
       var im = new Image();
       im.crossOrigin = 'anonymous';
@@ -23190,11 +23204,11 @@ else theftLoad();
           _mmCtx.clearRect(0, 0, 1, 1);
           _mmCtx.drawImage(im, MM_PX, MM_PY, 1, 1, 0, 0, 1, 1);
           var d = _mmCtx.getImageData(0, 0, 1, 1).data;
-          resolve(d[3] < 8 ? null : mmBandOf(d[0], d[1], d[2]));
+          resolve(d[3] < 8 ? null : nearestBand(pal, d[0], d[1], d[2]));
         } catch (e) { resolve(false); }
       };
       im.onerror = function () { resolve(false); };
-      im.src = MM_PROXY + '?layer=' + FUT_LAYER + '&tms=' + GRIDS.fcst.tms
+      im.src = MM_PROXY + '?layer=' + layer + '&tms=' + GRIDS.fcst.tms
              + '&time=' + iso + '&row=' + MM_ROW + '&col=' + MM_COL;
     });
   }
@@ -23214,24 +23228,16 @@ else theftLoad();
     timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit'
   });
 
-  /* The next 18 hours are the part a swimmer acts on, so they get 42% of the
-     width — six fat bars with the hour under them — and the remaining six days
-     share the rest at about a quarter the width each.
-
-     A chart with two x-scales can mislead about how long something lasts, so it
-     is not left to be noticed: the near zone sits on its own tint, a rule marks
-     the change, and the footnote says it in words. */
   var MM_NEAR_N = 6;        // 6 x 3 h = the next 18 hours
   var MM_NEAR_FRAC = 0.42;  // ...drawn across this share of the plot
   var MM_MIN_H = 5;         // shortest a real reading may be drawn, in px
 
   function drawMm(rows) {
-    var W = 360, H = 100, PAD_L = 26, PAD_B = 22, PAD_T = 6;
+    var W = 360, H = 118, PAD_L = 32, PAD_B = 40, PAD_T = 6;
     var x0 = PAD_L, x1 = W - 4, yB = H - PAD_B, plot = yB - PAD_T;
+    var stripY = yB + 5, stripH = 9;
     var n = rows.length, span = x1 - x0, p = [];
 
-    // Bar widths: fat near, thin far. If the run is short enough to be all
-    // "near", every bar is simply equal.
     var near = Math.min(MM_NEAR_N, n), far = n - near;
     var wNear = far > 0 ? (span * MM_NEAR_FRAC) / near : span / near;
     var wFar  = far > 0 ? (span * (1 - MM_NEAR_FRAC)) / far : 0;
@@ -23242,70 +23248,76 @@ else theftLoad();
     }
     var xSplit = far > 0 ? xs[near] : x1;
 
-    // The plot gets a ground. BOM's lightest class is #ffffd9 — cream on white —
-    // and at 2.7px wide in the compressed half those bars disappeared entirely,
-    // so a week of real "under 0.5 mm" readings looked like a week of no data.
-    // That is the app's worst failure mode running backwards, so it is fixed with
-    // contrast rather than by recolouring BOM's classes.
+    // A ground for the bars: BOM's lightest class is cream on white and vanished
+    // without one.
     p.push('<rect x="' + x0 + '" y="' + PAD_T + '" width="' + (x1 - x0).toFixed(1) +
            '" height="' + plot.toFixed(1) + '" fill="rgba(17,53,65,0.04)"/>');
-    // Tint under the near zone, so the scale change is visible before it is read.
     if (far > 0) {
       p.push('<rect x="' + x0 + '" y="' + PAD_T + '" width="' + (xSplit - x0).toFixed(1) +
              '" height="' + plot.toFixed(1) + '" fill="rgba(74,143,173,0.07)"/>');
     }
 
-    // Axis ticks sit on the class boundaries, and carry the same numbers as the
-    // map's forecast key — the two are the same scale.
-    [[1, '0.5'], [3, '2'], [5, '5'], [7, '20'], [9, '100']].forEach(function (t) {
-      var y = yB - (t[0] / 10) * plot;
-      p.push('<line x1="' + x0 + '" y1="' + y.toFixed(1) + '" x2="' + x1 + '" y2="' + y.toFixed(1) +
-             '" stroke="rgba(17,53,65,0.08)" stroke-width="1"/>');
+    // Gridlines on the class boundaries; labels in the MIDDLE of a class, so the
+    // axis reads as ten bands and not as a continuous scale.
+    for (var g = 1; g < 10; g++) {
+      var gy = yB - (g / 10) * plot;
+      p.push('<line x1="' + x0 + '" y1="' + gy.toFixed(1) + '" x2="' + x1 + '" y2="' + gy.toFixed(1) +
+             '" stroke="rgba(17,53,65,0.07)" stroke-width="0.6"/>');
+    }
+    [[0, '&lt;0.5'], [2, '1-2'], [4, '3-5'], [6, '10-20'], [8, '50+']].forEach(function (t) {
+      var y = yB - ((t[0] + 0.5) / 10) * plot;
       p.push('<text x="' + (PAD_L - 4) + '" y="' + (y + 3).toFixed(1) +
-             '" font-size="8.5" fill="#4a5f6e" text-anchor="end">' + t[1] + '</text>');
+             '" font-size="8" fill="#4a5f6e" text-anchor="end">' + t[1] + '</text>');
     });
     p.push('<line x1="' + x0 + '" y1="' + yB + '" x2="' + x1 + '" y2="' + yB +
            '" stroke="rgba(17,53,65,0.25)" stroke-width="1"/>');
+    p.push('<text x="' + (PAD_L - 4) + '" y="' + (stripY + stripH - 1) +
+           '" font-size="7.5" fill="#4a5f6e" text-anchor="end">rain?</text>');
 
     var prevDay = null;
     rows.forEach(function (row, i) {
       var bx = xs[i], w = Math.max(1.5, ws[i] - (i < near ? 2.5 : 1.2));
+
+      // mm bar
       if (row.band === false || row.band === null) {
-        // No reading is not a small reading. Grey, on the baseline, never a
-        // colour from the ramp.
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 3) + '" width="' + w.toFixed(1) +
                '" height="3" fill="#c4c4c4"/>');
       } else {
-        // MM_MIN_H is a floor, not a fudge: the smallest real reading must still
-        // read as a bar. It only ever bites on a very short plot.
         var h = Math.max(MM_MIN_H, ((row.band + 1) / 10) * plot);
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - h).toFixed(1) + '" width="' + w.toFixed(1) +
                '" height="' + h.toFixed(1) + '" rx="' + (i < near ? 1.5 : 0) + '" fill="' +
                KEY_FCST.colours[row.band] + '" stroke="rgba(17,53,65,0.38)" stroke-width="0.5"/>');
       }
-      // Near zone gets clock times, every second bar so they do not collide.
+
+      // chance-of-rain cell
+      if (typeof row.chance === 'number') {
+        p.push('<rect x="' + bx.toFixed(1) + '" y="' + stripY + '" width="' + w.toFixed(1) +
+               '" height="' + stripH + '" fill="' + CH_COLOURS[row.chance] +
+               '" stroke="rgba(17,53,65,0.22)" stroke-width="0.4"/>');
+      } else {
+        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (stripY + 3) + '" width="' + w.toFixed(1) +
+               '" height="3" fill="#c4c4c4"/>');
+      }
+
       if (i < near && i % 2 === 0) {
-        p.push('<text x="' + (bx + w / 2).toFixed(1) + '" y="' + (H - 12) +
+        p.push('<text x="' + (bx + w / 2).toFixed(1) + '" y="' + (H - 14) +
                '" font-size="8.5" fill="#4a5f6e" text-anchor="middle">' +
                mmHour.format(row.t).replace(/\s/g, '') + '</text>');
       }
-      // Days are ruled and named across the whole chart, or a week of 3-hour
-      // bars is unreadable.
       var day = mmYmd.format(row.t);
       if (day !== prevDay) {
         if (prevDay !== null) {
           p.push('<line x1="' + bx.toFixed(1) + '" y1="' + PAD_T + '" x2="' + bx.toFixed(1) +
-                 '" y2="' + (yB + 3) + '" stroke="rgba(17,53,65,0.20)" stroke-width="1"/>');
+                 '" y2="' + (stripY + stripH) + '" stroke="rgba(17,53,65,0.20)" stroke-width="1"/>');
         }
-        p.push('<text x="' + (bx + 2).toFixed(1) + '" y="' + (H - 2) +
+        p.push('<text x="' + (bx + 2).toFixed(1) + '" y="' + (H - 3) +
                '" font-size="8.5" fill="#4a5f6e">' + mmDay.format(row.t) + '</text>');
         prevDay = day;
       }
     });
-    // The scale change itself.
     if (far > 0) {
       p.push('<line x1="' + xSplit.toFixed(1) + '" y1="' + PAD_T + '" x2="' + xSplit.toFixed(1) +
-             '" y2="' + (yB + 3) + '" stroke="rgba(17,53,65,0.35)" stroke-width="1" stroke-dasharray="2 2"/>');
+             '" y2="' + (stripY + stripH) + '" stroke="rgba(17,53,65,0.35)" stroke-width="1" stroke-dasharray="2 2"/>');
     }
     mmSvg.innerHTML = p.join('');
 
@@ -23318,22 +23330,32 @@ else theftLoad();
     }
     var last = rows[rows.length - 1];
     var worst = got.reduce(function (a, b) { return b.band > a.band ? b : a; });
-    if (worst.band === 0) {
-      mmLead.className = 'radar-mm-lead is-none';
-      mmLead.textContent = 'Under 0.5 mm in every 3-hour block out to ' + mmDate.format(last.t) + '.';
-    } else {
+    var chances = rows.filter(function (r) { return typeof r.chance === 'number'; });
+    var peak = chances.length
+      ? chances.reduce(function (a, b) { return b.chance > a.chance ? b : a; }).chance
+      : null;
+
+    if (worst.band > 0) {
       mmLead.className = 'radar-mm-lead';
       // BOM does not state whether a 3-hourly step is period-beginning or
       // period-ending, so the wording does not claim either.
       mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' +
                            mmWhen.format(worst.t) + '.';
+    } else if (peak !== null && peak <= 1) {
+      // Lowest mm band AND a low chance: this really is a dry stretch, and saying
+      // so is the whole point of sampling the second field.
+      mmLead.className = 'radar-mm-lead is-none';
+      mmLead.textContent = 'Dry through to ' + mmDate.format(last.t) +
+                           ' — under ' + CH_BANDS[peak].split('–')[1] + '% chance of any rain.';
+    } else {
+      mmLead.className = 'radar-mm-lead';
+      mmLead.textContent = 'Nothing over 0.5 mm to ' + mmDate.format(last.t) +
+                           (peak !== null ? ', but up to a ' + CH_BANDS[peak] + '% chance of a shower.' : '.');
     }
-    // The explanatory footnote was removed on request. Only the absence signal
-    // is still worth words: a block the Bureau had no reading for is drawn grey
-    // on the baseline, and grey stubs alone are easy to miss.
-    mmFoot.textContent = got.length < rows.length
-      ? (rows.length - got.length) + ' block(s) had no reading from the Bureau.'
-      : '';
+
+    var missing = rows.length - got.length;
+    mmFoot.textContent = 'Bars: how much (mm bands) · strip: chance of any rain.'
+      + (missing ? ' ' + missing + ' block(s) had no reading.' : '');
   }
 
   /* Today and the next three days, by the Sydney calendar rather than a count of
@@ -23373,7 +23395,11 @@ else theftLoad();
       var slice = times.slice(at, at + MM_BATCH), base = at;
       at += MM_BATCH;
       return Promise.all(slice.map(function (t, k) {
-        return mmSample(isoZ(t)).then(function (band) { rows[base + k] = { t: t, band: band }; });
+        var iso = isoZ(t);
+        return Promise.all([
+          mmSample(FUT_LAYER, _mmRGB, iso),
+          mmSample(CHANCE_LAYER, _chRGB, iso)
+        ]).then(function (v) { rows[base + k] = { t: t, band: v[0], chance: v[1] }; });
       })).then(function () {
         // Stop as soon as a whole batch comes back unpublished — that is the
         // end of the run, not a bad connection, because earlier ones answered.
