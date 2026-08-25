@@ -3684,13 +3684,13 @@
         </div>
         <div class="radar-mm">
           <div class="radar-mm-head">
-            <span class="radar-mm-title">Rain at Manly &middot; the week</span>
+            <span class="radar-mm-title">Rain at Manly &middot; today + 3 days</span>
             <span class="radar-mm-src">Bureau of Meteorology</span>
           </div>
           <div class="radar-mm-lead is-none" id="radarMmLead">Reading the bay&hellip;</div>
           <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 100"
                preserveAspectRatio="xMidYMid meet"
-               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, for as far ahead as the Bureau forecasts"></svg>
+               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, today and the next three days"></svg>
           <div class="radar-mm-foot" id="radarMmFoot"></div>
         </div>
         <div class="radar-legend">
@@ -23336,20 +23336,36 @@ else theftLoad();
       : '';
   }
 
-  /* Ask for the Bureau's whole published run rather than a fixed window. The
-     capabilities document that states the extent is not readable from here (no
-     CORS), so instead we walk 3-hourly steps to a hard ceiling of eight days and
-     let the far end fall off: a step BOM has not published 404s, which arrives
-     as band === false, and trailing false values are trimmed. Requests go out
-     in small batches — this is up to 60 of them and a phone on a car-park
-     connection should not open 60 sockets at once. */
-  var MM_MAX_STEPS = 64;
+  /* Today and the next three days, by the Sydney calendar rather than a count of
+     hours — "today + 3 days" should mean the same thing whether the card is
+     opened at dawn or at dusk. The Bureau publishes about seven days, but the
+     back half of that arrived as a hairline of bars nobody could read; the
+     shorter window buys width for the part a swimmer acts on.
+
+     A step BOM has not published 404s, which arrives as band === false, and
+     trailing false values are trimmed — so the chart still ends where the run
+     ends if the run is short. Requests go out in small batches: a phone on a
+     car-park connection should not open thirty sockets at once. */
+  var MM_DAYS_AHEAD = 3;
+  var MM_MAX_STEPS = 40;    // safety ceiling only; the calendar cut-off bites first
   var MM_BATCH = 6;
+
+  // Last Sydney-local date to include, as 'YYYY-MM-DD'.
+  function mmLastDay() {
+    var p = mmYmd.format(new Date()).split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]));
+    d.setUTCDate(d.getUTCDate() + MM_DAYS_AHEAD);
+    return d.toISOString().slice(0, 10);
+  }
 
   function loadMm() {
     var t0 = Math.ceil(Date.now() / 10800000) * 10800000;
-    var times = [];
-    for (var i = 0; i < MM_MAX_STEPS; i++) times.push(t0 + i * 10800000);
+    var lastDay = mmLastDay(), times = [];
+    for (var i = 0; i < MM_MAX_STEPS; i++) {
+      var t = t0 + i * 10800000;
+      if (mmYmd.format(t) > lastDay) break;
+      times.push(t);
+    }
 
     var rows = new Array(times.length), at = 0;
     function nextBatch() {
