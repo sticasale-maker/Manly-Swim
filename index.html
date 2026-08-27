@@ -23632,9 +23632,6 @@ else theftLoad();
     // would otherwise navigate away the instant the picture appears.
     swallowUntil = Date.now() + 1200;
     show();
-    // Announce it: the shake-a-fish block uses this deliberate, already-hidden
-    // gesture as its iOS motion-permission unlock (see that block for why).
-    try { document.dispatchEvent(new Event('swim-secret-reveal')); } catch (e) {}
   }
   document.addEventListener('click', function (e) {
     if (Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); }
@@ -23684,9 +23681,10 @@ else theftLoad();
 </script>
 
 
-<!-- === Shake for a turtle ==================================================
-     Shake the phone and a green turtle swims across the screen, seen from above
-     as though he were crossing the surface of the glass.
+<!-- === The turtle ==========================================================
+     Every so often a green turtle swims across the screen, seen from above as
+     though he were crossing the surface of the glass. First pass ten seconds
+     after the page opens, then at random, never more than once a minute.
 
      THE PATH IS NOT INVENTED. The clip shows the turtle swimming on the spot
      while slowly turning right, so its heading was measured out of every frame
@@ -23707,8 +23705,12 @@ else theftLoad();
      The sprite already contains the turning, so the element takes only that one
      constant rotation - re-applying the per-frame heading would double it.
 
-     Decoration only: it reads no conditions and states no verdict. See the
-     secret-reveal block above for the iOS motion-permission story.
+     Decoration: he reads no conditions and states no verdict, and he swims on
+     every kind of day. He was briefly gated off Dangerous days on the reasoning
+     that an unbidden animation could read as levity there; Marco's call, 28 Aug
+     2026, was to drop that gate - a turtle makes no claim about the water. The
+     verdict copy rules in CLAUDE.md section 1 are untouched by this: nothing
+     here writes, softens or re-derives the verdict.
 ========================================================================== -->
 <style>
   #shakeFish {
@@ -23725,19 +23727,25 @@ else theftLoad();
   var host = document.getElementById('shakeFish');
   if (!host) return;
 
-  var _pGet = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
-  var _pSet = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
-  var GRANT_KEY = 'swimFishMotion';
-
   var SRC = 'images/turtle.webp';
-  var SPRITE_W = 320, SPRITE_H = 261;   // the sprite's own pixel size
-  // Fraction of the sprite's width taken up by the turtle nose-to-tail, measured
-  // off the clip. The brief is "about a third of the screen wide", and it is the
-  // TURTLE that must be a third - not the sprite box, which carries slack for
-  // the flippers - so the element is drawn wider than a third by exactly this.
-  var BODY_FRAC = 0.689;
+  var SPRITE_W = 200, SPRITE_H = 229;      // the sprite's own pixel size
+  // Fraction of the sprite's width taken up by the turtle nose-to-tail. The brief
+  // is "about a third of the screen wide", and it is the TURTLE that must be a
+  // third - not the sprite box, which carries slack for the flippers.
+  var BODY_FRAC = 0.9578;
   var SWIM_MS = 10000;
-  var CHORD_DEG = -75.09;        // chord direction of the stored path, degrees
+
+  // TURTLE_PATH runs [0,0] -> [1,0]: the straight line between entry and exit
+  // lies along +X and the curve is the sideways wander about it. TURTLE_ROT is
+  // the turtle's heading at each of those points, relative to that same line.
+  //
+  // The sprite is DE-ROTATED - he points along +X in every frame - so the turn
+  // is applied here instead of being baked in. That matters for smoothness: a
+  // baked turn can only step as often as the sprite has frames, and at 12fps the
+  // steps show. Interpolated by the compositor it is smooth at display rate, and
+  // the frames then only have to carry flipper strokes, which are slow enough
+  // not to care. Adding the same random angle to every rotation and to the path
+  // keeps heading and direction of travel identical, which is the whole point.
   var TURTLE_PATH = [
     [0,0],[0.0219,-0.0059],[0.0438,-0.0116],[0.0658,-0.017],[0.0878,-0.0225],[0.1097,-0.0284],
     [0.1358,-0.0359],[0.1574,-0.0429],[0.1787,-0.0506],[0.1995,-0.0594],[0.2199,-0.0693],[0.2398,-0.0802],
@@ -23747,6 +23755,13 @@ else theftLoad();
     [0.6473,-0.1624],[0.6686,-0.1547],[0.6893,-0.1455],[0.7094,-0.135],[0.7288,-0.1234],[0.7481,-0.1114],
     [0.7675,-0.0997],[0.7873,-0.0887],[0.8074,-0.0784],[0.8277,-0.0683],[0.848,-0.0582],[0.8683,-0.0481],
     [0.8928,-0.0363],[0.9136,-0.0274],[0.9349,-0.0196],[0.9565,-0.0126],[0.9782,-0.0062],[1,0]
+  ];
+  var TURTLE_ROT = [
+    -15.73,-14.82,-14.06,-13.87,-14.44,-15.24,-16.79,-18.72,-21.14,-24.01,
+    -26.94,-29.77,-32.47,-35,-37.07,-37.59,-35.31,-29.89,-21.64,-15.53,
+    -11.67,-9.21,-6.13,-2.45,1.93,5.73,8.7,11.11,13.22,15.24,
+    18.08,21.34,25.4,29.17,31.46,31.92,30.5,28.09,26.72,26.27,
+    26.46,26.64,24.69,21.94,19.18,17.12,16.1,15.83
   ];
 
   function rad(d) { return d * Math.PI / 180; }
@@ -23771,7 +23786,6 @@ else theftLoad();
     // One random angle decides everything: which side he enters, which side he
     // leaves, and how the sprite is turned so his body still faces the way he goes.
     var ang = Math.random() * 360;
-    var rot = ang - CHORD_DEG;
     var ca = Math.cos(rad(ang)), sa = Math.sin(rad(ang));
 
     // Long enough that both ends of the chord sit outside the screen.
@@ -23780,11 +23794,12 @@ else theftLoad();
     var off = (Math.random() - 0.5) * 0.36 * Math.min(vw, vh);
     var ox = vw / 2 - sa * off, oy = vh / 2 + ca * off;
 
-    var keys = TURTLE_PATH.map(function (p) {
+    var keys = TURTLE_PATH.map(function (p, i) {
       var lx = (p[0] - 0.5) * need, ly = p[1] * need;
       var x = ox + lx * ca - ly * sa;
       var y = oy + lx * sa + ly * ca;
-      return { transform: 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + rot.toFixed(1) + 'deg)' };
+      var r = TURTLE_ROT[i] + ang;
+      return { transform: 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + r.toFixed(1) + 'deg)' };
     });
 
     function done() {
@@ -23815,70 +23830,67 @@ else theftLoad();
     if (img.complete && img.naturalWidth) start();
   }
 
-  // ── shake detection ───────────────────────────────────────────────────────
-  // Sum of per-axis change between samples. A deliberate shake peaks well above
-  // 22; walking with the phone, or a tap, does not. Three peaks inside 1.2s
-  // keeps a single jolt (setting the phone down) from counting.
-  var THRESH = 22, NEEDED = 3, WINDOW_MS = 1200, SAMPLE_MS = 60, COOLDOWN_MS = 4000;
-  var lx = null, ly = null, lz = null, lastSample = 0, lastFire = 0, hits = [];
+  // ── when he shows up ──────────────────────────────────────────────────────
+  // A random pass, first one ten seconds after the page opens, and never more
+  // often than once a minute. Shake-to-summon was the original trigger and has
+  // been removed: iOS fires no motion events at all until permission is granted
+  // from a user gesture, so on the phones most of these swimmers actually carry
+  // it could never have worked without a prompt.
+  var FIRST_MS = 10000, FIRST_JITTER = 6000;
+  var MIN_GAP_MS = 60000, GAP_SPREAD = 90000;   // 60-150s between passes
+  var lastRun = 0;
 
-  function onMotion(e) {
-    var a = e.accelerationIncludingGravity;
-    if (!a || a.x === null) return;
-    var now = Date.now();
-    if (now - lastSample < SAMPLE_MS) return;
-    lastSample = now;
-    if (lx !== null) {
-      var d = Math.abs(a.x - lx) + Math.abs(a.y - ly) + Math.abs(a.z - lz);
-      if (d > THRESH) {
-        hits.push(now);
-        while (hits.length && now - hits[0] > WINDOW_MS) hits.shift();
-        if (hits.length >= NEEDED && now - lastFire > COOLDOWN_MS) {
-          lastFire = now; hits.length = 0;
-          swim();
-        }
-      }
-    }
-    lx = a.x; ly = a.y; lz = a.z;
+  function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (e) { return false; }
   }
 
-  var listening = false;
-  function listen() {
-    if (listening) return;
-    listening = true;
-    window.addEventListener('devicemotion', onMotion);
-  }
-
-  var needsPermission = (typeof DeviceMotionEvent !== 'undefined') &&
-                        (typeof DeviceMotionEvent.requestPermission === 'function');
-
-  function arm() {
-    if (listening) return;
-    if (!needsPermission) { listen(); return; }
+  // A metered or 2g connection should not spend half a megabyte on a turtle.
+  function thinPipe() {
     try {
-      DeviceMotionEvent.requestPermission().then(function (state) {
-        if (state === 'granted') { _pSet(GRANT_KEY, '1'); listen(); }
-      })['catch'](function () { /* no user activation, or declined - stay quiet */ });
-    } catch (e) {}
+      var c = navigator.connection;
+      if (!c) return false;
+      if (c.saveData) return true;
+      return /^(slow-)?2g$/.test(c.effectiveType || '');
+    } catch (e) { return false; }
   }
 
-  if (!needsPermission) {
-    listen();
-  } else if (_pGet(GRANT_KEY) === '1') {
-    arm();
-    document.addEventListener('pointerdown', function once() {
-      document.removeEventListener('pointerdown', once);
-      arm();
+  function blocked() {
+    if (document.visibilityState !== 'visible') return true;
+    if (reducedMotion()) return true;
+    var shot = document.getElementById('secretShot');
+    if (shot && shot.classList.contains('on')) return true;   // don't upstage the photo
+    return false;
+  }
+
+  function tick() {
+    var now = Date.now();
+    if (!blocked() && now - lastRun >= MIN_GAP_MS) {
+      lastRun = now;
+      swim();
+    }
+    schedule(MIN_GAP_MS + Math.random() * GAP_SPREAD);
+  }
+
+  var timer = null;
+  function schedule(ms) {
+    clearTimeout(timer);
+    timer = setTimeout(tick, ms);
+  }
+
+  if (!thinPipe()) {
+    // Warm the sprite before the first pass so it does not arrive half-loaded,
+    // but late enough that it never competes with the forecast's own fetches.
+    setTimeout(function () { try { new Image().src = SRC; } catch (e) {} }, 6000);
+    schedule(FIRST_MS + Math.random() * FIRST_JITTER);
+    // A tab left in the background must not bank up passes.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') schedule(2000 + Math.random() * 4000);
     });
   }
 
-  // The 3-second Sea + Pollution hold is the iOS unlock.
-  document.addEventListener('swim-secret-reveal', arm);
-
-  // Laptops and desktops have no accelerometer, so the shake can never fire
-  // there. Alt+Shift+F sends him across anyway - it is how you preview this
-  // without a phone in your hand, and it matches the Alt convention the secret
-  // photo already uses.
+  // Alt+Shift+F sends him across on demand, for previewing on a laptop.
+  // It ignores the once-a-minute rule.
   document.addEventListener('keydown', function (e) {
     if (e.altKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
       e.preventDefault();
