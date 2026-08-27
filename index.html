@@ -23544,9 +23544,10 @@ else theftLoad();
 
 
 <!-- === Secret reveal =======================================================
-     Press the Sea card and the Pollution card at the same time (two fingers).
-     Alt-click either card is the desktop equivalent, for testing. There is
-     deliberately no hint anywhere in the UI.
+     Press the Sea card and the Pollution card at the same time (two fingers)
+     and HOLD for 3 seconds. Alt-press-and-hold either card is the desktop
+     equivalent, for testing. There is deliberately no hint anywhere in the UI,
+     and no progress feedback during the hold.
 
      The picture lives at images/secret.webp - a transparent-background cut-out
      of the little-planet shot, so the sphere floats on the dimmed backdrop with
@@ -23573,6 +23574,14 @@ else theftLoad();
   }
   @keyframes secretIn { from { opacity: 0; transform: scale(.93); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { #secretShot img { animation: none; } }
+  /* A 3-second press on the Pollution card would otherwise trigger iOS Safari's
+     link-preview sheet (and the text-selection magnifier on the Sea card),
+     which steals the pointer before the hold completes. Cost: no long-press
+     "open in new tab" on the Beachwatch link. A normal tap is unaffected. */
+  .sea-temp-card2, .pollution-card2 {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none; user-select: none;
+  }
 </style>
 <div id="secretShot" role="dialog" aria-modal="true" aria-label="" hidden></div>
 <script>
@@ -23618,8 +23627,7 @@ else theftLoad();
   host.addEventListener('click', hide);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
 
-  function fire(e) {
-    if (e) { e.preventDefault(); }
+  function fire() {
     // The Pollution card is an <a> to Beachwatch; the finger that lifts off it
     // would otherwise navigate away the instant the picture appears.
     swallowUntil = Date.now() + 1200;
@@ -23629,18 +23637,37 @@ else theftLoad();
     if (Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); }
   }, true);
 
-  // Two pointers down, one on each card, within the same half second.
-  var tSea = 0, tPoll = 0;
+  // Both cards pressed at once and HELD. Lifting either finger, or a scroll
+  // stealing the pointer, cancels the hold and nothing happens.
+  var HOLD_MS = 3000;
+  var seaDown = false, pollDown = false, holdTimer = null;
+
+  function startHold(e) {
+    if (holdTimer || open) return;
+    if (e) { e.preventDefault(); }
+    holdTimer = setTimeout(function () { holdTimer = null; fire(); }, HOLD_MS);
+  }
+  function cancelHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  }
+
   function down(which) {
     return function (e) {
-      var now = Date.now();
-      if (which === 'sea') { tSea = now; } else { tPoll = now; }
-      if (e.altKey) { fire(e); return; }              // desktop equivalent
-      if (tSea && tPoll && Math.abs(tSea - tPoll) < 500) { fire(e); }
+      if (which === 'sea') { seaDown = true; } else { pollDown = true; }
+      // Desktop equivalent: one mouse can't press two cards, so alt stands in
+      // for the second finger - alt-press and hold for the same 3 seconds.
+      if (e.altKey || (seaDown && pollDown)) { startHold(e); }
     };
   }
   function up(which) {
-    return function () { if (which === 'sea') { tSea = 0; } else { tPoll = 0; } };
+    return function () {
+      if (which === 'sea') { seaDown = false; } else { pollDown = false; }
+      cancelHold();
+      // The fingers are still down when the picture appears, so the lift that
+      // follows is what would open Beachwatch (or instantly dismiss the
+      // overlay). Re-arm the swallow from the moment they actually let go.
+      if (open) { swallowUntil = Date.now() + 600; }
+    };
   }
 
   sea.addEventListener('pointerdown', down('sea'));
@@ -23649,6 +23676,7 @@ else theftLoad();
   sea.addEventListener('pointercancel', up('sea'));
   poll.addEventListener('pointerup', up('poll'));
   poll.addEventListener('pointercancel', up('poll'));
+  window.addEventListener('scroll', cancelHold, { passive: true });
 })();
 </script>
 
