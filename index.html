@@ -23882,8 +23882,16 @@ else theftLoad();
     // Warm the sprite before the first pass so it does not arrive half-loaded.
     // This has to beat FIRST_MS, so it can no longer wait for the forecast's own
     // fetches to finish; it is one image against a five-second head start.
-    setTimeout(function () { try { new Image().src = SRC; } catch (e) {} }, 1200);
-    schedule(FIRST_MS + Math.random() * FIRST_JITTER);
+    setTimeout(function () { try { new Image().src = SRC; } catch (e) {} }, 800);
+    // FIVE SECONDS FROM PAGE OPEN, not from whenever this script happened to
+    // run. On a real connection the app's own scripts push this block a second
+    // or two past navigation, which showed up live as a 7.3s first pass. So the
+    // delay is measured against performance.now(), which is time since
+    // navigation start, with a floor so a slow-starting page does not fire the
+    // turtle the instant the block parses.
+    var since = 0;
+    try { since = performance.now(); } catch (e) {}
+    schedule(Math.max(1200, FIRST_MS - since) + Math.random() * FIRST_JITTER);
     // A tab left in the background must not bank up passes.
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') schedule(2000 + Math.random() * 4000);
