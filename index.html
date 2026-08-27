@@ -23542,6 +23542,115 @@ else theftLoad();
 })();
 </script>
 
+
+<!-- === Secret reveal =======================================================
+     Press the Sea card and the Pollution card at the same time (two fingers).
+     Alt-click either card is the desktop equivalent, for testing. There is
+     deliberately no hint anywhere in the UI.
+
+     The picture lives at images/secret.png. While that file is absent the
+     gesture is a silent no-op - no broken image, no visible change (just a 404
+     in devtools when the gesture is tried) - so this can ship before the art.
+
+     This is decoration, not a verdict surface: it reads no conditions and says
+     nothing about the water. If the picture ever becomes celebratory it turns
+     into an encouragement-shaped feature and must then be hard-suppressed on
+     _bannerFacts.safetyLevel === 'dangerous', per CLAUDE.md section 1.
+========================================================================== -->
+<style>
+  #secretShot {
+    position: fixed; inset: 0; z-index: 99999; display: none;
+    align-items: center; justify-content: center; padding: 24px;
+    background: rgba(0,0,0,.88);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  #secretShot.on { display: flex; }
+  #secretShot img {
+    max-width: 100%; max-height: 100%; width: auto; height: auto;
+    border-radius: 8px; box-shadow: 0 12px 44px rgba(0,0,0,.65);
+    animation: secretIn .3s ease-out;
+  }
+  @keyframes secretIn { from { opacity: 0; transform: scale(.93); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { #secretShot img { animation: none; } }
+</style>
+<div id="secretShot" role="dialog" aria-modal="true" aria-label="" hidden></div>
+<script>
+(function () {
+  var SRC  = 'images/secret.png';
+  var sea  = document.querySelector('.sea-temp-card2');
+  var poll = document.querySelector('.pollution-card2');
+  var host = document.getElementById('secretShot');
+  if (!sea || !poll || !host) return;
+
+  var img = null, ready = false, open = false, swallowUntil = 0;
+
+  // Load the picture once, on first attempt. A missing file resolves to
+  // ready=false and every later gesture stays a no-op.
+  function prime(cb) {
+    if (img) { cb(ready); return; }
+    img = new Image();
+    img.alt = '';
+    img.onload  = function () { ready = true;  cb(true);  };
+    img.onerror = function () { ready = false; cb(false); };
+    img.src = SRC;
+  }
+
+  function show() {
+    prime(function (ok) {
+      if (!ok || open) return;
+      open = true;
+      if (!img.parentNode) host.appendChild(img);
+      host.hidden = false;
+      host.classList.add('on');
+      document.body.style.overflow = 'hidden';
+    });
+  }
+
+  function hide() {
+    if (!open) return;
+    open = false;
+    host.classList.remove('on');
+    host.hidden = true;
+    document.body.style.overflow = '';
+  }
+
+  host.addEventListener('click', hide);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+
+  function fire(e) {
+    if (e) { e.preventDefault(); }
+    // The Pollution card is an <a> to Beachwatch; the finger that lifts off it
+    // would otherwise navigate away the instant the picture appears.
+    swallowUntil = Date.now() + 1200;
+    show();
+  }
+  document.addEventListener('click', function (e) {
+    if (Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); }
+  }, true);
+
+  // Two pointers down, one on each card, within the same half second.
+  var tSea = 0, tPoll = 0;
+  function down(which) {
+    return function (e) {
+      var now = Date.now();
+      if (which === 'sea') { tSea = now; } else { tPoll = now; }
+      if (e.altKey) { fire(e); return; }              // desktop equivalent
+      if (tSea && tPoll && Math.abs(tSea - tPoll) < 500) { fire(e); }
+    };
+  }
+  function up(which) {
+    return function () { if (which === 'sea') { tSea = 0; } else { tPoll = 0; } };
+  }
+
+  sea.addEventListener('pointerdown', down('sea'));
+  poll.addEventListener('pointerdown', down('poll'));
+  sea.addEventListener('pointerup', up('sea'));
+  sea.addEventListener('pointercancel', up('sea'));
+  poll.addEventListener('pointerup', up('poll'));
+  poll.addEventListener('pointercancel', up('poll'));
+})();
+</script>
+
   <!-- Time-picker preference poll removed 2026-07-25 -->
 </body>
 </html>
