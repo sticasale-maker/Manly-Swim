@@ -23632,6 +23632,9 @@ else theftLoad();
     // would otherwise navigate away the instant the picture appears.
     swallowUntil = Date.now() + 1200;
     show();
+    // Announce it: the shake-a-fish block uses this deliberate, already-hidden
+    // gesture as its iOS motion-permission unlock (see that block for why).
+    try { document.dispatchEvent(new Event('swim-secret-reveal')); } catch (e) {}
   }
   document.addEventListener('click', function (e) {
     if (Date.now() < swallowUntil) { e.preventDefault(); e.stopPropagation(); }
@@ -23677,6 +23680,228 @@ else theftLoad();
   poll.addEventListener('pointerup', up('poll'));
   poll.addEventListener('pointercancel', up('poll'));
   window.addEventListener('scroll', cancelHold, { passive: true });
+})();
+</script>
+
+
+<!-- === Shake for a groper ==================================================
+     Shake the phone and an Eastern Blue Groper swims across the screen, seen
+     from directly above as though he were on the surface of the glass. Drawn
+     inline as SVG: nothing to host, works offline, scales on any display.
+
+     iOS is the whole difficulty here. Since iOS 13, Safari fires no
+     devicemotion events at all until DeviceMotionEvent.requestPermission()
+     has been called FROM A USER GESTURE, and that call raises a system
+     dialog. Prompting every visitor for motion access - to reveal a joke they
+     don't know exists - is worse than the joke. So on iOS the fish is unlocked
+     by the OTHER easter egg: complete the 3-second hold on Sea + Pollution and
+     we ask for motion access on the back of that gesture. Anyone who has found
+     one is already in on it. Android and desktop need no permission and work
+     straight away.
+
+     Grant state is remembered through persistSet (400-day cookie mirror), so
+     the ask happens once, not every visit - see CLAUDE.md section 4: this is an
+     on-device preference, not identity.
+
+     Decoration only: it reads no conditions and states no verdict, exactly like
+     the secret photo. If it ever gains conditions-aware behaviour it becomes an
+     encouragement-shaped feature and must be suppressed when
+     _bannerFacts.safetyLevel === 'dangerous', per CLAUDE.md section 1.
+========================================================================== -->
+<style>
+  #shakeFish {
+    position: fixed; inset: 0; z-index: 9998;
+    pointer-events: none;            /* never eats a tap meant for the app */
+    overflow: hidden; display: none;
+  }
+  #shakeFish.on { display: block; }
+  .sf-swim { position: absolute; will-change: transform; }
+  .sf-bob  { animation: sfBob 1.6s ease-in-out infinite; }
+  .sf-tail { transform-origin: 68% 50%; animation: sfTail .42s ease-in-out infinite; }
+  .sf-pecT { transform-origin: 31% 32%; animation: sfPecT .58s ease-in-out infinite; }
+  .sf-pecB { transform-origin: 31% 68%; animation: sfPecB .58s ease-in-out infinite; }
+  /* Seen from above, the bob is a lateral weave across his own line of travel. */
+  @keyframes sfBob  { 0%,100% { transform: translateY(-8px) rotate(-2.5deg); } 50% { transform: translateY(8px) rotate(2.5deg); } }
+  @keyframes sfTail { 0%,100% { transform: rotate(13deg); }  50% { transform: rotate(-13deg); } }
+  @keyframes sfPecT { 0%,100% { transform: rotate(9deg); }   50% { transform: rotate(-7deg); } }
+  @keyframes sfPecB { 0%,100% { transform: rotate(-9deg); }  50% { transform: rotate(7deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    /* The crossing IS the feature, so it stays - only the fidgeting stops. */
+    .sf-bob, .sf-tail, .sf-pecT, .sf-pecB { animation: none; }
+  }
+</style>
+<div id="shakeFish" aria-hidden="true"></div>
+<script>
+(function () {
+  var host = document.getElementById('shakeFish');
+  if (!host || !window.matchMedia) return;
+
+  var _pGet = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var _pSet = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
+  var GRANT_KEY = 'swimFishMotion';
+
+  // ── the fish ──────────────────────────────────────────────────────────────
+  // Eastern Blue Groper seen from DIRECTLY ABOVE, as though he were swimming on
+  // the surface of the glass. So: symmetrical about the spine, an eye on each
+  // side of the head, pectoral fins out to both flanks, and a tail that sweeps
+  // side to side rather than up and down. The gradient runs ACROSS the body -
+  // dark along the spine, lighter at the flanks - which is what a fish actually
+  // looks like from above, and it reads as roundness.
+  function fishSVG() {
+    return '' +
+      '<svg width="190" height="76" viewBox="0 0 190 76" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+        '<defs>' +
+          '<linearGradient id="sfBody" x1="0" y1="0" x2="0" y2="1">' +
+            '<stop offset="0" stop-color="#43a2e2"/>' +
+            '<stop offset="0.5" stop-color="#11395e"/>' +
+            '<stop offset="1" stop-color="#43a2e2"/>' +
+          '</linearGradient>' +
+        '</defs>' +
+        // caudal fin, hinged at the peduncle so it sweeps side to side. Strictly
+        // a fish tail is vertical and would be a thin line from above, but that
+        // reads as nothing at all, so it is fanned - the one liberty taken here.
+        '<path class="sf-tail" d="M130 32 L174 17 Q165 38 174 59 L130 44 Z" fill="#11395e"/>' +
+        // pectoral fins, one to each flank
+        '<path class="sf-pecT" d="M58 24 Q76 10 88 14 Q78 25 64 29 Z" fill="#2e8bd6" opacity="0.9"/>' +
+        '<path class="sf-pecB" d="M58 52 Q76 66 88 62 Q78 51 64 47 Z" fill="#2e8bd6" opacity="0.9"/>' +
+        // body: blunt snout, widest a third back, long taper to the peduncle
+        '<path d="M10 38 C14 25 34 20 62 21 C92 22 118 27 130 32 L130 44 C118 49 92 54 62 55 C34 56 14 51 10 38 Z" fill="url(#sfBody)"/>' +
+        // dorsal ridge running down the spine
+        '<path d="M44 38 C62 33 96 34 122 36 C96 42 62 43 44 38 Z" fill="#0a2b47" opacity="0.8"/>' +
+        // thick lips, seen end-on
+        '<path d="M10 38 C8 33 11 29 15 30 C13 33 13 43 15 46 C11 47 8 43 10 38 Z" fill="#0a2b47"/>' +
+        // gill covers, one each side
+        '<path d="M36 22 Q31 38 36 54" stroke="#0a2b47" stroke-width="2.2" fill="none" opacity="0.45"/>' +
+        // an eye on each side of the head
+        '<circle cx="25" cy="27" r="4.4" fill="#f4f7fa"/>' +
+        '<circle cx="25" cy="27" r="2.3" fill="#10202e"/>' +
+        '<circle cx="25" cy="49" r="4.4" fill="#f4f7fa"/>' +
+        '<circle cx="25" cy="49" r="2.3" fill="#10202e"/>' +
+      '</svg>';
+  }
+
+  // ── the swim ──────────────────────────────────────────────────────────────
+  var swimming = false;
+  function swim() {
+    if (swimming) return;
+    swimming = true;
+    host.classList.add('on');
+
+    var rtl = Math.random() < 0.5;               // which way he's headed
+    var top = 18 + Math.random() * 55;           // vh, kept off the very edges
+    var secs = 5.2 + Math.random() * 2.2;
+
+    var lane = document.createElement('div');
+    lane.className = 'sf-swim';
+    lane.style.top = top + 'vh';
+    lane.style.left = '0';
+
+    var bob = document.createElement('div');
+    bob.className = 'sf-bob';
+    bob.innerHTML = fishSVG();
+    // Flip the drawing only, never the wrapper: the wrapper's transform belongs
+    // to the weave animation, which would silently drop any inline value here.
+    if (rtl) { bob.firstChild.style.transform = 'scaleX(-1)'; }
+    lane.appendChild(bob);
+    host.appendChild(lane);
+
+    var from = rtl ? '110vw' : '-170px';
+    var to   = rtl ? '-170px' : '110vw';
+    lane.style.transform = 'translateX(' + from + ')';
+
+    var anim;
+    try {
+      anim = lane.animate(
+        [{ transform: 'translateX(' + from + ')' }, { transform: 'translateX(' + to + ')' }],
+        { duration: secs * 1000, easing: 'ease-in-out', fill: 'forwards' }
+      );
+    } catch (e) { anim = null; }
+
+    function done() {
+      if (lane.parentNode) { host.removeChild(lane); }
+      if (!host.children.length) { host.classList.remove('on'); }
+      swimming = false;
+    }
+    if (anim) { anim.onfinish = done; anim.oncancel = done; }
+    // Belt and braces: WAAPI is everywhere we care about, but never leave a
+    // fish stranded mid-screen if onfinish doesn't land.
+    setTimeout(done, secs * 1000 + 900);
+  }
+
+  // ── shake detection ───────────────────────────────────────────────────────
+  // Sum of per-axis change between samples. A deliberate shake peaks well above
+  // 22; walking with the phone, or a tap, does not. Three peaks inside 1.2s
+  // keeps a single jolt (setting the phone down) from counting.
+  var THRESH = 22, NEEDED = 3, WINDOW_MS = 1200, SAMPLE_MS = 60, COOLDOWN_MS = 5000;
+  var lx = null, ly = null, lz = null, lastSample = 0, lastFire = 0, hits = [];
+
+  function onMotion(e) {
+    var a = e.accelerationIncludingGravity;
+    if (!a || a.x === null) return;
+    var now = Date.now();
+    if (now - lastSample < SAMPLE_MS) return;
+    lastSample = now;
+
+    if (lx !== null) {
+      var d = Math.abs(a.x - lx) + Math.abs(a.y - ly) + Math.abs(a.z - lz);
+      if (d > THRESH) {
+        hits.push(now);
+        while (hits.length && now - hits[0] > WINDOW_MS) { hits.shift(); }
+        if (hits.length >= NEEDED && now - lastFire > COOLDOWN_MS) {
+          lastFire = now; hits.length = 0;
+          swim();
+        }
+      }
+    }
+    lx = a.x; ly = a.y; lz = a.z;
+  }
+
+  var listening = false;
+  function listen() {
+    if (listening) return;
+    listening = true;
+    window.addEventListener('devicemotion', onMotion);
+  }
+
+  var needsPermission = (typeof DeviceMotionEvent !== 'undefined') &&
+                        (typeof DeviceMotionEvent.requestPermission === 'function');
+
+  function arm() {
+    if (listening) return;
+    if (!needsPermission) { listen(); return; }
+    try {
+      DeviceMotionEvent.requestPermission().then(function (state) {
+        if (state === 'granted') { _pSet(GRANT_KEY, '1'); listen(); }
+      })['catch'](function () { /* no user activation, or declined - stay quiet */ });
+    } catch (e) {}
+  }
+
+  if (!needsPermission) {
+    listen();                                   // Android, desktop: nothing to ask
+  } else if (_pGet(GRANT_KEY) === '1') {
+    // Already granted once. Safari still wants the call, and still wants a
+    // gesture behind it, so retry on the first touch rather than on load.
+    arm();
+    document.addEventListener('pointerdown', function once() {
+      document.removeEventListener('pointerdown', once);
+      arm();
+    });
+  }
+
+  // The 3-second Sea + Pollution hold is the iOS unlock.
+  document.addEventListener('swim-secret-reveal', arm);
+
+  // Laptops and desktops have no accelerometer, so the shake can never fire
+  // there. Alt+Shift+F sends him across anyway - it is how you preview this
+  // without a phone in your hand, and it matches the Alt convention the secret
+  // photo already uses. Harmless left in: nobody reaches it by accident, and it
+  // says nothing about conditions.
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
+      e.preventDefault();
+      swim();
+    }
+  });
 })();
 </script>
 
