@@ -5847,7 +5847,7 @@ const SITE_DEFAULTS = {
   periodExp:      1.2,    // pinned to MASTER R24 (was 1.15); tab-1 severed. sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideGain × (tideM − tideRef) × (s1_d + ww_d), signed (adds above ref, credits below)
+  tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideAmp(tideM) × (s1_d + ww_d), signed (adds above ref, credits below); see tideHighMult for the high-side tilt
   // Dispersion-table shape. TRUE = legacy 19-row mirror (fold 181–359° onto 1–179°).
   // blDispFold follows the sheet: the parser flips it to false once rows 190°–350° carry
   // values. nsDispFold is PINNED true by SS_DISP_LOCK_FOLD — Entry does not move.
@@ -5855,6 +5855,7 @@ const SITE_DEFAULTS = {
   nsDispFold:     true,
   blDispFold:     true,
   tideRef:        0.7,    // neutral tide height (m, WW datum): at or below ref the tide adds nothing; above it high water amplifies. MONOTONE — a rising tide can only ever raise demerits (11 Jul 2026, low-tide credit retired).
+  tideHighMult:   1.2,    // ASYMMETRY (28 Aug 2026, Marco): above tideRef the tide bites 20% harder than the same distance below it credits. tideGain still sets the overall scale; this tilts only the high side. 1.0 restores the symmetric behaviour.
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
   // used before the sheet loads, or when a cell is blank. On the NS path the live values
@@ -6147,11 +6148,26 @@ let SITE = {
     // moves arriving energy, so with less energy there is less to move either way.
     // No gate name → weight 1 (ungated).
     const gate = gateName ? (d => this[gateName](d)) : (() => 1);
-    const ref  = this.tideRef ?? 0.7;
     const w = (parts.s1_d || 0) * gate(parts.s1Dir || 0)
             + (parts.ww_d || 0) * gate(parts.wwDir || 0);
+    return this.tideAmp(tideM) * w;
+  },
+
+  // THE tide amplitude, signed, and the ONLY place the tide curve is defined.
+  // Score and displayed height both multiply arriving wave energy by this, so it
+  // cannot live in two places without the card and the score drifting apart —
+  // which is exactly how the 18 Jul 2026 ramp-height contradiction happened.
+  //
+  // ASYMMETRIC since 28 Aug 2026: above tideRef the slope is tideGain ×
+  // tideHighMult, below it plain tideGain. Continuous at the reference (both
+  // branches are 0 there) with a kink in the slope, and still monotone —
+  // ∂/∂tideM ≥ 0 either side — so a higher tide is never scored better than a
+  // lower one, which is the property the bidirectional tide was built on.
+  tideAmp: function (tideM) {
     if (tideM == null || isNaN(tideM)) return 0;   // no tide forecast this far out → no tide effect
-    return (this.tideGain ?? 0.35) * (tideM - ref) * w;
+    const dT = tideM - (this.tideRef ?? 0.7);
+    const g  = (this.tideGain ?? 0.35) * (dT > 0 ? (this.tideHighMult ?? 1) : 1);
+    return g * dT;
   },
   get spm() { return 81 / this.periodPower; },
   ...JSON.parse(JSON.stringify(SITE_DEFAULTS)),
@@ -6728,12 +6744,11 @@ function shelteredRampH(h) {
   const wwDir = (h.windWaveDir != null ? h.windWaveDir : h.windDir);
   const nsTx = SITE.nsDisp ? cl(nsDispLookup(h.swell1Dir, h.swell1P)) : 0.5;
   const wwTx = SITE.nsDisp ? cl(nsDispLookup(wwDir, h.windWaveP || h.swell1P)) : 0.5;
-  const ref  = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-  const dT   = (h.tideM != null ? h.tideM : ref) - ref;
-  const gain = SITE.tideGain || 0;
+  // Same tide curve as the score — see SITE.tideAmp. Never re-derive it here.
+  const amp = SITE.tideAmp ? SITE.tideAmp(h.tideM) : 0;
   const tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
-  const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + gain * dT * tg(h.swell1Dir))
-            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + gain * dT * tg(wwDir));
+  const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + amp * tg(h.swell1Dir))
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + amp * tg(wwDir));
   return Math.sqrt(Math.max(0, Hs2));
 }
 // Bower Lane / in-bay significant height. Mirrors shelteredRampH, but through the
@@ -6753,13 +6768,12 @@ function shelteredBayH(h) {
   const wwP   = h.windWaveP || 5;
   const txS   = cl(blDispLookup(h.swell1Dir, h.swell1P));
   const txW   = cl(blDispLookup(wwDir, wwP));
-  const ref   = (SITE.tideRef != null ? SITE.tideRef : 0.7);
-  const dT    = (h.tideM != null ? h.tideM : ref) - ref;
-  const gain  = SITE.tideGain || 0;
+  // Same tide curve as the score — see SITE.tideAmp. Never re-derive it here.
+  const amp   = SITE.tideAmp ? SITE.tideAmp(h.tideM) : 0;
   const tg    = function (d) { try { return SITE.bowerTideGate ? SITE.bowerTideGate(d) : 1; } catch (e) { return 1; } };
   const heave = 1 - chopSlapWeight(h.windWaveH || 0, wwP);
-  const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * txS * (1 + gain * dT * tg(h.swell1Dir))
-            + (h.windWaveH || 0) * (h.windWaveH || 0) * heave * txW * (1 + gain * dT * tg(wwDir));
+  const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * txS * (1 + amp * tg(h.swell1Dir))
+            + (h.windWaveH || 0) * (h.windWaveH || 0) * heave * txW * (1 + amp * tg(wwDir));
   return Math.sqrt(Math.max(0, Hs2));
 }
 
@@ -7224,7 +7238,8 @@ async function loadChopShelterConfig(force) {
 //   windEntry= ws_d × (1 − w) + ww_d × w         (w = wind-wave arc weight)
 //   rif_d    = 0 (refraction absorbed into the dispersion table)
 //   o        = windEntry + s1_d
-//   tide_d   = tideGain × (tideM − tideRef) × Σ(term × tideGate(termDir))   [signed]
+//   tide_d   = tideAmp(tideM) × Σ(term × tideGate(termDir))                [signed]
+//              tideAmp = tideGain × (tideM − tideRef), × tideHighMult above ref
 //   total    = o + tide_d
 // VECCHIO — Gem-Cla50-50 2-D energy table (fallback when NS feed/table unavailable):
 //   ww_d     = swellPower(wwH, wwP_real) × gemLookup(wwDir, wwP_real) × wwSens
