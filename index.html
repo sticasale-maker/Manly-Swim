@@ -23683,7 +23683,7 @@ else theftLoad();
 
 <!-- === The turtle ==========================================================
      Every so often a green turtle swims across the screen, seen from above as
-     though he were crossing the surface of the glass. First pass ten seconds
+     though he were crossing the surface of the glass. First pass five seconds
      after the page opens, then at random, never more than once a minute.
 
      THE PATH IS NOT INVENTED. The clip shows the turtle swimming on the spot
@@ -23831,12 +23831,12 @@ else theftLoad();
   }
 
   // ── when he shows up ──────────────────────────────────────────────────────
-  // A random pass, first one ten seconds after the page opens, and never more
+  // A random pass, first one five seconds after the page opens, and never more
   // often than once a minute. Shake-to-summon was the original trigger and has
   // been removed: iOS fires no motion events at all until permission is granted
   // from a user gesture, so on the phones most of these swimmers actually carry
   // it could never have worked without a prompt.
-  var FIRST_MS = 10000, FIRST_JITTER = 6000;
+  var FIRST_MS = 5000, FIRST_JITTER = 1500;
   var MIN_GAP_MS = 60000, GAP_SPREAD = 90000;   // 60-150s between passes
   var lastRun = 0;
 
@@ -23879,9 +23879,10 @@ else theftLoad();
   }
 
   if (!thinPipe()) {
-    // Warm the sprite before the first pass so it does not arrive half-loaded,
-    // but late enough that it never competes with the forecast's own fetches.
-    setTimeout(function () { try { new Image().src = SRC; } catch (e) {} }, 6000);
+    // Warm the sprite before the first pass so it does not arrive half-loaded.
+    // This has to beat FIRST_MS, so it can no longer wait for the forecast's own
+    // fetches to finish; it is one image against a five-second head start.
+    setTimeout(function () { try { new Image().src = SRC; } catch (e) {} }, 1200);
     schedule(FIRST_MS + Math.random() * FIRST_JITTER);
     // A tab left in the background must not bank up passes.
     document.addEventListener('visibilitychange', function () {
