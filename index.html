@@ -2353,19 +2353,25 @@
      mistaken for a bay measurement - see the long note on the card's IIFE for
      why the nearshore pixels are worthless and why there is no pin on the bay. */
   .chl-wrap {
-    background:rgba(255,255,255,0.55); border:1px solid rgba(74,143,173,0.22);
-    border-radius:14px; margin:10px 0 0; overflow:hidden;
+    background:var(--map-frame);
+    backdrop-filter:blur(12px);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    margin-bottom:10px;
+    overflow:hidden;
   }
   .chl-head {
-    width:100%; display:flex; align-items:center; gap:10px; text-align:left;
-    background:none; border:none; cursor:pointer;
-    padding:clamp(9px,3vw,12px) clamp(12px,4vw,16px);
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    width:100%; box-sizing:border-box;
+    background:none; border:none; cursor:pointer; text-align:left;
+    font-family:inherit; padding:13px clamp(12px,4vw,16px);
   }
   .chl-head:hover { background:rgba(74,143,173,0.05); }
   .chl-titlewrap { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; flex:1; }
   .chl-title {
-    font-family:'Bebas Neue',sans-serif; font-size:clamp(15px,4.4vw,18px);
-    letter-spacing:0.6px; color:var(--deep);
+    font-family:'Bebas Neue',sans-serif; letter-spacing:1.2px;
+    font-size:clamp(15px,4.5vw,19px); color:var(--deep); text-transform:uppercase;
+    line-height:1.15;
   }
   .chl-when { font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.4px; color:var(--dim); }
   .chl-chevron { font-size:26px; color:var(--ocean); transition:transform 0.3s ease; flex:none; line-height:1; }
@@ -2376,12 +2382,37 @@
     padding:0 clamp(12px,4vw,16px);
   }
   .chl-body.chl-open { max-height:1400px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(10px,3vw,12px); }
-  .chl-figure { display:block; border-radius:10px; overflow:hidden; background:rgba(74,143,173,0.10); }
-  .chl-figure img { display:block; width:100%; height:auto; }
+  /* A WINDOW on the scene, not the whole scene. The full SNSW map is 780x890
+     covering five degrees of latitude, which at card width put Sydney in about
+     forty pixels. This crops to the source's own x 59-449, y 178-478 - Sydney
+     centred, the coast a little left of middle, ~120km of ocean to the east -
+     and renders those 390 source pixels at 390 CSS px, so it is 1:1 with the
+     satellite grid and twice the magnification of the fit-to-width version.
+     The offsets are percentages of the BOX, so the crop holds at any card width;
+     `left` resolves against its width and `top` against its height, hence the
+     two different divisors. */
+  .chl-figure { display:block; position:relative; width:100%; aspect-ratio:390/300;
+    overflow:hidden; border-radius:10px; background:rgba(74,143,173,0.10); }
+  .chl-map { position:absolute; display:block;
+    width:200%;                       /* 780 source px across a 390px window */
+    left:-15.128%;                    /*  -59 / 390 of the box width  */
+    top:-59.333%;                     /* -178 / 300 of the box height */
+  }
+  /* The colour bar lives in the top-left of the source image, well outside the
+     window above, so it is re-shown here as a second view onto the SAME file -
+     one download, and the key cannot drift from the map it explains. */
+  .chl-key { position:absolute; left:7px; top:7px; width:17%; min-width:52px;
+    aspect-ratio:72/278; overflow:hidden; border-radius:5px;
+    box-shadow:0 0 0 2px rgba(255,255,255,0.75); }
+  .chl-key img { position:absolute; display:block;
+    width:1083.33%;                   /* 780 / 72  — source x 38-110, y 22-300 */
+    left:-52.778%;                    /* -38 / 72  */
+    top:-7.914%;                      /* -22 / 278 */
+  }
   /* Age fade. A scene is a satellite pass, not a forecast - it can be days old
      when it is cloudy, and it must LOOK its age rather than sit there bright.
      Absent is grey, never green: .is-none is the same treatment as .bbf-day-none. */
-  .chl-figure.is-stale img { filter:grayscale(0.35) opacity(0.62); }
+  .chl-figure.is-stale .chl-map { filter:grayscale(0.35) opacity(0.62); }
   .chl-msg {
     font-family:'Inter',sans-serif; font-size:11px; color:var(--dim);
     padding:14px 10px; text-align:center;
@@ -3779,7 +3810,8 @@
       <div class="chl-body" id="chlBody">
         <a class="chl-figure" id="chlFigure" href="https://oceancurrent.aodn.org.au/product.php?product=oceancolour.CHL&amp;region=SNSW"
            target="_blank" rel="noopener" title="Open the interactive map at IMOS OceanCurrent">
-          <img id="chlImg" alt="Satellite chlorophyll-a off southern New South Wales, with Sydney marked" hidden>
+          <img class="chl-map" id="chlImg" alt="Satellite chlorophyll-a off Sydney" hidden>
+          <span class="chl-key" id="chlKey" aria-hidden="true" hidden><img id="chlKeyImg" alt=""></span>
         </a>
         <div class="chl-msg" id="chlMsg">Looking for the latest satellite pass&hellip;</div>
         <div class="chl-meta">
@@ -3846,6 +3878,8 @@
   var body = document.getElementById('chlBody');
   var fig  = document.getElementById('chlFigure');
   var img  = document.getElementById('chlImg');
+  var key  = document.getElementById('chlKey');
+  var keyI = document.getElementById('chlKeyImg');
   var msg  = document.getElementById('chlMsg');
   var when = document.getElementById('chlWhen');
   var scen = document.getElementById('chlScene');
@@ -3887,8 +3921,12 @@
 
   function show(hit) {
     var days = Math.floor((Date.now() - hit.at) / 86400000);
+    // Same URL for both views, so the browser fetches once and the key can
+    // never end up explaining a different scene from the map beside it.
     img.src = hit.url;
+    keyI.src = hit.url;
     img.hidden = false;
+    key.hidden = false;
     msg.hidden = true;
 
     var dt = new Date(hit.at);
