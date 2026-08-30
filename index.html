@@ -4098,6 +4098,19 @@
       /* ── THE BOARD ─────────────────────────────────────────────────────── */
       #featureCard .bd-head{font-family:'Bebas Neue',sans-serif;font-size:30px;letter-spacing:1px;color:var(--deep);line-height:1;margin:0 0 5px;}
       #featureCard .bd-lede{color:var(--dim);font-size:14px;line-height:1.45;margin:0 0 14px;}
+      /* Folded cards: the board opened as one endless scroll because every post
+         rendered its whole reply thread. A folded card keeps its name, time and
+         two lines of the post, and drops everything below. */
+      #featureCard .bd-card--fold .bd-body{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+      #featureCard .bd-card--fold .bd-photo,
+      #featureCard .bd-card--fold .bd-foot,
+      #featureCard .bd-card--fold .bd-replies,
+      #featureCard .bd-card--fold .bd-replybtn,
+      #featureCard .bd-card--fold .bd-replybox,
+      #featureCard .bd-card--fold .bd-admin{display:none;}
+      #featureCard .bd-unfold{display:block;width:100%;margin-top:8px;padding:7px 10px;background:transparent;border:1px solid rgba(17,53,65,0.16);border-radius:8px;color:var(--dim);font-family:inherit;font-size:12.5px;cursor:pointer;text-align:center;-webkit-tap-highlight-color:transparent;}
+      #featureCard .bd-unfold:hover{background:rgba(17,53,65,0.05);}
+      #featureCard .bd-card:not(.bd-card--fold) .bd-unfold{display:none;}
       #featureCard .bd-compose{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}
       #featureCard .bd-compose[hidden]{display:none;}
       #featureCard .fr-addbtn{display:inline-flex;align-items:center;gap:7px;padding:11px 16px;background:var(--ocean);color:#fff;border:none;border-radius:10px;font-size:15px;font-family:inherit;cursor:pointer;margin-bottom:10px;-webkit-tap-highlight-color:transparent;}
@@ -16685,7 +16698,7 @@ function submitFeedback(e) {
     '</div>';
   }
 
-  function cardHTML(p, adminOn, mineCtx){
+  function cardHTML(p, adminOn, mineCtx, folded){
     var isMine = !!(mineCtx && mineCtx.ids && mineCtx.ids.indexOf(p.id) !== -1);
     var newSince = isMine ? ((mineCtx.seen && mineCtx.seen[p.id]) || 0) : null;   // null = not mine, no reply highlighting
     var nm = (p.name && String(p.name).trim()) ? esc(frMask(String(p.name).trim())) : 'Anonymous';
@@ -16734,7 +16747,15 @@ function submitFeedback(e) {
           '<button type="button" class="bd-rsend" data-rsend="' + esc(p.id) + '">Reply</button>' +
         '</div>' +
       '</div>';
-    return '<div class="bd-card' + (p.pinned ? ' bd-card--pinned' : '') + (p.hidden ? ' bd-card--hidden' : '') + '">' +
+    // The opener carries the reply count, so a folded card still says how much
+    // conversation is underneath it rather than hiding the fact there is any.
+    var nrep = (p.replies && p.replies.length) || 0;
+    var unfold = folded
+      ? '<button type="button" class="bd-unfold" data-unfold="' + esc(p.id) + '">'
+          + (nrep ? 'Open &middot; ' + nrep + (nrep === 1 ? ' reply' : ' replies') : 'Open')
+        + '</button>'
+      : '';
+    return '<div class="bd-card' + (folded ? ' bd-card--fold' : '') + (p.pinned ? ' bd-card--pinned' : '') + (p.hidden ? ' bd-card--hidden' : '') + '">' +
       '<div class="bd-meta">' + pin +
         (p.hidden ? '<span class="bd-hidden-tag">Hidden</span>' : '') +
         '<span class="bd-name">' + nm + '</span>' +
@@ -16744,7 +16765,7 @@ function submitFeedback(e) {
       '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + photo +
       '<div class="bd-foot">' + vote + '</div>' +   // post reactions sit directly under the post, above any replies
       replies + replyUI +
-      (adminOn ? adminHTML(p) : '') +
+      (adminOn ? adminHTML(p) : '') + unfold +
     '</div>';
   }
 
@@ -16882,7 +16903,15 @@ function submitFeedback(e) {
       return;
     }
     var mineCtx = { ids: myPostIds(), seen: renderSeenMap() };   // parsed once per render, not per card
-    box.innerHTML = posts.map(function(p){ return cardHTML(p, BOARD_ADMIN, mineCtx); }).join('');
+    // Only the top conversation is open. Anything with a reply this device has
+    // not seen stays open too - being told "someone replied to you" and then
+    // having to hunt for it would be a worse page, not a shorter one.
+    var openIds = {};
+    unseenReplyPosts().forEach(function(p){ openIds[p.id] = 1; });
+    box.innerHTML = posts.map(function(p, i){
+      var folded = (i > 0) && !openIds[p.id];
+      return cardHTML(p, BOARD_ADMIN, mineCtx, folded);
+    }).join('');
   }
 
   var _lastFetchAt = 0;
@@ -17079,6 +17108,12 @@ function submitFeedback(e) {
     var pill = t.closest('.fr-pill');
     if (pill){ var vid = parseInt(pill.getAttribute('data-id'), 10); if (!isNaN(vid)) doVote(vid); return; }
     // --- public reply controls (available to every visitor) ---
+    var unf = t.closest('[data-unfold]');
+    if (unf){
+      var card = unf.closest('.bd-card');
+      if (card) card.classList.remove('bd-card--fold');
+      return;
+    }
     var rtog = t.closest('[data-replytoggle]');
     if (rtog){
       var rid = rtog.getAttribute('data-replytoggle');
@@ -23992,7 +24027,10 @@ else theftLoad();
   // A pass lasts SWIM_MS (10s), so at this cadence he is on screen roughly a
   // third of the time. That is the brief, not an accident.
   var FIRST_MS = 3000, FIRST_JITTER = 600;
-  var MIN_GAP_MS = 20000, GAP_SPREAD = 20000;   // 20-40s between passes
+  // 30% of the old rate (Marco, 30 Aug): the mean gap goes 30s -> 100s, so he
+  // turns up about a third as often. A pass still lasts SWIM_MS, which now makes
+  // him visible roughly a tenth of the time rather than a third.
+  var MIN_GAP_MS = 65000, GAP_SPREAD = 70000;   // 65-135s between passes
   var lastRun = 0;
 
   function reducedMotion() {
