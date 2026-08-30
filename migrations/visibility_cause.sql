@@ -5,13 +5,13 @@
 -- second, optional question on the three poor bands (Murky / Hazy / Average):
 -- Algae, Sediment, Whale snot, Not sure.
 --
--- HOW TO RUN: paste PART 1 into the Supabase SQL editor and Run. PART 2 needs
--- one line filled in first - see the note there.
+-- HOW TO RUN: paste this ENTIRE file into the Supabase SQL editor and Run once.
+-- It is safe to re-run.
 -- ============================================================================
 
--- ── PART 1 — the column. Safe to run on its own, changes no behaviour. ───────
 begin;
 
+-- ── 1. the column ───────────────────────────────────────────────────────────
 alter table public.visibility_reports
   add column if not exists cause text;
 
@@ -28,41 +28,81 @@ alter table public.visibility_reports
 comment on column public.visibility_reports.cause is
   'Optional swimmer-reported cause of poor visibility: algae | sediment | snot | unsure. NULL = not asked or skipped. Only offered on bands 1-3.';
 
+
+-- ── 2. the two-argument RPC ─────────────────────────────────────────────────
+-- PostgREST chooses the overload by the parameter NAMES in the request body, so
+-- this does NOT disturb report_visibility(integer): a bare {p_band} - including
+-- from any client still running the old bundle - keeps resolving to it,
+-- unchanged. Do NOT give p_cause a DEFAULT: that would make {p_band} ambiguous
+-- between the two and PostgREST would refuse both.
+--
+-- The body is report_visibility(integer) verbatim - same band check, same
+-- x-forwarded-for handling, same md5(ip || '|swim-visibility') hash, still no
+-- cooldown - with the cause validated and carried into the insert. The hash
+-- expression is copied rather than rewritten so both overloads keep producing
+-- the SAME ip_hash for the same swimmer.
+--
+-- Validation RAISES rather than silently coercing, and that is safe: PostgREST
+-- returns P0001 as HTTP 400, and the app's visInsert() treats a 400 from the
+-- two-argument call as "this cause was not accepted" and immediately re-sends
+-- {p_band} on its own. A bad cause therefore costs the cause, never the report.
+create or replace function public.report_visibility(p_band integer, p_cause text)
+ returns void
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare
+  v_ip     text;
+  v_hash   text;
+  v_cause  text;
+begin
+  if p_band is null or p_band < 1 or p_band > 5 then
+    raise exception 'invalid band' using errcode = 'P0001';
+  end if;
+
+  v_cause := nullif(btrim(coalesce(p_cause, '')), '');
+
+  if v_cause is not null and v_cause not in ('algae', 'sediment', 'snot', 'unsure') then
+    raise exception 'invalid cause' using errcode = 'P0001';
+  end if;
+
+  -- The question is only asked on the three poor bands. A cause on Clear or
+  -- Epic means the client and the server disagree about something, so refuse it
+  -- rather than store a row that cannot be interpreted later.
+  if v_cause is not null and p_band > 3 then
+    raise exception 'cause only applies to bands 1-3' using errcode = 'P0001';
+  end if;
+
+  v_ip := coalesce(
+    nullif(split_part(current_setting('request.headers', true)::json ->> 'x-forwarded-for', ',', 1), ''),
+    'unknown'
+  );
+  v_hash := md5(v_ip || '|swim-visibility');
+
+  -- No cooldown: swimmers may report visibility as often as they like.
+  insert into visibility_reports (band, ip_hash, cause) values (p_band, v_hash, v_cause);
+end;
+$function$;
+
+grant execute on function public.report_visibility(integer, text) to anon;
+grant execute on function public.report_visibility(integer, text) to authenticated;
+
 commit;
 
-
--- ── PART 2 — the two-argument RPC ───────────────────────────────────────────
--- The app posts {p_band} today and {p_band, p_cause} once this exists.
--- PostgREST chooses the overload by the parameter NAMES in the body, so adding
--- a two-argument function does NOT disturb the one-argument one: old calls, and
--- any cached client still sending {p_band}, keep resolving to the existing
--- function unchanged. Do not add a DEFAULT to p_cause - that would make
--- {p_band} ambiguous between the two and PostgREST would refuse both.
+-- ── Checking it worked, without writing a row ───────────────────────────────
+-- Sending a deliberately invalid band exercises the overload and returns before
+-- the INSERT, so nothing is stored:
 --
--- WHAT IS MISSING: the body below has to match your existing
--- report_visibility(integer) exactly - the same insert, the same ip_hash
--- derivation and the same cooldown. Guessing the ip_hash expression would
--- fragment the values and quietly break whatever abuse control depends on them,
--- so it is left blank on purpose. Get the current definition with:
+--   curl -s -X POST "$URL/rest/v1/rpc/report_visibility" \
+--     -H "apikey: $ANON" -H "Authorization: Bearer $ANON" \
+--     -H "Content-Type: application/json" \
+--     -d '{"p_band":99,"p_cause":"algae"}'
 --
---     select pg_get_functiondef(p.oid)
---       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
---      where n.nspname = 'public' and p.proname = 'report_visibility';
+--   before this migration : {"code":"PGRST202", ... no matches were found ...}
+--   after  this migration : {"code":"P0001","message":"invalid band"}
 --
--- then paste it here, add p_cause to the argument list and to the INSERT, and
--- run. Until then the app degrades on its own: it tries the two-argument call,
--- gets PGRST202, and re-sends {p_band} so the band is still recorded and only
--- the cause is lost.
---
--- create or replace function public.report_visibility(p_band integer, p_cause text)
--- returns <same as the existing one>
--- language plpgsql
--- security definer
--- as $$
--- begin
---   -- <body of the existing report_visibility(integer), with cause added to the
---   --  INSERT column list and p_cause to its VALUES>
--- end;
--- $$;
---
--- grant execute on function public.report_visibility(integer, text) to anon;
+-- ── If you ever add a fifth answer ──────────────────────────────────────────
+-- Three places have to agree, or reports start bouncing back as 400s and the
+-- app quietly falls back to band-only: VIS_CAUSES in index.html, the check
+-- constraint above, and the in-function list.
