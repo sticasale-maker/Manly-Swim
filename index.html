@@ -21761,18 +21761,49 @@ function theftToggle(ev) {
 
 // Static copy — no longer fetches anything. Kept as a function because the
 // submit path and boot both call it.
+const THEFT_SUB_DEFAULT = 'Had a bag taken off the promenade? Log it here.';
+
+// TOTALS ARE BACK ON THE STRIP (Marco, 29 Aug 2026) — the scale of it is the
+// point, and a strip that says nothing reads as a form nobody uses.
+//
+// This reverses the 2026-08 decision that used to sit here, which was that Marco
+// should see the data and choose what the group is told, because a bare number
+// reads as alarming or trivial depending on the week. That reasoning still holds
+// for the REST of the summary: peak hours, day-of-week and the hotspot grid tell
+// a thief where and when, so only the two headline numbers are shown.
+//
+// NOTE: migrations/bag_theft_admin_only.sql was never actually run — the public
+// bag_theft_summary(p_days) it was meant to drop is still live and answers the
+// anon key, which is why this works at all. See the note in that file.
+async function theftSummary() {
+  try {
+    const r = await fetch(`${BB_SUPABASE_URL}/rest/v1/rpc/bag_theft_summary`, {
+      method: 'POST',
+      headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_days: 365 })
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const row = Array.isArray(j) ? j[0] : j;
+    return (row && row.reports) ? row : null;
+  } catch (e) { return null; }
+}
+
 function theftLoad() {
   const sub  = document.getElementById('theftSub');
   const body = document.getElementById('theftBody');
   if (!sub) return;
-  // NO TOTALS HERE, DELIBERATELY. The strip used to publish counts, value, peak
-  // hours and recovery rate to every swimmer. Marco reviews the data on the admin
-  // page and decides what the group is told and how — a bare number posted
-  // automatically reads as alarming or as trivial depending on the week, and
-  // either reading changes how people behave on the promenade. The aggregate RPC
-  // is admin-gated to match (migrations/bag_theft_admin_only.sql), so this isn't
-  // just hidden in the UI while the anon key could still fetch it.
-  sub.textContent = 'Had a bag taken off the promenade? Log it here.';
+  sub.textContent = THEFT_SUB_DEFAULT;
+  // Fill in behind the default, so a slow or failed call leaves the call to
+  // action rather than an empty strip or a spinner.
+  theftSummary().then(row => {
+    if (!row) return;
+    const n = row.reports | 0;
+    const v = Math.round(+row.swimmers_value || 0);
+    const bits = [n + (n === 1 ? ' report' : ' reports')];
+    if (v > 0) bits.push('$' + v.toLocaleString('en-AU') + ' total');
+    sub.textContent = bits.join(' \u00b7 ');
+  });
   if (body) {
     body.innerHTML =
       '<div style="display:flex;gap:10px;padding:10px;justify-content:center;align-items:center">'
