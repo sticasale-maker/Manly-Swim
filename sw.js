@@ -49,6 +49,12 @@ const PASSTHROUGH_HOSTS = [
   // …and the standalone Worker that re-serves one BOM tile with CORS so the
   // page can read the forecast pixel over the bay. Same reasoning: timestamped.
   'bom-tile-proxy.sticasale.workers.dev',
+  // IMOS OceanCurrent satellite imagery. Passthrough because the SW could not
+  // cache it anyway - the host sends no CORS headers, so these come back opaque
+  // - and because a chlorophyll scene is stamped with the date of its satellite
+  // pass. Same rule as the cams and the radar: never re-serve a timestamped
+  // frame from cache under a label that says how old it is.
+  'oceancurrent.aodn.org.au',
 ];
 
 // ── Install: pre-cache shell assets ──────────────────────────

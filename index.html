@@ -2347,6 +2347,57 @@
   .radar-wrap.radar-zoom .radar-body { max-height:none; flex:1; display:flex; flex-direction:column; min-height:0; }
   .radar-wrap.radar-zoom .radar-map { aspect-ratio:auto; flex:1; min-height:0; border-radius:10px; }
   .radar-wrap.radar-zoom .radar-chevron { display:none; }
+
+  /* ── Offshore chlorophyll (IMOS OceanCurrent) ──────────────────────────────
+     A CONTEXT card, not a reading. It is deliberately built so it cannot be
+     mistaken for a bay measurement - see the long note on the card's IIFE for
+     why the nearshore pixels are worthless and why there is no pin on the bay. */
+  .chl-wrap {
+    background:rgba(255,255,255,0.55); border:1px solid rgba(74,143,173,0.22);
+    border-radius:14px; margin:10px 0 0; overflow:hidden;
+  }
+  .chl-head {
+    width:100%; display:flex; align-items:center; gap:10px; text-align:left;
+    background:none; border:none; cursor:pointer;
+    padding:clamp(9px,3vw,12px) clamp(12px,4vw,16px);
+  }
+  .chl-head:hover { background:rgba(74,143,173,0.05); }
+  .chl-titlewrap { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; flex:1; }
+  .chl-title {
+    font-family:'Bebas Neue',sans-serif; font-size:clamp(15px,4.4vw,18px);
+    letter-spacing:0.6px; color:var(--deep);
+  }
+  .chl-when { font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.4px; color:var(--dim); }
+  .chl-chevron { font-size:26px; color:var(--ocean); transition:transform 0.3s ease; flex:none; line-height:1; }
+  .chl-head[aria-expanded="true"] .chl-chevron { transform:rotate(180deg); }
+  .chl-body {
+    max-height:0; opacity:0; overflow:hidden;
+    transition:max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
+    padding:0 clamp(12px,4vw,16px);
+  }
+  .chl-body.chl-open { max-height:1400px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(10px,3vw,12px); }
+  .chl-figure { display:block; border-radius:10px; overflow:hidden; background:rgba(74,143,173,0.10); }
+  .chl-figure img { display:block; width:100%; height:auto; }
+  /* Age fade. A scene is a satellite pass, not a forecast - it can be days old
+     when it is cloudy, and it must LOOK its age rather than sit there bright.
+     Absent is grey, never green: .is-none is the same treatment as .bbf-day-none. */
+  .chl-figure.is-stale img { filter:grayscale(0.35) opacity(0.62); }
+  .chl-msg {
+    font-family:'Inter',sans-serif; font-size:11px; color:var(--dim);
+    padding:14px 10px; text-align:center;
+  }
+  .chl-msg[hidden] { display:none; }
+  .chl-meta {
+    display:flex; align-items:baseline; justify-content:space-between; gap:8px;
+    font-family:'Inter',sans-serif; font-size:10.5px; color:var(--dim); margin-top:6px;
+  }
+  .chl-age { font-weight:600; }
+  .chl-age.is-old { color:var(--amber); }
+  .chl-note {
+    font-family:'Inter',sans-serif; font-size:10px; line-height:1.5; color:var(--dim);
+    margin-top:7px;
+  }
+  .chl-note b { color:var(--deep); font-weight:600; }
   .chop-graph-legend {
     display:flex; align-items:center; gap:8px; margin-top:8px;
     font-family:'Inter',sans-serif; font-size:clamp(8px,2.4vw,10px); color:var(--dim);
@@ -3713,6 +3764,154 @@
         </div>
       </div>
     </div>
+
+
+    <!-- Offshore chlorophyll-a — IMOS OceanCurrent, VIIRS. Collapsed by default;
+         nothing is fetched until it is opened. See the chlorophyll IIFE. -->
+    <div class="chl-wrap" id="chlCard">
+      <button type="button" class="chl-head" id="chlToggle" aria-expanded="false" aria-controls="chlBody">
+        <span class="chl-titlewrap">
+          <span class="chl-title">Offshore chlorophyll &middot; IMOS</span>
+          <span class="chl-when" id="chlWhen">Open-ocean water colour, not the bay &middot; tap to open</span>
+        </span>
+        <span class="chl-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="chl-body" id="chlBody">
+        <a class="chl-figure" id="chlFigure" href="https://oceancurrent.aodn.org.au/product.php?product=oceancolour.CHL&amp;region=SNSW"
+           target="_blank" rel="noopener" title="Open the interactive map at IMOS OceanCurrent">
+          <img id="chlImg" alt="Satellite chlorophyll-a off southern New South Wales, with Sydney marked" hidden>
+        </a>
+        <div class="chl-msg" id="chlMsg">Looking for the latest satellite pass&hellip;</div>
+        <div class="chl-meta">
+          <span id="chlScene">&nbsp;</span>
+          <span class="chl-age" id="chlAge">&nbsp;</span>
+        </div>
+        <div class="chl-note">
+          Phytoplankton in the <b>open ocean</b> &mdash; the East Australian Current and its
+          eddies, hundreds of kilometres wide. It is <b>not a reading for Cabbage Tree Bay</b>
+          and it does not say whether there is algae in the water you swim in.
+          Each pixel is about 775&nbsp;m, so the bay is smaller than one; and the red fringe
+          that hugs the whole coastline is sediment and seabed the algorithm cannot tell
+          from algae, not a bloom. Chlorophyll-a is phytoplankton in general, harmless and
+          harmful alike. VIIRS via IMOS OceanCurrent.
+        </div>
+      </div>
+    </div>
+
+
+
+<!-- === Offshore chlorophyll ================================================
+     A CONTEXT card. It shows what the open ocean is doing, and it is written
+     throughout so that it cannot be read as a number for the bay.
+
+     WHY NOT A BAY READING. Three separate reasons, any one of which is fatal:
+
+       1. Resolution. The product is VIIRS at roughly 775m a pixel. Cabbage Tree
+          Bay is about 400m across, so it is SMALLER THAN ONE PIXEL, and every
+          pixel that touches it also contains headland, surf zone and seabed.
+       2. The algorithm. OCI is a Case-1 open-water retrieval. In coastal water
+          suspended sediment and tannin cannot be separated from chlorophyll,
+          which is why a dark red fringe hugs the entire NSW coast, unbroken,
+          for five degrees of latitude in every single scene. That fringe is an
+          artefact. The bay sits inside it permanently.
+       3. Chlorophyll-a is not bloom level. It is phytoplankton biomass of every
+          kind; a harmless spring pulse and a harmful bloom both raise it.
+
+     So there is deliberately NO PIN on the bay. A pin would invite exactly the
+     reading the card exists to prevent - it would say "here is your water" over
+     a pixel that is mostly rock. The map already labels Sydney; that is the
+     right level of precision for what this can honestly support. CLAUDE.md
+     section 2 is the rule this is obeying.
+
+     FINDING THE NEWEST SCENE without a proxy. oceancurrent.aodn.org.au sends no
+     CORS headers, so nothing here can fetch(), read the directory listing, or
+     put the image on a canvas. But <img> loading is not CORS-gated, so the
+     newest scene is found by TRYING dated URLs newest-first and letting onload
+     decide - the first that loads is the answer, and its filename is the date.
+     That also guarantees the picture and the date label can never disagree,
+     which they could if the image came from latest.gif and the date came from
+     somewhere else.
+
+     Filenames are SNSW_chl/YYYYMMDDHH.gif in UTC, at 04Z and 05Z, one or two a
+     day. Cloud means gaps: three or four days in a month typically have none,
+     so the walk-back goes ten days before giving up.
+
+     NOTHING IS FETCHED UNTIL THE CARD IS OPENED. The image is ~240KB, which is
+     not worth spending on a card nobody has asked to see - same contract as the
+     rain radar above it.
+========================================================================== -->
+<script>
+(function () {
+  var head = document.getElementById('chlToggle');
+  var body = document.getElementById('chlBody');
+  var fig  = document.getElementById('chlFigure');
+  var img  = document.getElementById('chlImg');
+  var msg  = document.getElementById('chlMsg');
+  var when = document.getElementById('chlWhen');
+  var scen = document.getElementById('chlScene');
+  var aged = document.getElementById('chlAge');
+  if (!head || !body || !img) return;
+
+  var BASE = 'https://oceancurrent.aodn.org.au/SNSW_chl/';
+  var LOOKBACK_DAYS = 10;
+  var STALE_DAYS = 4;            // beyond this the picture is faded, not just labelled
+  var started = false;
+
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+
+  // Newest first: today 05Z, today 04Z, yesterday 05Z, ... Filenames are UTC.
+  function candidates() {
+    var out = [], now = new Date();
+    for (var d = 0; d < LOOKBACK_DAYS; d++) {
+      var t = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - d));
+      var y = t.getUTCFullYear(), m = t.getUTCMonth(), day = t.getUTCDate();
+      var stem = y + two(m + 1) + two(day);
+      out.push({ url: BASE + stem + '05.gif', at: Date.UTC(y, m, day, 5) });
+      out.push({ url: BASE + stem + '04.gif', at: Date.UTC(y, m, day, 4) });
+    }
+    return out;
+  }
+
+  function tryFrom(list, i) {
+    if (i >= list.length) return fail();
+    var probe = new Image();
+    probe.onload  = function () { show(list[i]); };
+    probe.onerror = function () { tryFrom(list, i + 1); };
+    probe.src = list[i].url;
+  }
+
+  function fail() {
+    msg.hidden = false;
+    msg.textContent = 'No recent satellite pass reached us — the sky may be clouded over, or the connection is down.';
+  }
+
+  function show(hit) {
+    var days = Math.floor((Date.now() - hit.at) / 86400000);
+    img.src = hit.url;
+    img.hidden = false;
+    msg.hidden = true;
+
+    var dt = new Date(hit.at);
+    var when_ = dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Sydney' });
+    scen.textContent = 'Satellite pass ' + when_;
+
+    var label = days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days old';
+    aged.textContent = label;
+    // A scene this old is still the newest there is, but it must not look current.
+    if (days >= STALE_DAYS) {
+      aged.classList.add('is-old');
+      fig.classList.add('is-stale');
+    }
+    when.textContent = 'Open-ocean water colour · ' + label;
+  }
+
+  head.addEventListener('click', function () {
+    var open = body.classList.toggle('chl-open');
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open && !started) { started = true; tryFrom(candidates(), 0); }
+  });
+})();
+</script>
 
     <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
     <div class="livecam-row" id="liveCamRow">
