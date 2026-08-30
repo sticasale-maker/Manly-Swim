@@ -24075,6 +24075,51 @@ else theftLoad();
     26.05,27.47,29.03,30.66,32.35,34.10,35.86,37.54,39.01,40.15,40.91,41.20
   ];
 
+  // ── the octopus ───────────────────────────────────────────────────────────
+  // The only one of the three that actually TRAVELS in its clip: it walks a
+  // straight diagonal across the frame, 22.78 degrees, deviating 12px rms over a
+  // 1158px walk. So there is nothing to integrate and nothing to infer - the
+  // sprite is de-rotated by that one measured angle, OCTOPUS_PATH is the straight
+  // line [0,0] to [1,0], and heading agrees with travel exactly rather than to
+  // within a fraction of a degree. The animal's own sway about its course is left
+  // in the frames; only the mean walk is taken out and handed to the path.
+  //
+  // IT CANNOT LOOP, so its sprite plays once per pass. Every start/period pair in
+  // the clean stretch was scored and the best seam came to 0.51 IoU - no better
+  // than two frames eight apart, against 0.84 for neighbours. An octopus does not
+  // repeat itself. Only frames 70-186 have the whole animal inside the frame
+  // (before that it is entering top-left, after that leaving bottom-right), which
+  // is 4.9s of footage spread over the 10s pass: the arms move at about half
+  // speed, which suits the animal, and there is no seam to see.
+  //
+  // THE SHADOW IS REAL AND IT IS KEPT. A chroma key could not have kept it - a
+  // shadow IS the backdrop's own hue scaled down, which is the very thing a key
+  // measures - so the matte is a difference against a reconstructed clean
+  // backdrop, separating three things instead of two: clean plate, plate scaled
+  // down (shadow), and colour that does not lie along the plate's hue at all
+  // (animal). It sits 60-90px below the body in every frame sampled, so the light
+  // is overhead, and it darkens by 10-25% at the 90th percentile against 0.4%
+  // far from the animal.
+  //
+  // It travels in this same sprite as BLACK PIXELS AT LOW ALPHA, under the
+  // animal. That is not an approximation: compositing black at alpha a over a
+  // destination leaves dest*(1-a), which is exactly what a shadow does to what is
+  // beneath it. So it needs no second element and no blend mode, and it is
+  // correct over whatever the app happens to be showing.
+  //
+  // It will only be SEEN over the light cards - the page itself is #113541 and
+  // darkening a dark thing does nothing. That is physics, not a bug, and it is
+  // the reason the octopus reads as walking on the app rather than over it.
+  //
+  // ANG IS RESTRICTED for this one animal, and only this one. The other two are
+  // dropped in at any angle out of 360; do that here and the light swings with
+  // the sprite, so the sun would be underneath the screen half the time. angBase
+  // is the rotation that puts the shadow straight down, and angSpread keeps it
+  // within 50 degrees of that - enough variety in entry and exit, with the light
+  // always plausibly above.
+  var OCTOPUS_PATH = [[0,0],[1,0]];
+  var OCTOPUS_ROT  = [0,0];
+
   var TURTLE = {
     src: 'images/turtle.webp', sw: 200, sh: 229,
     bodyFrac: 0.9578, cap: 560, path: TURTLE_PATH, rot: TURTLE_ROT
@@ -24082,6 +24127,11 @@ else theftLoad();
   var RAY = {
     src: 'images/ray.webp', sw: 242, sh: 193,
     bodyFrac: 1.0478, cap: 512, path: RAY_PATH, rot: RAY_ROT
+  };
+  var OCTOPUS = {
+    src: 'images/octopus.webp', sw: 300, sh: 177,
+    bodyFrac: 0.6386, cap: 840, path: OCTOPUS_PATH, rot: OCTOPUS_ROT,
+    angBase: 22.8, angSpread: 50            // keep the light overhead - see above
   };
 
   function rad(d) { return d * Math.PI / 180; }
@@ -24107,7 +24157,11 @@ else theftLoad();
 
     // One random angle decides everything: which side it enters, which side it
     // leaves, and how the sprite is turned so the body still faces the way it goes.
-    var ang = Math.random() * 360;
+    // An animal that carries its own shadow gets a restricted arc instead, so the
+    // light cannot end up coming from under the screen.
+    var ang = c.angSpread == null
+      ? Math.random() * 360
+      : c.angBase + (Math.random() * 2 - 1) * c.angSpread;
     var ca = Math.cos(rad(ang)), sa = Math.sin(rad(ang));
 
     // Long enough that both ends of the chord sit outside the screen.
@@ -24171,25 +24225,37 @@ else theftLoad();
   // all until permission is granted from a user gesture, so on the phones most of
   // these swimmers actually carry it could never have worked without a prompt.
   //
-  // THE RATE IS SET ON THE PAIR, NOT ON EACH. Marco, 30 Aug 2026: one animal a
-  // minute in total, shared between the two. So there is one scheduler, not two,
-  // it fires every 40-80s for a mean gap of 60s, and a fair coin decides which
-  // animal turns up - half a pass each per minute. Adding a third animal means
-  // re-cutting these shares, not adding a third timer.
+  // THE RATE IS SET ON THE CAST, NOT ON EACH ANIMAL. Marco, 30 Aug 2026: one
+  // animal a minute in total, shared between them. So there is one scheduler, not
+  // one per animal, it fires every 40-80s for a mean gap of 60s, and CAST is
+  // drawn from evenly - a third of a pass each per minute, so any given animal
+  // turns up about every three minutes. Adding a fourth re-cuts the same minute
+  // four ways; it does not add a fourth timer.
   //
   // For scale: the turtle alone originally came every 20-40s, a mean gap of 30s.
   // One a minute is exactly half that, which is also the ceiling Marco set for
-  // the pair earlier the same day.
+  // the cast earlier the same day.
   //
   // A pass lasts SWIM_MS (10s), so at this cadence something is on screen a sixth
-  // of the time, each animal a twelfth.
+  // of the time, each animal a eighteenth.
+  var CAST = [TURTLE, RAY, OCTOPUS];
   var FIRST_MS = 3000, FIRST_JITTER = 600;
   var MIN_GAP_MS = 40000, GAP_SPREAD = 40000;   // 40-80s between passes
-  var TURTLE_SHARE = 0.5;
   var lastRun = 0;
-  var pending = null;          // the animal whose sprite has already been warmed
+  var pending = null;          // the animal drawn for the NEXT pass, sprite warmed
 
-  function pick() { return Math.random() < TURTLE_SHARE ? TURTLE : RAY; }
+  function pick() { return CAST[Math.floor(Math.random() * CAST.length)]; }
+
+  // Draw the next animal as soon as the last one has gone, and put its sprite on
+  // the wire then. The three together are well over a megabyte and preloading all
+  // of them would spend that on two animals that may not be along for minutes; at
+  // one draw per pass there is still 40s of warning, nothing is fetched until it
+  // is actually coming, and a cold cache costs one sprite rather than three.
+  function drawNext() {
+    pending = pick();
+    var src = pending.src;
+    setTimeout(function () { try { new Image().src = src; } catch (e) {} }, 400);
+  }
 
   function reducedMotion() {
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
@@ -24219,7 +24285,7 @@ else theftLoad();
     if (!blocked() && now - lastRun >= MIN_GAP_MS) {
       lastRun = now;
       swim(pending || pick());
-      pending = null;
+      drawNext();
     }
     schedule(MIN_GAP_MS + Math.random() * GAP_SPREAD);
   }
@@ -24231,16 +24297,13 @@ else theftLoad();
   }
 
   if (!thinPipe()) {
-    // Warm the sprites before they are needed. The two together are over a
-    // megabyte, so they are not fetched together: the one that will make the
-    // first pass goes on the wire almost immediately, because it has three
-    // seconds to arrive and on a cold cache it will otherwise turn up late. The
-    // other cannot be needed for at least MIN_GAP_MS, so it waits until the app's
-    // own fetches are long finished.
-    var warm = pick(), other = warm === TURTLE ? RAY : TURTLE;
-    pending = warm;
-    setTimeout(function () { try { new Image().src = warm.src; } catch (e) {} }, 250);
-    setTimeout(function () { try { new Image().src = other.src; } catch (e) {} }, 25000);
+    // The first animal is drawn and warmed straight away rather than at
+    // drawNext's polite 400ms: it has only three seconds to arrive, and on a cold
+    // cache it will otherwise turn up half-loaded. Every pass after this one is
+    // warmed by drawNext, which has the whole gap to work in.
+    pending = pick();
+    var first = pending.src;
+    setTimeout(function () { try { new Image().src = first; } catch (e) {} }, 250);
     // THREE SECONDS FROM PAGE OPEN, not from whenever this script happened to
     // run. On a real connection the app's own scripts push this block a second
     // or two past navigation, which showed up live as a 7.3s first pass when the
@@ -24256,12 +24319,13 @@ else theftLoad();
     });
   }
 
-  // Alt+Shift+F sends the turtle across on demand and Alt+Shift+R the ray, for
-  // previewing on a laptop. They ignore the spacing rule.
+  // Alt+Shift+F sends the turtle across on demand, R the ray and O the octopus,
+  // for previewing on a laptop. They ignore the spacing rule.
   document.addEventListener('keydown', function (e) {
     if (!e.altKey || !e.shiftKey) return;
     if (e.key === 'F' || e.key === 'f') { e.preventDefault(); swim(TURTLE); }
     if (e.key === 'R' || e.key === 'r') { e.preventDefault(); swim(RAY); }
+    if (e.key === 'O' || e.key === 'o') { e.preventDefault(); swim(OCTOPUS); }
   });
 })();
 </script>
