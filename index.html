@@ -1680,6 +1680,11 @@
   .vis-axis span { font-size: 8.5px; color: var(--dim); text-align: center; letter-spacing: 0.2px; }
   .vis-axis span.pk { color: var(--text); font-weight: 700; }
   .vis-total { font-size: 10px; color: var(--dim); text-align: right; margin-top: 9px; padding-top: 6px; border-top: 1px solid rgba(17,53,65,0.10); letter-spacing: 0.3px; }
+  /* What swimmers said the murk was. Absent entirely when nobody has said. */
+  .vis-cause-line { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; margin-top: 8px; }
+  .vis-cause-line .lbl { font-size: 9.5px; color: var(--dim); letter-spacing: 0.5px; text-transform: uppercase; }
+  .vis-cause-tag { font-size: 10px; color: var(--text); background: rgba(17,53,65,0.07); border: 1px solid rgba(17,53,65,0.14); border-radius: 999px; padding: 2px 8px; letter-spacing: 0.2px; }
+  .vis-cause-tag b { font-weight: 700; }
   /* report gauge (in the sheet) */
   .vis-segs { display: grid; grid-template-columns: repeat(5,1fr); gap: 5px; }
   .vis-seg { border-radius: 9px; padding: 9px 2px 7px; text-align: center; cursor: pointer; border: 2px solid var(--bc, var(--dim)); background: #fff; box-shadow: 0 1px 3px rgba(9,26,33,0.14); transition: transform 0.08s, border-color 0.1s, background 0.1s; }
@@ -13578,6 +13583,7 @@ const VIS_COOLDOWN  = 0;   // no limit — visibility can be reported as often a
 const VIS_CACHE_TTL = 5 * 60 * 1000;
 
 let _visCache = null, _visCacheAt = 0, _visPick = 0, _visCause = '';
+let _visCauseCounts = null;   // [{cause, n}] over the same window as the bands
 
 function visGetLastMine() { try { const v = localStorage.getItem('swim_vis_last_mine'); return v ? parseInt(v, 10) : 0; } catch(e) { return 0; } }
 function visSetLastMine() { try { localStorage.setItem('swim_vis_last_mine', Date.now().toString()); } catch(e) {} }
@@ -13601,6 +13607,23 @@ async function visFetch() {
   if (!res.ok) throw new Error(`visibility fetch ${res.status}`);
   return await res.json(); // [{band, n}]
 }
+
+// Reported causes over the SAME window as the bands. Its own RPC rather than a
+// raw table read: visibility_reports also carries ip_hash, and the app has never
+// needed to read that table directly. A missing function is not an error worth
+// surfacing - the line simply does not appear.
+async function visFetchCauses() {
+  try {
+    const res = await fetch(`${BB_SUPABASE_URL}/rest/v1/rpc/visibility_causes`, {
+      method: 'POST',
+      headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_hours: VIS_WINDOW_H })
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return Array.isArray(j) ? j : null;
+  } catch (e) { return null; }
+}
 async function visInsert(band, cause) {
   const post = (body) => fetch(`${BB_SUPABASE_URL}/rest/v1/rpc/report_visibility`, {
     method: 'POST',
@@ -13618,6 +13641,23 @@ async function visInsert(band, cause) {
   }
   const plain = await post({ p_band: band });
   if (!plain.ok) throw new Error(`visibility rpc ${plain.status}`);
+}
+
+// Counts, not the recency weighting the bands use: "two people said algae" is
+// a plainer claim than a weighted score, and mixing the two in one panel would
+// invite reading the tags as a share of the bars, which they are not.
+function visCauseLineHTML() {
+  const rows = (_visCauseCounts || []).filter(r => r && r.n > 0);
+  if (!rows.length) return '';
+  const order = VIS_CAUSES.map(c => c.k);
+  rows.sort((a, b) => (b.n - a.n) || (order.indexOf(a.cause) - order.indexOf(b.cause)));
+  const tags = rows.map(r => {
+    const known = VIS_CAUSES.find(c => c.k === r.cause);
+    if (!known) return '';               // a cause this build does not know about
+    return `<span class="vis-cause-tag">${known.w} <b>${r.n}</b></span>`;
+  }).join('');
+  if (!tags) return '';
+  return `<div class="vis-cause-line"><span class="lbl">Swimmers said</span>${tags}</div>`;
 }
 
 function visRenderFromData(rows) {
@@ -13660,7 +13700,8 @@ function visRenderFromData(rows) {
       body.innerHTML =
         `<div class="vis-bars">${bars}</div>
          <div class="vis-axis">${axis}</div>
-         <div class="vis-total">Based on ${total} report${total !== 1 ? 's' : ''} · freshest ${fresh}</div>`;
+         <div class="vis-total">Based on ${total} report${total !== 1 ? 's' : ''} · freshest ${fresh}</div>`
+        + visCauseLineHTML();
     }
   }
 
@@ -13673,8 +13714,8 @@ async function visLoad() {
   try {
     const now = Date.now();
     if (_visCache && now - _visCacheAt < VIS_CACHE_TTL) { visRenderFromData(_visCache); return; }
-    const rows = await visFetch();
-    _visCache = rows; _visCacheAt = now;
+    const [rows, causes] = await Promise.all([visFetch(), visFetchCauses()]);
+    _visCache = rows; _visCacheAt = now; _visCauseCounts = causes;
     visRenderFromData(rows);
   } catch(e) { /* leave last state */ }
 }
