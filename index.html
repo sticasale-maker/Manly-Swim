@@ -23920,6 +23920,16 @@ else theftLoad();
      not assumed - travel is differentiated out of the interpolated keyframes and
      compared against the orientation actually on screen.
 
+     An octopus was built as a third and removed the same day, 30 Aug 2026:
+     Marco's call, its walk did not read as real. The footage is the reason and
+     it is not fixable by tuning - only 4.9s of it holds the whole animal inside
+     the frame, and no seamless loop exists in that (the best seam scores 0.51
+     IoU against 0.84 for adjacent frames), so the sprite has to play once per
+     pass and the arms can never be paced against the ground speed. The keying
+     work is worth keeping if a better clip ever turns up: it recovered the cast
+     shadow as well as the animal, which a chroma key cannot do. See commit
+     b5935d2 and the two after it.
+
      Decoration: they read no conditions and state no verdict, and they swim on
      every kind of day. The turtle was briefly gated off Dangerous days on the
      reasoning that an unbidden animation could read as levity there; Marco's
@@ -23942,8 +23952,6 @@ else theftLoad();
   var host = document.getElementById('shakeFish');
   if (!host) return;
 
-  // How long a pass lasts. An animal may override it with `ms` when its sprite
-  // has to play once through at its own speed - see the octopus.
   var SWIM_MS = 10000;
 
   // ── the turtle ────────────────────────────────────────────────────────────
@@ -24077,68 +24085,6 @@ else theftLoad();
     26.05,27.47,29.03,30.66,32.35,34.10,35.86,37.54,39.01,40.15,40.91,41.20
   ];
 
-  // ── the octopus ───────────────────────────────────────────────────────────
-  // The only one of the three that actually TRAVELS in its clip: it walks a
-  // straight diagonal across the frame, 22.78 degrees, deviating 12px rms over a
-  // 1158px walk. So there is nothing to integrate and nothing to infer - the
-  // sprite is de-rotated by that one measured angle, OCTOPUS_PATH is the straight
-  // line [0,0] to [1,0], and heading agrees with travel exactly rather than to
-  // within a fraction of a degree. The animal's own sway about its course is left
-  // in the frames; only the mean walk is taken out and handed to the path.
-  //
-  // IT CANNOT LOOP, so its sprite plays once per pass. Every start/period pair in
-  // the clean stretch was scored and the best seam came to 0.51 IoU - no better
-  // than two frames eight apart, against 0.84 for neighbours. An octopus does not
-  // repeat itself. Only frames 70-186 have the whole animal inside the frame
-  // (before that it is entering top-left, after that leaving bottom-right), which
-  // is 117 frames of 24fps footage: 4914ms, and THAT is the octopus's pass, not
-  // SWIM_MS. It was first shipped stretched over the full 10s, which put the arms
-  // at half speed; Marco's call, 30 Aug 2026, was true speed and a short pass.
-  //
-  // Worth knowing before anyone changes it back: the two are the same trade. The
-  // path is the same length either way, so halving the pass doubles ground speed
-  // exactly as it doubles arm speed, and arm-strokes-per-screen-width is
-  // identical. The choice is a quick scuttle against a slow amble, not one of
-  // them sliding more than the other.
-  //
-  // THE SHADOW IS REAL AND IT IS KEPT. A chroma key could not have kept it - a
-  // shadow IS the backdrop's own hue scaled down, which is the very thing a key
-  // measures - so the matte is a difference against a reconstructed clean
-  // backdrop, separating three things instead of two: clean plate, plate scaled
-  // down (shadow), and colour that does not lie along the plate's hue at all
-  // (animal). It sits 60-90px below the body in every frame sampled, so the light
-  // is overhead, and it darkens by 10-25% at the 90th percentile against 0.4%
-  // far from the animal.
-  //
-  // It travels in this same sprite as BLACK PIXELS AT LOW ALPHA, under the
-  // animal. That is not an approximation: compositing black at alpha a over a
-  // destination leaves dest*(1-a), which is exactly what a shadow does to what is
-  // beneath it. So it needs no second element and no blend mode, and it is
-  // correct over whatever the app happens to be showing.
-  //
-  // It will only be SEEN over the light cards - the page itself is #113541 and
-  // darkening a dark thing does nothing. That is physics, not a bug, and it is
-  // the reason the octopus reads as walking on the app rather than over it.
-  //
-  // SIZE. It was first sized to the turtle's own footprint, 417px across at a
-  // 1280px viewport, and read too big; Marco's call, 30 Aug 2026. It is now sized
-  // to the RAY's 340px instead - the smallest of the other two - which is an 18%
-  // reduction. Worth knowing why caliper and not ink: a sprawling eight-armed
-  // animal reads by its REACH, and by ink the octopus was already the lightest of
-  // the three even while matching the turtle's span (27k px2 against the ray's
-  // 35k and the turtle's 53k). Sizing it by ink would have made it larger, not
-  // smaller. The shadow is excluded from the measure - it is not the animal - so
-  // the octopus's total mark on screen still reaches a little past the other two.
-  //
-  // ANG IS RESTRICTED for this one animal, and only this one. The other two are
-  // dropped in at any angle out of 360; do that here and the light swings with
-  // the sprite, so the sun would be underneath the screen half the time. angBase
-  // is the rotation that puts the shadow straight down, and angSpread keeps it
-  // within 50 degrees of that - enough variety in entry and exit, with the light
-  // always plausibly above.
-  var OCTOPUS_PATH = [[0,0],[1,0]];
-  var OCTOPUS_ROT  = [0,0];
-
   var TURTLE = {
     src: 'images/turtle.webp', sw: 200, sh: 229,
     bodyFrac: 0.9578, cap: 560, path: TURTLE_PATH, rot: TURTLE_ROT
@@ -24146,12 +24092,6 @@ else theftLoad();
   var RAY = {
     src: 'images/ray.webp', sw: 242, sh: 193,
     bodyFrac: 1.0478, cap: 512, path: RAY_PATH, rot: RAY_ROT
-  };
-  var OCTOPUS = {
-    src: 'images/octopus.webp', sw: 300, sh: 177,
-    bodyFrac: 0.7835, cap: 685, path: OCTOPUS_PATH, rot: OCTOPUS_ROT,
-    ms: 4914,                               // 117 frames x 42ms - its own clip, once
-    angBase: 22.8, angSpread: 50            // keep the light overhead - see above
   };
 
   function rad(d) { return d * Math.PI / 180; }
@@ -24164,7 +24104,6 @@ else theftLoad();
     swimming = true;
     host.classList.add('on');
 
-    var ms = c.ms || SWIM_MS;
     var vw = window.innerWidth, vh = window.innerHeight;
     var wide = Math.min(vw / 3 / c.bodyFrac, c.cap);   // cap: desktops only
     var w = Math.round(wide), h = Math.round(wide * c.sh / c.sw);
@@ -24178,11 +24117,7 @@ else theftLoad();
 
     // One random angle decides everything: which side it enters, which side it
     // leaves, and how the sprite is turned so the body still faces the way it goes.
-    // An animal that carries its own shadow gets a restricted arc instead, so the
-    // light cannot end up coming from under the screen.
-    var ang = c.angSpread == null
-      ? Math.random() * 360
-      : c.angBase + (Math.random() * 2 - 1) * c.angSpread;
+    var ang = Math.random() * 360;
     var ca = Math.cos(rad(ang)), sa = Math.sin(rad(ang));
 
     // Long enough that both ends of the chord sit outside the screen.
@@ -24225,11 +24160,11 @@ else theftLoad();
       host.appendChild(img);
       var anim = null;
       try {
-        anim = img.animate(keys, { duration: ms, easing: 'linear', fill: 'forwards' });
+        anim = img.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
       } catch (e) { anim = null; }
       if (anim) { anim.onfinish = done; anim.oncancel = done; }
       // Belt and braces: never leave an animal stranded mid-screen.
-      setTimeout(done, ms + 900);
+      setTimeout(done, SWIM_MS + 900);
     }
 
     img.onload = start;
@@ -24249,18 +24184,17 @@ else theftLoad();
   // THE RATE IS SET ON THE CAST, NOT ON EACH ANIMAL. Marco, 30 Aug 2026: one
   // animal a minute in total, shared between them. So there is one scheduler, not
   // one per animal, it fires every 40-80s for a mean gap of 60s, and CAST is
-  // drawn from evenly - a third of a pass each per minute, so any given animal
-  // turns up about every three minutes. Adding a fourth re-cuts the same minute
-  // four ways; it does not add a fourth timer.
+  // drawn from evenly - half a pass each per minute, so either animal turns up
+  // about every two minutes. Adding a third re-cuts the same minute three ways;
+  // it does not add a third timer.
   //
   // For scale: the turtle alone originally came every 20-40s, a mean gap of 30s.
   // One a minute is exactly half that, which is also the ceiling Marco set for
   // the cast earlier the same day.
   //
-  // A pass lasts SWIM_MS (10s), or whatever the animal sets for itself - the
-  // octopus takes 4.9s. So at this cadence something is on screen about an
-  // eighth of the time.
-  var CAST = [TURTLE, RAY, OCTOPUS];
+  // A pass lasts SWIM_MS (10s), so at this cadence something is on screen a sixth
+  // of the time, each animal a twelfth.
+  var CAST = [TURTLE, RAY];
   var FIRST_MS = 3000, FIRST_JITTER = 600;
   var MIN_GAP_MS = 40000, GAP_SPREAD = 40000;   // 40-80s between passes
   var lastRun = 0;
@@ -24341,13 +24275,12 @@ else theftLoad();
     });
   }
 
-  // Alt+Shift+F sends the turtle across on demand, R the ray and O the octopus,
-  // for previewing on a laptop. They ignore the spacing rule.
+  // Alt+Shift+F sends the turtle across on demand and Alt+Shift+R the ray, for
+  // previewing on a laptop. They ignore the spacing rule.
   document.addEventListener('keydown', function (e) {
     if (!e.altKey || !e.shiftKey) return;
     if (e.key === 'F' || e.key === 'f') { e.preventDefault(); swim(TURTLE); }
     if (e.key === 'R' || e.key === 'r') { e.preventDefault(); swim(RAY); }
-    if (e.key === 'O' || e.key === 'o') { e.preventDefault(); swim(OCTOPUS); }
   });
 })();
 </script>
