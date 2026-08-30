@@ -23942,6 +23942,8 @@ else theftLoad();
   var host = document.getElementById('shakeFish');
   if (!host) return;
 
+  // How long a pass lasts. An animal may override it with `ms` when its sprite
+  // has to play once through at its own speed - see the octopus.
   var SWIM_MS = 10000;
 
   // ── the turtle ────────────────────────────────────────────────────────────
@@ -24089,8 +24091,15 @@ else theftLoad();
   // than two frames eight apart, against 0.84 for neighbours. An octopus does not
   // repeat itself. Only frames 70-186 have the whole animal inside the frame
   // (before that it is entering top-left, after that leaving bottom-right), which
-  // is 4.9s of footage spread over the 10s pass: the arms move at about half
-  // speed, which suits the animal, and there is no seam to see.
+  // is 117 frames of 24fps footage: 4914ms, and THAT is the octopus's pass, not
+  // SWIM_MS. It was first shipped stretched over the full 10s, which put the arms
+  // at half speed; Marco's call, 30 Aug 2026, was true speed and a short pass.
+  //
+  // Worth knowing before anyone changes it back: the two are the same trade. The
+  // path is the same length either way, so halving the pass doubles ground speed
+  // exactly as it doubles arm speed, and arm-strokes-per-screen-width is
+  // identical. The choice is a quick scuttle against a slow amble, not one of
+  // them sliding more than the other.
   //
   // THE SHADOW IS REAL AND IT IS KEPT. A chroma key could not have kept it - a
   // shadow IS the backdrop's own hue scaled down, which is the very thing a key
@@ -24131,6 +24140,7 @@ else theftLoad();
   var OCTOPUS = {
     src: 'images/octopus.webp', sw: 300, sh: 177,
     bodyFrac: 0.6386, cap: 840, path: OCTOPUS_PATH, rot: OCTOPUS_ROT,
+    ms: 4914,                               // 117 frames x 42ms - its own clip, once
     angBase: 22.8, angSpread: 50            // keep the light overhead - see above
   };
 
@@ -24144,6 +24154,7 @@ else theftLoad();
     swimming = true;
     host.classList.add('on');
 
+    var ms = c.ms || SWIM_MS;
     var vw = window.innerWidth, vh = window.innerHeight;
     var wide = Math.min(vw / 3 / c.bodyFrac, c.cap);   // cap: desktops only
     var w = Math.round(wide), h = Math.round(wide * c.sh / c.sw);
@@ -24204,11 +24215,11 @@ else theftLoad();
       host.appendChild(img);
       var anim = null;
       try {
-        anim = img.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
+        anim = img.animate(keys, { duration: ms, easing: 'linear', fill: 'forwards' });
       } catch (e) { anim = null; }
       if (anim) { anim.onfinish = done; anim.oncancel = done; }
       // Belt and braces: never leave an animal stranded mid-screen.
-      setTimeout(done, SWIM_MS + 900);
+      setTimeout(done, ms + 900);
     }
 
     img.onload = start;
@@ -24236,8 +24247,9 @@ else theftLoad();
   // One a minute is exactly half that, which is also the ceiling Marco set for
   // the cast earlier the same day.
   //
-  // A pass lasts SWIM_MS (10s), so at this cadence something is on screen a sixth
-  // of the time, each animal a eighteenth.
+  // A pass lasts SWIM_MS (10s), or whatever the animal sets for itself - the
+  // octopus takes 4.9s. So at this cadence something is on screen about an
+  // eighth of the time.
   var CAST = [TURTLE, RAY, OCTOPUS];
   var FIRST_MS = 3000, FIRST_JITTER = 600;
   var MIN_GAP_MS = 40000, GAP_SPREAD = 40000;   // 40-80s between passes
