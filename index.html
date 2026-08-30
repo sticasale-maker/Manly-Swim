@@ -24237,7 +24237,10 @@ else theftLoad();
      Whichever way, the invariant is the same and it is the one that matters: at
      every instant the animal points the way it is going. It is checked as such,
      not assumed - travel is differentiated out of the interpolated keyframes and
-     compared against the orientation actually on screen.
+     compared against the orientation actually on screen. Differentiate the
+     ANIMAL'S OWN PIVOT, though, not the sprite box: for a year the check was run
+     on the box, which is the same thing only when the animal is centred in it,
+     and the ray is not. See the pivot note above swim().
 
      An octopus was built as a third and removed the same day, 30 Aug 2026:
      Marco's call, its walk did not read as real. The footage is the reason and
@@ -24436,16 +24439,70 @@ else theftLoad();
     30.17,30.03,29.96,29.97,30.06,30.21,30.42,30.70,31.05,31.46,31.92,32.18
   ];
 
+  // PIVOT is where the animal actually is inside its own sprite box, as a
+  // fraction of the box. It is BOTH the point put on the path and the point
+  // rotated about, and those two must be the same point or the animal crabs -
+  // see the note above swim().
+  //
+  // Measured off the alpha channel of all 120 frames of each sprite: erode the
+  // mask until the thin parts (whip tail, flippers) are gone, keep the largest
+  // surviving blob, dilate it back inside the mask, take its centroid. The
+  // turtle's lands on his box centre - (100.6, 115.4) of 200x229 - so 0.5/0.5
+  // is his real pivot, not a default. The ray's does not: (166.1, 97.0) of
+  // 242x193 is 45px right of centre, 19% of the sprite width. Both are stable
+  // across the clip; the ray's disc centroid wanders 1.0px in x and 1.5px in y
+  // over all 120 frames, which is why one fixed pivot is enough.
   var TURTLE = {
     src: 'images/turtle.webp', sw: 200, sh: 229,
-    bodyFrac: 0.9578, cap: 560, path: TURTLE_PATH, rot: TURTLE_ROT
+    bodyFrac: 0.9578, cap: 560, pivot: [0.5, 0.5], path: TURTLE_PATH, rot: TURTLE_ROT
   };
   var RAY = {
     src: 'images/ray.webp', sw: 242, sh: 193,
-    bodyFrac: 1.0478, cap: 512, path: RAY_PATH, rot: RAY_ROT
+    bodyFrac: 1.0478, cap: 512, pivot: [0.6864, 0.5027], path: RAY_PATH, rot: RAY_ROT
   };
 
   function rad(d) { return d * Math.PI / 180; }
+
+  // POINTING THE RIGHT WAY IS NOT THE SAME AS GOING THE RIGHT WAY, and the ray
+  // spent its whole life so far proving it. Every check in this block compared
+  // the sprite's ANGLE against the path's tangent, and the ray passed them all
+  // while visibly sliding sideways through its bank.
+  //
+  // The angle was never the problem. The rotation centre was. transform-origin
+  // defaults to the middle of the image box, and the ray is not in the middle of
+  // its image box - its disc sits 45px right of centre in a 242px sprite, 19% of
+  // the width, because of how the clip was cropped. So the box centre rode the
+  // path and the animal hung off it on a 19% arm. Differentiate that: the body's
+  // velocity is the path's velocity PLUS the arm times the turn rate, and that
+  // second term points across the heading, not along it. The faster it turns the
+  // harder it crabs, which is why it looked worst exactly in the bank and fine on
+  // the straights.
+  //
+  // Measured through the real CSS box - margins, transform-origin and all - by
+  // walking the animal's own disc pixel along the keyframes:
+  //
+  //                      worst crab   mean crab
+  //   phone,   119px        7.97deg     1.96deg
+  //   laptop,  407px       13.14deg     3.26deg
+  //   desktop, 512px       11.94deg     2.95deg
+  //   any size, pivot fixed 0.14deg     0.04deg
+  //
+  // It scaled with the sprite because the arm is a fraction of the sprite, which
+  // is the signature of this bug and not of a bad angle. The worst of it is the
+  // same order as the 15.7 degrees that got the baked sprite thrown out, and it
+  // outlived that decision because both were only ever measured in angle. Note
+  // these are already the softened path's numbers; against the pre-smoothing turn
+  // rate the same arm was giving about three times as much.
+  //
+  // Moving the pivot onto the disc takes the arm to zero, and with it the whole
+  // term - the residual 0.14 is the path's own chord-versus-lerp error, and it no
+  // longer varies with screen size because the animal is now exactly on the path
+  // rather than swinging around it. The turtle never showed any of this: his body
+  // IS centred in his box, to within a pixel, so his arm was already zero.
+  //
+  // The lesson for anything added here later: an animal is placed by TWO numbers,
+  // where its pivot goes and which way it faces, and this block used to only ever
+  // check the second.
 
   // One at a time. Two animals crossing together would read as an aquarium, and
   // it would also break the rate ceiling below, which counts passes not animals.
@@ -24463,8 +24520,15 @@ else theftLoad();
     img.alt = '';
     img.width = w; img.height = h;
     img.style.width = w + 'px';
-    img.style.marginLeft = (-w / 2) + 'px';            // transform positions the CENTRE
-    img.style.marginTop = (-h / 2) + 'px';
+    // Put the ANIMAL on the path, and spin about the ANIMAL. The margins pull
+    // the sprite back so its pivot sits on the translate point; transform-origin
+    // moves the rotation centre to the same place. Both, or neither - they are
+    // two halves of one statement, and setting only one of them displaces the
+    // animal by the pivot offset instead of fixing anything.
+    var pvx = c.pivot ? c.pivot[0] : 0.5, pvy = c.pivot ? c.pivot[1] : 0.5;
+    img.style.marginLeft = (-w * pvx) + 'px';
+    img.style.marginTop = (-h * pvy) + 'px';
+    img.style.transformOrigin = (pvx * 100).toFixed(2) + '% ' + (pvy * 100).toFixed(2) + '%';
 
     // One random angle decides everything: which side it enters, which side it
     // leaves, and how the sprite is turned so the body still faces the way it goes.
