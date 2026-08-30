@@ -3748,6 +3748,159 @@
       </div>
     </div>
 
+    <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
+    <div class="livecam-row" id="liveCamRow">
+      <a class="livecam" href="https://manlylsc.com/surfline-camera/" target="_blank" rel="noopener">
+        <img id="camSouthSteyne" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlysouthsteyne/latest_small.jpg" alt="Live cam — Manly South Steyne" loading="lazy">
+        <span class="livecam-cap">South Steyne <span class="livecam-live">● LIVE</span></span>
+      </a>
+      <a class="livecam" href="https://manlypacific.com.au/live-webcam/" target="_blank" rel="noopener">
+        <img id="camBeachOverview" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlybeachoverview/latest_small.jpg" alt="Live cam — Manly Beach overview" loading="lazy">
+        <span class="livecam-cap">Beach overview <span class="livecam-live">● LIVE</span></span>
+      </a>
+    </div>
+    <script>
+    // Live-cam stills: load fresh (cache-bust) and refresh every 90s while visible.
+    (function () {
+      var imgs = document.querySelectorAll('#liveCamRow img[data-cam]');
+      function refresh() {
+        if (document.hidden) return;
+        for (var i = 0; i < imgs.length; i++) {
+          imgs[i].src = imgs[i].dataset.cam + '?t=' + Date.now();
+        }
+      }
+      refresh();
+      setInterval(refresh, 90000);
+      document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+    })();
+    </script>
+
+    <!-- ── Community section ("Swimmers' Corner") — reports & hellos from swimmers ── -->
+    <div class="community-group">
+      <div class="cg-head"><span class="cg-ic">👥</span><span class="cg-title">SWIMMERS&rsquo; CORNER</span><span class="cg-rule"></span></div>
+
+    <!-- Underwater visibility strip — swimmer reports (Supabase), last 28h -->
+    <div id="visSection">
+      <div class="sight-strip community" id="visStrip">
+        <div class="sight-head" onclick="visToggle(event)">
+          <div class="bb-icon">👁️</div>
+          <div class="bb-body">
+            <div class="bb-status" id="visTitle">Loading visibility…</div>
+            <div class="bb-sub" id="visSub"></div>
+          </div>
+          <button class="bb-btn sight-btn" id="visBtn" type="button" onclick="visOpen(event)">Report</button>
+          <span class="sight-chev" id="visChev">&#9662;</span>
+        </div>
+        <div class="sight-body" id="visBody"></div>
+      </div>
+    </div>
+
+    <!-- Marine-life sightings strip — swimmer species reports (Supabase), last 28h -->
+    <div id="sightSection">
+      <div class="sight-strip community" id="sightStrip">
+        <div class="sight-head" onclick="sightToggle(event)">
+          <div class="bb-icon">🐠</div>
+          <div class="bb-body">
+            <div class="bb-status" id="sightTitle">Loading sightings…</div>
+            <div class="bb-sub" id="sightSub"></div>
+          </div>
+          <button class="bb-btn sight-btn" id="sightBtn" type="button" onclick="sightOpen(event)">Report</button>
+          <span class="sight-chev" id="sightChev">&#9662;</span>
+        </div>
+        <div class="sight-body" id="sightBody"></div>
+      </div>
+    </div>
+
+    <!-- Stolen bag reports strip — builds the evidence base shared with police
+         and (in aggregate only) with the Bold & Beautiful group. -->
+    <div id="theftSection">
+      <div class="sight-strip community" id="theftStrip">
+        <div class="sight-head" onclick="theftToggle(event)">
+          <div class="bb-icon">&#128188;</div>
+          <div class="bb-body">
+            <div class="bb-status" id="theftTitle">Stolen bags</div>
+            <div class="bb-sub" id="theftSub">Had a bag taken off the promenade? Log it here.</div>
+          </div>
+          <button class="bb-btn sight-btn" id="theftBtn" type="button" onclick="theftChoose(event)">Report</button>
+          <span class="sight-chev" id="theftChev">&#9662;</span>
+        </div>
+        <div class="sight-body" id="theftBody"></div>
+      </div>
+    </div>
+
+    <!-- "Who's Out There?" (ntmSection) removed 2026-07-24 — superseded by Bay Talk.
+         Its CSS, JS module and admin overlay were deleted 2026-08-17. -->
+
+    <!-- THE BOARD — collapsed-by-default strip (Q&A: submit, upvote, reply; Marco answers) -->
+    <div id="boardSection">
+      <div class="sight-strip community" id="boardStrip">
+        <div class="sight-head" onclick="boardToggle(event)">
+          <div class="bb-icon">&#128172;</div>
+          <div class="bb-body">
+            <div class="bb-status">Bay Talk</div>
+            <!-- Live "shop window": JS swaps this for the newest post + weekly counts once the board loads -->
+            <div class="bb-sub" id="boardSub">Community chat — ask, comment, say hi, whatever you fancy</div>
+          </div>
+          <button class="bb-btn sight-btn" id="boardPostBtn" type="button" onclick="boardPostOpen(event)">Post</button>
+          <span class="board-newdot" id="boardNewDot" aria-hidden="true"></span>
+          <span class="sight-chev" id="boardChev">&#9662;</span>
+        </div>
+        <div class="sight-body" id="boardBody">
+          <div id="featureCard">
+            <button type="button" id="frAddBtn" class="fr-addbtn"><span aria-hidden="true">&#9998;</span> Add your post</button>
+            <div class="bd-compose" id="frCompose" hidden>
+              <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)">
+              <textarea id="frInput" class="fr-input" maxlength="200" rows="3" placeholder="Say hi, ask a question, share something from the bay&hellip;"></textarea>
+              <div id="frPhotoWrap" class="fr-photo-wrap" hidden>
+                <img id="frPhotoImg" class="fr-photo-thumb" alt="Photo to attach">
+                <button id="frPhotoRemove" class="fr-photo-remove" type="button" aria-label="Remove photo">&times;</button>
+              </div>
+              <div class="bd-composerow">
+                <label class="fr-photo-btn" title="Add a photo">
+                  <span aria-hidden="true">&#128247;</span><span class="fr-photo-label">Photo</span>
+                  <input id="frPhoto" type="file" accept="image/*" hidden>
+                </label>
+                <span id="frCount" class="fr-count">0/200</span>
+                <button id="frSubmit" class="fr-submit" type="button" disabled>Post</button>
+              </div>
+            </div>
+            <div id="frMsg" class="fr-msg" role="alert"></div>
+            <div id="frList" class="fr-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
+    <div id="bbSection">
+      <div class="bb-strip community" id="bbStrip">
+        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
+          <div class="bb-icon">🪼</div>
+          <div class="bb-body">
+            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
+            <div class="bb-sub" id="bbSub"></div>
+          </div>
+          <!-- No `capture` attribute: with it, iOS/Android open the camera directly and
+               a swimmer who shot the bluebottle a minute ago on the beach can't attach
+               that shot. Without it the OS offers camera AND camera roll. -->
+          <input type="file" id="bbPhotoInput" accept="image/*" style="display:none" onchange="bbPhotoPicked(event)">
+          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
+            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
+            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
+          </span>
+          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+          <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
+            <span id="bbNotifyLabel">🔔 Get notifications</span>
+          </button>
+          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
+        </div>
+        <div class="bb-gallery" id="bbGallery"></div>
+      </div>
+      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
+    </div>
+
+    </div><!-- /community-group -->
+
     <!-- Rain radar — BOM tiles, past echo then forecast rain. Collapsed by
          default; nothing is fetched until it is opened. See the radar IIFE. -->
     <div class="radar-wrap" id="radarCard">
@@ -3958,158 +4111,6 @@
 })();
 </script>
 
-    <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
-    <div class="livecam-row" id="liveCamRow">
-      <a class="livecam" href="https://manlylsc.com/surfline-camera/" target="_blank" rel="noopener">
-        <img id="camSouthSteyne" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlysouthsteyne/latest_small.jpg" alt="Live cam — Manly South Steyne" loading="lazy">
-        <span class="livecam-cap">South Steyne <span class="livecam-live">● LIVE</span></span>
-      </a>
-      <a class="livecam" href="https://manlypacific.com.au/live-webcam/" target="_blank" rel="noopener">
-        <img id="camBeachOverview" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlybeachoverview/latest_small.jpg" alt="Live cam — Manly Beach overview" loading="lazy">
-        <span class="livecam-cap">Beach overview <span class="livecam-live">● LIVE</span></span>
-      </a>
-    </div>
-    <script>
-    // Live-cam stills: load fresh (cache-bust) and refresh every 90s while visible.
-    (function () {
-      var imgs = document.querySelectorAll('#liveCamRow img[data-cam]');
-      function refresh() {
-        if (document.hidden) return;
-        for (var i = 0; i < imgs.length; i++) {
-          imgs[i].src = imgs[i].dataset.cam + '?t=' + Date.now();
-        }
-      }
-      refresh();
-      setInterval(refresh, 90000);
-      document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
-    })();
-    </script>
-
-    <!-- ── Community section ("Swimmers' Corner") — reports & hellos from swimmers ── -->
-    <div class="community-group">
-      <div class="cg-head"><span class="cg-ic">👥</span><span class="cg-title">SWIMMERS&rsquo; CORNER</span><span class="cg-rule"></span></div>
-
-    <!-- Underwater visibility strip — swimmer reports (Supabase), last 28h -->
-    <div id="visSection">
-      <div class="sight-strip community" id="visStrip">
-        <div class="sight-head" onclick="visToggle(event)">
-          <div class="bb-icon">👁️</div>
-          <div class="bb-body">
-            <div class="bb-status" id="visTitle">Loading visibility…</div>
-            <div class="bb-sub" id="visSub"></div>
-          </div>
-          <button class="bb-btn sight-btn" id="visBtn" type="button" onclick="visOpen(event)">Report</button>
-          <span class="sight-chev" id="visChev">&#9662;</span>
-        </div>
-        <div class="sight-body" id="visBody"></div>
-      </div>
-    </div>
-
-    <!-- Marine-life sightings strip — swimmer species reports (Supabase), last 28h -->
-    <div id="sightSection">
-      <div class="sight-strip community" id="sightStrip">
-        <div class="sight-head" onclick="sightToggle(event)">
-          <div class="bb-icon">🐠</div>
-          <div class="bb-body">
-            <div class="bb-status" id="sightTitle">Loading sightings…</div>
-            <div class="bb-sub" id="sightSub"></div>
-          </div>
-          <button class="bb-btn sight-btn" id="sightBtn" type="button" onclick="sightOpen(event)">Report</button>
-          <span class="sight-chev" id="sightChev">&#9662;</span>
-        </div>
-        <div class="sight-body" id="sightBody"></div>
-      </div>
-    </div>
-
-    <!-- Stolen bag reports strip — builds the evidence base shared with police
-         and (in aggregate only) with the Bold & Beautiful group. -->
-    <div id="theftSection">
-      <div class="sight-strip community" id="theftStrip">
-        <div class="sight-head" onclick="theftToggle(event)">
-          <div class="bb-icon">&#128188;</div>
-          <div class="bb-body">
-            <div class="bb-status" id="theftTitle">Stolen bags</div>
-            <div class="bb-sub" id="theftSub">Had a bag taken off the promenade? Log it here.</div>
-          </div>
-          <button class="bb-btn sight-btn" id="theftBtn" type="button" onclick="theftChoose(event)">Report</button>
-          <span class="sight-chev" id="theftChev">&#9662;</span>
-        </div>
-        <div class="sight-body" id="theftBody"></div>
-      </div>
-    </div>
-
-    <!-- "Who's Out There?" (ntmSection) removed 2026-07-24 — superseded by Bay Talk.
-         Its CSS, JS module and admin overlay were deleted 2026-08-17. -->
-
-    <!-- THE BOARD — collapsed-by-default strip (Q&A: submit, upvote, reply; Marco answers) -->
-    <div id="boardSection">
-      <div class="sight-strip community" id="boardStrip">
-        <div class="sight-head" onclick="boardToggle(event)">
-          <div class="bb-icon">&#128172;</div>
-          <div class="bb-body">
-            <div class="bb-status">Bay Talk</div>
-            <!-- Live "shop window": JS swaps this for the newest post + weekly counts once the board loads -->
-            <div class="bb-sub" id="boardSub">Community chat — ask, comment, say hi, whatever you fancy</div>
-          </div>
-          <button class="bb-btn sight-btn" id="boardPostBtn" type="button" onclick="boardPostOpen(event)">Post</button>
-          <span class="board-newdot" id="boardNewDot" aria-hidden="true"></span>
-          <span class="sight-chev" id="boardChev">&#9662;</span>
-        </div>
-        <div class="sight-body" id="boardBody">
-          <div id="featureCard">
-            <button type="button" id="frAddBtn" class="fr-addbtn"><span aria-hidden="true">&#9998;</span> Add your post</button>
-            <div class="bd-compose" id="frCompose" hidden>
-              <input id="frName" class="fr-name" type="text" maxlength="24" autocomplete="off" placeholder="Your name (optional — we pick one if blank)">
-              <textarea id="frInput" class="fr-input" maxlength="200" rows="3" placeholder="Say hi, ask a question, share something from the bay&hellip;"></textarea>
-              <div id="frPhotoWrap" class="fr-photo-wrap" hidden>
-                <img id="frPhotoImg" class="fr-photo-thumb" alt="Photo to attach">
-                <button id="frPhotoRemove" class="fr-photo-remove" type="button" aria-label="Remove photo">&times;</button>
-              </div>
-              <div class="bd-composerow">
-                <label class="fr-photo-btn" title="Add a photo">
-                  <span aria-hidden="true">&#128247;</span><span class="fr-photo-label">Photo</span>
-                  <input id="frPhoto" type="file" accept="image/*" hidden>
-                </label>
-                <span id="frCount" class="fr-count">0/200</span>
-                <button id="frSubmit" class="fr-submit" type="button" disabled>Post</button>
-              </div>
-            </div>
-            <div id="frMsg" class="fr-msg" role="alert"></div>
-            <div id="frList" class="fr-list"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
-    <div id="bbSection">
-      <div class="bb-strip community" id="bbStrip">
-        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
-          <div class="bb-icon">🪼</div>
-          <div class="bb-body">
-            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
-            <div class="bb-sub" id="bbSub"></div>
-          </div>
-          <!-- No `capture` attribute: with it, iOS/Android open the camera directly and
-               a swimmer who shot the bluebottle a minute ago on the beach can't attach
-               that shot. Without it the OS offers camera AND camera roll. -->
-          <input type="file" id="bbPhotoInput" accept="image/*" style="display:none" onchange="bbPhotoPicked(event)">
-          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
-            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
-            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
-          </span>
-          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
-          <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
-            <span id="bbNotifyLabel">🔔 Get notifications</span>
-          </button>
-          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
-        </div>
-        <div class="bb-gallery" id="bbGallery"></div>
-      </div>
-      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
-    </div>
-
-    </div><!-- /community-group -->
 
     <!-- TWO DAY CARDS, both 6am-8pm for ONE day and both swipeable day to day.
          They are DIFFERENT READINGS of the same hours, not variants of one card,
@@ -18818,6 +18819,15 @@ if ('serviceWorker' in navigator) {
     // in 'swimmers' below). Listed here so the panel order matches the page order.
     { key:'bluebottleforecast', label:"Bluebottles forecast (risk strip)", sel:'.bbf-row', complete:1, custom:1 },
     { key:'swimmers', label:"Swimmers' Corner (visibility, sightings, bluebottle reports, hellos)", sel:'.community-group', complete:1, custom:1 },
+    // Both map cards moved directly under Swimmers' Corner on the page 30 Aug 2026,
+    // so they move here too - this list is ordered to match the page, and the two
+    // drifting apart is how the Customise panel starts lying about what it controls.
+    { key:'radar', label:"Rain radar + forecast (BOM)", sel:'#radarCard', complete:1, custom:1 },
+    // The chlorophyll card shipped without an entry here, which meant it was the one
+    // card on the page that could not be switched off: apply() only ever hides what
+    // it finds in this list, so an unlisted section is permanently on. Not a crash,
+    // but every other card offers the choice. complete:1 to match its neighbours.
+    { key:'chlorophyll', label:"Offshore chlorophyll (IMOS)", sel:'#chlCard', complete:1, custom:1 },
     // 'daywindow' (Best swim window day chart) removed 2026-08-14 along with its
     // #dayWindowWrap card. A stale daywindow=0 in someone's saved CUSTOM_KEY map
     // is now inert — nothing reads the key.
@@ -18841,7 +18851,6 @@ if ('serviceWorker' in navigator) {
     { key:'daylines', label:"Day View Lines",  sel:'#dayLinesCard',  complete:1, custom:1 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
-    { key:'radar', label:"Rain radar + forecast (BOM)", sel:'#radarCard', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1, custom:1 },
     { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 }
