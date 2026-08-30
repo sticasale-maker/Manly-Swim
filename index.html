@@ -23868,36 +23868,54 @@ else theftLoad();
 </script>
 
 
-<!-- === The turtle ==========================================================
-     Every so often a green turtle swims across the screen, seen from above as
-     though he were crossing the surface of the glass. First pass three seconds
-     after the page opens, then a random 20-40 seconds apart.
+<!-- === The passers-by =====================================================
+     Every so often an animal swims across the screen, seen from above as though
+     it were crossing the surface of the glass. Two of them now: a green turtle
+     and a smooth ray. First pass three seconds after the page opens, then a
+     random gap, and each pass is one animal or the other - never both at once.
 
-     THE PATH IS NOT INVENTED. The clip shows the turtle swimming on the spot
-     while slowly turning right, so its heading was measured out of every frame
-     (principal axis of the alpha mask, with the front/back ambiguity settled by
-     the third moment - the shell end carries far more mass than the head) and
-     the path below is the integral of those headings. That makes the direction
-     of travel identical to the direction he is pointing, at every instant,
-     rather than merely close.
+     THE PATHS ARE NOT INVENTED. Each clip shows the animal swimming on the spot
+     while slowly turning, so its heading was measured out of every frame and the
+     path is the integral of those headings. That makes the direction of travel
+     identical to the direction it is pointing, at every instant, rather than
+     merely close. The two were measured differently because the two shapes give
+     up their axis differently:
 
-     TURTLE_PATH runs from [0,0] to [1,0], so the straight line between entry and
+       turtle - principal axis of the alpha mask, with the front/back ambiguity
+                settled by the third moment (the shell end carries far more mass
+                than the head).
+       ray    - the disc is very nearly circular (major/minor axis ratio 1.00-1.21
+                across the clip), so its principal axis is meaningless and the
+                turtle's method would have returned noise. The tail root is used
+                instead: erode the mask until the whip tail is gone, and the
+                vector from the disc centroid to where the tail re-appears is the
+                body axis, pointing aft. Where the disc still reads symmetric it
+                is refined by searching for the axis of bilateral symmetry; that
+                refinement is weighted out through the banked part of the turn,
+                where the animal is not symmetric in projection and the search
+                starts guessing.
+
+     Each PATH runs from [0,0] to [1,0], so the straight line between entry and
      exit lies along +X and the stored curve is the sideways wander about it. At
      run time the whole thing is rotated by ONE random angle: rotating a path and
      its tangents together preserves the relationship, so entry and exit sides
      come out different every time and the swim still reads as coherent. The
-     chord is made longer than the screen diagonal, which is what guarantees he
+     chord is made longer than the screen diagonal, which is what guarantees it
      enters from off-screen and leaves off-screen inside the ten seconds.
 
-     The sprite already contains the turning, so the element takes only that one
-     constant rotation - re-applying the per-frame heading would double it.
+     Both sprites are DE-ROTATED - the animal points along +X in every frame - so
+     the turn is applied here instead of being baked in. A baked turn can only
+     step as often as the sprite has frames, and at 12fps the steps show;
+     interpolated by the compositor it is smooth at display rate, and the frames
+     then only have to carry flipper and wing strokes, which are slow enough not
+     to care.
 
-     Decoration: he reads no conditions and states no verdict, and he swims on
-     every kind of day. He was briefly gated off Dangerous days on the reasoning
-     that an unbidden animation could read as levity there; Marco's call, 28 Aug
-     2026, was to drop that gate - a turtle makes no claim about the water. The
-     verdict copy rules in CLAUDE.md section 1 are untouched by this: nothing
-     here writes, softens or re-derives the verdict.
+     Decoration: they read no conditions and state no verdict, and they swim on
+     every kind of day. The turtle was briefly gated off Dangerous days on the
+     reasoning that an unbidden animation could read as levity there; Marco's
+     call, 28 Aug 2026, was to drop that gate - an animal makes no claim about
+     the water. The verdict copy rules in CLAUDE.md section 1 are untouched by
+     this: nothing here writes, softens or re-derives the verdict.
 ========================================================================== -->
 <style>
   #shakeFish {
@@ -23914,25 +23932,13 @@ else theftLoad();
   var host = document.getElementById('shakeFish');
   if (!host) return;
 
-  var SRC = 'images/turtle.webp';
-  var SPRITE_W = 200, SPRITE_H = 229;      // the sprite's own pixel size
-  // Fraction of the sprite's width taken up by the turtle nose-to-tail. The brief
-  // is "about a third of the screen wide", and it is the TURTLE that must be a
-  // third - not the sprite box, which carries slack for the flippers.
-  var BODY_FRAC = 0.9578;
   var SWIM_MS = 10000;
 
-  // TURTLE_PATH runs [0,0] -> [1,0]: the straight line between entry and exit
-  // lies along +X and the curve is the sideways wander about it. TURTLE_ROT is
-  // the turtle's heading at each of those points, relative to that same line.
-  //
-  // The sprite is DE-ROTATED - he points along +X in every frame - so the turn
-  // is applied here instead of being baked in. That matters for smoothness: a
-  // baked turn can only step as often as the sprite has frames, and at 12fps the
-  // steps show. Interpolated by the compositor it is smooth at display rate, and
-  // the frames then only have to carry flipper strokes, which are slow enough
-  // not to care. Adding the same random angle to every rotation and to the path
-  // keeps heading and direction of travel identical, which is the whole point.
+  // ── the turtle ────────────────────────────────────────────────────────────
+  // BODY_FRAC is the fraction of the sprite's WIDTH taken up by the animal's own
+  // measure - the one that gets scaled to about a third of the screen. For the
+  // turtle that measure is nose-to-tail, and the sprite box is barely wider than
+  // he is; it carries a little slack for the flippers.
   var TURTLE_PATH = [
     [0,0],[0.0219,-0.0059],[0.0438,-0.0116],[0.0658,-0.017],[0.0878,-0.0225],[0.1097,-0.0284],
     [0.1358,-0.0359],[0.1574,-0.0429],[0.1787,-0.0506],[0.1995,-0.0594],[0.2199,-0.0693],[0.2398,-0.0802],
@@ -23951,17 +23957,60 @@ else theftLoad();
     26.46,26.64,24.69,21.94,19.18,17.12,16.1,15.83
   ];
 
+  // ── the ray ───────────────────────────────────────────────────────────────
+  // The ray is NOT sized to a fraction of the screen. Nose-to-tail would have
+  // been the wrong measure - the tail is a thin whip that trails well past the
+  // animal, and sizing to it leaves the ray itself tiny - and wingspan, the
+  // obvious substitute, put the ray 23% larger than the turtle in linear terms.
+  // So bodyFrac is solved instead: it is the value at which the two animals lay
+  // down the SAME amount of ink at the same viewport (mean opaque area over all
+  // frames, 0.238 of the turtle's box against 0.266 of the ray's), so they read
+  // as the same-sized animal rather than one upstaging the other. The cap is
+  // carried across at the same ratio, so both stop growing at the same viewport.
+  //
+  // The tail runs off the bottom of the source frames for the first half of the
+  // clip. Rather than leave a straight cut it is faded out over the last few
+  // rows, so on those frames the tail tapers away instead of ending on a line.
+  var RAY_PATH = [
+    [0,0],[0.0211,-0.0157],[0.0422,-0.0315],[0.0634,-0.0472],[0.0846,-0.0628],[0.106,-0.0783],
+    [0.1316,-0.0969],[0.1529,-0.1123],[0.1744,-0.1276],[0.1959,-0.1428],[0.2176,-0.1577],[0.2394,-0.1725],
+    [0.2615,-0.187],[0.2837,-0.201],[0.3061,-0.215],[0.3284,-0.2291],[0.3505,-0.2434],[0.3723,-0.2581],
+    [0.3979,-0.2767],[0.4186,-0.2931],[0.4387,-0.3101],[0.4599,-0.3257],[0.4846,-0.3345],[0.5107,-0.3379],
+    [0.537,-0.3386],[0.5634,-0.3396],[0.5897,-0.341],[0.616,-0.3414],[0.6423,-0.3401],[0.668,-0.3343],
+    [0.697,-0.3221],[0.7143,-0.3024],[0.7286,-0.2803],[0.7428,-0.2581],[0.7573,-0.2361],[0.7722,-0.2144],
+    [0.7879,-0.1932],[0.8031,-0.1717],[0.8175,-0.1496],[0.8317,-0.1274],[0.8457,-0.105],[0.8613,-0.0839],
+    [0.8855,-0.0637],[0.909,-0.0518],[0.9332,-0.0414],[0.9572,-0.0305],[0.9796,-0.0167],[1,0]
+  ];
+  var RAY_ROT = [
+    -36.74,-36.73,-36.77,-36.36,-36.06,-35.99,-35.81,-35.71,-35.35,-34.89,
+    -34.22,-33.68,-32.6,-32.1,-32.07,-32.54,-33.44,-34.91,-37.52,-39.9,
+    -39.68,-27.31,-10.83,-3.17,-0.79,-3.59,-1.56,-0.17,9.47,16.19,
+    39.34,56.54,57.45,57.02,56.22,54.01,53.65,56.36,57.14,58.18,
+    56.55,47.24,29.97,24.08,22.86,28.23,36.74,41.48
+  ];
+
+  var TURTLE = {
+    src: 'images/turtle.webp', sw: 200, sh: 229,
+    bodyFrac: 0.9578, cap: 560, path: TURTLE_PATH, rot: TURTLE_ROT
+  };
+  var RAY = {
+    src: 'images/ray.webp', sw: 242, sh: 193,
+    bodyFrac: 0.8445, cap: 635, path: RAY_PATH, rot: RAY_ROT
+  };
+
   function rad(d) { return d * Math.PI / 180; }
 
+  // One at a time. Two animals crossing together would read as an aquarium, and
+  // it would also break the rate ceiling below, which counts passes not animals.
   var swimming = false;
-  function swim() {
+  function swim(c) {
     if (swimming) return;
     swimming = true;
     host.classList.add('on');
 
     var vw = window.innerWidth, vh = window.innerHeight;
-    var wide = Math.min(vw / 3 / BODY_FRAC, 560);      // cap: desktops only
-    var w = Math.round(wide), h = Math.round(wide * SPRITE_H / SPRITE_W);
+    var wide = Math.min(vw / 3 / c.bodyFrac, c.cap);   // cap: desktops only
+    var w = Math.round(wide), h = Math.round(wide * c.sh / c.sw);
 
     var img = new Image();
     img.alt = '';
@@ -23970,22 +24019,35 @@ else theftLoad();
     img.style.marginLeft = (-w / 2) + 'px';            // transform positions the CENTRE
     img.style.marginTop = (-h / 2) + 'px';
 
-    // One random angle decides everything: which side he enters, which side he
-    // leaves, and how the sprite is turned so his body still faces the way he goes.
+    // One random angle decides everything: which side it enters, which side it
+    // leaves, and how the sprite is turned so the body still faces the way it goes.
     var ang = Math.random() * 360;
     var ca = Math.cos(rad(ang)), sa = Math.sin(rad(ang));
 
     // Long enough that both ends of the chord sit outside the screen.
     var need = Math.hypot(vw, vh) + 2 * Math.max(w, h);
-    // Nudge the whole line sideways so he does not always cross dead centre.
+    // Nudge the whole line sideways so it does not always cross dead centre.
     var off = (Math.random() - 0.5) * 0.36 * Math.min(vw, vh);
     var ox = vw / 2 - sa * off, oy = vh / 2 + ca * off;
 
-    var keys = TURTLE_PATH.map(function (p, i) {
-      var lx = (p[0] - 0.5) * need, ly = p[1] * need;
+    // The arc is anchored at its OWN midpoint, not at the chord's. The stored
+    // path is the integral of a measured heading, so an animal that runs straight
+    // for a while before it turns comes out bowed well off the chord - the ray
+    // peaks 0.34 of the chord length away from it, the turtle 0.19. Anchoring the
+    // chord instead would push the middle of the pass off the side of the screen:
+    // sampled over random angles the ray was on screen for 30% of its pass and
+    // ducked out and back again on half of them. Anchoring the midpoint puts the
+    // animal at the centre of the screen at t = SWIM_MS/2, which makes every pass
+    // a single clean crossing and lifts the ray to the turtle's ~55%. Both ends
+    // of the path stay off-screen either way; that is what `need` guarantees.
+    var ma = c.path[(c.path.length >> 1) - 1], mb = c.path[c.path.length >> 1];
+    var mx = (ma[0] + mb[0]) / 2, my = (ma[1] + mb[1]) / 2;
+
+    var keys = c.path.map(function (p, i) {
+      var lx = (p[0] - mx) * need, ly = (p[1] - my) * need;
       var x = ox + lx * ca - ly * sa;
       var y = oy + lx * sa + ly * ca;
-      var r = TURTLE_ROT[i] + ang;
+      var r = c.rot[i] + ang;
       return { transform: 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + r.toFixed(1) + 'deg)' };
     });
 
@@ -24005,7 +24067,7 @@ else theftLoad();
         anim = img.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
       } catch (e) { anim = null; }
       if (anim) { anim.onfinish = done; anim.oncancel = done; }
-      // Belt and braces: never leave a turtle stranded mid-screen.
+      // Belt and braces: never leave an animal stranded mid-screen.
       setTimeout(done, SWIM_MS + 900);
     }
 
@@ -24013,32 +24075,41 @@ else theftLoad();
     // A cached sprite can fire load before we get here, and a missing file must
     // not leave the flag stuck on.
     img.onerror = function () { swimming = false; host.classList.remove('on'); };
-    img.src = SRC;
+    img.src = c.src;
     if (img.complete && img.naturalWidth) start();
   }
 
-  // ── when he shows up ──────────────────────────────────────────────────────
-  // A random pass, first one three seconds after the page opens, then every
-  // 20-40 seconds. Shake-to-summon was the original trigger and has been
-  // removed: iOS fires no motion events at all until permission is granted from
-  // a user gesture, so on the phones most of these swimmers actually carry it
-  // could never have worked without a prompt.
+  // ── when they show up ─────────────────────────────────────────────────────
+  // A random pass, first one three seconds after the page opens. Shake-to-summon
+  // was the original trigger and has been removed: iOS fires no motion events at
+  // all until permission is granted from a user gesture, so on the phones most of
+  // these swimmers actually carry it could never have worked without a prompt.
   //
-  // A pass lasts SWIM_MS (10s), so at this cadence he is on screen roughly a
-  // third of the time. That is the brief, not an accident.
+  // THE RATE IS A CEILING ON THE PAIR, NOT ON EACH. The turtle originally came
+  // every 20-40s, a mean gap of 30s; call that rate R. Marco cut him to 30% of R
+  // on 30 Aug 2026 (mean gap 100s), and asked on the same day that turtle and ray
+  // TOGETHER stay under half of R. So there is one scheduler, not two, and it
+  // fires every 40-83s - a mean gap of 61.5s, which is 0.49R. Which animal turns
+  // up is then a weighted coin: the turtle keeps his own 0.30R (61.5/100 = 0.615
+  // of the passes) and the ray gets the remaining 0.19R. Adding a third animal
+  // means re-cutting these shares, not adding a third timer.
+  //
+  // A pass lasts SWIM_MS (10s), so at this cadence something is on screen about
+  // a sixth of the time - the turtle a tenth of it, the ray a sixteenth.
   var FIRST_MS = 3000, FIRST_JITTER = 600;
-  // 30% of the old rate (Marco, 30 Aug): the mean gap goes 30s -> 100s, so he
-  // turns up about a third as often. A pass still lasts SWIM_MS, which now makes
-  // him visible roughly a tenth of the time rather than a third.
-  var MIN_GAP_MS = 65000, GAP_SPREAD = 70000;   // 65-135s between passes
+  var MIN_GAP_MS = 40000, GAP_SPREAD = 43000;   // 40-83s between passes
+  var TURTLE_SHARE = 0.615;
   var lastRun = 0;
+  var pending = null;          // the animal whose sprite has already been warmed
+
+  function pick() { return Math.random() < TURTLE_SHARE ? TURTLE : RAY; }
 
   function reducedMotion() {
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
     catch (e) { return false; }
   }
 
-  // A metered or 2g connection should not spend half a megabyte on a turtle.
+  // A metered or 2g connection should not spend a megabyte on decoration.
   function thinPipe() {
     try {
       var c = navigator.connection;
@@ -24060,7 +24131,8 @@ else theftLoad();
     var now = Date.now();
     if (!blocked() && now - lastRun >= MIN_GAP_MS) {
       lastRun = now;
-      swim();
+      swim(pending || pick());
+      pending = null;
     }
     schedule(MIN_GAP_MS + Math.random() * GAP_SPREAD);
   }
@@ -24072,19 +24144,22 @@ else theftLoad();
   }
 
   if (!thinPipe()) {
-    // Warm the sprite before the first pass so it does not arrive half-loaded.
-    // This has to beat FIRST_MS, so it can no longer wait for the forecast's own
-    // fetches to finish; it is one image against a five-second head start.
-    // At a three-second first pass there is no polite window left to wait for:
-    // the sprite has to be on the wire almost immediately or he turns up late on
-    // a cold cache. It is one image, and it loads at low priority.
-    setTimeout(function () { try { new Image().src = SRC; } catch (e) {} }, 250);
+    // Warm the sprites before they are needed. The two together are over a
+    // megabyte, so they are not fetched together: the one that will make the
+    // first pass goes on the wire almost immediately, because it has three
+    // seconds to arrive and on a cold cache it will otherwise turn up late. The
+    // other cannot be needed for at least MIN_GAP_MS, so it waits until the app's
+    // own fetches are long finished.
+    var warm = pick(), other = warm === TURTLE ? RAY : TURTLE;
+    pending = warm;
+    setTimeout(function () { try { new Image().src = warm.src; } catch (e) {} }, 250);
+    setTimeout(function () { try { new Image().src = other.src; } catch (e) {} }, 25000);
     // THREE SECONDS FROM PAGE OPEN, not from whenever this script happened to
     // run. On a real connection the app's own scripts push this block a second
     // or two past navigation, which showed up live as a 7.3s first pass when the
     // delay was measured from here. So it is measured against performance.now(),
     // which is time since navigation start, with a small floor so a slow-starting
-    // page does not fire the turtle the instant the block parses.
+    // page does not fire the first pass the instant the block parses.
     var since = 0;
     try { since = performance.now(); } catch (e) {}
     schedule(Math.max(600, FIRST_MS - since) + Math.random() * FIRST_JITTER);
@@ -24094,13 +24169,12 @@ else theftLoad();
     });
   }
 
-  // Alt+Shift+F sends him across on demand, for previewing on a laptop.
-  // It ignores the spacing rule.
+  // Alt+Shift+F sends the turtle across on demand and Alt+Shift+R the ray, for
+  // previewing on a laptop. They ignore the spacing rule.
   document.addEventListener('keydown', function (e) {
-    if (e.altKey && e.shiftKey && (e.key === 'F' || e.key === 'f')) {
-      e.preventDefault();
-      swim();
-    }
+    if (!e.altKey || !e.shiftKey) return;
+    if (e.key === 'F' || e.key === 'f') { e.preventDefault(); swim(TURTLE); }
+    if (e.key === 'R' || e.key === 'r') { e.preventDefault(); swim(RAY); }
   });
 })();
 </script>
