@@ -1,6 +1,15 @@
 -- ============================================================================
 -- Bag theft: take the aggregate summary away from the public
 -- ============================================================================
+-- SUPERSEDED 30 Aug 2026 - DO NOT RUN. Use bag_theft_public_totals.sql instead.
+--
+-- This file was never applied. Applying it now would break the stolen-bags
+-- strip, which since 29 Aug reads its "N reports - $X total" line from the
+-- public bag_theft_summary(integer) that this file drops. The replacement keeps
+-- those two numbers public and puts the rest - by_hour, by_dow, hotspots -
+-- behind the same admin token this file intended. The reasoning below still
+-- stands for that detail; it just no longer applies to the count and value.
+--
 -- Run this AFTER bag_theft_reports.sql.
 --
 -- WHY
