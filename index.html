@@ -1688,6 +1688,14 @@
   .vis-seg .w { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 0.5px; color: var(--text); line-height: 1; }
   .vis-seg .m { font-size: 8.5px; color: var(--dim); margin-top: 2px; letter-spacing: 0.2px; }
   .vis-seg.sel { border-color: var(--text); background: rgba(17,53,65,0.08); }
+  /* "What was it?" — only shown for the three murky bands, and never required. */
+  .vis-cause-wrap { margin-top: 12px; }
+  .vis-cause-q { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+  .vis-cause-q span { font-size: 9.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--dim); border: 1px solid var(--line, rgba(17,53,65,0.18)); border-radius: 999px; padding: 1px 6px; }
+  .vis-causes { display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; }
+  .vis-cause { border-radius: 9px; padding: 8px 3px; text-align: center; cursor: pointer; border: 2px solid rgba(17,53,65,0.18); background: #fff; box-shadow: 0 1px 3px rgba(9,26,33,0.14); transition: transform 0.08s, border-color 0.1s, background 0.1s; font-size: 11px; line-height: 1.15; color: var(--text); }
+  .vis-cause:active { transform: scale(0.96); }
+  .vis-cause.sel { border-color: var(--text); background: rgba(17,53,65,0.08); }
 
   /* Community-input strips (visibility · sightings · bluebottles) share one look
      so they read as a group — cool blue-grey (not the tan forecast cards) with an
@@ -13555,11 +13563,21 @@ const VIS_BANDS = [
   { w: 'Clear',   m: '6–8m',  c: '#33a3c4' },  // band 4
   { w: 'Epic',    m: '>8m',   c: '#45d6c4' },  // band 5
 ];
+// Swimmers asked to be able to say WHY it was murky, not just how murky. Offered
+// on the three poor bands only: on a Clear or Epic day there is nothing to explain.
+// Always optional - "Not sure" is a real answer, but so is skipping the question.
+const VIS_CAUSES = [
+  { k: 'algae',    w: 'Algae' },
+  { k: 'sediment', w: 'Sediment' },
+  { k: 'snot',     w: 'Whale snot' },
+  { k: 'unsure',   w: 'Not sure' },
+];
+const VIS_CAUSE_MAX_BAND = 3;      // Murky, Hazy, Average
 const VIS_WINDOW_H  = 28;
 const VIS_COOLDOWN  = 0;   // no limit — visibility can be reported as often as swimmers like
 const VIS_CACHE_TTL = 5 * 60 * 1000;
 
-let _visCache = null, _visCacheAt = 0, _visPick = 0;
+let _visCache = null, _visCacheAt = 0, _visPick = 0, _visCause = '';
 
 function visGetLastMine() { try { const v = localStorage.getItem('swim_vis_last_mine'); return v ? parseInt(v, 10) : 0; } catch(e) { return 0; } }
 function visSetLastMine() { try { localStorage.setItem('swim_vis_last_mine', Date.now().toString()); } catch(e) {} }
@@ -13583,13 +13601,23 @@ async function visFetch() {
   if (!res.ok) throw new Error(`visibility fetch ${res.status}`);
   return await res.json(); // [{band, n}]
 }
-async function visInsert(band) {
-  const res = await fetch(`${BB_SUPABASE_URL}/rest/v1/rpc/report_visibility`, {
+async function visInsert(band, cause) {
+  const post = (body) => fetch(`${BB_SUPABASE_URL}/rest/v1/rpc/report_visibility`, {
     method: 'POST',
     headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p_band: band })
+    body: JSON.stringify(body)
   });
-  if (!res.ok) throw new Error(`visibility rpc ${res.status}`);
+  // PostgREST picks the overload by the NAMES sent, so the one-argument function
+  // is untouched and still answers a bare {p_band}. If the two-argument version
+  // is not deployed yet it answers PGRST202 - drop the cause and send the band
+  // anyway, because losing the whole report to save a nicety is the wrong trade.
+  if (cause) {
+    const res = await post({ p_band: band, p_cause: cause });
+    if (res.ok) return;
+    if (res.status !== 404 && res.status !== 400) throw new Error(`visibility rpc ${res.status}`);
+  }
+  const plain = await post({ p_band: band });
+  if (!plain.ok) throw new Error(`visibility rpc ${plain.status}`);
 }
 
 function visRenderFromData(rows) {
@@ -13671,7 +13699,14 @@ function visOpen(ev) {
        </div>`).join('');
     segs.dataset.built = '1';
   }
+  const causes = document.getElementById('visCauses');
+  if (causes && !causes.dataset.built) {
+    causes.innerHTML = VIS_CAUSES.map(c =>
+      `<div class="vis-cause" data-k="${c.k}" role="button" aria-label="${c.w}" onclick="visCausePick(this)">${c.w}</div>`).join('');
+    causes.dataset.built = '1';
+  }
   _visPick = 0;
+  visResetCause();
   document.querySelectorAll('.vis-seg.sel').forEach(s => s.classList.remove('sel'));
   visSyncSubmit();
   document.getElementById('visScrim').classList.add('open');
@@ -13681,25 +13716,51 @@ function visClose() {
   if (s) s.classList.remove('open');
   document.querySelectorAll('.vis-seg.sel').forEach(x => x.classList.remove('sel'));
   _visPick = 0;
+  visResetCause();
+}
+function visResetCause() {
+  _visCause = '';
+  document.querySelectorAll('.vis-cause.sel').forEach(x => x.classList.remove('sel'));
+  const w = document.getElementById('visCauseWrap');
+  if (w) w.hidden = true;
 }
 function visPick(el) {
   document.querySelectorAll('.vis-seg.sel').forEach(x => x.classList.remove('sel'));
   el.classList.add('sel');
   _visPick = +el.dataset.b;
+  // Moving from a murky band to a clear one clears the answer too, so a stale
+  // cause cannot ride along with a band it makes no sense for.
+  const w = document.getElementById('visCauseWrap');
+  if (_visPick >= 1 && _visPick <= VIS_CAUSE_MAX_BAND) {
+    if (w) w.hidden = false;
+  } else {
+    visResetCause();
+  }
+  visSyncSubmit();
+}
+function visCausePick(el) {
+  const already = el.classList.contains('sel');
+  document.querySelectorAll('.vis-cause.sel').forEach(x => x.classList.remove('sel'));
+  if (already) { _visCause = ''; }          // tap again to unpick
+  else { el.classList.add('sel'); _visCause = el.dataset.k; }
   visSyncSubmit();
 }
 function visSyncSubmit() {
   const b = document.getElementById('visSubmit');
   if (!b) return;
   b.disabled = _visPick < 1;
-  b.textContent = _visPick ? `Report ${VIS_BANDS[_visPick - 1].w}` : 'Report';
+  if (!_visPick) { b.textContent = 'Report'; return; }
+  const c = _visCause && VIS_CAUSES.find(x => x.k === _visCause);
+  b.textContent = c ? `Report ${VIS_BANDS[_visPick - 1].w} \u00b7 ${c.w}`
+                    : `Report ${VIS_BANDS[_visPick - 1].w}`;
 }
 async function visSubmit() {
   if (_visPick < 1) return;
   const b = document.getElementById('visSubmit');
   const band = _visPick;
+  const cause = (_visPick <= VIS_CAUSE_MAX_BAND) ? _visCause : '';
   if (b) { b.disabled = true; b.textContent = 'Sending…'; }
-  try { await visInsert(band); } catch(e) { /* server cooldown or error — lock locally either way */ }
+  try { await visInsert(band, cause); } catch(e) { /* server cooldown or error — lock locally either way */ }
   visSetLastMine();
   _visCache = null; _visCacheAt = 0;
   visClose();
@@ -21679,6 +21740,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       <div class="sight-h3">HOW CLEAR IS IT TODAY?</div>
       <div class="sight-sh-sub">Tap the band that matches what you saw underwater.</div>
       <div class="vis-segs" id="visSegs"></div>
+      <div class="vis-cause-wrap" id="visCauseWrap" hidden>
+        <div class="sight-sh-sub vis-cause-q">Any idea what it was?<span>optional</span></div>
+        <div class="vis-causes" id="visCauses"></div>
+      </div>
       <div class="sight-foot">
         <button class="sight-cancel" type="button" onclick="visClose()">Cancel</button>
         <button class="sight-submit" id="visSubmit" type="button" onclick="visSubmit()" disabled>Report</button>
