@@ -23968,64 +23968,111 @@ else theftLoad();
   ];
 
   // ── the ray ───────────────────────────────────────────────────────────────
-  // THE RAY KEEPS THE ORIENTATION IT HAS IN THE VIDEO. It is not de-rotated the
-  // way the turtle is; the sprite is the filmed animal, only keyed and centred,
-  // and the whole turn is already in the frames. Marco's call, 30 Aug 2026, and
-  // it is what fixes the crabbing:
+  // DE-ROTATED, like the turtle, and NOT because the video's own orientation was
+  // wrong. It was tried the other way - sprite left exactly as filmed, turn and
+  // all, one constant rotation at run time - and on paper it was the more
+  // accurate of the two. On screen the ray crabbed, and the reason is that an
+  // animated image has a clock this app cannot address:
   //
-  //   The turtle's arrangement - flat sprite plus a per-keyframe rotation - is
-  //   only as honest as the interpolation between keys. The compositor walks the
-  //   position along a straight chord between one key and the next while it walks
-  //   the angle linearly, and where the ray banks it swings 23 degrees inside a
-  //   single 213ms key interval. Measured against its own path the animal was
-  //   pointing up to 15.7 degrees off the way it was going. The turtle turns
-  //   gently enough to stay inside 4.4.
+  //   Three <img> elements were made from this sprite, one at t=0 and two at
+  //   t=6s, one of those on a cache-busted URL. At 6s the first should have been
+  //   deep into the turn and the others still swimming straight. All three showed
+  //   the SAME frame. The phase does not belong to the element and it does not
+  //   belong to the URL; a new element joins whatever the decoder is already
+  //   doing, and the sprite has been looping since it was preloaded, a minute or
+  //   more before any pass begins. (The turtle proves playback itself works - its
+  //   flippers move between two screenshots three seconds apart.)
   //
-  //   Baked, there is no rotation to interpolate: the frame IS the orientation,
-  //   and the path carries a point per sprite frame so the chord it walks is
-  //   never more than one frame long. Travel and heading now differ by 0.4
-  //   degrees on average and never by more than 3.1.
+  //   So with the turn baked into the pixels, the animal points wherever the
+  //   decoder happens to be when the pass starts - anywhere in a 99 degree arc,
+  //   different every time. That is the sideways drift. De-rotated, the phase can
+  //   only change which wing-stroke shows, and if playback stalls entirely the
+  //   ray still points the right way; it just glides.
   //
-  // RAY_BIAS is the one constant that lines the two up. RAY_PATH is normalised
-  // the same way the turtle's is - [0,0] to [1,0] - which turned the whole thing
-  // by -53.13 degrees off the video's own frame, so the sprite is turned back by
-  // the same amount. It is a fixed offset, exactly like the random entry angle,
-  // and a fixed offset applied to path and animal together cannot introduce a
-  // mismatch. There is no RAY_ROT.
+  // RAY_ROT IS THE PATH'S OWN TANGENT, not the measured heading. The two are the
+  // same thing in principle, but the compositor walks position along a straight
+  // chord between keys while it walks angle linearly, so what matters is the
+  // chord, and the error is about half the turn contained in one key interval.
+  // That is also why there are 240 keys and not the turtle's 48: where the ray
+  // banks it swings 23 degrees inside one of his intervals, which is what put the
+  // first attempt 15.7 degrees off course. At 240 keys, with rotation defined off
+  // the path, the animal is 0.18 degrees from its heading on average and never
+  // more than 2.84 - better than the baked sprite managed, and it cannot drift.
   //
   // Size: the ray is measured body-to-body against the turtle rather than to a
   // fraction of the screen. Its disc, and the turtle's shell, both come out at
-  // 0.60 of their own sprite width once the thin parts (whip tail, flippers) are
-  // eroded away, so an equal bodyFrac makes them the same-sized animal. That
-  // leaves the ray's whole footprint smaller than the turtle's, 345 against 418
-  // at a 1280px viewport, which is the point - sized by wingspan, or by ink, the
-  // ray read as the bigger animal.
+  // 0.60-0.66 of their own sprite width once the thin parts (whip tail, flippers)
+  // are eroded away, so bodyFrac is solved to make those two equal. That leaves
+  // the ray's whole footprint smaller than the turtle's, 343 against 418 at a
+  // 1280px viewport, which is the point - sized by wingspan, or by ink, the ray
+  // read as the bigger animal.
   //
   // The tail runs off the bottom of the source frames for the first half of the
   // clip. Rather than leave a straight cut it is faded out over the last few
   // rows, so on those frames the tail tapers away instead of ending on a line.
-  var RAY_BIAS = 53.13;
   var RAY_PATH = [
-    [0,0],[0.0085,-0.0063],[0.017,-0.0126],[0.0255,-0.0189],[0.034,-0.0252],[0.0425,-0.0315],
-    [0.051,-0.0378],[0.0595,-0.0441],[0.0681,-0.0503],[0.0766,-0.0566],[0.0852,-0.0628],[0.0938,-0.069],
-    [0.1024,-0.0752],[0.1109,-0.0813],[0.1195,-0.0875],[0.1281,-0.0937],[0.1367,-0.0999],[0.1453,-0.106],
-    [0.1539,-0.1122],[0.1626,-0.1183],[0.1712,-0.1244],[0.1798,-0.1305],[0.1885,-0.1366],[0.1972,-0.1427],
-    [0.2059,-0.1487],[0.2146,-0.1546],[0.2234,-0.1606],[0.2322,-0.1665],[0.241,-0.1724],[0.2498,-0.1782],
-    [0.2587,-0.1839],[0.2676,-0.1896],[0.2766,-0.1952],[0.2856,-0.2008],[0.2945,-0.2064],[0.3035,-0.212],
-    [0.3125,-0.2176],[0.3215,-0.2232],[0.3305,-0.2288],[0.3394,-0.2345],[0.3483,-0.2402],[0.3572,-0.246],
-    [0.366,-0.2519],[0.3747,-0.2578],[0.3834,-0.2639],[0.392,-0.2701],[0.4005,-0.2764],[0.4089,-0.2828],
-    [0.4171,-0.2894],[0.4253,-0.2962],[0.4334,-0.303],[0.4415,-0.3098],[0.4497,-0.3165],[0.4583,-0.3226],
-    [0.4676,-0.3277],[0.4774,-0.3315],[0.4877,-0.3341],[0.4981,-0.3359],[0.5086,-0.3371],[0.5192,-0.3378],
-    [0.5298,-0.338],[0.5404,-0.3381],[0.5509,-0.3382],[0.5615,-0.3387],[0.5721,-0.3393],[0.5827,-0.3399],
-    [0.5932,-0.3403],[0.6038,-0.3405],[0.6144,-0.3406],[0.625,-0.3406],[0.6355,-0.3403],[0.6461,-0.3392],
-    [0.6565,-0.3372],[0.6667,-0.3347],[0.6769,-0.3318],[0.6869,-0.3284],[0.6965,-0.3238],[0.705,-0.3176],
-    [0.7121,-0.3097],[0.7182,-0.3011],[0.724,-0.2922],[0.7297,-0.2833],[0.7353,-0.2744],[0.741,-0.2654],
-    [0.7467,-0.2565],[0.7524,-0.2476],[0.7582,-0.2388],[0.764,-0.2299],[0.77,-0.2212],[0.7761,-0.2125],
-    [0.7823,-0.2039],[0.7886,-0.1954],[0.7948,-0.1869],[0.801,-0.1783],[0.8069,-0.1695],[0.8127,-0.1607],
-    [0.8184,-0.1518],[0.8241,-0.1429],[0.8298,-0.134],[0.8355,-0.125],[0.841,-0.116],[0.8466,-0.107],
-    [0.8523,-0.0981],[0.8584,-0.0894],[0.865,-0.0812],[0.8724,-0.0736],[0.8805,-0.0668],[0.8893,-0.0609],
-    [0.8985,-0.0557],[0.908,-0.051],[0.9176,-0.0466],[0.9273,-0.0424],[0.9371,-0.0383],[0.9468,-0.0341],
-    [0.9564,-0.0296],[0.9657,-0.0247],[0.9748,-0.0193],[0.9836,-0.0133],[0.9919,-0.0069],[1,0]
+    [0,0],[0.0042,-0.0032],[0.0084,-0.0063],[0.0127,-0.0094],[0.0169,-0.0126],[0.0211,-0.0157],
+    [0.0254,-0.0189],[0.0296,-0.0221],[0.0338,-0.0252],[0.038,-0.0284],[0.0422,-0.0315],[0.0465,-0.0347],
+    [0.0507,-0.0378],[0.0549,-0.041],[0.0591,-0.0441],[0.0634,-0.0472],[0.0676,-0.0504],[0.0719,-0.0535],
+    [0.0761,-0.0566],[0.0804,-0.0597],[0.0846,-0.0628],[0.0889,-0.0659],[0.0932,-0.069],[0.0974,-0.0721],
+    [0.1017,-0.0752],[0.106,-0.0783],[0.1102,-0.0814],[0.1145,-0.0845],[0.1188,-0.0876],[0.123,-0.0907],
+    [0.1273,-0.0938],[0.1316,-0.0969],[0.1358,-0.1],[0.1401,-0.103],[0.1444,-0.1061],[0.1487,-0.1092],
+    [0.1529,-0.1123],[0.1572,-0.1153],[0.1615,-0.1184],[0.1658,-0.1215],[0.1701,-0.1245],[0.1744,-0.1276],
+    [0.1787,-0.1307],[0.183,-0.1337],[0.1873,-0.1367],[0.1916,-0.1398],[0.1959,-0.1428],[0.2002,-0.1458],
+    [0.2046,-0.1488],[0.2089,-0.1518],[0.2132,-0.1548],[0.2176,-0.1577],[0.222,-0.1607],[0.2263,-0.1637],
+    [0.2307,-0.1666],[0.2351,-0.1696],[0.2394,-0.1725],[0.2438,-0.1754],[0.2482,-0.1783],[0.2526,-0.1812],
+    [0.257,-0.1841],[0.2615,-0.187],[0.2659,-0.1898],[0.2704,-0.1926],[0.2748,-0.1954],[0.2793,-0.1982],
+    [0.2837,-0.201],[0.2882,-0.2038],[0.2927,-0.2066],[0.2971,-0.2094],[0.3016,-0.2122],[0.3061,-0.215],
+    [0.3105,-0.2178],[0.315,-0.2206],[0.3195,-0.2234],[0.3239,-0.2263],[0.3284,-0.2291],[0.3328,-0.2319],
+    [0.3372,-0.2348],[0.3417,-0.2376],[0.3461,-0.2405],[0.3505,-0.2434],[0.3549,-0.2463],[0.3593,-0.2492],
+    [0.3636,-0.2522],[0.368,-0.2551],[0.3723,-0.2581],[0.3767,-0.2611],[0.381,-0.2642],[0.3852,-0.2672],
+    [0.3895,-0.2704],[0.3937,-0.2735],[0.3979,-0.2767],[0.4021,-0.2799],[0.4063,-0.2831],[0.4104,-0.2864],
+    [0.4145,-0.2897],[0.4186,-0.2931],[0.4226,-0.2965],[0.4266,-0.2999],[0.4306,-0.3033],[0.4346,-0.3067],
+    [0.4387,-0.3101],[0.4427,-0.3135],[0.4468,-0.3168],[0.451,-0.3199],[0.4554,-0.3229],[0.4599,-0.3257],
+    [0.4646,-0.3281],[0.4694,-0.3301],[0.4744,-0.3319],[0.4795,-0.3333],[0.4846,-0.3345],[0.4898,-0.3355],
+    [0.495,-0.3363],[0.5002,-0.337],[0.5055,-0.3375],[0.5107,-0.3379],[0.516,-0.3382],[0.5212,-0.3384],
+    [0.5265,-0.3385],[0.5318,-0.3386],[0.537,-0.3386],[0.5423,-0.3387],[0.5476,-0.3388],[0.5529,-0.339],
+    [0.5581,-0.3393],[0.5634,-0.3396],[0.5686,-0.34],[0.5739,-0.3403],[0.5792,-0.3405],[0.5844,-0.3408],
+    [0.5897,-0.341],[0.595,-0.3411],[0.6002,-0.3412],[0.6055,-0.3413],[0.6108,-0.3414],[0.616,-0.3414],
+    [0.6213,-0.3414],[0.6266,-0.3414],[0.6318,-0.3412],[0.6371,-0.3408],[0.6423,-0.3401],[0.6475,-0.3392],
+    [0.6527,-0.3382],[0.6578,-0.337],[0.6629,-0.3357],[0.668,-0.3343],[0.6731,-0.3329],[0.6781,-0.3313],
+    [0.6831,-0.3295],[0.6879,-0.3274],[0.6926,-0.325],[0.697,-0.3221],[0.7011,-0.3188],[0.7048,-0.315],
+    [0.7082,-0.311],[0.7113,-0.3067],[0.7143,-0.3024],[0.7172,-0.298],[0.7201,-0.2936],[0.7229,-0.2892],
+    [0.7258,-0.2847],[0.7286,-0.2803],[0.7314,-0.2758],[0.7343,-0.2714],[0.7371,-0.267],[0.74,-0.2625],
+    [0.7428,-0.2581],[0.7457,-0.2537],[0.7486,-0.2493],[0.7515,-0.2448],[0.7544,-0.2404],[0.7573,-0.2361],
+    [0.7602,-0.2317],[0.7632,-0.2273],[0.7662,-0.223],[0.7692,-0.2187],[0.7722,-0.2144],[0.7753,-0.2101],
+    [0.7785,-0.2059],[0.7816,-0.2016],[0.7848,-0.1974],[0.7879,-0.1932],[0.791,-0.1889],[0.7941,-0.1847],
+    [0.7972,-0.1804],[0.8002,-0.176],[0.8031,-0.1717],[0.8061,-0.1673],[0.8089,-0.1629],[0.8118,-0.1585],
+    [0.8147,-0.154],[0.8175,-0.1496],[0.8204,-0.1452],[0.8232,-0.1407],[0.8261,-0.1363],[0.8289,-0.1319],
+    [0.8317,-0.1274],[0.8345,-0.1229],[0.8373,-0.1184],[0.84,-0.114],[0.8428,-0.1095],[0.8457,-0.105],
+    [0.8486,-0.1007],[0.8516,-0.0963],[0.8547,-0.0921],[0.8579,-0.0879],[0.8613,-0.0839],[0.8649,-0.08],
+    [0.8687,-0.0763],[0.8726,-0.0728],[0.8768,-0.0696],[0.8811,-0.0665],[0.8855,-0.0637],[0.8901,-0.0611],
+    [0.8947,-0.0586],[0.8995,-0.0562],[0.9042,-0.054],[0.909,-0.0518],[0.9138,-0.0496],[0.9186,-0.0475],
+    [0.9235,-0.0455],[0.9284,-0.0434],[0.9332,-0.0414],[0.9381,-0.0393],[0.9429,-0.0373],[0.9477,-0.0351],
+    [0.9525,-0.0328],[0.9572,-0.0305],[0.9618,-0.028],[0.9664,-0.0254],[0.9709,-0.0226],[0.9753,-0.0197],
+    [0.9796,-0.0167],[0.9838,-0.0135],[0.988,-0.0103],[0.992,-0.0069],[0.996,-0.0035],[1,-0]
+  ];
+  var RAY_ROT = [
+    -36.74,-36.72,-36.68,-36.67,-36.68,-36.71,-36.74,-36.77,-36.78,-36.79,-36.78,-36.75,
+    -36.69,-36.62,-36.52,-36.41,-36.31,-36.22,-36.15,-36.10,-36.07,-36.05,-36.04,-36.02,
+    -36.01,-36.00,-35.99,-35.98,-35.96,-35.93,-35.88,-35.83,-35.79,-35.76,-35.74,-35.73,
+    -35.72,-35.69,-35.65,-35.58,-35.49,-35.39,-35.31,-35.24,-35.17,-35.09,-34.96,-34.81,
+    -34.64,-34.48,-34.36,-34.26,-34.19,-34.12,-34.03,-33.92,-33.76,-33.58,-33.37,-33.14,
+    -32.91,-32.70,-32.51,-32.36,-32.24,-32.16,-32.11,-32.09,-32.08,-32.08,-32.07,-32.07,
+    -32.08,-32.12,-32.20,-32.31,-32.46,-32.63,-32.82,-33.00,-33.18,-33.36,-33.54,-33.76,
+    -34.03,-34.35,-34.72,-35.12,-35.53,-35.96,-36.39,-36.83,-37.29,-37.76,-38.25,-38.74,
+    -39.23,-39.69,-40.08,-40.36,-40.47,-40.36,-39.96,-39.16,-37.82,-35.76,-32.89,-29.28,
+    -25.22,-21.13,-17.44,-14.36,-11.91,-9.93,-8.25,-6.71,-5.25,-3.85,-2.56,-1.48,
+    -0.72,-0.41,-0.58,-1.15,-1.94,-2.71,-3.28,-3.54,-3.50,-3.23,-2.80,-2.30,
+    -1.80,-1.36,-1.03,-0.81,-0.64,-0.36,0.27,1.48,3.36,5.73,8.23,10.50,
+    12.31,13.65,14.69,15.67,16.90,18.68,21.39,25.28,30.36,36.26,42.27,47.59,
+    51.69,54.42,56.00,56.79,57.14,57.31,57.39,57.44,57.45,57.42,57.35,57.23,
+    57.09,56.95,56.80,56.67,56.52,56.33,56.06,55.70,55.25,54.75,54.25,53.82,
+    53.51,53.35,53.36,53.53,53.85,54.31,54.87,55.48,56.07,56.58,56.95,57.15,
+    57.21,57.17,57.14,57.21,57.41,57.72,58.03,58.24,58.26,58.06,57.63,56.95,
+    55.98,54.67,52.98,50.93,48.52,45.81,42.86,39.76,36.67,33.75,31.16,29.02,
+    27.35,26.11,25.17,24.42,23.78,23.24,22.85,22.66,22.74,23.13,23.82,24.81,
+    26.05,27.47,29.03,30.66,32.35,34.10,35.86,37.54,39.01,40.15,40.91,41.20
   ];
 
   var TURTLE = {
@@ -24033,8 +24080,8 @@ else theftLoad();
     bodyFrac: 0.9578, cap: 560, path: TURTLE_PATH, rot: TURTLE_ROT
   };
   var RAY = {
-    src: 'images/ray.webp', sw: 244, sh: 199,
-    bodyFrac: 0.96, cap: 559, path: RAY_PATH, bias: RAY_BIAS
+    src: 'images/ray.webp', sw: 242, sh: 193,
+    bodyFrac: 1.0478, cap: 512, path: RAY_PATH, rot: RAY_ROT
   };
 
   function rad(d) { return d * Math.PI / 180; }
@@ -24086,10 +24133,7 @@ else theftLoad();
       var lx = (p[0] - mx) * need, ly = (p[1] - my) * need;
       var x = ox + lx * ca - ly * sa;
       var y = oy + lx * sa + ly * ca;
-      // c.rot for an animal that was de-rotated frame by frame; c.bias for one
-      // that kept the orientation it was filmed with and only needs the path's
-      // own normalisation turned back out.
-      var r = (c.rot ? c.rot[i] : c.bias) + ang;
+      var r = c.rot[i] + ang;
       return { transform: 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + r.toFixed(1) + 'deg)' };
     });
 
@@ -24127,20 +24171,21 @@ else theftLoad();
   // all until permission is granted from a user gesture, so on the phones most of
   // these swimmers actually carry it could never have worked without a prompt.
   //
-  // THE RATE IS A CEILING ON THE PAIR, NOT ON EACH. The turtle originally came
-  // every 20-40s, a mean gap of 30s; call that rate R. Marco cut him to 30% of R
-  // on 30 Aug 2026 (mean gap 100s), and asked on the same day that turtle and ray
-  // TOGETHER stay under half of R. So there is one scheduler, not two, and it
-  // fires every 40-83s - a mean gap of 61.5s, which is 0.49R. Which animal turns
-  // up is then a weighted coin: the turtle keeps his own 0.30R (61.5/100 = 0.615
-  // of the passes) and the ray gets the remaining 0.19R. Adding a third animal
-  // means re-cutting these shares, not adding a third timer.
+  // THE RATE IS SET ON THE PAIR, NOT ON EACH. Marco, 30 Aug 2026: one animal a
+  // minute in total, shared between the two. So there is one scheduler, not two,
+  // it fires every 40-80s for a mean gap of 60s, and a fair coin decides which
+  // animal turns up - half a pass each per minute. Adding a third animal means
+  // re-cutting these shares, not adding a third timer.
   //
-  // A pass lasts SWIM_MS (10s), so at this cadence something is on screen about
-  // a sixth of the time - the turtle a tenth of it, the ray a sixteenth.
+  // For scale: the turtle alone originally came every 20-40s, a mean gap of 30s.
+  // One a minute is exactly half that, which is also the ceiling Marco set for
+  // the pair earlier the same day.
+  //
+  // A pass lasts SWIM_MS (10s), so at this cadence something is on screen a sixth
+  // of the time, each animal a twelfth.
   var FIRST_MS = 3000, FIRST_JITTER = 600;
-  var MIN_GAP_MS = 40000, GAP_SPREAD = 43000;   // 40-83s between passes
-  var TURTLE_SHARE = 0.615;
+  var MIN_GAP_MS = 40000, GAP_SPREAD = 40000;   // 40-80s between passes
+  var TURTLE_SHARE = 0.5;
   var lastRun = 0;
   var pending = null;          // the animal whose sprite has already been warmed
 
