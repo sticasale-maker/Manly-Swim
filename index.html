@@ -2385,7 +2385,15 @@
     transition:max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
     padding:0 clamp(12px,4vw,16px);
   }
-  .chl-body.chl-open { max-height:1400px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(10px,3vw,12px); }
+  /* Headroom for the explainer note. Measured at a 375px viewport the open body
+     is 956px (the note itself 682px, the map 248px), so the old 1400px cap did
+     still clear it - but only by 1.45x, and it was set when the note was a
+     single paragraph. A narrower phone or a browser minimum-font-size would eat
+     that margin, and the failure is silent: the note is the last thing in the
+     body, so the first thing a clip takes is the source line. This is a max,
+     not a height - the body is still only as tall as its content - so the
+     headroom costs nothing but the ease curve on the open/close transition. */
+  .chl-body.chl-open { max-height:2200px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(10px,3vw,12px); }
   /* A WINDOW on the scene, not the whole scene. The full SNSW map is 780x890
      covering five degrees of latitude, which at card width put Sydney in about
      forty pixels. This crops to the source's own x 157-352, y 253-403 - about
@@ -2440,6 +2448,19 @@
     margin-top:7px;
   }
   .chl-note b { color:var(--deep); font-weight:600; }
+  /* The note was one paragraph of caption and is now a multi-section explainer,
+     so it needs real block spacing. All of this is scoped inside .chl-note - the
+     card has no other prose, and h4/ul/p are otherwise unstyled in this app. */
+  .chl-note p { margin:0 0 7px; }
+  .chl-note p:last-child { margin-bottom:0; }
+  .chl-note-h {
+    font-family:'Inter',sans-serif; font-size:10.5px; font-weight:700;
+    letter-spacing:0.2px; color:var(--deep); margin:11px 0 5px;
+  }
+  .chl-note ul { margin:0 0 7px; padding-left:15px; }
+  .chl-note li { margin:0 0 4px; }
+  .chl-note li:last-child { margin-bottom:0; }
+  .chl-note-src { margin-top:9px; opacity:0.8; }
   .chop-graph-legend {
     display:flex; align-items:center; gap:8px; margin-top:8px;
     font-family:'Inter',sans-serif; font-size:clamp(8px,2.4vw,10px); color:var(--dim);
@@ -3983,13 +4004,52 @@
           <span class="chl-age" id="chlAge">&nbsp;</span>
         </div>
         <div class="chl-note">
-          Phytoplankton in the <b>open ocean</b> &mdash; the East Australian Current and its
-          eddies, hundreds of kilometres wide. It is <b>not a reading for Cabbage Tree Bay</b>
-          and it does not say whether there is algae in the water you swim in.
-          Each pixel is about 775&nbsp;m, so the bay is smaller than one; and the red fringe
-          that hugs the whole coastline is sediment and seabed the algorithm cannot tell
-          from algae, not a bloom. Chlorophyll-a is phytoplankton in general, harmless and
-          harmful alike. VIIRS via IMOS OceanCurrent.
+          <p>
+            Chlorophyll-a is the primary green photosynthetic pigment found in
+            phytoplankton&mdash;microscopic marine algae that drift in the ocean. Just
+            like terrestrial plants, these single-celled organisms use Chlorophyll-a to
+            capture sunlight and convert it into energy.
+          </p>
+          <p>
+            When phytoplankton populations explode into an &ldquo;algal bloom,&rdquo; the
+            sheer volume of Chlorophyll-a in the water column drastically alters the
+            optical properties of the ocean. The pigment absorbs red and blue light while
+            reflecting green, turning the water a murky, emerald colour.
+          </p>
+          <h4 class="chl-note-h">What Causes the Blooms?</h4>
+          <p>
+            Phytoplankton require two primary ingredients to multiply: sunlight and
+            nutrients (like nitrogen and phosphorus). Along the New South Wales coast,
+            these explosive blooms are typically triggered by a combination of factors:
+          </p>
+          <ul>
+            <li><b>Coastal Upwelling:</b> As the East Australian Current (EAC) flows
+              southward and interacts with the continental shelf, it often drives cold,
+              nutrient-rich deep water to the surface.</li>
+            <li><b>Terrestrial Runoff:</b> Heavy coastal rains flush organic matter and
+              fertilizers from land catchments directly into the nearshore environment,
+              providing a sudden nutrient feast for algae.</li>
+            <li><b>Optimal Sunlight:</b> As the water warms and daylight hours increase,
+              the photosynthetic engine of the phytoplankton accelerates.</li>
+          </ul>
+          <h4 class="chl-note-h">Seasonality and Duration</h4>
+          <ul>
+            <li><b>When it happens:</b> While Chlorophyll-a is always present in the water,
+              the &ldquo;Temperate East&rdquo; marine bioregion (which includes the Sydney
+              coastline) experiences its most massive, classic phytoplankton blooms during
+              Spring (September through November). During these months, the combination of
+              increasing solar radiation and nutrient availability creates the perfect
+              storm for algal growth. Smaller, secondary spikes can also occur in summer
+              driven by intense EAC upwelling events.</li>
+            <li><b>How long it lasts:</b> The biological life cycle of a bloom takes time
+              to spin up and eventually dissipate. While the physical upwelling of cold
+              water might occur rapidly over 5 to 10 days, the resulting phytoplankton
+              blooms typically develop and persist over 4 to 8 weeks. However, the actual
+              duration of poor visibility at a specific coastal dive site may only last a
+              few days to a couple of weeks, depending on how quickly ocean currents flush
+              the bay and how fast local nutrients are depleted.</li>
+          </ul>
+          <p class="chl-note-src">VIIRS via IMOS OceanCurrent.</p>
         </div>
       </div>
     </div>
@@ -24160,17 +24220,19 @@ else theftLoad();
      chord is made longer than the screen diagonal, which is what guarantees it
      enters from off-screen and leaves off-screen inside the ten seconds.
 
-     The two sprites then differ in where the turn lives, and it matters:
+     BOTH sprites are DE-ROTATED: each points along +X in every frame, and the
+     turn is a run-time rotation from its own ROT table. The argument is
+     smoothness - a baked turn can only step as often as the sprite has frames,
+     where an applied one is interpolated by the compositor at display rate.
 
-       turtle - DE-ROTATED. He points along +X in every frame and TURTLE_ROT is
-                applied at run time. The argument was smoothness: a baked turn
-                can only step as often as the sprite has frames, where an applied
-                one is interpolated by the compositor at display rate.
-       ray    - BAKED. The sprite is the filmed animal, turn and all. The
-                smoothness argument is real but it is worth less than it costs,
-                because the compositor interpolates position and angle
-                independently - and where the ray banks hard, that put it 15.7
-                degrees off its own course. See the ray's own note below.
+     Baked was tried on the ray and abandoned. It read as an accurate idea and
+     crabbed on screen, because an animated image has a clock this app cannot
+     address; the ray's own note below has the three-<img> experiment that
+     settled it, and the 15.7 degrees it cost.
+
+     The ray's path is additionally low-passed, which is where the softness of
+     its bank comes from; the turtle's is not, because his never needed it. That
+     too is in the ray's note.
 
      Whichever way, the invariant is the same and it is the one that matters: at
      every instant the animal points the way it is going. It is checked as such,
@@ -24264,7 +24326,39 @@ else theftLoad();
   // banks it swings 23 degrees inside one of his intervals, which is what put the
   // first attempt 15.7 degrees off course. At 240 keys, with rotation defined off
   // the path, the animal is 0.18 degrees from its heading on average and never
-  // more than 2.84 - better than the baked sprite managed, and it cannot drift.
+  // more than 1.03 - better than the baked sprite managed, and it cannot drift.
+  //
+  // THE PATH IS LOW-PASSED, and the turn follows because the turn is derived from
+  // it. The measured swim banked far harder than it read as: it peaked at 144
+  // degrees a second against the turtle's 39, and swung 6.0 degrees inside a
+  // single 42ms key, which on screen was a snap rather than a bank. RAY_PATH is
+  // now the measured path through a Gaussian along its own index, sigma 10 keys,
+  // and RAY_ROT is re-derived from THAT - so the invariant below is untouched by
+  // construction: rotation is still nothing but the path's own tangent.
+  //
+  // Smoothing the rotation on its own would have been the wrong knob. It would
+  // have bought the same softer turn by breaking the one thing this block is for,
+  // pointing the animal away from its own course exactly where the course bends
+  // hardest. Filtering the path moves the course instead, and the heading follows
+  // it for free.
+  //
+  //   peak turn rate  144 -> 51 deg/s   (turtle 39)
+  //   mean turn rate   18 -> 12 deg/s   (turtle 11)
+  //   worst step        6.0 -> 2.1 deg per key
+  //   heading error     3.23 -> 1.03 deg worst, 0.50 -> 0.18 mean
+  //
+  // It stays the filmed swim: no point moves more than 1.14% of the chord, the
+  // total turn is 78 degrees against 69, and the arc still bows 0.34 of the chord
+  // off it, which is what the midpoint anchoring below is sized against.
+  //
+  // Two details that are not optional if this is ever re-run. The tangent must be
+  // taken from the UNROUNDED smoothed path: at 5 decimal places the quantisation
+  // is a thousandth of a key step, which is invisible in position and 17 deg/s of
+  // noise in a tangent differenced from it - deriving the angle from the rounded
+  // array put the peak back up at 61. And the path must be re-sampled to equal
+  // arc length afterwards, because smoothing shortens the curved stretches more
+  // than the straight ones: without it the keys bunch through the bank and the
+  // ray slows to half speed there, where the filmed animal held 1.04.
   //
   // Size: the ray is measured body-to-body against the turtle rather than to a
   // fraction of the screen. Its disc, and the turtle's shell, both come out at
@@ -24278,68 +24372,68 @@ else theftLoad();
   // clip. Rather than leave a straight cut it is faded out over the last few
   // rows, so on those frames the tail tapers away instead of ending on a line.
   var RAY_PATH = [
-    [0,0],[0.0042,-0.0032],[0.0084,-0.0063],[0.0127,-0.0094],[0.0169,-0.0126],[0.0211,-0.0157],
-    [0.0254,-0.0189],[0.0296,-0.0221],[0.0338,-0.0252],[0.038,-0.0284],[0.0422,-0.0315],[0.0465,-0.0347],
-    [0.0507,-0.0378],[0.0549,-0.041],[0.0591,-0.0441],[0.0634,-0.0472],[0.0676,-0.0504],[0.0719,-0.0535],
-    [0.0761,-0.0566],[0.0804,-0.0597],[0.0846,-0.0628],[0.0889,-0.0659],[0.0932,-0.069],[0.0974,-0.0721],
-    [0.1017,-0.0752],[0.106,-0.0783],[0.1102,-0.0814],[0.1145,-0.0845],[0.1188,-0.0876],[0.123,-0.0907],
-    [0.1273,-0.0938],[0.1316,-0.0969],[0.1358,-0.1],[0.1401,-0.103],[0.1444,-0.1061],[0.1487,-0.1092],
-    [0.1529,-0.1123],[0.1572,-0.1153],[0.1615,-0.1184],[0.1658,-0.1215],[0.1701,-0.1245],[0.1744,-0.1276],
-    [0.1787,-0.1307],[0.183,-0.1337],[0.1873,-0.1367],[0.1916,-0.1398],[0.1959,-0.1428],[0.2002,-0.1458],
-    [0.2046,-0.1488],[0.2089,-0.1518],[0.2132,-0.1548],[0.2176,-0.1577],[0.222,-0.1607],[0.2263,-0.1637],
-    [0.2307,-0.1666],[0.2351,-0.1696],[0.2394,-0.1725],[0.2438,-0.1754],[0.2482,-0.1783],[0.2526,-0.1812],
-    [0.257,-0.1841],[0.2615,-0.187],[0.2659,-0.1898],[0.2704,-0.1926],[0.2748,-0.1954],[0.2793,-0.1982],
-    [0.2837,-0.201],[0.2882,-0.2038],[0.2927,-0.2066],[0.2971,-0.2094],[0.3016,-0.2122],[0.3061,-0.215],
-    [0.3105,-0.2178],[0.315,-0.2206],[0.3195,-0.2234],[0.3239,-0.2263],[0.3284,-0.2291],[0.3328,-0.2319],
-    [0.3372,-0.2348],[0.3417,-0.2376],[0.3461,-0.2405],[0.3505,-0.2434],[0.3549,-0.2463],[0.3593,-0.2492],
-    [0.3636,-0.2522],[0.368,-0.2551],[0.3723,-0.2581],[0.3767,-0.2611],[0.381,-0.2642],[0.3852,-0.2672],
-    [0.3895,-0.2704],[0.3937,-0.2735],[0.3979,-0.2767],[0.4021,-0.2799],[0.4063,-0.2831],[0.4104,-0.2864],
-    [0.4145,-0.2897],[0.4186,-0.2931],[0.4226,-0.2965],[0.4266,-0.2999],[0.4306,-0.3033],[0.4346,-0.3067],
-    [0.4387,-0.3101],[0.4427,-0.3135],[0.4468,-0.3168],[0.451,-0.3199],[0.4554,-0.3229],[0.4599,-0.3257],
-    [0.4646,-0.3281],[0.4694,-0.3301],[0.4744,-0.3319],[0.4795,-0.3333],[0.4846,-0.3345],[0.4898,-0.3355],
-    [0.495,-0.3363],[0.5002,-0.337],[0.5055,-0.3375],[0.5107,-0.3379],[0.516,-0.3382],[0.5212,-0.3384],
-    [0.5265,-0.3385],[0.5318,-0.3386],[0.537,-0.3386],[0.5423,-0.3387],[0.5476,-0.3388],[0.5529,-0.339],
-    [0.5581,-0.3393],[0.5634,-0.3396],[0.5686,-0.34],[0.5739,-0.3403],[0.5792,-0.3405],[0.5844,-0.3408],
-    [0.5897,-0.341],[0.595,-0.3411],[0.6002,-0.3412],[0.6055,-0.3413],[0.6108,-0.3414],[0.616,-0.3414],
-    [0.6213,-0.3414],[0.6266,-0.3414],[0.6318,-0.3412],[0.6371,-0.3408],[0.6423,-0.3401],[0.6475,-0.3392],
-    [0.6527,-0.3382],[0.6578,-0.337],[0.6629,-0.3357],[0.668,-0.3343],[0.6731,-0.3329],[0.6781,-0.3313],
-    [0.6831,-0.3295],[0.6879,-0.3274],[0.6926,-0.325],[0.697,-0.3221],[0.7011,-0.3188],[0.7048,-0.315],
-    [0.7082,-0.311],[0.7113,-0.3067],[0.7143,-0.3024],[0.7172,-0.298],[0.7201,-0.2936],[0.7229,-0.2892],
-    [0.7258,-0.2847],[0.7286,-0.2803],[0.7314,-0.2758],[0.7343,-0.2714],[0.7371,-0.267],[0.74,-0.2625],
-    [0.7428,-0.2581],[0.7457,-0.2537],[0.7486,-0.2493],[0.7515,-0.2448],[0.7544,-0.2404],[0.7573,-0.2361],
-    [0.7602,-0.2317],[0.7632,-0.2273],[0.7662,-0.223],[0.7692,-0.2187],[0.7722,-0.2144],[0.7753,-0.2101],
-    [0.7785,-0.2059],[0.7816,-0.2016],[0.7848,-0.1974],[0.7879,-0.1932],[0.791,-0.1889],[0.7941,-0.1847],
-    [0.7972,-0.1804],[0.8002,-0.176],[0.8031,-0.1717],[0.8061,-0.1673],[0.8089,-0.1629],[0.8118,-0.1585],
-    [0.8147,-0.154],[0.8175,-0.1496],[0.8204,-0.1452],[0.8232,-0.1407],[0.8261,-0.1363],[0.8289,-0.1319],
-    [0.8317,-0.1274],[0.8345,-0.1229],[0.8373,-0.1184],[0.84,-0.114],[0.8428,-0.1095],[0.8457,-0.105],
-    [0.8486,-0.1007],[0.8516,-0.0963],[0.8547,-0.0921],[0.8579,-0.0879],[0.8613,-0.0839],[0.8649,-0.08],
-    [0.8687,-0.0763],[0.8726,-0.0728],[0.8768,-0.0696],[0.8811,-0.0665],[0.8855,-0.0637],[0.8901,-0.0611],
-    [0.8947,-0.0586],[0.8995,-0.0562],[0.9042,-0.054],[0.909,-0.0518],[0.9138,-0.0496],[0.9186,-0.0475],
-    [0.9235,-0.0455],[0.9284,-0.0434],[0.9332,-0.0414],[0.9381,-0.0393],[0.9429,-0.0373],[0.9477,-0.0351],
-    [0.9525,-0.0328],[0.9572,-0.0305],[0.9618,-0.028],[0.9664,-0.0254],[0.9709,-0.0226],[0.9753,-0.0197],
-    [0.9796,-0.0167],[0.9838,-0.0135],[0.988,-0.0103],[0.992,-0.0069],[0.996,-0.0035],[1,-0]
+    [0,0],[0.00417,-0.00311],[0.00835,-0.00621],[0.01252,-0.00932],[0.01669,-0.01242],[0.02087,-0.01552],
+    [0.02505,-0.01862],[0.02923,-0.02172],[0.03341,-0.02481],[0.03759,-0.0279],[0.04177,-0.03099],[0.04596,-0.03408],
+    [0.05015,-0.03717],[0.05434,-0.04026],[0.05853,-0.04334],[0.06272,-0.04642],[0.06691,-0.0495],[0.07111,-0.05257],
+    [0.0753,-0.05564],[0.0795,-0.05871],[0.0837,-0.06178],[0.08791,-0.06485],[0.09211,-0.06791],[0.09632,-0.07097],
+    [0.10053,-0.07403],[0.10474,-0.07708],[0.10895,-0.08013],[0.11316,-0.08318],[0.11738,-0.08623],[0.1216,-0.08927],
+    [0.12582,-0.09231],[0.13005,-0.09534],[0.13427,-0.09837],[0.1385,-0.1014],[0.14273,-0.10443],[0.14697,-0.10745],
+    [0.15121,-0.11046],[0.15545,-0.11347],[0.1597,-0.11647],[0.16395,-0.11947],[0.1682,-0.12247],[0.17246,-0.12546],
+    [0.17672,-0.12844],[0.18099,-0.13141],[0.18526,-0.13438],[0.18954,-0.13734],[0.19382,-0.1403],[0.1981,-0.14325],
+    [0.2024,-0.14618],[0.20669,-0.14912],[0.21099,-0.15204],[0.2153,-0.15496],[0.21961,-0.15787],[0.22393,-0.16077],
+    [0.22826,-0.16366],[0.23258,-0.16654],[0.23692,-0.16942],[0.24125,-0.17229],[0.2456,-0.17516],[0.24994,-0.17801],
+    [0.25429,-0.18087],[0.25865,-0.18371],[0.26301,-0.18655],[0.26737,-0.18939],[0.27173,-0.19222],[0.27609,-0.19505],
+    [0.28046,-0.19788],[0.28483,-0.20071],[0.28919,-0.20354],[0.29356,-0.20636],[0.29792,-0.2092],[0.30228,-0.21203],
+    [0.30664,-0.21487],[0.311,-0.21771],[0.31535,-0.22056],[0.31969,-0.22342],[0.32403,-0.22629],[0.32837,-0.22916],
+    [0.3327,-0.23205],[0.33702,-0.23495],[0.34133,-0.23786],[0.34563,-0.24078],[0.34993,-0.24371],[0.35422,-0.24665],
+    [0.3585,-0.24961],[0.36277,-0.25258],[0.36703,-0.25556],[0.37129,-0.25855],[0.37554,-0.26155],[0.37979,-0.26455],
+    [0.38403,-0.26756],[0.38827,-0.27057],[0.39252,-0.27357],[0.39677,-0.27657],[0.40103,-0.27956],[0.4053,-0.28253],
+    [0.40958,-0.28548],[0.41388,-0.28841],[0.41821,-0.2913],[0.42256,-0.29415],[0.42694,-0.29696],[0.43135,-0.29971],
+    [0.4358,-0.3024],[0.4403,-0.30502],[0.44484,-0.30756],[0.44942,-0.31001],[0.45405,-0.31238],[0.45874,-0.31464],
+    [0.46347,-0.3168],[0.46825,-0.31885],[0.47308,-0.32079],[0.47795,-0.32261],[0.48286,-0.32431],[0.48782,-0.32589],
+    [0.49281,-0.32735],[0.49783,-0.3287],[0.50289,-0.32994],[0.50797,-0.33107],[0.51306,-0.33209],[0.51818,-0.33302],
+    [0.52332,-0.33385],[0.52847,-0.33459],[0.53363,-0.33525],[0.53879,-0.33584],[0.54397,-0.33635],[0.54915,-0.33679],
+    [0.55434,-0.33716],[0.55954,-0.33748],[0.56473,-0.33773],[0.56993,-0.33792],[0.57513,-0.33805],[0.58033,-0.33813],
+    [0.58553,-0.33814],[0.59073,-0.33808],[0.59593,-0.33796],[0.60113,-0.33777],[0.60633,-0.33749],[0.61151,-0.33714],
+    [0.6167,-0.33669],[0.62187,-0.33615],[0.62703,-0.33551],[0.63218,-0.33475],[0.6373,-0.33387],[0.64241,-0.33286],
+    [0.64748,-0.33172],[0.65252,-0.33043],[0.65752,-0.32899],[0.66247,-0.32739],[0.66736,-0.32563],[0.67219,-0.32369],
+    [0.67694,-0.32159],[0.68162,-0.31931],[0.68621,-0.31686],[0.6907,-0.31424],[0.69509,-0.31145],[0.69938,-0.30851],
+    [0.70356,-0.30542],[0.70764,-0.30219],[0.71161,-0.29883],[0.71547,-0.29534],[0.71923,-0.29175],[0.7229,-0.28806],
+    [0.72647,-0.28428],[0.72996,-0.28043],[0.73337,-0.2765],[0.73672,-0.27252],[0.74,-0.26848],[0.74322,-0.2644],
+    [0.7464,-0.26028],[0.74953,-0.25613],[0.75263,-0.25195],[0.7557,-0.24775],[0.75874,-0.24353],[0.76176,-0.23929],
+    [0.76476,-0.23504],[0.76775,-0.23079],[0.77073,-0.22653],[0.77371,-0.22226],[0.77667,-0.21798],[0.77963,-0.21371],
+    [0.78259,-0.20943],[0.78555,-0.20515],[0.7885,-0.20086],[0.79145,-0.19658],[0.7944,-0.1923],[0.79735,-0.18801],
+    [0.80029,-0.18372],[0.80324,-0.17944],[0.80618,-0.17515],[0.80913,-0.17086],[0.81208,-0.16657],[0.81503,-0.16229],
+    [0.81798,-0.15801],[0.82094,-0.15373],[0.8239,-0.14946],[0.82688,-0.14519],[0.82987,-0.14093],[0.83288,-0.13669],
+    [0.8359,-0.13246],[0.83895,-0.12824],[0.84203,-0.12405],[0.84514,-0.11988],[0.84829,-0.11574],[0.85149,-0.11164],
+    [0.85473,-0.10757],[0.85803,-0.10355],[0.86138,-0.09957],[0.86479,-0.09564],[0.86827,-0.09178],[0.87182,-0.08798],
+    [0.87544,-0.08424],[0.87913,-0.08058],[0.8829,-0.07699],[0.88674,-0.07347],[0.89064,-0.07004],[0.89462,-0.06669],
+    [0.89866,-0.06341],[0.90277,-0.06022],[0.90693,-0.0571],[0.91115,-0.05406],[0.91542,-0.05108],[0.91973,-0.04818],
+    [0.92408,-0.04533],[0.92847,-0.04253],[0.93289,-0.03979],[0.93733,-0.03708],[0.94179,-0.03441],[0.94627,-0.03177],
+    [0.95077,-0.02915],[0.95527,-0.02654],[0.95977,-0.02394],[0.96428,-0.02135],[0.96879,-0.01875],[0.97329,-0.01614],
+    [0.97778,-0.01351],[0.98226,-0.01087],[0.98672,-0.0082],[0.99117,-0.0055],[0.9956,-0.00277],[1,0]
   ];
   var RAY_ROT = [
-    -36.74,-36.72,-36.68,-36.67,-36.68,-36.71,-36.74,-36.77,-36.78,-36.79,-36.78,-36.75,
-    -36.69,-36.62,-36.52,-36.41,-36.31,-36.22,-36.15,-36.10,-36.07,-36.05,-36.04,-36.02,
-    -36.01,-36.00,-35.99,-35.98,-35.96,-35.93,-35.88,-35.83,-35.79,-35.76,-35.74,-35.73,
-    -35.72,-35.69,-35.65,-35.58,-35.49,-35.39,-35.31,-35.24,-35.17,-35.09,-34.96,-34.81,
-    -34.64,-34.48,-34.36,-34.26,-34.19,-34.12,-34.03,-33.92,-33.76,-33.58,-33.37,-33.14,
-    -32.91,-32.70,-32.51,-32.36,-32.24,-32.16,-32.11,-32.09,-32.08,-32.08,-32.07,-32.07,
-    -32.08,-32.12,-32.20,-32.31,-32.46,-32.63,-32.82,-33.00,-33.18,-33.36,-33.54,-33.76,
-    -34.03,-34.35,-34.72,-35.12,-35.53,-35.96,-36.39,-36.83,-37.29,-37.76,-38.25,-38.74,
-    -39.23,-39.69,-40.08,-40.36,-40.47,-40.36,-39.96,-39.16,-37.82,-35.76,-32.89,-29.28,
-    -25.22,-21.13,-17.44,-14.36,-11.91,-9.93,-8.25,-6.71,-5.25,-3.85,-2.56,-1.48,
-    -0.72,-0.41,-0.58,-1.15,-1.94,-2.71,-3.28,-3.54,-3.50,-3.23,-2.80,-2.30,
-    -1.80,-1.36,-1.03,-0.81,-0.64,-0.36,0.27,1.48,3.36,5.73,8.23,10.50,
-    12.31,13.65,14.69,15.67,16.90,18.68,21.39,25.28,30.36,36.26,42.27,47.59,
-    51.69,54.42,56.00,56.79,57.14,57.31,57.39,57.44,57.45,57.42,57.35,57.23,
-    57.09,56.95,56.80,56.67,56.52,56.33,56.06,55.70,55.25,54.75,54.25,53.82,
-    53.51,53.35,53.36,53.53,53.85,54.31,54.87,55.48,56.07,56.58,56.95,57.15,
-    57.21,57.17,57.14,57.21,57.41,57.72,58.03,58.24,58.26,58.06,57.63,56.95,
-    55.98,54.67,52.98,50.93,48.52,45.81,42.86,39.76,36.67,33.75,31.16,29.02,
-    27.35,26.11,25.17,24.42,23.78,23.24,22.85,22.66,22.74,23.13,23.82,24.81,
-    26.05,27.47,29.03,30.66,32.35,34.10,35.86,37.54,39.01,40.15,40.91,41.20
+    -36.67,-36.66,-36.64,-36.62,-36.60,-36.58,-36.55,-36.53,-36.50,-36.47,-36.44,-36.42,
+    -36.39,-36.36,-36.32,-36.29,-36.26,-36.23,-36.19,-36.16,-36.12,-36.09,-36.05,-36.01,
+    -35.98,-35.94,-35.90,-35.86,-35.81,-35.77,-35.72,-35.67,-35.62,-35.57,-35.51,-35.45,
+    -35.39,-35.32,-35.25,-35.18,-35.10,-35.02,-34.93,-34.84,-34.75,-34.66,-34.56,-34.46,
+    -34.36,-34.26,-34.15,-34.05,-33.94,-33.84,-33.74,-33.64,-33.54,-33.45,-33.36,-33.28,
+    -33.20,-33.13,-33.07,-33.02,-32.98,-32.95,-32.93,-32.93,-32.94,-32.96,-33.00,-33.04,
+    -33.11,-33.19,-33.28,-33.39,-33.50,-33.63,-33.77,-33.92,-34.08,-34.24,-34.40,-34.56,
+    -34.72,-34.87,-35.01,-35.13,-35.23,-35.29,-35.32,-35.31,-35.25,-35.13,-34.96,-34.71,
+    -34.39,-34.00,-33.51,-32.94,-32.28,-31.53,-30.68,-29.74,-28.71,-27.61,-26.42,-25.17,
+    -23.87,-22.53,-21.16,-19.78,-18.40,-17.03,-15.69,-14.39,-13.13,-11.93,-10.80,-9.72,
+    -8.71,-7.77,-6.88,-6.04,-5.24,-4.50,-3.80,-3.12,-2.45,-1.79,-1.13,-0.46,
+    0.24,0.97,1.75,2.57,3.46,4.41,5.44,6.55,7.75,9.05,10.44,11.93,
+    13.52,15.21,17.00,18.88,20.83,22.86,24.93,27.05,29.18,31.30,33.40,35.45,
+    37.44,39.35,41.16,42.86,44.44,45.89,47.22,48.43,49.50,50.46,51.30,52.03,
+    52.66,53.20,53.66,54.04,54.35,54.61,54.81,54.97,55.10,55.19,55.27,55.32,
+    55.37,55.40,55.43,55.45,55.47,55.49,55.50,55.51,55.51,55.50,55.47,55.43,
+    55.37,55.29,55.17,55.01,54.81,54.56,54.26,53.90,53.47,52.98,52.42,51.78,
+    51.07,50.28,49.43,48.49,47.48,46.44,45.35,44.22,43.06,41.89,40.73,39.57,
+    38.44,37.36,36.32,35.34,34.43,33.59,32.84,32.18,31.60,31.11,30.71,30.40,
+    30.17,30.03,29.96,29.97,30.06,30.21,30.42,30.70,31.05,31.46,31.92,32.18
   ];
 
   var TURTLE = {
