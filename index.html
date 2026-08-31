@@ -13910,6 +13910,17 @@ let _visCauseCounts = null;   // [{cause, n}] over the same window as the bands
 function visGetLastMine() { try { const v = localStorage.getItem('swim_vis_last_mine'); return v ? parseInt(v, 10) : 0; } catch(e) { return 0; } }
 function visSetLastMine() { try { localStorage.setItem('swim_vis_last_mine', Date.now().toString()); } catch(e) {} }
 function visOnCooldown() { const l = visGetLastMine(); return l > 0 && (VIS_COOLDOWN - (Date.now() - l)) > 0; }
+// Past 24h this counts CALENDAR days, not 24-hour blocks. Sunday 11am read on
+// Tuesday morning is 44 elapsed hours, which floors to "1d" - but every reader
+// calls that two days ago, and the error only ever runs one way: it makes a
+// reading look FRESHER than it is. Absent is grey and stale must look stale.
+function agoDays(then, now) {
+  const a = new Date(then), b = new Date(now);
+  a.setHours(0, 0, 0, 0); b.setHours(0, 0, 0, 0);
+  // Round, not floor: a DST boundary makes a local "day" 23 or 25 hours long.
+  return Math.max(1, Math.round((b - a) / 86400000));
+}
+
 function visAgo(ms) {
   if (!ms) return 'just now';
   const m = Math.max(0, Math.floor((Date.now() - ms) / 60000));
@@ -13917,7 +13928,7 @@ function visAgo(ms) {
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  return `${agoDays(ms, Date.now())}d ago`;
 }
 
 async function visFetch() {
@@ -16628,6 +16639,12 @@ function submitFeedback(e) {
   }
 
   // Relative time, self-contained (mirrors visAgo but takes an ISO string).
+  // Self-contained ON PURPOSE - this block must render even if the script that
+  // defines visAgo/agoDays has not run - so the calendar-day rule is repeated
+  // here rather than shared. Keep the two in step: past 24h it is CALENDAR days,
+  // not 24-hour blocks, because a Sunday post read on Tuesday is 44 elapsed
+  // hours and floors to "1d" when every reader calls it two days. On the shop
+  // window that error runs the wrong way - it makes a quiet room look busy.
   function relTime(iso){
     var t = Date.parse(iso); if (isNaN(t)) return '';
     var m = Math.max(0, Math.floor((Date.now() - t) / 60000));
@@ -16635,7 +16652,10 @@ function submitFeedback(e) {
     if (m < 60) return m + 'm ago';
     var h = Math.floor(m / 60);
     if (h < 24) return h + 'h ago';
-    var d = Math.floor(h / 24);
+    var a = new Date(t), b = new Date();
+    a.setHours(0, 0, 0, 0); b.setHours(0, 0, 0, 0);
+    // Round, not floor: a DST boundary makes a local "day" 23 or 25 hours long.
+    var d = Math.max(1, Math.round((b - a) / 86400000));
     if (d < 7) return d + 'd ago';
     return Math.floor(d / 7) + 'w ago';
   }
