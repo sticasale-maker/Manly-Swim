@@ -18937,7 +18937,15 @@ if ('serviceWorker' in navigator) {
     { key:'tide', label:"Tide graph", sel:'#tideGraphWrap', complete:1, custom:1 },
     { key:'weekahead', label:"The week ahead", sel:'.wa2-card', complete:1, custom:1 },
     { key:'forecast', label:"Forecasted values", sel:'.forecast-values', complete:1, custom:1 },
-    { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 }
+    { key:'feedback', label:"Feedback", sel:'#feedbackCard', complete:1, custom:1 },
+    // NOT a card. The passers-by (turtle, ray) are an overlay that swims across
+    // the whole page, so it has no place in the page order above and sits last.
+    // sel hides the host; the animation block ALSO asks window.sectionOn('sealife')
+    // before it spends anything, because display:none would stop them being seen
+    // while the 10s pass and the megabyte of sprites carried on regardless.
+    // complete:1 - they are on for everyone today, and a new switch should not
+    // change what anybody is already looking at.
+    { key:'sealife', label:"Random sealife (turtle + ray)", sel:'#shakeFish', complete:1, custom:1 }
     // Bay Talk removed 11 Aug 2026: #featureCard is nested INSIDE .community-group,
     // so the 'swimmers' row above already shows/hides it. Two switches for one
     // section only let them disagree. A stale featurerequests=0 in someone's saved
@@ -19019,6 +19027,19 @@ if ('serviceWorker' in navigator) {
     try { if (window.track) window.track('mode_change', { mode: m }); } catch (e) {}
   }
   window.setAppMode = setMode; window.getAppMode = getMode;
+
+  // Read-only "is this section switched on?", for behaviour that lives outside
+  // this module. Answers from STORAGE, not from the DOM, so it is valid before
+  // DOMContentLoaded - which is the whole point: apply() runs on DOMContentLoaded
+  // but the passers-by block runs during parse, so it cannot ask by reading
+  // .sec-hidden off an element that has not been classed yet.
+  // Unknown key returns true: a typo here must never silently switch something off.
+  window.sectionOn = function (key) {
+    for (var i = 0; i < SECTIONS.length; i++) {
+      if (SECTIONS[i].key === key) return !!visibleIn(SECTIONS[i], getMode(), getCustom());
+    }
+    return true;
+  };
 
   function buildCustomList(){
     var list = document.getElementById('customList'); if (!list) return;
@@ -24620,18 +24641,19 @@ else theftLoad();
   // not one per animal, and CAST is drawn from evenly. Adding a third re-cuts the
   // same gap three ways; it does not add a third timer.
   //
-  // The rate has been halved twice. The turtle alone originally came every 20-40s,
-  // a mean gap of 30s. Marco, 30 Aug 2026: one animal a minute in total, shared
-  // between them - 40-80s, mean 60s. Halved again the same day: it now fires every
-  // 80-160s for a mean gap of 120s, so each of the two turns up about every four
-  // minutes. Halving the cast rate halves each animal's, precisely because the
-  // rate lives on the cast - there is nothing per-animal to change.
+  // The rate has been cut three times. The turtle alone originally came every
+  // 20-40s, a mean gap of 30s. Marco, 30 Aug 2026: one animal a minute in total,
+  // shared between them - 40-80s, mean 60s. Halved again the same day to 80-160s.
+  // Marco, 1 Sep 2026: two minutes between passes, so the FLOOR is now 120s and
+  // the spread runs to 180s, a mean gap of 150s. Cutting the cast rate cuts each
+  // animal's, precisely because the rate lives on the cast - there is nothing
+  // per-animal to change.
   //
   // A pass lasts SWIM_MS (10s), so at this cadence something is on screen a
-  // twelfth of the time, each animal a twenty-fourth.
+  // fifteenth of the time, each animal a thirtieth - about one every five minutes.
   var CAST = [TURTLE, RAY];
-  var FIRST_MS = 3000, FIRST_JITTER = 600;
-  var MIN_GAP_MS = 80000, GAP_SPREAD = 80000;   // 80-160s between passes
+  var FIRST_MS = 10000, FIRST_JITTER = 600;
+  var MIN_GAP_MS = 120000, GAP_SPREAD = 60000;  // 120-180s between passes
   var lastRun = 0;
   var pending = null;          // the animal drawn for the NEXT pass, sprite warmed
 
@@ -24663,7 +24685,17 @@ else theftLoad();
     } catch (e) { return false; }
   }
 
+  // Customise owns the switch; ask it rather than keeping a second copy of the
+  // mode/custom logic over here, which would be one more pair of things to drift.
+  // Defaults ON if that module has not defined it, so a failure there can never
+  // silently remove the animals.
+  function sealifeOn() {
+    try { return !window.sectionOn || window.sectionOn('sealife'); }
+    catch (e) { return true; }
+  }
+
   function blocked() {
+    if (!sealifeOn()) return true;                  // switched off in Customise
     if (document.visibilityState !== 'visible') return true;
     if (reducedMotion()) return true;
     var shot = document.getElementById('secretShot');
@@ -24689,16 +24721,19 @@ else theftLoad();
 
   if (!thinPipe()) {
     // The first animal is drawn and warmed straight away rather than at
-    // drawNext's polite 400ms: it has only three seconds to arrive, and on a cold
+    // drawNext's polite 400ms: it has only ten seconds to arrive, and on a cold
     // cache it will otherwise turn up half-loaded. Every pass after this one is
     // warmed by drawNext, which has the whole gap to work in.
     pending = pick();
     var first = pending.src;
-    setTimeout(function () { try { new Image().src = first; } catch (e) {} }, 250);
-    // THREE SECONDS FROM PAGE OPEN, not from whenever this script happened to
+    // Not spent on someone who has switched the animals off. The SCHEDULER still
+    // runs either way - it is one timer every couple of minutes - so switching
+    // them back on in Customise brings one along within a gap, without a reload.
+    if (sealifeOn()) setTimeout(function () { try { new Image().src = first; } catch (e) {} }, 250);
+    // TEN SECONDS FROM PAGE OPEN, not from whenever this script happened to
     // run. On a real connection the app's own scripts push this block a second
-    // or two past navigation, which showed up live as a 7.3s first pass when the
-    // delay was measured from here. So it is measured against performance.now(),
+    // or two past navigation, which showed up live as a 7.3s first pass when a
+    // 3s delay was measured from here. So it is measured against performance.now(),
     // which is time since navigation start, with a small floor so a slow-starting
     // page does not fire the first pass the instant the block parses.
     var since = 0;
