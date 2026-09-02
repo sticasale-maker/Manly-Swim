@@ -2400,18 +2400,25 @@
   /* 12 columns, scrollable sideways rather than squeezed: at 320px a readable
      species name plus twelve legible cells does not fit, and shrinking the cells
      until they do makes the whole thing unreadable instead of just narrow. */
-  .bayc-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -2px; }
-  .bayc-grid { display:grid; grid-template-columns:minmax(104px,1.3fr) repeat(12,minmax(19px,1fr)); gap:2px; min-width:290px; }
+  /* IT HAS TO FIT. The first cut floored at 104 + 12x19 + 13 gaps = 358px, which
+     overflows a 375px phone and lands exactly on the edge of a 390px one - so it
+     scrolled sideways by a few pixels on most phones, which reads as broken
+     rather than as scrollable. The floor is now 76 + 12x14 + 13 = 257px, inside
+     even a 320px screen once the card's own padding is taken off. The fr units
+     still let it use whatever width it actually gets. overflow-x stays purely as
+     a safety net; it should never trigger. */
+  .bayc-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .bayc-grid { display:grid; grid-template-columns:minmax(76px,1.2fr) repeat(12,minmax(14px,1fr)); gap:1px; }
   .bayc-mh {
     font-family:'Inter',sans-serif; font-size:8.5px; font-weight:600; color:var(--dim);
     text-align:center; letter-spacing:0.2px; padding-bottom:2px;
   }
   .bayc-mh.is-now { color:var(--ocean); font-weight:700; }
   .bayc-name {
-    font-family:'Inter',sans-serif; font-size:10.5px; line-height:1.25; color:var(--text);
-    display:flex; align-items:center; padding-right:6px;
+    font-family:'Inter',sans-serif; font-size:10px; line-height:1.2; color:var(--text);
+    display:flex; align-items:center; padding-right:5px;
   }
-  .bayc-cell { height:19px; border-radius:3px; background:rgba(74,143,173,0.10); }
+  .bayc-cell { height:17px; border-radius:3px; background:rgba(74,143,173,0.10); }
   .bayc-cell.lv2 { background:#4caf50; }
   .bayc-cell.lv1 { background:#c9c246; }
   .bayc-cell.lv0 { background:rgba(74,143,173,0.10); }
@@ -4215,14 +4222,18 @@
   var INITIALS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
 
   // 2 = usually about, 1 = sometimes, 0 = not usually, -1 = too little data.
+  // `short` is the grid label, `name` the one used in the sentence above it: the
+  // row label has 76px on a small phone and the full names wrapped to two lines,
+  // which doubled the height of half the rows. Nothing is lost - the sentence
+  // names in full whatever is actually about this month.
   var SPECIES = [
-    { name: 'Port Jackson Shark',  m: [1,0,0,0,0,0,2,2,2,2,1,1] },
-    { name: 'Giant Cuttlefish',    m: [1,1,1,1,2,2,2,1,1,1,1,1] },
-    { name: 'Dusky Whaler Shark',  m: [1,2,2,2,2,1,0,1,0,0,0,0] },
-    { name: 'Grey Nurse Shark',    m: [2,0,1,1,2,2,2,2,1,1,1,2] },
-    { name: 'Australian Angelshark', m: [0,0,1,1,1,1,1,2,1,0,0,0] },
-    { name: 'Sea Turtle',          m: [1,1,1,1,2,1,2,1,1,1,1,1] },
-    { name: 'Little Penguin',      m: [0,2,2,0,0,0,0,0,0,0,0,0] }
+    { name: 'Port Jackson Shark',    short: 'Port Jackson', m: [1,0,0,0,0,0,2,2,2,2,1,1] },
+    { name: 'Giant Cuttlefish',      short: 'Cuttlefish',   m: [1,1,1,1,2,2,2,1,1,1,1,1] },
+    { name: 'Dusky Whaler Shark',    short: 'Dusky Whaler', m: [1,2,2,2,2,1,0,1,0,0,0,0] },
+    { name: 'Grey Nurse Shark',      short: 'Grey Nurse',   m: [2,0,1,1,2,2,2,2,1,1,1,2] },
+    { name: 'Australian Angelshark', short: 'Angelshark',   m: [0,0,1,1,1,1,1,2,1,0,0,0] },
+    { name: 'Sea Turtle',            short: 'Sea Turtle',   m: [1,1,1,1,2,1,2,1,1,1,1,1] },
+    { name: 'Little Penguin',        short: 'Penguin',      m: [0,2,2,0,0,0,0,0,0,0,0,0] }
   ];
 
   // Sydney's month, not the device's: a swimmer checking this from an airport
@@ -4262,7 +4273,7 @@
       out.push('<div class="bayc-mh' + (i === M ? ' is-now' : '') + '">' + INITIALS[i] + '</div>');
     }
     SPECIES.forEach(function (s) {
-      out.push('<div class="bayc-name">' + s.name + '</div>');
+      out.push('<div class="bayc-name">' + (s.short || s.name) + '</div>');
       for (var i = 0; i < 12; i++) {
         var v = s.m[i];
         var cls = v === 2 ? 'lv2' : v === 1 ? 'lv1' : v === 0 ? 'lv0' : 'lvx';
