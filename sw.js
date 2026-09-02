@@ -11,7 +11,7 @@
 //  CACHE_VERSION is stamped automatically by CI — do not edit by hand.
 // ─────────────────────────────────────────────────────────────
 
-const CACHE_VERSION = '20260902-221021';
+const CACHE_VERSION = '20260903-003058';
 const CACHE_NAME    = 'swim-manly-' + CACHE_VERSION;
 
 // App shell assets to pre-cache on install (relative to /Manly-Swim/)
