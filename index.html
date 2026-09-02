@@ -4167,9 +4167,6 @@
           From the <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener">VIZ</a>
           Tracking Project &mdash; 4&frac12; years of sightings reported by Sydney divers,
           June 2019 to October 2023, &copy; Marco Bordieri (CC BY-NC-ND).
-          It records what was <em>reported</em>, so a quiet month can mean rough weather
-          and nobody in the water rather than nothing there. The Australian Cownose Ray
-          is tracked too but is left off: it turns up at no reliable time of year.
         </p>
       </div>
     </div>
@@ -15821,7 +15818,16 @@ function oracleSpeakToggle() {
     voice = vs.find(function (v) { return /en[-_]AU/i.test(v.lang); })
          || vs.find(function (v) { return /^en/i.test(v.lang); }) || null;
   } catch (e) {}
-  var chunks = text.match(/[^.!?]+[.!?]+[\s]*|[^.!?]+$/g) || [text];
+  // A DECIMAL POINT IS NOT A FULL STOP. Splitting on bare [.!?] cut "17.2°C"
+  // into "Water is 17." and "2°C." - two utterances, so the voice stopped dead
+  // mid-number and started a new sentence on the decimal. Every sea temperature
+  // and every swell height in metres hit this.
+  // The point between two digits is swapped for a placeholder, the split runs,
+  // then it is put back - simpler than a lookbehind, which Safari was late to.
+  var DOT_ESC = '\u0001';
+  var guarded = text.replace(/(\d)\.(\d)/g, '$1' + DOT_ESC + '$2');
+  var chunks = (guarded.match(/[^.!?]+[.!?]+[\s]*|[^.!?]+$/g) || [guarded])
+    .map(function (c) { return c.split(DOT_ESC).join('.'); });
   var b = _oracleSpeakBtn();
   if (b) b.setAttribute('aria-pressed', 'true');
   _oracleSpeaking = true;
@@ -15929,8 +15935,13 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 // Module-scope emphasise (also fixes refreshCommunitySummary, which referenced
 // the copy nested inside the generator and could not see it).
+// DECIMALS ARE PART OF THE NUMBER. Every \d+ here is \d+(?:\.\d+)? because the
+// bare version broke on a decimal in the ugliest way available: \b matches after
+// the point, so "17.2\u00b0C" bolded as 17.<em>2\u00b0C</em> - the app emphasising the
+// wrong half of its own sea temperature. Same for "12.5 km/h".
+// Keep this in step with the second copy inside the baseline generator.
 function emphasise(t) {
-  return String(t || '').replace(/\b(\d+[\u2013\-]\d+\u00b0[Cc]|\d+\u00b0[Cc]|\d+[\u2013\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
+  return String(t || '').replace(/\b(\d+(?:\.\d+)?[\u2013\-]\d+(?:\.\d+)?\u00b0[Cc]|\d+(?:\.\d+)?\u00b0[Cc]|\d+(?:\.\d+)?[\u2013\-]\d+(?:\.\d+)? km\/h|\d+(?:\.\d+)? km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
 }
 
 // The Worker summariser is an LLM, and it has been caught contradicting the very
@@ -16239,8 +16250,10 @@ async function generateBannerSummaryLocal() {
   const entryNoun     = entryIsEasy ? 'easy entry'    : 'a doable entry';
   const entrySimple   = entryIsEasy ? 'straightforward' : 'doable, if not effortless';
 
+  // The second copy. Decimal-aware for the same reason as the global one above -
+  // see the note there; the two must not drift.
   function emphasise(t) {
-    return t.replace(/\b(\d+[\–\-]\d+°[Cc]|\d+°[Cc]|\d+[\–\-]\d+ km\/h|\d+ km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
+    return t.replace(/\b(\d+(?:\.\d+)?[\–\-]\d+(?:\.\d+)?°[Cc]|\d+(?:\.\d+)?°[Cc]|\d+(?:\.\d+)?[\–\-]\d+(?:\.\d+)? km\/h|\d+(?:\.\d+)? km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
   }
 
   // ── PARAGRAPH 1: Weather ──────────────────────────────────────────────────
