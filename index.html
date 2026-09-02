@@ -2352,6 +2352,78 @@
   .radar-wrap.radar-zoom .radar-map { aspect-ratio:auto; flex:1; min-height:0; border-radius:10px; }
   .radar-wrap.radar-zoom .radar-chevron { display:none; }
 
+  /* ── In the bay: the month-by-month species calendar ───────────────────────
+     Static content from the VIZ Tracking Project, so it renders on a dead
+     connection like everything else - there is nothing to fetch.
+
+     ABSENT IS GREY, NEVER GREEN - and never RED either. The source poster marks
+     "0 sightings" in red, but red means DANGEROUS everywhere else in this app,
+     and "no penguins in July" is not a warning. Grey borrows .bbf-day-none's
+     treatment, which is the reference for absence (CLAUDE.md §8). */
+  .bayc-wrap {
+    background:var(--map-frame);
+    backdrop-filter:blur(12px);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    margin-bottom:10px;
+    overflow:hidden;
+  }
+  .bayc-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    width:100%; box-sizing:border-box;
+    background:none; border:none; cursor:pointer; text-align:left;
+    font-family:inherit; padding:13px clamp(12px,4vw,16px);
+  }
+  .bayc-head:hover { background:rgba(74,143,173,0.05); }
+  .bayc-titlewrap { display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:0; flex:1; }
+  .bayc-title {
+    font-family:'Bebas Neue',sans-serif; letter-spacing:1.2px;
+    font-size:clamp(15px,4.5vw,19px); color:var(--deep); text-transform:uppercase;
+    line-height:1.15;
+  }
+  .bayc-when { font-family:'Inter',sans-serif; font-size:11px; letter-spacing:0.4px; color:var(--dim); }
+  .bayc-chevron { font-size:26px; color:var(--ocean); transition:transform 0.3s ease; flex:none; line-height:1; }
+  .bayc-head[aria-expanded="true"] .bayc-chevron { transform:rotate(180deg); }
+  .bayc-body {
+    max-height:0; opacity:0; overflow:hidden;
+    transition:max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
+    padding:0 clamp(12px,4vw,16px);
+  }
+  .bayc-body.bayc-open { max-height:1600px; opacity:1; padding:0 clamp(12px,4vw,16px) clamp(10px,3vw,12px); }
+
+  /* This month, in words, before the grid. The grid is the evidence; this is
+     the answer, and it is what most people will read. */
+  .bayc-now { font-family:'Inter',sans-serif; font-size:12.5px; line-height:1.6; color:var(--text); margin-bottom:12px; }
+  .bayc-now b { font-weight:700; }
+  .bayc-now .bayc-none { color:var(--dim); }
+
+  /* 12 columns, scrollable sideways rather than squeezed: at 320px a readable
+     species name plus twelve legible cells does not fit, and shrinking the cells
+     until they do makes the whole thing unreadable instead of just narrow. */
+  .bayc-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:0 -2px; }
+  .bayc-grid { display:grid; grid-template-columns:minmax(104px,1.3fr) repeat(12,minmax(19px,1fr)); gap:2px; min-width:290px; }
+  .bayc-mh {
+    font-family:'Inter',sans-serif; font-size:8.5px; font-weight:600; color:var(--dim);
+    text-align:center; letter-spacing:0.2px; padding-bottom:2px;
+  }
+  .bayc-mh.is-now { color:var(--ocean); font-weight:700; }
+  .bayc-name {
+    font-family:'Inter',sans-serif; font-size:10.5px; line-height:1.25; color:var(--text);
+    display:flex; align-items:center; padding-right:6px;
+  }
+  .bayc-cell { height:19px; border-radius:3px; background:rgba(74,143,173,0.10); }
+  .bayc-cell.lv2 { background:#4caf50; }
+  .bayc-cell.lv1 { background:#c9c246; }
+  .bayc-cell.lv0 { background:rgba(74,143,173,0.10); }
+  .bayc-cell.lvx { background:repeating-linear-gradient(45deg,rgba(74,143,173,0.13) 0 3px,transparent 3px 6px); }
+  .bayc-cell.is-now { box-shadow:0 0 0 2px var(--ocean); }
+
+  .bayc-key { display:flex; flex-wrap:wrap; gap:10px; margin-top:9px; }
+  .bayc-key span { display:flex; align-items:center; gap:4px; font-family:'Inter',sans-serif; font-size:9.5px; color:var(--dim); }
+  .bayc-key i { width:11px; height:9px; border-radius:2px; display:block; }
+  .bayc-src { font-family:'Inter',sans-serif; font-size:10px; line-height:1.55; color:var(--dim); margin-top:10px; }
+  .bayc-src a { color:var(--ocean); text-decoration:none; font-weight:600; }
+
   /* ── Offshore chlorophyll (IMOS OceanCurrent) ──────────────────────────────
      A CONTEXT card, not a reading. It is deliberately built so it cannot be
      mistaken for a bay measurement - see the long note on the card's IIFE for
@@ -4071,7 +4143,146 @@
       </div>
     </div>
 
+    <!-- In the bay — the month-by-month species calendar. Static; nothing is
+         fetched. See the renderer below for where the numbers come from. -->
+    <div class="bayc-wrap" id="bayCalCard">
+      <button type="button" class="bayc-head" id="baycToggle" aria-expanded="false" aria-controls="baycBody">
+        <span class="bayc-titlewrap">
+          <span class="bayc-title">In the bay &middot; <span id="baycMonth">&mdash;</span><span class="card-new">New!</span></span>
+          <span class="bayc-when" id="baycWhen">What the divers see this month &middot; tap to open</span>
+        </span>
+        <span class="bayc-chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="bayc-body" id="baycBody">
+        <div class="bayc-now" id="baycNow"></div>
+        <div class="bayc-scroll">
+          <div class="bayc-grid" id="baycGrid"></div>
+        </div>
+        <div class="bayc-key" aria-hidden="true">
+          <span><i style="background:#4caf50"></i>Usually about</span>
+          <span><i style="background:#c9c246"></i>Sometimes</span>
+          <span><i style="background:rgba(74,143,173,0.10)"></i>Not usually</span>
+        </div>
+        <p class="bayc-src">
+          From the <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener">VIZ</a>
+          Tracking Project &mdash; 4&frac12; years of sightings reported by Sydney divers,
+          June 2019 to October 2023, &copy; Marco Bordieri (CC BY-NC-ND).
+          It records what was <em>reported</em>, so a quiet month can mean rough weather
+          and nobody in the water rather than nothing there. The Australian Cownose Ray
+          is tracked too but is left off: it turns up at no reliable time of year.
+        </p>
+      </div>
+    </div>
 
+
+
+<!-- === In the bay: the species calendar ====================================
+     Twelve months of what a swimmer can expect to meet in Cabbage Tree Bay.
+
+     WHERE THE NUMBERS COME FROM. The VIZ Tracking Project: sightings posted to
+     the VIZ Sydney diving group between June 2019 and October 2023, scored per
+     species per month across five years. Each month below is the majority
+     verdict of the years that HAVE data - 2 where most years were green on the
+     source chart, 1 where most years saw at least something, 0 otherwise. Every
+     month here has at least three years behind it; a month that ever drops
+     below that renders hatched, not green, rather than quietly averaging thin
+     evidence into a confident colour.
+
+     IT IS A REPORTING RECORD, NOT A CENSUS, and the card says so in plain words.
+     Storms and the 2021 lockdowns show up on the source charts as gaps, which
+     means a quiet month can be a quiet month for DIVERS. That cuts one way only
+     - it under-reports presence - so nothing here should be read as "the bay is
+     empty", and the copy deliberately says "not usually" rather than "absent".
+
+     TWO SPECIES ARE DELIBERATELY MISSING. The Anglerfish and Eastern Gobbleguts
+     panels on the source poster are Chowder Bay, not here. The Australian
+     Cownose Ray IS Cabbage Tree Bay but reaches no reliable season in five
+     years - the project's own note says as much - so it is named in the credit
+     rather than given a row that would imply a pattern nobody has found.
+
+     NO IMAGES. species/*.webp has art for four of these seven and nothing for
+     the Dusky Whaler, the Angelshark or the Little Penguin. Illustrating some
+     rows and not others reads as broken, and borrowing the Eagle Ray for a
+     Cownose is the kind of thing that costs the whole app its credibility.
+========================================================================== -->
+<script>
+(function () {
+  var head = document.getElementById('baycToggle');
+  var body = document.getElementById('baycBody');
+  var grid = document.getElementById('baycGrid');
+  var nowEl = document.getElementById('baycNow');
+  if (!head || !body || !grid) return;
+
+  var MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+  var INITIALS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+
+  // 2 = usually about, 1 = sometimes, 0 = not usually, -1 = too little data.
+  var SPECIES = [
+    { name: 'Port Jackson Shark',  m: [1,0,0,0,0,0,2,2,2,2,1,1] },
+    { name: 'Giant Cuttlefish',    m: [1,1,1,1,2,2,2,1,1,1,1,1] },
+    { name: 'Dusky Whaler Shark',  m: [1,2,2,2,2,1,0,1,0,0,0,0] },
+    { name: 'Grey Nurse Shark',    m: [2,0,1,1,2,2,2,2,1,1,1,2] },
+    { name: 'Australian Angelshark', m: [0,0,1,1,1,1,1,2,1,0,0,0] },
+    { name: 'Sea Turtle',          m: [1,1,1,1,2,1,2,1,1,1,1,1] },
+    { name: 'Little Penguin',      m: [0,2,2,0,0,0,0,0,0,0,0,0] }
+  ];
+
+  // Sydney's month, not the device's: a swimmer checking this from an airport
+  // should still be told what is in THIS bay now.
+  function sydMonth() {
+    try {
+      var s = new Date().toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });
+      return parseInt(s.split('-')[1], 10) - 1;
+    } catch (e) { return new Date().getMonth(); }
+  }
+  var M = sydMonth();
+
+  function render() {
+    var mn = document.getElementById('baycMonth');
+    if (mn) mn.textContent = MONTHS[M];
+
+    var sure = SPECIES.filter(function (s) { return s.m[M] === 2; });
+    var maybe = SPECIES.filter(function (s) { return s.m[M] === 1; });
+    var names = function (a) { return a.map(function (s) { return s.name; }).join(', '); };
+
+    var html = '';
+    if (sure.length) html += '<b>Usually about now:</b> ' + names(sure) + '. ';
+    if (maybe.length) html += '<span class="bayc-none">Sometimes: ' + names(maybe) + '.</span>';
+    // A month with nothing reliable is a real answer, not a failure to render.
+    if (!sure.length && !maybe.length) html = '<span class="bayc-none">A quiet month in the records &mdash; nothing shows up reliably.</span>';
+    nowEl.innerHTML = html;
+
+    var when = document.getElementById('baycWhen');
+    if (when) {
+      when.innerHTML = sure.length
+        ? sure.length + (sure.length === 1 ? ' regular' : ' regulars') + ' about &middot; tap to open'
+        : 'A quiet month &middot; tap to open';
+    }
+
+    var out = ['<div></div>'];
+    for (var i = 0; i < 12; i++) {
+      out.push('<div class="bayc-mh' + (i === M ? ' is-now' : '') + '">' + INITIALS[i] + '</div>');
+    }
+    SPECIES.forEach(function (s) {
+      out.push('<div class="bayc-name">' + s.name + '</div>');
+      for (var i = 0; i < 12; i++) {
+        var v = s.m[i];
+        var cls = v === 2 ? 'lv2' : v === 1 ? 'lv1' : v === 0 ? 'lv0' : 'lvx';
+        out.push('<div class="bayc-cell ' + cls + (i === M ? ' is-now' : '') + '"></div>');
+      }
+    });
+    grid.innerHTML = out.join('');
+  }
+
+  head.addEventListener('click', function () {
+    var open = body.classList.toggle('bayc-open');
+    head.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+
+  render();
+})();
+</script>
 
 <!-- === Offshore chlorophyll ================================================
      A CONTEXT card. It shows what the open ocean is doing, and it is written
@@ -19031,6 +19242,8 @@ if ('serviceWorker' in navigator) {
     // it finds in this list, so an unlisted section is permanently on. Not a crash,
     // but every other card offers the choice. complete:1 to match its neighbours.
     { key:'chlorophyll', label:"Offshore chlorophyll (IMOS)", sel:'#chlCard', complete:1, custom:1 },
+    // Listed from the start, for the reason directly above.
+    { key:'baycalendar', label:"In the bay (species calendar)", sel:'#bayCalCard', complete:1, custom:1 },
     // 'daywindow' (Best swim window day chart) removed 2026-08-14 along with its
     // #dayWindowWrap card. A stale daywindow=0 in someone's saved CUSTOM_KEY map
     // is now inert — nothing reads the key.
