@@ -2925,6 +2925,15 @@
     background: none; border: none; font-size: 18px; color: var(--dim);
     cursor: pointer; line-height: 1; padding: 4px;
   }
+  .db-modal-headbtns { display: flex; align-items: center; gap: 2px; }
+  .db-modal-speak {
+    background: none; border: none; font-size: 17px; color: var(--dim);
+    cursor: pointer; line-height: 1; padding: 4px 6px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .db-modal-speak[aria-pressed="true"] { color: var(--ocean); }
+  @keyframes speakPulse { 50% { opacity: 0.45; } }
+  .db-modal-speak[aria-pressed="true"] { animation: speakPulse 1.2s ease-in-out infinite; }
   .db-modal-meta { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--dim); margin-bottom: 12px; }
   .db-modal-summary { font-size: 13px; line-height: 1.55; color: var(--text); white-space: pre-wrap; }
   .db-modal-foot { font-size: 10px; color: var(--dim); margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
@@ -4652,7 +4661,14 @@
     <div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="news-modal-title">
       <div class="db-modal-head">
         <div class="db-modal-title" id="news-modal-title">The Oracle</div>
-        <button class="db-modal-close" onclick="closeNews()" aria-label="Close">&#10005;</button>
+        <span class="db-modal-headbtns">
+          <!-- Reads the Oracle aloud — car park, gloves, fogged glasses. Hidden
+               by oracleSpeakInit() when speechSynthesis is missing, never shown
+               disabled: a control that cannot work should not be offered. -->
+          <button class="db-modal-speak" id="oracleSpeakBtn" onclick="oracleSpeakToggle()"
+                  aria-label="Read the Oracle aloud" aria-pressed="false" hidden>&#128266;</button>
+          <button class="db-modal-close" onclick="closeNews()" aria-label="Close">&#10005;</button>
+        </span>
       </div>
       <div id="news-slot"></div>
     </div>
@@ -15524,8 +15540,103 @@ function closeNews() {
   if (ov) ov.classList.remove('open');
   document.body.style.overflow = '';
   document.removeEventListener('keydown', _newsEsc);
+  oracleSpeakStop();                       // never keep talking over a closed modal
 }
 function toggleSummary() { openNews(); }   // legacy alias — old callers still work
+
+// ── The Oracle, out loud ────────────────────────────────────────────────────
+// Reads the RENDERED prose — textContent of the visible .oracle-sec blocks, in
+// DOM order, headings as spoken cues. Reading the screen is what keeps this
+// inside CLAUDE.md §1 by construction: the text spoken is the text the
+// validator already passed, siteCheck sentence included; there is no fifth
+// place a verdict gets derived, because nothing is derived.
+//
+// On-device Web Speech only. No audio file, no network, works in the car park
+// on a dead connection like everything else. The button is HIDDEN (not
+// disabled) when speechSynthesis is missing.
+//
+// CHUNKED BY SENTENCE, one utterance each: Chrome silently kills utterances
+// past a few hundred characters, and a stop button that leaves the voice
+// running is worse than no button. A queue of small utterances also makes
+// cancel() reliable across platforms.
+var _oracleSpeaking = false;
+function _oracleSpeakBtn() { return document.getElementById('oracleSpeakBtn'); }
+
+function _oracleGatherText() {
+  var out = [];
+  document.querySelectorAll('#summary-body .oracle-sec').forEach(function (sec) {
+    if (sec.hidden) return;
+    var h = sec.querySelector('.oracle-h');
+    if (h && h.textContent.trim()) out.push(h.textContent.trim() + '.');
+    sec.querySelectorAll('.summary-item-text').forEach(function (t) {
+      // Skeletons have no text; the VIZ credit line is attribution, not conditions,
+      // and reading a URL-bearing credit aloud is noise - skip #db-sub only.
+      var clone = t.cloneNode(true);
+      var sub = clone.querySelector('#db-sub'); if (sub) sub.remove();
+      var txt = clone.textContent.replace(/\s+/g, ' ').trim();
+      if (txt) out.push(txt);
+    });
+  });
+  // Emoji read as their Unicode names on some platforms ("swimmer", fine;
+  // "loudly crying face", not) - strip pictographs, keep letters and punctuation.
+  return out.join(' ').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '');
+}
+
+function oracleSpeakStop() {
+  _oracleSpeaking = false;
+  try { window.speechSynthesis && window.speechSynthesis.cancel(); } catch (e) {}
+  var b = _oracleSpeakBtn();
+  if (b) b.setAttribute('aria-pressed', 'false');
+}
+
+function oracleSpeakToggle() {
+  if (_oracleSpeaking) { oracleSpeakStop(); return; }
+  var text = _oracleGatherText();
+  if (!text) return;                        // skeletons still up - nothing to read yet
+  var synth = window.speechSynthesis;
+  try { synth.cancel(); } catch (e) {}
+  // en-AU voice when the device has one; otherwise any English; otherwise default.
+  var voice = null;
+  try {
+    var vs = synth.getVoices() || [];
+    voice = vs.find(function (v) { return /en[-_]AU/i.test(v.lang); })
+         || vs.find(function (v) { return /^en/i.test(v.lang); }) || null;
+  } catch (e) {}
+  var chunks = text.match(/[^.!?]+[.!?]+[\s]*|[^.!?]+$/g) || [text];
+  var b = _oracleSpeakBtn();
+  if (b) b.setAttribute('aria-pressed', 'true');
+  _oracleSpeaking = true;
+  var i = 0;
+  (function next() {
+    if (!_oracleSpeaking || i >= chunks.length) { oracleSpeakStop(); return; }
+    var u = new SpeechSynthesisUtterance(chunks[i++].trim());
+    if (voice) u.voice = voice;
+    u.rate = 1.0;
+    u.onend = next;
+    u.onerror = function () { oracleSpeakStop(); };
+    try { synth.speak(u); } catch (e) { oracleSpeakStop(); }
+  })();
+  try { if (window.track) window.track('oracle_speak', {}); } catch (e) {}
+}
+
+(function oracleSpeakInit() {
+  function init() {
+    var b = _oracleSpeakBtn();
+    if (!b) return;
+    if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+      b.hidden = false;
+      // Some engines load voices async; poking the list here warms it so the
+      // first tap can pick the en-AU voice instead of the default.
+      try { window.speechSynthesis.getVoices(); } catch (e) {}
+    }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+  // Leaving the app mid-read: stop rather than talk over whatever comes next.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') oracleSpeakStop();
+  });
+})();
 (function mountNews() {
   function mount() {
     const body = document.getElementById('summary-body');
