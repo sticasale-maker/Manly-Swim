@@ -1840,6 +1840,18 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             corrected += 1
             rec["hand_checked"] = True
             rec.pop("shape_contested", None)     # a person settled it
+            # A hand-entered size must drag its bucket with it, or the detail
+            # sheet says 30 cm while the filter still files it under 40.
+            if "size_cm" in fix and fix["size_cm"]:
+                cm = float(fix["size_cm"])
+                rec["size_basis"] = fix.get("size_basis", "typical")
+                rec["size_bucket"] = next(
+                    (k for k, lo, hi, _ in SIZE_BUCKETS if lo <= cm < hi),
+                    SIZE_BUCKETS[-1][0])
+                rec["size_low_cm"] = max(1, round(cm * JUVENILE_FRACTION))
+                rec["size_juvenile"] = [
+                    k for k, lo, hi, _ in SIZE_BUCKETS
+                    if rec["size_low_cm"] < hi and cm >= lo and k != rec["size_bucket"]]
         out.append(rec)
 
     out.sort(key=lambda r: -r["annual"])
