@@ -371,17 +371,29 @@ var MARKS=[['plain','Plain'],['bars-across','Bars across'],['stripes-along','Str
   ['spots','Spots'],['blotchy-mottled','Blotchy'],['one-dark-spot','One dark spot'],
   ['dark-eye-bar','Bar through the eye'],['net-or-scribble','Net or scribble']];
 
-function matches(s){
+/* Shape, size and the search box EXCLUDE. Colour and markings only DEMOTE.
+   Water eats red first, so 34% of these photos have their red badly
+   suppressed and a brown Coffin Ray reads silver-grey. A colour tag
+   therefore describes the photograph at least as much as the animal, and
+   excluding on it would make a correctly-remembered animal unfindable.
+   The swimmer's eye loses the same red at the same depth, so neither
+   reading is authoritative — which is exactly why colour reorders instead
+   of deciding. Same demote-never-hide rule as the out-of-season tail. */
+function hardMatch(s){
   if(Q){
     var q=Q.toLowerCase();
     if((s.name+' '+s.sci).toLowerCase().indexOf(q)<0) return false;
   }
   if(SEL.shape && s.shape!==SEL.shape) return false;
-  if(SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour) return false;
-  if(SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0) return false;
   if(SEL.size && s.size_bucket!==SEL.size) return false;
   return true;
 }
+function softMatch(s){
+  if(SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour) return false;
+  if(SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0) return false;
+  return true;
+}
+function matches(s){ return hardMatch(s); }
 
 function renderId(){
   var all=DATA.species.filter(function(s){ return s.img; });
@@ -389,9 +401,11 @@ function renderId(){
   /* Most likely first: what is actually about this month, then how often the
      animal is seen here at all. */
   hits.sort(function(a,b){ return (b.months[NOW]-a.months[NOW]) || (b.annual-a.annual); });
-  var seenNow=hits.filter(function(s){ return s.months[NOW]>0; });
-  var notNow=hits.filter(function(s){ return s.months[NOW]===0; });
-  var shown=seenNow.slice(0,60), tail=notNow.slice(0,40);
+  var soft=hits.filter(softMatch), off=hits.filter(function(s){ return !softMatch(s); });
+  var seenNow=soft.filter(function(s){ return s.months[NOW]>0; });
+  var notNow=soft.filter(function(s){ return s.months[NOW]===0; });
+  var shown=seenNow.slice(0,60), tail=notNow.slice(0,40), other=off.slice(0,30);
+  var softOn=!!(SEL.colour||SEL.mark);
 
   var bits=[SEL.shape,SEL.colour,SEL.mark,
             SEL.size?(sizeLabelFor(SEL.size)):null].filter(Boolean);
@@ -428,14 +442,19 @@ function renderId(){
         return '<button class="chip'+(SEL.mark===m[0]?' on':'')+'" data-mark="'+m[0]+'">'+m[1]+'</button>'; }).join('')
     +'</div>'
 
-    +'<div class="resbar"><span class="l">'+hits.length+' match'+(hits.length===1?'':'es')+'</span>'
+    +'<div class="resbar"><span class="l">'+soft.length+' match'+(soft.length===1?'':'es')+'</span>'
     +'<span class="r">Most likely first,<br>by '+FULL[NOW]+' records</span></div>'
     +'<div class="rows">'
     + shown.map(function(s){ return rowHTML(s,null); }).join('')
     + (tail.length?'<div class="divider">Not recorded here in '+FULL[NOW]+' &middot; '+notNow.length+'</div>'
         + tail.map(function(s){ return rowHTML(s,null); }).join(''):'')
+    + (softOn&&other.length
+        ?'<div class="divider">Recorded a different colour &middot; '+off.length+'</div>'
+         +'<p class="cap" style="padding-bottom:4px">Water eats red before anything else, so an '
+         +'animal can be photographed looking quite unlike itself. These match the shape.</p>'
+         + other.map(function(s){ return rowHTML(s,null); }).join(''):'')
     +'</div>'
-    + (hits.length?'':'<p class="empty">Nothing matches all of that.<br>Try dropping a filter &mdash; the shape is the one most worth keeping.</p>')
+    + (soft.length+off.length?'':'<p class="empty">Nothing matches all of that.<br>Try dropping a filter &mdash; the shape is the one most worth keeping.</p>')
     +'<p class="stamp">Attributes derived from photographs taken in this bay &middot; '
     +'counts as at '+DATA.generated_at.slice(0,10)+'</p>'
     +'</div>';

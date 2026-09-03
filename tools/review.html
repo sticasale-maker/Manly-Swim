@@ -32,7 +32,7 @@ button{font:inherit;cursor:pointer;border:none;border-radius:8px}
 .wrap{display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,520px);
   gap:22px;padding:20px;max-width:1240px;margin:0 auto;align-items:start}
 .photo{background:var(--shell-2);border-radius:14px;padding:12px;position:sticky;top:64px}
-.photo img{width:100%;height:auto;border-radius:10px;display:block;background:#000}
+.photo img{width:100%;height:auto;max-height:52vh;object-fit:contain;border-radius:10px;display:block;background:#000}
 .photo .cap{font-size:11px;color:var(--shell-dim);margin-top:8px;line-height:1.45}
 .photo .cap a{color:var(--ocean)}
 
@@ -115,22 +115,47 @@ function priority(s){
   return p + Math.min(s.annual || 0, 500) / 500 * 250;
 }
 
+/* Load each file separately and say WHICH one failed and why. A single
+   catch around Promise.all reported "can't read the data" for three quite
+   different problems — opened as file://, run from the Drive copy that has
+   no dataset, or a genuine 404 — and left you with nothing to act on. */
+async function grab(url){
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw {url, why: location.protocol === 'file:'
+      ? 'the page is open as a file:// path, and browsers block fetch from the filesystem'
+      : 'the request failed: ' + e.message};
+  }
+  if (!res.ok) throw {url, why: `the server returned ${res.status}`};
+  try { return await res.json(); }
+  catch (e) { throw {url, why: 'the file is not valid JSON'}; }
+}
+
 async function boot(){
   let data, shapes;
   try {
-    [shapes, data] = await Promise.all([
-      fetch(SHAPES_URL).then(r => r.json()),
-      fetch(DATA_URL).then(r => r.json()),
-    ]);
+    shapes = await grab(SHAPES_URL);
+    data   = await grab(DATA_URL);
   } catch (e) {
+    const driveish = e.url && e.url.includes('species/') &&
+                     e.why && e.why.includes('404');
     document.getElementById('app').innerHTML =
-      `<div class="empty"><h2>Can't read the data</h2>
-       <p>Open this over a local server, not as a file:// path — browsers block
-       fetch from the filesystem.</p>
-       <p style="margin-top:12px"><b>cd</b> into the repo root, then:<br>
-       <code>python -m http.server 8000</code><br>
-       and visit <code>localhost:8000/tools/review.html</code></p>
-       <p style="margin-top:12px;opacity:.7">${e}</p></div>`;
+      `<div class="empty"><h2>Couldn't load ${e.url || 'the data'}</h2>
+       <p>Because ${e.why || e}.</p>
+       ${driveish ? `<p style="margin-top:14px">That path exists only in the
+         <b>repo clone</b> — the Drive working copy has the tools but not the
+         dataset. Run it from the clone.</p>` : ''}
+       <p style="margin-top:14px">This page reads
+       <code>tools/shape-silhouettes.json</code> and
+       <code>species/ctbar.json</code>, so it has to be served from the
+       repository root:</p>
+       <p style="margin-top:10px">
+         <code>cd C:/Users/stica/repos/Manly-Swim</code><br>
+         <code>python -m http.server 8000</code></p>
+       <p style="margin-top:10px">then open
+       <code>http://localhost:8000/tools/review.html</code></p></div>`;
     return;
   }
   SHAPES = shapes;
