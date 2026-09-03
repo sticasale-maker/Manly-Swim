@@ -1856,7 +1856,13 @@ def _require_key(stage: str):
 # trusted; the same has to be true here. A fact per species would be a tell
 # that the model is filling space.
 
-FACT_MODEL = "claude-haiku-4-5"
+# Measured, not assumed. The cheap model was tried first and 40 species were
+# put through both generators with the same refute prompt: Haiku held 8 and
+# lost 32, Opus held 35 and lost 5. Twenty percent against eighty-eight. The
+# failure was not randomness either — Haiku reached for invented male
+# nest-guarding again and again, for broadcast spawners that have never built
+# a nest. At $0.029 a species all-in there is no saving worth that error rate.
+FACT_MODEL = MODEL
 FACT_REFUTE_MODEL = MODEL          # the stronger model marks the popular ones
 # Every fact, not the most-seen 150. The generating model was told most species
 # have nothing worth saying and returned a fact for all of them anyway, so its
@@ -1925,7 +1931,13 @@ def stage_facts(species: list, force: bool, refute: bool = True) -> dict:
     """One curiosity per species where one honestly exists, then an adversarial
     second opinion on the ones that will be read most."""
     cache = {} if force else (cache_read("facts.json") or {})
-    todo = [s for s in species if str(s["taxon_id"]) not in cache]
+    # An error is not an answer. Caching it as though it were meant 137 species
+    # — 21% of the run, Port Jackson Shark, Luderick and Moorish Idol among
+    # them — were written off as "no fact" on a transient failure and never
+    # asked again. A decline is permanent; an error is a retry.
+    todo = [s for s in species
+            if (cache.get(str(s["taxon_id"])) or {}).get("status", "missing")
+            in ("missing", "error")]
     if not todo:
         log(f"5f/6 facts       {len(cache):>4} (cached)")
     else:
@@ -1935,17 +1947,25 @@ def stage_facts(species: list, force: bool, refute: bool = True) -> dict:
 
         def ask(s):
             tid = str(s["taxon_id"])
-            try:
-                r = client.messages.parse(
-                    model=FACT_MODEL, max_tokens=400, system=FACT_SYS,
-                    messages=[{"role": "user", "content":
-                               f"{s['sci']} ({s['name']})"}],
-                    output_format=SpeciesFact)
-                SPEND.add(r.usage)
-                return tid, r.parsed_output
-            except Exception as e:                          # noqa: BLE001
-                log(f"    fact failed {s['name']}: {type(e).__name__}")
-                return tid, None
+            # Same intermittent malformed structured output the refute pass
+            # hits, and it was costing more here: one attempt each meant a
+            # fifth of the run silently produced nothing.
+            for attempt in (1, 2, 3):
+                try:
+                    r = client.messages.parse(
+                        model=FACT_MODEL, max_tokens=800, system=FACT_SYS,
+                        messages=[{"role": "user", "content":
+                                   f"{s['sci']} ({s['name']})"}],
+                        output_format=SpeciesFact)
+                    SPEND.add(r.usage)
+                    return tid, r.parsed_output
+                except Exception as e:                      # noqa: BLE001
+                    if attempt == 3:
+                        log(f"    fact failed {s['name']}: {type(e).__name__}"
+                            f" (after {attempt} tries)")
+                        return tid, None
+                    time.sleep(0.5 * attempt)
+            return tid, None
 
         done = 0
         by_tid = {str(s["taxon_id"]): s for s in todo}
@@ -2049,6 +2069,50 @@ def stage_facts(species: list, force: bool, refute: bool = True) -> dict:
             log(f"            -> {why[:80]}")
     print(SPEND.report())
     return cache
+
+def apply_fact_overrides(species: list, facts: dict) -> dict:
+    """Hand rulings on individual claims, read after the model and the refute
+    pass and before emit.
+
+    The refute pass catches what is *checkably* wrong. It does not catch a
+    claim that is repeated in every popular source and still not true — the
+    Port Jackson egg case is the case in point: "she screws it into a crevice"
+    is everywhere, survived refutation, and is not what she does. A person who
+    knows the animal has to be able to overrule the model, and that ruling has
+    to survive every future re-bake.
+
+    Keyed by scientific name. A value of null suppresses the fact entirely; a
+    string replaces it and is marked as hand-written rather than generated.
+    """
+    path = ROOT / "tools" / "fact-overrides.json"
+    if not path.exists():
+        return facts
+    ov = {k: v for k, v in json.loads(path.read_text("utf-8")).items()
+          if not k.startswith("_")}
+    by_sci = {s["sci"]: str(s["taxon_id"]) for s in species}
+    killed = replaced = unknown = 0
+    for sci, rule in ov.items():
+        tid = by_sci.get(sci)
+        if tid is None:
+            unknown += 1
+            continue
+        text = rule.get("fact") if isinstance(rule, dict) else rule
+        rec = dict(facts.get(tid) or {})
+        if text:
+            rec.update({"status": "found", "fact": text, "checked": True,
+                        "by_hand": True,
+                        "why": (rule or {}).get("why") if isinstance(rule, dict) else None})
+            replaced += 1
+        else:
+            rec = {"status": "suppressed",
+                   "was": rec.get("fact"),
+                   "why": (rule or {}).get("why") if isinstance(rule, dict) else None}
+            killed += 1
+        facts[tid] = rec
+    if killed or replaced or unknown:
+        log(f"5h/6 fact rulings  {killed} suppressed, {replaced} replaced by hand"
+            + (f", {unknown} name not in the list" if unknown else ""))
+    return facts
 
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
@@ -2474,6 +2538,9 @@ def main() -> int:
         if args.facts:
             facts = stage_facts(species, args.force,
                                 refute=not args.no_fact_check)
+        # Applied on every run, paid stage or not: a hand ruling must not need
+        # an API call to reach the app.
+        facts = apply_fact_overrides(species, facts)
         if args.vote and not args.skip_tags:
             tags = stage_vote(species, tags)
         if previous:
