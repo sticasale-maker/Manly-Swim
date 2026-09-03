@@ -170,6 +170,9 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   overflow-y:auto;color:var(--text);
 }
 .grab{width:38px;height:4px;border-radius:3px;background:rgba(17,53,65,.25);margin:0 auto 10px}
+.x{position:sticky;top:0;float:right;width:34px;height:34px;margin:-4px -4px 0 0;
+  font-size:26px;line-height:1;color:var(--dim);border-radius:50%;
+  background:rgba(17,53,65,.07);z-index:2}
 .hero{width:100%;height:210px;object-fit:cover;border-radius:12px;display:block;background:#0d2b35}
 .attrib{font-size:9.5px;color:var(--dim);margin-top:6px;line-height:1.45}
 .attrib a{color:var(--ocean)}
@@ -537,7 +540,8 @@ function openDetail(id){
       +'No size on record for this one.</p>';
   }
 
-  el('sheet').innerHTML='<div class="grab"></div>'
+  el('sheet').innerHTML='<button class="x" id="xBtn" aria-label="Close">&times;</button>'
+    +'<div class="grab"></div>'
     +'<img class="hero" src="species/'+esc(s.img)+'" alt="'+esc(s.name)+'">'
     +'<p class="attrib">'+(s.credit?'Photo &copy; '+esc(s.credit)+' &middot; iNaturalist &middot; taken in this bay':'')
     +(s.obs_url?' &middot; <a href="'+esc(s.obs_url)+'" target="_blank" rel="noopener">observation</a>':'')
@@ -573,6 +577,7 @@ function openDetail(id){
     +(seen(s.id)?'✓ Seen it':'Mark as seen')+'</button>'
     +'<button class="close" id="closeBtn">Close</button>';
   el('scrim').classList.add('open');
+  el('xBtn').onclick=closeDetail;
   el('lifeBtn').onclick=function(){ toggleSeen(s.id); openDetail(id); render(); };
   el('closeBtn').onclick=closeDetail;
 }
@@ -589,7 +594,10 @@ document.addEventListener('click',function(e){
   SEL[k]=(SEL[k]===v)?null:v;
   renderId();
 });
-el('scrim').addEventListener('click',function(e){ if(e.target===el('scrim')) closeDetail(); });
+/* Deliberately NO tap-to-dismiss on the backdrop. The sheet nearly fills a
+   phone, so the dimmed strip above it looks like page, not like a control —
+   and a stray tap there threw away whatever you were reading. Closing is the
+   X, the Close button, Escape, or the back gesture: all deliberate. */
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') closeDetail(); });
 el('tabNow').onclick=function(){ MODE='now'; el('tabNow').classList.add('on'); el('tabId').classList.remove('on'); render(); };
 el('tabId').onclick =function(){ MODE='id';  el('tabId').classList.add('on');  el('tabNow').classList.remove('on'); render(); };
