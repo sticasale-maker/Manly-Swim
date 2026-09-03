@@ -176,7 +176,9 @@ IMG_PX = 320              # square crop edge, enough for a phone tile at 2x
 ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = ROOT / "species"
 IMG_DIR = OUT_DIR / "img"
-CACHE = ROOT / ".bake-cache"
+# Overridable so a test can exercise a stage without writing over the real
+# caches — the other half of the accident above.
+CACHE = Path(os.environ.get("BAKE_CACHE_DIR") or (ROOT / ".bake-cache"))
 
 # Opus 5, USD per million tokens. Update if the rate card moves.
 PRICE_IN, PRICE_OUT = 5.00, 25.00
@@ -434,9 +436,32 @@ def cache_read(name: str):
     return json.loads(p.read_text("utf-8")) if p.exists() else None
 
 
-def cache_write(name: str, data) -> None:
+def cache_write(name: str, data, allow_shrink: bool = False) -> None:
+    """Write a cache, refusing to silently gut one.
+
+    Stages take a `tags` dict and write it back wholesale. Hand one a SUBSET —
+    as a test harness did — and it writes the subset over the whole cache. That
+    cost 603 tags, every shape ballot, and about $14 of re-tagging, and nothing
+    complained: the next run simply saw 6 cached entries and rebuilt the rest.
+
+    So a write that loses more than half the entries now has to say it means
+    it. Legitimate shrinks are small (the staleness check drops the species a
+    vocabulary change invalidated — 13% at its largest) and pass untouched.
+    """
     CACHE.mkdir(parents=True, exist_ok=True)
-    (CACHE / name).write_text(json.dumps(data), encoding="utf-8")
+    p = CACHE / name
+    if p.exists() and isinstance(data, dict) and not allow_shrink:
+        try:
+            old = json.loads(p.read_text("utf-8"))
+        except (json.JSONDecodeError, OSError):
+            old = None
+        if isinstance(old, dict) and len(old) >= 20 and len(data) < len(old) / 2:
+            raise RuntimeError(
+                f"refusing to write {name}: {len(data)} entries would replace "
+                f"{len(old)}. If a subset is genuinely intended, pass "
+                f"allow_shrink=True; if this is a test, point CACHE somewhere "
+                f"else with BAKE_CACHE_DIR.")
+    p.write_text(json.dumps(data), encoding="utf-8")
 
 
 def notify_failure(msg: str) -> None:
@@ -1442,6 +1467,103 @@ def stage_colour(species: list, tags: dict, force: bool = False) -> dict:
     return tags
 
 
+# ── Stage 5d: does the photo show the animal it is filed under? ──────────────
+#
+# Nothing checked this. The vision pass is told "this is a Stylocheilus
+# longicauda, describe it" and obediently describes the crab in the frame; it
+# is never invited to say "that is not one". iNat observations can be
+# misidentified, and the photo can show the substrate or a passenger rather
+# than the subject. research-grade reduces it, it does not remove it.
+#
+# The existing guards caught that case only by luck — the photo was also poor,
+# so it came out low confidence with a caveat. A CLEAR photo of the wrong
+# animal, confidently tagged, is invisible to every check here.
+#
+# Deliberately narrow: a crab against a sea hare is a gross mismatch any vision
+# model spots. Two similar wrasses are not, and asking would trade a real
+# problem for a queue full of false accusations — so the prompt says default to
+# plausible whenever unsure.
+
+PLAUSIBLE_SYS = (
+    "You are checking whether a photograph shows the KIND of animal it is filed "
+    "under — not identifying it to species.\n\n"
+    "Answer plausible = false ONLY when the photo clearly shows a different kind "
+    "of creature: a crab where a sea slug is claimed, a fish where a coral is "
+    "claimed, an empty rock where an animal is claimed. When it is false, say "
+    "briefly what the photo actually shows.\n\n"
+    "Answer plausible = true whenever the photo is consistent with the stated "
+    "animal, and ALSO whenever you are unsure — a murky or partial photo of "
+    "something that could be the right animal is plausible. Do not adjudicate "
+    "between similar species; you are catching filing errors, not refereeing "
+    "identifications. A wrong accusation costs a person real time, so when in "
+    "doubt, say plausible.")
+
+
+class PhotoCheck(BaseModel):
+    plausible: bool
+    shows_instead: Optional[str] = Field(
+        default=None,
+        description="If not plausible, what the photograph actually shows, "
+                    "in a few words.")
+
+
+def stage_plausible(species: list, tags: dict, force: bool = False) -> dict:
+    client = anthropic.Anthropic()
+    todo = []
+    for s in species:
+        tid = str(s["taxon_id"])
+        t = tags.get(tid)
+        if not t or (t.get("photo_ok") is not None and not force):
+            continue
+        f = (t.get("photo") or {}).get("file")
+        if f and (OUT_DIR / f).exists():
+            todo.append((s, OUT_DIR / f))
+    if not todo:
+        log(f"5d/6 photo check  nothing to check")
+        return tags
+
+    log(f"5d/6 photo check  {len(todo)} photos (~${len(todo)*0.0055:.2f})")
+
+    def check(pair):
+        s, path = pair
+        tid = str(s["taxon_id"])
+        label = s["name"] if s["name"] != s["sci"] else s["sci"]
+        try:
+            b64 = base64.standard_b64encode(path.read_bytes()).decode()
+            resp = client.messages.parse(
+                model=MODEL, max_tokens=500, system=PLAUSIBLE_SYS,
+                messages=[{"role": "user", "content": [
+                    {"type": "image",
+                     "source": {"type": "base64", "media_type": "image/webp", "data": b64}},
+                    {"type": "text",
+                     "text": f"This photograph is filed as {label} ({s['sci']}). "
+                             f"Does it plausibly show that kind of animal?"}]}],
+                output_format=PhotoCheck)
+            SPEND.add(resp.usage)
+            return tid, resp.parsed_output
+        except Exception as e:                             # noqa: BLE001
+            log(f"    check failed on {s['name']}: {type(e).__name__}")
+            return tid, None
+
+    done = flagged = 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(check, p) for p in todo]):
+            tid, out = fut.result()
+            done += 1
+            if out:
+                tags[tid]["photo_ok"] = bool(out.plausible)
+                if not out.plausible:
+                    flagged += 1
+                    tags[tid]["photo_shows"] = out.shows_instead
+            if done % 40 == 0:
+                log(f"      {done}/{len(todo)}  {flagged} flagged")
+                cache_write("tags.json", tags)
+    cache_write("tags.json", tags)
+    log(f"5d/6 photo check  {flagged} of {done} photos look like a different animal")
+    print(SPEND.report())
+    return tags
+
+
 # ── Stage 6: emit ────────────────────────────────────────────────────────────
 
 def report_disagreement(before: dict, after: dict, species: list) -> None:
@@ -1570,14 +1692,22 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
                 "distinctive": t.get("distinctive"),
                 "confidence": t.get("confidence"),
                 "photo_caveat": t.get("photo_caveat"),
+                "photo_ok": t.get("photo_ok"),
+                "photo_shows": t.get("photo_shows"),
                 "shape_contested": t.get("shape_contested", False),
             })
+            if t.get("photo_ok") is False:
+                review.append({"name": s["name"], "id": rec["id"],
+                               "why": "photo may show " + (t.get("photo_shows") or "another animal"),
+                               "img": rec["img"]})
             if t.get("confidence") != "high":
                 review.append({"name": s["name"], "id": rec["id"],
                            "shape_votes": t.get("shape_votes"),
                            "slug": rec["slug"],
                                "confidence": t.get("confidence"),
                 "photo_caveat": t.get("photo_caveat"),
+                "photo_ok": t.get("photo_ok"),
+                "photo_shows": t.get("photo_shows"),
                 "shape_contested": t.get("shape_contested", False),
                                "img": rec["img"], "tags": t})
         fix = corrections.get(str(s["taxon_id"])) or {}
@@ -1651,6 +1781,10 @@ def main() -> int:
                          "and typical fall in different buckets 62%% of the time.")
     ap.add_argument("--typical-limit", type=int, default=0, metavar="N",
                     help="only look up the N most-recorded (for a dry run)")
+    ap.add_argument("--check-photos", action="store_true",
+                    help="ask whether each photo actually shows the KIND of animal "
+                         "it is filed under. Catches misidentified observations — "
+                         "a crab filed as a sea slug — which no other check sees.")
     ap.add_argument("--colour", action="store_true",
                     help="re-read colour on white-balanced copies of the photos "
                          "whose red is badly suppressed. Water eats red first, so "
@@ -1714,6 +1848,8 @@ def main() -> int:
             tags = stage_tags(species, photos, args.force or args.force_tags,
                               sample=args.sample)
 
+        if args.check_photos and not args.skip_tags:
+            tags = stage_plausible(species, tags)
         if args.colour and not args.skip_tags:
             tags = stage_colour(species, tags)
         if args.vote and not args.skip_tags:
