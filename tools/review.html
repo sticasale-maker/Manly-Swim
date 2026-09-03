@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Who Lives Here — tag review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Internal tool, but it wears the app's colours so a correction made here looks
+   like the thing it will change. */
+:root{
+  --deep:#113541; --shell:#0b222b; --shell-2:#102e39; --sheet:#eaf0f3;
+  --ocean:#4a8fad; --dim:#4a5f6e; --rule:rgba(180,210,230,0.14);
+  --shell-text:#cfe0e7; --shell-dim:#7d9aa6; --warn:#e08a3c; --good:#4caf50;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--shell);color:var(--shell-text);
+  font-family:'Inter',system-ui,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+.bar{display:flex;align-items:center;gap:16px;padding:10px 18px;
+  border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--shell);z-index:5}
+.bar h1{font-family:'Bebas Neue',Impact,sans-serif;font-weight:400;font-size:22px;
+  letter-spacing:1px;color:#eaf3f6}
+.bar .sub{font-size:12px;color:var(--shell-dim)}
+.bar .grow{flex:1}
+button{font:inherit;cursor:pointer;border:none;border-radius:8px}
+.btn{background:var(--ocean);color:#fff;padding:7px 14px;font-size:13px;font-weight:600}
+.btn.ghost{background:transparent;border:1.5px solid var(--rule);color:var(--shell-text)}
+.btn:disabled{opacity:.4;cursor:default}
+
+.wrap{display:grid;grid-template-columns:minmax(320px,1fr) minmax(360px,520px);
+  gap:22px;padding:20px;max-width:1240px;margin:0 auto;align-items:start}
+.photo{background:var(--shell-2);border-radius:14px;padding:12px;position:sticky;top:64px}
+.photo img{width:100%;height:auto;border-radius:10px;display:block;background:#000}
+.photo .cap{font-size:11px;color:var(--shell-dim);margin-top:8px;line-height:1.45}
+.photo .cap a{color:var(--ocean)}
+
+.panel{background:var(--sheet);border-radius:14px;padding:16px;color:var(--deep)}
+.nm{font-family:'Bebas Neue',Impact,sans-serif;font-size:28px;letter-spacing:.8px;line-height:1}
+.sci{font-size:12.5px;font-style:italic;color:var(--dim);margin-top:2px}
+.recs{font-size:12px;color:var(--ocean);font-weight:600;margin-top:5px}
+.flags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+.flag{font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(17,53,65,.08);color:var(--dim)}
+.flag.hot{background:rgba(224,138,60,.18);color:#8a4d10;font-weight:600}
+
+.lbl{font-family:'Bebas Neue',Impact,sans-serif;font-size:11.5px;letter-spacing:1.5px;
+  color:var(--dim);text-transform:uppercase;margin:16px 0 7px}
+.shapes{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:6px}
+.sh{border:1.5px solid rgba(17,53,65,.16);border-radius:10px;padding:5px 3px 3px;
+  background:transparent;display:flex;flex-direction:column;align-items:center;gap:1px}
+.sh svg{width:100%;height:auto;display:block}
+.sh svg path,.sh svg rect{fill:var(--deep)}
+.sh svg circle{fill:var(--sheet)}
+.sh .t{font-size:8.5px;color:var(--dim);text-align:center;line-height:1.1}
+.sh .k{font-size:8px;color:var(--ocean);font-weight:700}
+.sh.on{background:var(--ocean);border-color:var(--ocean)}
+.sh.on .t{color:#fff}.sh.on .k{color:#fff}
+.sh.on svg path,.sh.on svg rect{fill:#fff}
+.sh.on svg circle{fill:var(--ocean)}
+.sh.was{border-color:var(--warn);border-width:2px}
+
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:12px;padding:4px 10px;border-radius:20px;background:transparent;
+  border:1.5px solid rgba(17,53,65,.18);color:var(--dim)}
+.chip.on{background:var(--ocean);border-color:var(--ocean);color:#fff}
+.row{display:flex;gap:8px;align-items:center;margin-top:6px}
+.row input{flex:1;min-width:0;font:inherit;font-size:13px;padding:7px 10px;
+  border:1.5px solid rgba(17,53,65,.16);border-radius:8px;background:#fff;color:var(--deep)}
+.hint{font-size:11px;color:var(--dim);margin-top:5px;line-height:1.4}
+.foot{display:flex;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid rgba(17,53,65,.14)}
+.foot .btn{flex:1;padding:10px}
+.keys{font-size:11px;color:var(--dim);margin-top:9px;line-height:1.6}
+.keys b{font-family:ui-monospace,Menlo,monospace;background:rgba(17,53,65,.08);
+  padding:1px 5px;border-radius:4px;color:var(--deep)}
+.empty{padding:60px 20px;text-align:center;color:var(--shell-dim)}
+.empty h2{font-family:'Bebas Neue',Impact,sans-serif;font-size:30px;color:#eaf3f6;margin-bottom:8px}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}.photo{position:static}}
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>Who Lives Here</h1>
+  <span class="sub" id="pos">loading…</span>
+  <span class="grow"></span>
+  <span class="sub" id="edits">0 corrections</span>
+  <button class="btn ghost" id="skipAll">Skip rest</button>
+  <button class="btn" id="save">Save overrides</button>
+</div>
+<div id="app"></div>
+
+<script>
+const SHAPES_URL = 'shape-silhouettes.json';
+const DATA_URL   = '../species/ctbar.json';
+const IMG_BASE   = '../species/';
+const STORE      = 'wlh_review_v1';
+
+const COLOURS = ['grey','white','black','brown','green','blue','yellow','orange','red','pink','purple'];
+const GROUPING = ['schools','small groups','pairs','usually alone'];
+
+let SHAPES = [], QUEUE = [], i = 0;
+let edits = JSON.parse(localStorage.getItem(STORE) || '{}');
+
+/* Queue order is the whole point: contested first, then unusable photos, then
+   low confidence, and within each by how often the animal is actually seen.
+   Reviewing 400 species alphabetically is how a review never gets finished. */
+function priority(s){
+  let p = 0;
+  if (s.shape_contested) p += 4000;
+  if (s.photo_caveat)    p += 2000;
+  if (!s.shape)          p += 1500;
+  if (s.confidence === 'low')    p += 900;
+  if (s.confidence === 'medium') p += 300;
+  if (s.size_cm == null) p += 200;
+  return p + Math.min(s.annual || 0, 500) / 500 * 250;
+}
+
+async function boot(){
+  let data, shapes;
+  try {
+    [shapes, data] = await Promise.all([
+      fetch(SHAPES_URL).then(r => r.json()),
+      fetch(DATA_URL).then(r => r.json()),
+    ]);
+  } catch (e) {
+    document.getElementById('app').innerHTML =
+      `<div class="empty"><h2>Can't read the data</h2>
+       <p>Open this over a local server, not as a file:// path — browsers block
+       fetch from the filesystem.</p>
+       <p style="margin-top:12px"><b>cd</b> into the repo root, then:<br>
+       <code>python -m http.server 8000</code><br>
+       and visit <code>localhost:8000/tools/review.html</code></p>
+       <p style="margin-top:12px;opacity:.7">${e}</p></div>`;
+    return;
+  }
+  SHAPES = shapes;
+  QUEUE = data.species
+    .filter(s => s.img)
+    .map(s => ({...s, _p: priority(s)}))
+    .filter(s => s._p >= 300)          // anything flagged at all
+    .sort((a,b) => b._p - a._p);
+  render();
+}
+
+function currentValue(s, field){
+  const e = edits[s.id];
+  return (e && field in e) ? e[field] : s[field];
+}
+function setValue(s, field, val){
+  edits[s.id] = edits[s.id] || {_name: s.name};
+  if (val === s[field]) delete edits[s.id][field];
+  else edits[s.id][field] = val;
+  if (Object.keys(edits[s.id]).length <= 1) delete edits[s.id];
+  localStorage.setItem(STORE, JSON.stringify(edits));
+  render();
+}
+
+function render(){
+  const app = document.getElementById('app');
+  document.getElementById('edits').textContent =
+    Object.keys(edits).length + ' corrections';
+  if (i >= QUEUE.length){
+    app.innerHTML = `<div class="empty"><h2>Queue clear</h2>
+      <p>${Object.keys(edits).length} corrections ready. Hit <b>Save overrides</b>,
+      drop the file at <code>tools/tag-overrides.json</code>, and re-run the bake —
+      overrides are read before the model, so they survive every future rebuild.</p></div>`;
+    return;
+  }
+  const s = QUEUE[i];
+  document.getElementById('pos').textContent = `${i+1} of ${QUEUE.length}`;
+  const shape = currentValue(s,'shape'), colour = currentValue(s,'colour');
+  const grouping = currentValue(s,'grouping'), size = currentValue(s,'size_cm');
+
+  const flags = [];
+  if (s.shape_contested) flags.push(['hot','shape contested']);
+  if (s.photo_caveat)    flags.push(['hot','no photo shows the whole animal']);
+  if (!s.shape)          flags.push(['hot','no shape']);
+  if (s.confidence)      flags.push(['', s.confidence + ' confidence']);
+  if (s.size_cm == null) flags.push(['','no size']);
+  if (s.shape_votes && s.shape_votes.length > 1)
+    flags.push(['','votes: ' + s.shape_votes.join(' / ')]);
+
+  app.innerHTML = `
+  <div class="wrap">
+    <div class="photo">
+      <img src="${IMG_BASE}${s.img}" alt="${s.name}">
+      <p class="cap">${s.credit ? 'Photo © ' + s.credit + ' · iNaturalist' : ''}
+        ${s.obs_url ? ` · <a href="${s.obs_url}" target="_blank" rel="noopener">see the observation</a>` : ''}
+        ${s.distinctive ? '<br>Look for: ' + s.distinctive : ''}</p>
+    </div>
+    <div class="panel">
+      <div class="nm">${s.name}</div>
+      <div class="sci">${s.sci || ''}</div>
+      <div class="recs">${s.annual} records in the bay</div>
+      <div class="flags">${flags.map(([c,t]) => `<span class="flag ${c}">${t}</span>`).join('')}</div>
+
+      <p class="lbl">Shape ${shape ? '— ' + shape : '— none'}</p>
+      <div class="shapes">${SHAPES.map((sh,n) => `
+        <button class="sh ${sh.key===shape?'on':''} ${sh.key===s.shape&&sh.key!==shape?'was':''}"
+          data-shape="${sh.key}" title="${sh.label}">
+          <svg viewBox="0 0 84 56" aria-hidden="true">${sh.path}</svg>
+          <span class="t">${sh.label}</span>
+          <span class="k">${n<9?n+1:''}</span>
+        </button>`).join('')}</div>
+
+      <p class="lbl">Colour</p>
+      <div class="chips">${COLOURS.map(c => `
+        <button class="chip ${c===colour?'on':''}" data-colour="${c}">${c}</button>`).join('')}</div>
+
+      <p class="lbl">Typical size (cm)</p>
+      <div class="row">
+        <input type="number" id="sz" value="${size ?? ''}" placeholder="what an adult usually is">
+      </div>
+      <p class="hint">${s.size_source ? 'currently ' + s.size_source : 'no source'}
+        ${s.max_cm ? ' · grows to ' + s.max_cm + ' cm' : ''}</p>
+
+      <p class="lbl">Grouping — a photo can't show this</p>
+      <div class="chips">${GROUPING.map(g => `
+        <button class="chip ${g===grouping?'on':''}" data-group="${g}">${g}</button>`).join('')}</div>
+
+      <div class="foot">
+        <button class="btn ghost" id="prev">&larr; Back</button>
+        <button class="btn" id="next">Looks right &rarr;</button>
+      </div>
+      <p class="keys"><b>1</b>–<b>9</b> pick shape · <b>Enter</b> accept &amp; next ·
+        <b>&larr;</b> <b>&rarr;</b> move · <b>s</b> skip</p>
+    </div>
+  </div>`;
+
+  app.querySelectorAll('[data-shape]').forEach(b =>
+    b.onclick = () => setValue(s,'shape',b.dataset.shape));
+  app.querySelectorAll('[data-colour]').forEach(b =>
+    b.onclick = () => setValue(s,'colour', b.dataset.colour===colour?null:b.dataset.colour));
+  app.querySelectorAll('[data-group]').forEach(b =>
+    b.onclick = () => setValue(s,'grouping', b.dataset.group===grouping?null:b.dataset.group));
+  document.getElementById('sz').onchange = e =>
+    setValue(s,'size_cm', e.target.value ? Number(e.target.value) : null);
+  document.getElementById('next').onclick = () => { i++; render(); };
+  document.getElementById('prev').onclick = () => { i = Math.max(0,i-1); render(); };
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  const s = QUEUE[i];
+  if (!s) return;
+  if (e.key >= '1' && e.key <= '9'){
+    const sh = SHAPES[+e.key - 1];
+    if (sh) setValue(s,'shape',sh.key);
+  }
+  else if (e.key === 'Enter' || e.key === 'ArrowRight'){ i++; render(); }
+  else if (e.key === 'ArrowLeft'){ i = Math.max(0,i-1); render(); }
+  else if (e.key === 's'){ i++; render(); }
+});
+
+document.getElementById('skipAll').onclick = () => { i = QUEUE.length; render(); };
+document.getElementById('save').onclick = () => {
+  const doc = {
+    _README: "Hand corrections for the Who Lives Here dataset, keyed by iNaturalist "
+           + "taxon id. bake_ctbar.py reads this AFTER the vision pass and BEFORE "
+           + "emit, so a correction survives every future rebuild. Delete an entry "
+           + "to hand a species back to the model.",
+    _generated: new Date().toISOString().slice(0,10),
+    ...edits,
+  };
+  const blob = new Blob([JSON.stringify(doc,null,1)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tag-overrides.json';
+  a.click();
+};
+
+boot();
+</script>
+</body>
+</html>
