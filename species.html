@@ -352,7 +352,10 @@ function rowHTML(s,rank,showMonth){
     +'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">'
     +'<span class="b"><span class="n">'+esc(s.name)+'</span>'
     +'<span class="s">'+esc(s.sci)+'</span>'
-    +'<span class="w"><span class="dot"></span>'+word+'</span></span>'
+    +'<span class="w"><span class="dot"></span>'+word+'</span>'
+    +(function(){ var w=morphWhy(s); return w
+        ?'<span class="w" style="color:var(--dim)">'+esc(w)+'</span>':''; })()
+    +'</span>'
     +(seen(s.id)?'<span class="seen">&#10003;</span>':'')+'</button>';
 }
 
@@ -395,10 +398,38 @@ function hardMatch(s){
   if(SEL.size && s.size_bucket!==SEL.size) return false;
   return true;
 }
+/* A record carries ONE colour, and for a lot of reef species that colour is
+   the adult male. Matching only on it makes the female unfindable: someone who
+   saw the brown-green female Blue Groper and taps "brown" gets nothing back,
+   because the record says blue. So a facet matches if the primary record OR
+   any verified morph matches. */
+function morphHit(s,field,val){
+  var ms=s.morphs||[];
+  for(var i=0;i<ms.length;i++){
+    var m=ms[i];
+    if(field==='colour' && (m.colour===val || m.colour2===val)) return m;
+    if(field==='mark' && (m.markings||[]).indexOf(val)>=0) return m;
+  }
+  return null;
+}
 function softMatch(s){
-  if(SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour) return false;
-  if(SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0) return false;
+  if(SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour
+     && !morphHit(s,'colour',SEL.colour)) return false;
+  if(SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0
+     && !morphHit(s,'mark',SEL.mark)) return false;
   return true;
+}
+/* Why a blue fish came back for "brown". Without this the match reads as a
+   bug: the row shows a blue Groper under a brown filter, next to a blue photo.
+   Naming the morph turns a wrong-looking result into the useful half of the
+   answer — that the thing they saw was the female. */
+function morphWhy(s){
+  var m = (SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour)
+            ? morphHit(s,'colour',SEL.colour) : null;
+  if(!m && SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0) m=morphHit(s,'mark',SEL.mark);
+  if(!m) return '';
+  var who = String(m.label).replace(/-/g,' ');
+  return 'the '+who+' is the one you saw';
 }
 function matches(s){ return hardMatch(s); }
 
@@ -570,6 +601,22 @@ function openDetail(id){
       +'<p class="cap">Background, not a bay record.</p>';
   }
 
+  /* Two appearances, shown as such. This is the same knowledge the filter uses,
+     so it must not be phrased as a separate claim that could drift from it. */
+  var morphLine='';
+  if((s.morphs||[]).length>1){
+    morphLine='<p class="lbl">More than one appearance</p>'
+      +s.morphs.map(function(m){
+        var cols=[m.colour,m.colour2].filter(Boolean)
+          .map(function(c){ return String(c).replace(/-/g,' '); }).join(' and ');
+        return '<p style="font-size:13px"><strong>'
+          + esc(String(m.label).replace(/-/g,' '))+'</strong>'
+          + (cols?' &mdash; '+esc(cols):'')
+          + (m.describe?'<br><span style="color:var(--dim);font-size:11.5px">'
+             +esc(m.describe)+'</span>':'')+'</p>'; }).join('')
+      +'<p class="cap">Both are this species. Either will find it in Identify.</p>';
+  }
+
   el('sheet').innerHTML='<button class="x" id="xBtn" aria-label="Close">&times;</button>'
     +'<div class="grab"></div>'
     +'<img class="hero" src="species/'+esc(s.img)+'" alt="'+esc(s.name)+'">'
@@ -580,6 +627,7 @@ function openDetail(id){
     +'<div class="dtags">'+tags.map(function(t){ return '<span class="dtag">'+esc(t)+'</span>'; }).join('')+'</div>'
     +(s.grouping?'<p class="cap" style="margin-top:8px">Usually seen '+esc(s.grouping)+'</p>':'')
     +'<div class="block">'+sizeLine+'</div>'
+    +(morphLine?'<div class="block">'+morphLine+'</div>':'')
     +(factLine?'<div class="block">'+factLine+'</div>':'')
     /* Three states, because "has a season" is not the default. Measured over
        570 species with enough NSW data: 13% have a real season, 49% are flat,
