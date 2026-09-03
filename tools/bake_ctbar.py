@@ -2292,6 +2292,108 @@ def stage_morphs(species: list, force: bool, refute: bool = True) -> dict:
     print(SPEND.report())
     return cache
 
+# TWO PLACES SAYING THE SAME THING WILL EVENTUALLY SAY DIFFERENT THINGS.
+#
+# The fact pass and the morph pass were run independently, and for 53 species
+# they describe the same animal from two directions. Today they agree — eleven
+# were re-derived cold and matched every time — but they are regenerated
+# separately, so a future re-bake can leave a card asserting one thing in prose
+# and another in its filter.
+#
+# The morph block is the one that feeds the filter, so it is the copy that
+# stays. But a blanket drop would be wrong: Senator Wrasse's fact is about a
+# Roman toga, Blind Shark's about clamping its eyes shut, Three-spot Dascyllus
+# about sheltering in anemone tentacles. Those sit alongside morphs without
+# duplicating them. Only the restatements go, and only a reading of both can
+# tell which is which.
+
+RETIRE_SYS = (
+    "You are given structured data listing a marine species' distinct "
+    "appearances, and a one-line prose fact about the same species.\n\n"
+    "Answer says_the_same_thing=true ONLY if the prose is essentially a "
+    "restatement of the appearance data — if a reader who had already seen the "
+    "appearance list would learn nothing new from it.\n\n"
+    "Answer false if the prose adds anything the list does not carry: where a "
+    "name comes from, a behaviour, a habitat, a defence, a lifespan, what "
+    "triggers the change, or any detail beyond which forms exist and what "
+    "colour they are. Mentioning the same forms is not enough to make it a "
+    "restatement — it must add nothing.\n\n"
+    "Keep reason under 200 characters."
+)
+
+
+class Redundant(BaseModel):
+    says_the_same_thing: bool
+    reason: Optional[str] = None
+
+
+def stage_retire_facts(species: list, facts: dict, morphs: dict) -> dict:
+    """Drop facts that only restate the morph data, keep the ones that add."""
+    rank = {str(s["taxon_id"]): s for s in species}
+    todo = [t for t, v in facts.items()
+            if v.get("status") == "found" and v.get("checked") is True
+            and not v.get("by_hand")
+            and (morphs.get(t) or {}).get("checked") is True
+            and t in rank]
+    if not todo:
+        log("5k/6 retire      nothing overlaps")
+        return facts
+    _require_key("5k/6 retire")
+    log(f"5k/6 retire      {len(todo)} facts sit beside morph data (~${len(todo)*0.012:.2f})")
+    client = anthropic.Anthropic()
+
+    def shape_of(tid):
+        return "; ".join(
+            f"{m['label']}: {m.get('describe') or ''} "
+            f"({m.get('colour') or '?'}{'/' + m['colour2'] if m.get('colour2') else ''})"
+            for m in morphs[tid]["morphs"])
+
+    def judge(tid):
+        s = rank[tid]
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=MODEL, max_tokens=1000, system=RETIRE_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']})\n"
+                               f"Appearances: {shape_of(tid)}\n"
+                               f"Prose fact: {facts[tid]['fact']}"}],
+                    output_format=Redundant)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    retire check failed {s['name']}: {type(e).__name__}")
+                    return tid, None
+                time.sleep(0.5 * attempt)
+        return tid, None
+
+    dropped, kept, done = [], [], 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(judge, t) for t in todo]):
+            tid, v = fut.result()
+            done += 1
+            if v is None:
+                continue                       # unjudged: leave the fact alone
+            if v.says_the_same_thing:
+                dropped.append((rank[tid]["annual"], rank[tid]["name"],
+                                facts[tid]["fact"]))
+                facts[tid] = {"status": "retired-overlaps-morphs",
+                              "was": facts[tid]["fact"], "why": v.reason}
+            else:
+                kept.append((rank[tid]["annual"], rank[tid]["name"]))
+            if done % 25 == 0:
+                cache_write("facts.json", facts)
+    cache_write("facts.json", facts)
+    dropped.sort(reverse=True); kept.sort(reverse=True)
+    log(f"5k/6 retire      {len(dropped)} retired, {len(kept)} kept as additive")
+    for a, n, f in dropped[:8]:
+        log(f"      drop {a:4d}  {n[:26]:26s} {f[:58]}")
+    for a, n in kept[:6]:
+        log(f"      keep {a:4d}  {n}")
+    print(SPEND.report())
+    return facts
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -2644,6 +2746,9 @@ def main() -> int:
                          "whose red is badly suppressed. Water eats red first, so "
                          "a brown animal can be tagged grey; 34%% of these photos "
                          "are affected. The displayed photo is never altered.")
+    ap.add_argument("--retire-facts", action="store_true",
+                    help="drop facts that only restate the morph data, so the "
+                         "same claim does not live in two places and drift")
     ap.add_argument("--morphs", action="store_true",
                     help="find species whose sexes or juveniles look like "
                          "different animals, so the filter can match either")
@@ -2738,6 +2843,9 @@ def main() -> int:
         morphs = cache_read("morphs.json") or {}
         if args.morphs:
             morphs = stage_morphs(species, args.force)
+        if args.retire_facts:
+            facts = stage_retire_facts(species, facts, morphs)
+            facts = apply_fact_overrides(species, facts)   # a ruling still wins
         if args.vote and not args.skip_tags:
             tags = stage_vote(species, tags)
         if previous:
