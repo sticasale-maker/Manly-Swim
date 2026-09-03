@@ -101,36 +101,28 @@ const GROUPING = ['schools','small groups','pairs','usually alone'];
 let SHAPES = [], QUEUE = [], i = 0;
 let edits = JSON.parse(localStorage.getItem(STORE) || '{}');
 
-/* Queue order is the whole point: contested first, then unusable photos, then
-   low confidence, and within each by how often the animal is actually seen.
-   Reviewing 400 species alphabetically is how a review never gets finished. */
-function priority(s){
-  let p = 0;
-  if (s.shape_contested) p += 4000;
-  if (s.photo_caveat)    p += 2000;
-  if (!s.shape)          p += 1500;
-  if (s.confidence === 'low')    p += 900;
-  if (s.confidence === 'medium') p += 300;
-  if (s.size_cm == null) p += 200;
-  return p + Math.min(s.annual || 0, 500) / 500 * 250;
-}
+/* Queue only what a person can actually settle.
 
-/* Load each file separately and say WHICH one failed and why. A single
-   catch around Promise.all reported "can't read the data" for three quite
-   different problems — opened as file://, run from the Drive copy that has
-   no dataset, or a genuine 404 — and left you with nothing to act on. */
-async function grab(url){
-  let res;
-  try {
-    res = await fetch(url);
-  } catch (e) {
-    throw {url, why: location.protocol === 'file:'
-      ? 'the page is open as a file:// path, and browsers block fetch from the filesystem'
-      : 'the request failed: ' + e.message};
-  }
-  if (!res.ok) throw {url, why: `the server returned ${res.status}`};
-  try { return await res.json(); }
-  catch (e) { throw {url, why: 'the file is not valid JSON'}; }
+   This used to include every medium-confidence tag, which was 363 species and
+   made the review look like a month of work. Medium is not evidence of a
+   problem: the tagging prompt tells the model that understating confidence is
+   the cheaper error, and it obeys. Shape is now settled by ballot instead, so
+   self-reported confidence has stopped being the signal it never really was.
+
+   What is left is genuinely undecidable by machine: two ballots that disagree,
+   a photo that appears to show a different animal, no photo showing the whole
+   animal, no shape at all, or a well-recorded species with no size. Everything
+   already corrected by hand drops out entirely. */
+function priority(s){
+  if (s.hand_checked) return 0;             // a person has already ruled on it
+  let p = 0;
+  if (s.shape_contested)   p += 4000;       // ballots could not agree
+  if (s.photo_ok === false) p += 3000;      // photo may show another animal
+  if (s.photo_caveat)      p += 2000;       // no candidate showed the whole animal
+  if (!s.shape)            p += 1500;
+  if (s.confidence === 'low') p += 900;
+  if (s.size_cm == null && (s.annual || 0) >= 20) p += 400;
+  return p ? p + Math.min(s.annual || 0, 500) / 500 * 250 : 0;
 }
 
 async function boot(){
@@ -162,7 +154,7 @@ async function boot(){
   QUEUE = data.species
     .filter(s => s.img)
     .map(s => ({...s, _p: priority(s)}))
-    .filter(s => s._p >= 300)          // anything flagged at all
+    .filter(s => s._p > 0)             // only real, actionable flags
     .sort((a,b) => b._p - a._p);
   render();
 }
@@ -198,6 +190,8 @@ function render(){
 
   const flags = [];
   if (s.shape_contested) flags.push(['hot','shape contested']);
+  if (s.photo_ok === false)
+    flags.push(['hot','photo may show ' + (s.photo_shows || 'a different animal')]);
   if (s.photo_caveat)    flags.push(['hot','no photo shows the whole animal']);
   if (!s.shape)          flags.push(['hot','no shape']);
   if (s.confidence)      flags.push(['', s.confidence + ' confidence']);
