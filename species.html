@@ -449,9 +449,8 @@ function renderId(){
     +'<div class="rows">'
     + shown.map(function(s){ return rowHTML(s,null); }).join('')
     + (softOn&&other.length
-        ?'<div class="divider">Recorded a different colour &middot; '+off.length+'</div>'
-         +'<p class="cap" style="padding-bottom:4px">Water eats red before anything else, so an '
-         +'animal can be photographed looking quite unlike itself. These match the shape.</p>'
+        ?'<div class="divider">'+softLabel()+' &middot; '+off.length+'</div>'
+         +'<p class="cap" style="padding-bottom:4px">'+softWhy()+'</p>'
          + other.map(function(s){ return rowHTML(s,null); }).join(''):'')
     +'</div>'
     + (soft.length+off.length?'':'<p class="empty">Nothing matches all of that.<br>Try dropping a filter &mdash; the shape is the one most worth keeping.</p>')
@@ -468,6 +467,24 @@ function renderId(){
       var n=el('q'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(err){} }
     });
   }
+}
+/* The demoted tail has to name the thing that actually differs. Saying
+   "a different colour" when the swimmer picked a marking is worse than saying
+   nothing: it sends them checking a filter they never touched. */
+function softLabel(){
+  if(SEL.colour&&SEL.mark) return 'Recorded a different colour or markings';
+  if(SEL.mark) return 'Recorded different markings';
+  return 'Recorded a different colour';
+}
+function softWhy(){
+  if(SEL.colour&&!SEL.mark)
+    return 'Water eats red before anything else, so an animal can be photographed '
+         + 'looking quite unlike itself. These match the shape.';
+  if(SEL.mark&&!SEL.colour)
+    return 'Markings are read from one photograph, and a pattern can be hidden by '
+         + 'angle, growth or a fish that simply was not showing it. These match the shape.';
+  return 'Colour and markings are both read from a single photograph, which water and '
+       + 'angle can make unreliable. These match the shape.';
 }
 function sizeLabelFor(key){
   var out=null;
