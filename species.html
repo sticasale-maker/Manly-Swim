@@ -503,8 +503,22 @@ function openDetail(id){
     .filter(Boolean).map(function(t){ return String(t).replace(/-/g,' '); });
   var sz=sizeLabel(s);
 
+  /* Only claim a typical size when we actually have one. FishBase gives a
+     maximum for 315 of these species and nothing else, and printing a record
+     specimen's length under "typically about" is simply false: the Yellowtail
+     False Fusilier's 50 cm maximum sat there while the fish you meet is 30-35.
+     Where all we have is a ceiling, say ceiling. */
+  var isTypical = (s.size_basis==='typical'||s.size_basis==='common');
   var sizeLine='';
-  if(s.size_cm!=null){
+  if(s.size_cm!=null && !isTypical){
+    sizeLine='<p class="lbl">Size</p><p style="font-size:13px">'
+      +'Grows to <strong>'+Math.round(s.size_cm)+' cm</strong>'
+      +'<br><span style="color:var(--dim);font-size:11.5px">That is the largest on '
+      +'record, not the one you are likely to meet — most adults are smaller.</span></p>'
+      +(s.size_source&&s.size_source.indexOf('http')===0
+        ? '<p class="cap"><a href="'+esc(s.size_source)+'" target="_blank" rel="noopener">source</a></p>'
+        : (s.size_source?'<p class="cap">'+esc(s.size_source)+'</p>':''));
+  } else if(s.size_cm!=null){
     sizeLine='<p class="lbl">Size</p><p style="font-size:13px">'
       +'Typically about <strong>'+Math.round(s.size_cm)+' cm</strong>'
       +(sz?' &mdash; '+esc(sz):'')
