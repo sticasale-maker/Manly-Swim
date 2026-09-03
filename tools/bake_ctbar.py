@@ -2114,6 +2114,184 @@ def apply_fact_overrides(species: list, facts: dict) -> dict:
             + (f", {unknown} name not in the list" if unknown else ""))
     return facts
 
+# ONE RECORD PER SPECIES IS A FINDABILITY BUG.
+#
+# The card holds a single colour, and for a great many reef species that colour
+# is the adult male. A swimmer who saw the brown-green female Eastern Blue
+# Groper and taps "brown" gets nothing back, because the record says blue. The
+# verified facts are full of this — Crimsonband Wrasse, Southern Maori Wrasse,
+# Sunset Wrasse, White-ear, Orangeblotch Surgeonfish, Three-spot Dascyllus all
+# came back as some version of "the two things you think you saw are one
+# animal" — but prose is the one place a filter cannot reach.
+#
+# So the appearances are data. A facet matches if ANY morph matches, and the
+# identikit draws the morph that matched: showing a blue fish to someone who
+# saw a brown one is the same bug in visual form.
+#
+# Most species have nothing to say here. Barnacles, corals, sponges, sea stars
+# and the great majority of fish look the same whatever their sex, and the
+# model is told to say so.
+
+MORPH_MODEL = MODEL
+MorphLabel = Literal["male", "female", "juvenile", "adult",
+                     "initial-phase", "terminal-phase"]
+
+
+class Morph(BaseModel):
+    label: MorphLabel
+    colour: Optional[Colour] = None
+    colour2: Optional[Colour] = None
+    markings: List[Marking] = []
+    describe: Optional[str] = None      # short phrase for the card
+
+
+class MorphSet(BaseModel):
+    differs: bool
+    morphs: List[Morph] = []
+
+
+MORPH_SYS = (
+    "You are describing whether a marine species looks DIFFERENT enough between "
+    "sexes, or between young and adult, that an ocean swimmer would take them "
+    "for two different animals.\n\n"
+    "Set differs=false for the great majority. Most species look the same "
+    "whatever their sex, and invertebrates almost always do. A subtle "
+    "difference in size or fin length is NOT enough — the test is whether "
+    "someone in a mask would think they had seen two species.\n\n"
+    "Set differs=true for the cases where the difference is a whole change of "
+    "appearance: wrasses and parrotfishes whose initial and terminal phases "
+    "differ completely, damselfishes whose juveniles are a different colour "
+    "entirely, gropers where one sex is blue and the other brown.\n\n"
+    "When it is true, give one entry per appearance a swimmer would meet, using "
+    "ONLY the supplied colour and marking vocabularies, and a describe phrase "
+    "under 70 characters written for someone looking at the animal. Use "
+    "initial-phase and terminal-phase for wrasses where the change follows sex "
+    "reversal rather than simple sex, and juvenile only where the young differ "
+    "from BOTH adult forms.")
+
+MORPH_REFUTE_SYS = (
+    "You are checking a claim that a marine species has two or more distinct "
+    "appearances. Assume it is wrong and try to show that.\n\n"
+    "Set true_of_this_species=false if the species does not actually differ "
+    "this way, if the difference is far too subtle for a swimmer to notice, if "
+    "the colours named are wrong, or if the pattern described belongs to a "
+    "different species. Uncertainty is a refutation.\n\n"
+    "Keep reason under 300 characters. One or two sentences, no preamble.")
+
+
+def stage_morphs(species: list, force: bool, refute: bool = True) -> dict:
+    cache = {} if force else (cache_read("morphs.json") or {})
+    todo = [s for s in species
+            if (cache.get(str(s["taxon_id"])) or {}).get("status", "missing")
+            in ("missing", "error")]
+    if todo:
+        _require_key("5i/6 morphs")
+        log(f"5i/6 morphs      {len(todo)} on {MORPH_MODEL} (~${len(todo)*0.02:.2f})")
+        client = anthropic.Anthropic()
+
+        def ask(s):
+            tid = str(s["taxon_id"])
+            for attempt in (1, 2, 3):
+                try:
+                    r = client.messages.parse(
+                        model=MORPH_MODEL, max_tokens=1200, system=MORPH_SYS,
+                        messages=[{"role": "user", "content":
+                                   f"{s['sci']} ({s['name']})"}],
+                        output_format=MorphSet)
+                    SPEND.add(r.usage)
+                    return tid, r.parsed_output
+                except Exception as e:                      # noqa: BLE001
+                    if attempt == 3:
+                        log(f"    morph failed {s['name']}: {type(e).__name__}")
+                        return tid, None
+                    time.sleep(0.5 * attempt)
+            return tid, None
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+            for fut in as_completed([pool.submit(ask, s) for s in todo]):
+                tid, out = fut.result()
+                done += 1
+                if out is None:
+                    cache[tid] = {"status": "error"}
+                elif out.differs and len(out.morphs) >= 2:
+                    cache[tid] = {"status": "found", "checked": None,
+                                  "morphs": [m.model_dump() for m in out.morphs]}
+                else:
+                    # differs=true with one morph says nothing; treat as none.
+                    cache[tid] = {"status": "none"}
+                if done % 50 == 0:
+                    cache_write("morphs.json", cache)
+                    log(f"      {done}/{len(todo)}")
+        cache_write("morphs.json", cache)
+
+    found = [t for t, v in cache.items() if v.get("status") == "found"]
+    log(f"5i/6 morphs      {len(found)} of {len(cache)} species have more than "
+        f"one appearance ({len(found)/max(1,len(cache))*100:.0f}%)")
+    if not refute:
+        return cache
+
+    rank = {str(s["taxon_id"]): s for s in species}
+    pool_ = [t for t in found if rank.get(t) and cache[t].get("checked") is None]
+    if not pool_:
+        log("5j/6 morph check all checked")
+        return cache
+    _require_key("5j/6 morph check")
+    log(f"5j/6 morph check {len(pool_)} on {MORPH_MODEL} (~${len(pool_)*0.015:.2f})")
+    client = anthropic.Anthropic()
+
+    def describe(tid):
+        return "; ".join(
+            f"{m['label']}: {m.get('describe') or ''} "
+            f"({m.get('colour') or '?'}{'/'+m['colour2'] if m.get('colour2') else ''})"
+            for m in cache[tid]["morphs"])
+
+    def check(tid):
+        s = rank[tid]
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=MORPH_MODEL, max_tokens=1200, system=MORPH_REFUTE_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']}). "
+                               f"Claim: {describe(tid)}"}],
+                    output_format=FactVerdict)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    morph check failed {s['name']}: {type(e).__name__}")
+                    return tid, None
+                time.sleep(0.5 * attempt)
+        return tid, None
+
+    kept, killed, errors, done = 0, [], 0, 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool2:
+        for fut in as_completed([pool2.submit(check, t) for t in pool_]):
+            tid, v = fut.result()
+            done += 1
+            if v is None:
+                cache[tid]["checked"] = None
+                errors += 1
+            elif v.true_of_this_species:
+                cache[tid]["checked"] = True
+                kept += 1
+            else:
+                killed.append((rank[tid]["annual"], rank[tid]["name"], v.reason or ""))
+                cache[tid] = {"status": "refuted", "why": v.reason,
+                              "was": cache[tid].get("morphs")}
+            if done % 40 == 0:
+                cache_write("morphs.json", cache)
+                log(f"      {done}/{len(pool_)}  {kept} held, {len(killed)} refuted")
+    cache_write("morphs.json", cache)
+    killed.sort(reverse=True)
+    log(f"5j/6 morph check {kept} held, {len(killed)} refuted"
+        + (f", {errors} could not be checked" if errors else ""))
+    for a, n, why in killed[:8]:
+        log(f"      {a:4d}  {n[:26]:26s} {why[:60]}")
+    print(SPEND.report())
+    return cache
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -2226,7 +2404,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None, facts: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -2318,6 +2496,11 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "fact": ((facts or {}).get(tid) or {}).get("fact"),
             "fact_category": ((facts or {}).get(tid) or {}).get("category"),
             "fact_checked": bool(((facts or {}).get(tid) or {}).get("checked")),
+            # Only verified sets ship. A wrong second appearance is worse than
+            # none: it puts the species under a colour it never wears, which is
+            # the same findability failure pointing the other way.
+            "morphs": (((morphs or {}).get(tid) or {}).get("morphs")
+                       if ((morphs or {}).get(tid) or {}).get("checked") else None),
         }
         if t:
             rec.update({
@@ -2453,6 +2636,9 @@ def main() -> int:
                          "whose red is badly suppressed. Water eats red first, so "
                          "a brown animal can be tagged grey; 34%% of these photos "
                          "are affected. The displayed photo is never altered.")
+    ap.add_argument("--morphs", action="store_true",
+                    help="find species whose sexes or juveniles look like "
+                         "different animals, so the filter can match either")
     ap.add_argument("--facts", action="store_true",
                     help="look up one curiosity per species, then have the "
                          "stronger model try to refute the most-seen ones")
@@ -2541,6 +2727,9 @@ def main() -> int:
         # Applied on every run, paid stage or not: a hand ruling must not need
         # an API call to reach the app.
         facts = apply_fact_overrides(species, facts)
+        morphs = cache_read("morphs.json") or {}
+        if args.morphs:
+            morphs = stage_morphs(species, args.force)
         if args.vote and not args.skip_tags:
             tags = stage_vote(species, tags)
         if previous:
@@ -2553,7 +2742,7 @@ def main() -> int:
             log("everything AND invalidates the human review.")
             return 0
         stage_emit(species, months, photos, tags, sizes, slugs, season,
-                   facts=facts)
+                   facts=facts, morphs=morphs)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")
