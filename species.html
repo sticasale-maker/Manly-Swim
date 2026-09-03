@@ -325,9 +325,6 @@ function idkit(shapeKey,hue,marks,finish){
 function share(sp,i){
   var e=DATA.effort[i]; return e?sp.months[i]/e*1000:0;
 }
-function inSeasonCount(){
-  var n=0; DATA.species.forEach(function(s){ if(s.months[NOW]>0) n++; }); return n;
-}
 
 function sizeLabel(s){
   if(s.size_cm==null) return null;
@@ -336,11 +333,18 @@ function sizeLabel(s){
   return b?b.label:null;
 }
 
-function rowHTML(s,rank){
-  var c=s.months[NOW], none=c===0;
-  var word=none?'Not recorded here in '+FULL[NOW]
-               :'Seen '+c+' time'+(c===1?'':'s')+' here in '+FULL[NOW];
-  return '<button class="row'+(none?' none':'')+'" data-id="'+s.id+'">'
+/* The month count is a rarity measure in disguise: a species with two records
+   has an 8% chance of one landing in September — exactly random — whether or
+   not it lives here all year. 67% of the list has 12 records or fewer, so
+   showing a month count would tell 400 species' worth of lies. Total records
+   is always true. Anything anchored to the reef, and most small resident fish,
+   are simply here. */
+function rowHTML(s,rank,showMonth){
+  var c=s.months[NOW];
+  var word = showMonth
+    ? 'Seen '+c+' time'+(c===1?'':'s')+' here in '+FULL[NOW]
+    : s.annual+' record'+(s.annual===1?'':'s')+' in the bay';
+  return '<button class="row" data-id="'+s.id+'">'
     +(rank?'<span class="rank">'+rank+'</span>':'')
     +'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">'
     +'<span class="b"><span class="n">'+esc(s.name)+'</span>'
@@ -355,10 +359,10 @@ function renderNow(){
   el('view').innerHTML=
     '<div class="strip">'
     +'<div class="live"><span style="font-size:19px">&#128032;</span><span>'
-    +'<span class="t">'+inSeasonCount()+' species recorded here in '+FULL[NOW]+'</span>'
-    +'<span class="d">Across ten years of observations by 206 contributors</span></span></div>'
-    +'<p class="lbl">Typically about &mdash; most-recorded first</p>'
-    +'<div class="rows">'+list.map(function(s,i){ return rowHTML(s,i+1); }).join('')+'</div>'
+    +'<span class="t">Most often seen around now</span>'
+    +'<span class="d">From ten years of observations by 206 contributors</span></span></div>'
+    +'<p class="lbl">In '+FULL[NOW]+'</p>'
+    +'<div class="rows">'+list.map(function(s,i){ return rowHTML(s,i+1,true); }).join('')+'</div>'
     +'<p class="stamp">Counts as at '+DATA.generated_at.slice(0,10)+' &middot; rebuilt quarterly</p>'
     +'</div>';
 }
@@ -402,9 +406,7 @@ function renderId(){
      animal is seen here at all. */
   hits.sort(function(a,b){ return (b.months[NOW]-a.months[NOW]) || (b.annual-a.annual); });
   var soft=hits.filter(softMatch), off=hits.filter(function(s){ return !softMatch(s); });
-  var seenNow=soft.filter(function(s){ return s.months[NOW]>0; });
-  var notNow=soft.filter(function(s){ return s.months[NOW]===0; });
-  var shown=seenNow.slice(0,60), tail=notNow.slice(0,40), other=off.slice(0,30);
+  var shown=soft.slice(0,80), other=off.slice(0,30);
   var softOn=!!(SEL.colour||SEL.mark);
 
   var bits=[SEL.shape,SEL.colour,SEL.mark,
@@ -443,11 +445,9 @@ function renderId(){
     +'</div>'
 
     +'<div class="resbar"><span class="l">'+soft.length+' match'+(soft.length===1?'':'es')+'</span>'
-    +'<span class="r">Most likely first,<br>by '+FULL[NOW]+' records</span></div>'
+    +'<span class="r">Most likely first</span></div>'
     +'<div class="rows">'
     + shown.map(function(s){ return rowHTML(s,null); }).join('')
-    + (tail.length?'<div class="divider">Not recorded here in '+FULL[NOW]+' &middot; '+notNow.length+'</div>'
-        + tail.map(function(s){ return rowHTML(s,null); }).join(''):'')
     + (softOn&&other.length
         ?'<div class="divider">Recorded a different colour &middot; '+off.length+'</div>'
          +'<p class="cap" style="padding-bottom:4px">Water eats red before anything else, so an '
@@ -515,13 +515,22 @@ function openDetail(id){
     +'<div class="dtags">'+tags.map(function(t){ return '<span class="dtag">'+esc(t)+'</span>'; }).join('')+'</div>'
     +(s.grouping?'<p class="cap" style="margin-top:8px">Usually seen '+esc(s.grouping)+'</p>':'')
     +'<div class="block">'+sizeLine+'</div>'
-    +'<div class="block"><p class="lbl">When it’s about &mdash; per 1,000 dives</p>'
-    +'<div class="months">'+sh.map(function(v,i){
-        return '<div class="mo'+(i===NOW?' now':'')+'">'
-          +'<div class="bar" style="height:'+Math.max(2,Math.round(v/peak*36))+'px"></div>'
-          +'<div class="lb">'+MON[i]+'</div></div>'; }).join('')+'</div>'
-    +'<p class="cap">Share of each month’s diving, so a quiet winter doesn’t read as an '
-    +'absent animal. Strongest in '+FULL[best]+'. '+s.annual+' records in the bay.</p></div>'
+    /* A twelve-bar chart drawn from six records is a picture of who went
+       diving, not of the animal. Below ~2 records a month there is no pattern
+       to show, and drawing one anyway would be the same error as colouring a
+       missing reading green. */
+    +(s.annual>=24
+      ?'<div class="block"><p class="lbl">When it’s about &mdash; per 1,000 dives</p>'
+        +'<div class="months">'+sh.map(function(v,i){
+            return '<div class="mo'+(i===NOW?' now':'')+'">'
+              +'<div class="bar" style="height:'+Math.max(2,Math.round(v/peak*36))+'px"></div>'
+              +'<div class="lb">'+MON[i]+'</div></div>'; }).join('')+'</div>'
+        +'<p class="cap">Share of each month’s diving, so a quiet winter doesn’t read as an '
+        +'absent animal. Strongest in '+FULL[best]+'. '+s.annual+' records in the bay.</p></div>'
+      :'<div class="block"><p class="lbl">When it’s about</p>'
+        +'<p class="cap">Only '+s.annual+' record'+(s.annual===1?'':'s')+' in the bay — too few '
+        +'to say anything about the time of year. Most things anchored to the reef, and most '
+        +'small resident fish, are simply here all year.</p></div>')
     +'<button class="lifebtn'+(seen(s.id)?' on':'')+'" id="lifeBtn">'
     +(seen(s.id)?'✓ Seen it':'Mark as seen')+'</button>'
     +'<button class="close" id="closeBtn">Close</button>';
