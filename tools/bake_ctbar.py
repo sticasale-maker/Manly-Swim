@@ -823,6 +823,105 @@ def stage_size(species: list, force: bool, typical: dict = None) -> dict:
     return out
 
 
+# ── Stage 2b: seasonality, at the scale it is actually visible ───────────────
+#
+# The bay's own record cannot see a season. Measured: a species with 1-2 local
+# records has an 8% chance of one landing in September — exactly the random
+# expectation for one month in twelve — while a species with 100+ has 93%. That
+# is a rarity gradient wearing a seasonal costume, and 67% of the list has 12
+# records or fewer. Charting it would show who went diving.
+#
+# NSW-wide it IS visible: the median species has ~39x more records there, and
+# 555 of 640 clear 24. A fish does not keep a different calendar at Shelly than
+# at Bondi, so the honest split is local list, regional season.
+#
+# Then three states, because "has a season" is not the default:
+#
+#   real     the best four CONSECUTIVE months hold >=50% of the normalised
+#            year, from enough records to mean it. Port Jackson Shark peaks in
+#            July at 20% of its year, running AGAINST the effort curve, which
+#            is what a genuine signal looks like.
+#   flat     enough records, no concentration. 49%. Anemones, limpets, urchins
+#            — fixed to the rock and there every day. "Here all year" is a
+#            finding, not a gap.
+#   unknown  too few records anywhere to say.
+#
+# Anything below the bar is called flat rather than "possibly seasonal": a
+# marginal concentration could still be regional dive-club rhythm, water
+# clarity or school holidays, and claiming a season on that is the error this
+# whole stage exists to avoid.
+
+NSW_PLACE = 6744           # New South Wales
+SEASON_MIN_RECORDS = 24    # ~2 a month before a shape is worth reading
+# Measured against species whose behaviour is known. The busiest THREE months
+# was the wrong test: it called Port Jackson Shark flat, because its winter
+# aggregation spans four months (Jun-Sep at 13/20/16/12%) and top-3 caught only
+# 49% of it. A season is contiguous by nature, so ask for the best four
+# CONSECUTIVE months instead — and demanding contiguity is also what separates
+# a real signal from scatter, since noise does not cluster in a row.
+#
+#   known seasonal   Port Jackson 61%  Moorish Idol 61%  Dusky Shark 80%
+#   known resident   Waratah Anemone 37%  Blue Groper 40%  Luderick 43%
+#
+# The gap between 44% and 56% is empty, so the bar goes in the middle of it.
+SEASON_STRONG = 0.50       # share of the year in the best 4 consecutive months
+
+
+def stage_season(species: list, force: bool) -> dict:
+    cached = None if force else cache_read("season.json")
+    if cached:
+        log(f"2b/6 season      {len(cached['species']):>4} (cached)")
+        return cached
+
+    months, effort = {}, [0] * 12
+    for m in range(1, 13):
+        seen, page = 0, 1
+        while True:
+            d = inat("observations/species_counts", place_id=NSW_PLACE, taxon_id=TAXA,
+                     per_page=500, page=page, verifiable="true", month=m)
+            for r in d["results"]:
+                months.setdefault(r["taxon"]["id"], [0] * 12)[m - 1] = r["count"]
+                effort[m - 1] += r["count"]
+            seen += len(d["results"])
+            if seen >= d["total_results"] or not d["results"]:
+                break
+            page += 1
+        log(f"    month {m:>2}  {d['total_results']:>4} species across NSW")
+
+    out = {}
+    for s in species:
+        m = months.get(s["taxon_id"])
+        if not m:
+            continue
+        total = sum(m)
+        if total < SEASON_MIN_RECORDS:
+            out[str(s["taxon_id"])] = {"state": "unknown", "records": total}
+            continue
+        # normalise by how much observing happened each month, then read the shape
+        share = [m[i] / effort[i] if effort[i] else 0 for i in range(12)]
+        tot = sum(share) or 1
+        share = [x / tot for x in share]
+        best = max(range(12), key=lambda i: sum(share[(i + j) % 12] for j in range(4)))
+        window = sum(share[(best + j) % 12] for j in range(4))
+        peak = share.index(max(share))
+        out[str(s["taxon_id"])] = {
+            "state": "real" if window >= SEASON_STRONG else "flat",
+            "records": total,
+            "share": [round(x, 4) for x in share],
+            "peak": peak,
+            "concentration": round(window, 3),
+            "window_from": best,
+        }
+
+    doc = {"place": NSW_PLACE, "effort": effort, "species": out}
+    cache_write("season.json", doc)
+    import collections
+    c = collections.Counter(v["state"] for v in out.values())
+    log(f"2b/6 season      {c['real']} with a real season, {c['flat']} here all year, "
+        f"{c['unknown']} too few records")
+    return doc
+
+
 # ── Stage 4b: typical length, search-grounded ────────────────────────────────
 #
 # FishBase's `Length` is the largest specimen ever recorded, and only 24% of
@@ -1607,7 +1706,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict) -> None:
+               sizes: dict, slugs: dict, season: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -1657,6 +1756,16 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "sci": s["sci"],
             "annual": s["annual"],
             "months": m,                       # RAW counts — normalise with `effort`
+            # Seasonality is read at NSW scale, where it is actually visible;
+            # the bay's own counts above stay the local abundance figure.
+            "season": (((season or {}).get("species") or {}).get(str(s["taxon_id"])) or {})
+                      .get("state"),
+            "season_share": (((season or {}).get("species") or {}).get(str(s["taxon_id"])) or {})
+                            .get("share"),
+            "season_peak": (((season or {}).get("species") or {}).get(str(s["taxon_id"])) or {})
+                           .get("peak"),
+            "season_records": (((season or {}).get("species") or {}).get(str(s["taxon_id"])) or {})
+                              .get("records"),
             "img": photo["file"] if photo else None,
             "credit": (f"{photo['who_name'] or photo['who']} ({photo['lic']})"
                        if photo else None),
@@ -1732,7 +1841,8 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
                      "observations inside the reserve. Attributes derived from "
                      "those photographs; size from FishBase " + FB_RELEASE + "."),
         },
-        "effort": effort,                      # monthly observation totals
+        "effort": effort,                      # monthly observation totals, in the bay
+        "season_effort": (season or {}).get("effort"),   # and across NSW
         "size_buckets": [{"key": k, "low_cm": lo, "high_cm": hi, "label": lb}
                          for k, lo, hi, lb in SIZE_BUCKETS],
         "species": out,
@@ -1825,6 +1935,7 @@ def main() -> int:
 
         slugs = assign_slugs(species)
         months = stage_months(species, args.force)
+        season = stage_season(species, args.force)
         photos = stage_photos(species, args.force, slugs)
         sizes = stage_size(species, args.force)
         if args.typical:
@@ -1863,7 +1974,7 @@ def main() -> int:
             log("FishTags before the full pass; changing them later re-tags")
             log("everything AND invalidates the human review.")
             return 0
-        stage_emit(species, months, photos, tags, sizes, slugs)
+        stage_emit(species, months, photos, tags, sizes, slugs, season)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")

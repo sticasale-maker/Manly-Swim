@@ -515,22 +515,29 @@ function openDetail(id){
     +'<div class="dtags">'+tags.map(function(t){ return '<span class="dtag">'+esc(t)+'</span>'; }).join('')+'</div>'
     +(s.grouping?'<p class="cap" style="margin-top:8px">Usually seen '+esc(s.grouping)+'</p>':'')
     +'<div class="block">'+sizeLine+'</div>'
-    /* A twelve-bar chart drawn from six records is a picture of who went
-       diving, not of the animal. Below ~2 records a month there is no pattern
-       to show, and drawing one anyway would be the same error as colouring a
-       missing reading green. */
-    +(s.annual>=24
-      ?'<div class="block"><p class="lbl">When it’s about &mdash; per 1,000 dives</p>'
-        +'<div class="months">'+sh.map(function(v,i){
+    /* Three states, because "has a season" is not the default. Measured over
+       570 species with enough NSW data: 13% have a real season, 49% are flat,
+       and calling the flat ones seasonal would be inventing a pattern. The bay
+       cannot see any of this — 67% of the list has 12 local records or fewer —
+       so the shape is read at NSW scale and labelled as such. */
+    +(s.season==='real'
+      ?'<div class="block"><p class="lbl">When it’s about</p>'
+        +'<div class="months">'+(s.season_share||[]).map(function(v,i){
+            var pk=Math.max.apply(null,s.season_share)||1;
             return '<div class="mo'+(i===NOW?' now':'')+'">'
-              +'<div class="bar" style="height:'+Math.max(2,Math.round(v/peak*36))+'px"></div>'
+              +'<div class="bar" style="height:'+Math.max(2,Math.round(v/pk*36))+'px"></div>'
               +'<div class="lb">'+MON[i]+'</div></div>'; }).join('')+'</div>'
-        +'<p class="cap">Share of each month’s diving, so a quiet winter doesn’t read as an '
-        +'absent animal. Strongest in '+FULL[best]+'. '+s.annual+' records in the bay.</p></div>'
+        +'<p class="cap">Strongest in '+FULL[s.season_peak]+'. Read across NSW, from '
+        +s.season_records+' records, and divided by how much observing happened each '
+        +'month — the bay alone is too thinly recorded to show a season.</p></div>'
+      : s.season==='flat'
+      ?'<div class="block"><p class="lbl">When it’s about</p>'
+        +'<p style="font-size:13px">Here <strong>all year</strong>.</p>'
+        +'<p class="cap">'+s.season_records+' records across NSW show no month it favours. '
+        +'Most things anchored to the reef, and most small resident fish, simply stay put.</p></div>'
       :'<div class="block"><p class="lbl">When it’s about</p>'
-        +'<p class="cap">Only '+s.annual+' record'+(s.annual===1?'':'s')+' in the bay — too few '
-        +'to say anything about the time of year. Most things anchored to the reef, and most '
-        +'small resident fish, are simply here all year.</p></div>')
+        +'<p class="cap">Too few records anywhere to say anything about the time of '
+        +'year.</p></div>')
     +'<button class="lifebtn'+(seen(s.id)?' on':'')+'" id="lifeBtn">'
     +(seen(s.id)?'✓ Seen it':'Mark as seen')+'</button>'
     +'<button class="close" id="closeBtn">Close</button>';
