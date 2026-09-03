@@ -1287,6 +1287,161 @@ def stage_vote(species: list, tags: dict) -> dict:
     return tags
 
 
+# ── Stage 5c: re-read colour on white-balanced photos ────────────────────────
+#
+# Water absorbs red first, so an animal photographed in ambient light can look
+# nothing like itself. Coffin Ray is a sandy brown animal and was tagged
+# grey/purple — a faithful description of the photograph and a wrong one of the
+# fish. Measured over 120 photos: the median cast is near neutral because many
+# used flash, but 34% have their red badly suppressed.
+#
+# So correct those, and ask again. Two deliberate limits:
+#
+#   * The correction is BOUNDED grey-world. Grey-world assumes the average
+#     scene is neutral, which holds for a frame full of sand and fails badly
+#     for one full of open water — uncapped, that scene goes orange and we
+#     would have traded one wrong colour for another.
+#   * It runs on a temporary copy. The photo we display stays the
+#     photographer's original: we are correcting our own reading of it, not
+#     republishing an altered version of someone's work.
+
+# TRIED AND REVERTED, 3 Sep 2026. Correcting 195 photos and re-reading their
+# colour changed 77 hues for $1.07, and made the data worse:
+#
+#   Silver Trevally  cast 0.48  silver -> LURID PINK
+#   Yellowfin Leatherjacket 0.67  cream -> pink
+#   Luderick         cast 0.76  green -> grey        (a fair improvement)
+#
+# Grey-world assumes the average scene is neutral. Underwater the scene really
+# is green-blue, so the correction pours red in, and the SUBJECT — correctly
+# silver — comes out pink. 17 of the 77 changes went to pink, which is the
+# signature. It fails hardest on the strongest casts, i.e. exactly the photos
+# worth correcting, and the 1.75 gain cap was nowhere near tight enough.
+#
+# It also never touched the Coffin Ray that prompted it: a pale animal keeps
+# its channel means up, so the cast ratio never crossed the threshold.
+#
+# If revisited: correct only mild casts (>=0.70, where gains are small), or
+# segment the subject from the water first and balance on the subject alone.
+# The blunt whole-frame version is a dead end — don't pay for it twice.
+CAST_THRESHOLD = 0.85      # red/green below this = red badly suppressed
+WB_GAIN_CAP = 1.75         # never push a channel further than this
+
+
+def _channel_means(im):
+    small = im.convert("RGB").resize((64, 64))
+    px = list(small.getdata())
+    n = len(px)
+    return [sum(p[i] for p in px) / n for i in range(3)]
+
+
+def _cast_ratio(im) -> float:
+    m = _channel_means(im)
+    return m[0] / max(1.0, m[1])          # red relative to green
+
+
+def _white_balance(im):
+    """Bounded grey-world. The cap is the whole safety story: uncapped, a frame
+    of open blue water gets its red multiplied into orange, and we would have
+    swapped one wrong colour for another."""
+    im = im.convert("RGB")
+    m = _channel_means(im)
+    grey = sum(m) / 3
+    gains = [min(WB_GAIN_CAP, max(1 / WB_GAIN_CAP, grey / max(1.0, c))) for c in m]
+    lut = []
+    for g in gains:
+        lut += [min(255, int(i * g)) for i in range(256)]
+    return im.point(lut)
+
+
+COLOUR_SYS = (
+    "Name the dominant hue of the animal in this photograph, choosing only from "
+    "the supplied list. The image has been white-balance corrected, so judge the "
+    "colours as you see them now. Silver is not a hue: a silvery fish is usually "
+    "grey or white. If the animal is too obscured to judge colour, set "
+    "photo_usable false rather than guessing.")
+
+
+class ColourVote(BaseModel):
+    photo_usable: bool
+    colour_primary: Optional[Colour] = None
+    colour_secondary: Optional[Colour] = None
+
+
+def stage_colour(species: list, tags: dict, force: bool = False) -> dict:
+    from PIL import Image as _Im
+    client = anthropic.Anthropic()
+    wb_dir = CACHE / "wb"
+    wb_dir.mkdir(parents=True, exist_ok=True)
+
+    todo = []
+    for s in species:
+        tid = str(s["taxon_id"])
+        t = tags.get(tid)
+        if not t or not t.get("colour_primary"):
+            continue
+        if t.get("colour_wb") and not force:
+            continue
+        f = (t.get("photo") or {}).get("file")
+        if not f or not (OUT_DIR / f).exists():
+            continue
+        try:
+            if _cast_ratio(_Im.open(OUT_DIR / f)) < CAST_THRESHOLD:
+                todo.append((s, OUT_DIR / f))
+        except Exception:                                  # noqa: BLE001
+            continue
+
+    if not todo:
+        log("5c/6 colour      nothing badly cast, or all already re-read")
+        return tags
+
+    log(f"5c/6 colour      {len(todo)} photos with suppressed red "
+        f"({len(todo)/max(1,len(species))*100:.0f}% of the list)")
+
+    def ballot(pair):
+        s, path = pair
+        tid = str(s["taxon_id"])
+        try:
+            im = _white_balance(_Im.open(path).convert("RGB"))
+            tmp = wb_dir / (path.stem + ".webp")
+            im.save(tmp, "WEBP", quality=80)
+            b64 = base64.standard_b64encode(tmp.read_bytes()).decode()
+            resp = client.messages.parse(
+                model=MODEL, max_tokens=500, system=COLOUR_SYS,
+                messages=[{"role": "user", "content": [
+                    {"type": "image",
+                     "source": {"type": "base64", "media_type": "image/webp", "data": b64}},
+                    {"type": "text", "text": f"This is a {s['name']}. What colour is it?"}]}],
+                output_format=ColourVote)
+            SPEND.add(resp.usage)
+            return tid, resp.parsed_output
+        except Exception as e:                             # noqa: BLE001
+            log(f"    colour ballot failed on {s['name']}: {type(e).__name__}")
+            return tid, None
+
+    done = changed = 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(ballot, p) for p in todo]):
+            tid, out = fut.result()
+            done += 1
+            if out and out.photo_usable and out.colour_primary:
+                t = tags[tid]
+                t["colour_was"] = t.get("colour_primary")
+                if out.colour_primary != t.get("colour_primary"):
+                    changed += 1
+                t["colour_primary"] = out.colour_primary
+                if out.colour_secondary:
+                    t["colour_secondary"] = out.colour_secondary
+                t["colour_wb"] = True          # read off a corrected image
+            if done % 25 == 0:
+                log(f"      {done}/{len(todo)}")
+                cache_write("tags.json", tags)
+    cache_write("tags.json", tags)
+    log(f"5c/6 colour      {changed} of {done} changed hue after correction")
+    print(SPEND.report())
+    return tags
+
+
 # ── Stage 6: emit ────────────────────────────────────────────────────────────
 
 def report_disagreement(before: dict, after: dict, species: list) -> None:
@@ -1496,6 +1651,11 @@ def main() -> int:
                          "and typical fall in different buckets 62%% of the time.")
     ap.add_argument("--typical-limit", type=int, default=0, metavar="N",
                     help="only look up the N most-recorded (for a dry run)")
+    ap.add_argument("--colour", action="store_true",
+                    help="re-read colour on white-balanced copies of the photos "
+                         "whose red is badly suppressed. Water eats red first, so "
+                         "a brown animal can be tagged grey; 34%% of these photos "
+                         "are affected. The displayed photo is never altered.")
     ap.add_argument("--vote", action="store_true",
                     help="settle the shape axis by ballot: cast cheap shape-only "
                          "reads until each species has two that agree. Measured at "
@@ -1554,6 +1714,8 @@ def main() -> int:
             tags = stage_tags(species, photos, args.force or args.force_tags,
                               sample=args.sample)
 
+        if args.colour and not args.skip_tags:
+            tags = stage_colour(species, tags)
         if args.vote and not args.skip_tags:
             tags = stage_vote(species, tags)
         if previous:
