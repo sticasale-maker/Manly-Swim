@@ -854,7 +854,16 @@ def stage_size(species: list, force: bool, typical: dict = None) -> dict:
                 typ = "common" if common else "max"
                 mx = common or mxl
                 if mx is None:
-                    continue
+                    # FishBase knows the species but carries no length at all.
+                    # Bailing out here threw away the researched typical for
+                    # Eastern Hulafish, Long-spined Sea Urchin, Purple Rock Crab
+                    # and Eastern Blue Devil — every one of them a species we
+                    # had already paid to look up. A matched row with no number
+                    # is worth less than a number from anywhere else.
+                    if tpre.get("status") == "found" and tpre.get("typical_cm"):
+                        mx, typ, how = float(tpre["typical_cm"]), "typical", "researched"
+                    else:
+                        continue
 
         # A researched typical length wins the BUCKET; the sourced max stays as
         # the displayed "grows to" figure. Two different jobs, two numbers.
@@ -871,6 +880,10 @@ def stage_size(species: list, force: bool, typical: dict = None) -> dict:
             "cm": round(mx, 1),
             "max_cm": round(display_max, 1) if display_max else None,
             "typical_source": tp.get("source_url") if typ == "typical" else None,
+            "typical_estimated": bool(tp.get("estimated")) if typ == "typical" else False,
+            # A sea star's 15 cm is an arm span and a chiton's is a shell; saying
+            # "15 cm long" for either is wrong. Carried so the app can say which.
+            "measure": tp.get("measure") if typ == "typical" else None,
             "cm_low": lo,
             "basis": typ,                      # "common" | "max" | "manual"
             "bucket": adult,                   # primary match
@@ -1067,6 +1080,59 @@ def _typical_lookup(client, sci: str, common: str):
     return rec, cost
 
 
+def apply_typical_overrides(species: list, typical: dict) -> dict:
+    """Fold hand-researched typical lengths into the typical cache.
+
+    Keyed by SCIENTIFIC name, because that is the stable identifier — the six
+    species Sear flagged as "missing" were all present under a different
+    COMMON name, and two under a renamed genus. Never key size on a common name.
+
+    These land in the same slot as a model lookup, so stage_size keeps using
+    the FishBase maximum for the "grows to" figure and only the bucket moves.
+    An entry marked estimated=true carries no source that states a typical
+    size; the app must word those as an estimate, per the rule that a model
+    must never visually outrank a real observation.
+    """
+    path = ROOT / "tools" / "typical-overrides.json"
+    if not path.exists():
+        return typical
+    ov = {k: v for k, v in json.loads(path.read_text("utf-8")).items()
+          if not k.startswith("_") and isinstance(v, dict) and v.get("typical_cm")}
+    by_sci = {s["sci"]: str(s["taxon_id"]) for s in species}
+    used, unknown, absurd = 0, [], []
+    for sci, v in ov.items():
+        tid = by_sci.get(sci)
+        if tid is None:
+            unknown.append(sci)
+            continue
+        # A typical length above the recorded maximum means one of the two is
+        # about a different animal. Refuse it rather than average the error in.
+        #
+        # But only when the two measure the SAME thing. A 17.5 cm carapace and
+        # a 13 cm "max" are not in conflict — they are different rulers, and
+        # comparing them threw out four good answers. Anything not measured as
+        # total length is passed through, since the held maximum always is.
+        held = (typical.get(tid) or {}).get("max_cm")
+        measure = v.get("measure") or "total length"
+        if measure == "total length" and held and float(v["typical_cm"]) > float(held) * 1.05:
+            absurd.append(f"{sci} ({v['typical_cm']}cm typical > {held}cm max)")
+            continue
+        rec = dict(typical.get(tid) or {})
+        rec.update({"typical_cm": float(v["typical_cm"]), "status": "found",
+                    "confident": True, "source_url": v.get("source") or "researched",
+                    "estimated": bool(v.get("estimated")),
+                    "measure": v.get("measure") or "total length"})
+        typical[tid] = rec
+        used += 1
+    log(f"4c/6 typical ov  {used} applied from tools/typical-overrides.json"
+        + (f" · {sum(1 for k in ov.values() if k.get('estimated'))} are estimates" if used else ""))
+    for label, items in (("not in the species list", unknown),
+                         ("rejected, above the recorded maximum", absurd)):
+        if items:
+            log(f"     {len(items)} {label}: " + ", ".join(items[:4])
+                + (" ..." if len(items) > 4 else ""))
+    return typical
+
 def stage_typical(species: list, sizes: dict, force: bool, limit: int = 0,
                   min_cm: float = 0.0, retry: bool = True) -> dict:
     """Look up typical length where it will actually change a size bucket.
@@ -1107,6 +1173,7 @@ def stage_typical(species: list, sizes: dict, force: bool, limit: int = 0,
         log(f"4b/6 typical     {len(cache):>4} (cached)")
         return cache
 
+    _require_key("4b/6 typical")
     est = len(todo) * 0.021
     log(f"4b/6 typical     {len(todo)} to look up on {SIZE_MODEL} (~${est:.2f})")
     client = anthropic.Anthropic()
@@ -1763,14 +1830,245 @@ SHAPE_BY_NAME_SYS = (
     "species is not one you know, rather than guessing from the family.")
 
 
-def stage_shape_by_name(species: list, tags: dict) -> dict:
-    client = anthropic.Anthropic()
-    todo = [s for s in species
-            if str(s["taxon_id"]) in tags and not tags[str(s["taxon_id"])].get("shape")]
+def _require_key(stage: str):
+    """Fail before spending, and before a whole stage reports a false success.
+
+    Without this the run made one API call per species, caught each auth
+    failure as an unexplained TypeError, resolved nothing, and still printed a
+    coverage table and "Done" at the end. A stage that resolved zero of 583
+    must not exit 0.
+    """
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        raise SystemExit(
+            f"{stage} needs ANTHROPIC_API_KEY in the environment and it is not "
+            f"set. Nothing was called and nothing was charged. "
+            f"Export the key and re-run.")
+
+
+# A size makes a species findable; a fact is what makes a swimmer glad they
+# looked it up. The audience is people who have swum past the same animals for
+# years, so the bar is "something a regular does not already know" — not an
+# encyclopaedia opening line. "Eats crustaceans" is true of half this list and
+# interesting about none of it.
+#
+# The stage is built to return NOTHING most of the time. The typical-size
+# lookup declined 214 times out of 501 and that is why its numbers can be
+# trusted; the same has to be true here. A fact per species would be a tell
+# that the model is filling space.
+
+FACT_MODEL = "claude-haiku-4-5"
+FACT_REFUTE_MODEL = MODEL          # the stronger model marks the popular ones
+# Every fact, not the most-seen 150. The generating model was told most species
+# have nothing worth saying and returned a fact for all of them anyway, so its
+# output carries no self-filtering: an unchecked claim is simply an unchecked
+# claim, whether the species is seen 450 times a year or four. Checking the
+# popular ones only would have shipped ~450 unverified facts on the strength of
+# an assumption the smoke test disproved.
+FACT_REFUTE_TOP = 10_000
+
+FactCategory = Literal[
+    "sex-change", "night-behaviour", "name-origin", "venom-or-spines",
+    "lifespan", "breeding", "feeding-oddity", "camouflage", "movement", "other"]
+
+
+class SpeciesFact(BaseModel):
+    has_fact: bool
+    fact: Optional[str] = Field(None, max_length=180)
+    category: Optional[FactCategory] = None
+
+
+class FactVerdict(BaseModel):
+    true_of_this_species: bool
+    # No max_length here. Capping it in the schema does not make the model
+    # brief — it makes a long answer fail validation and throw away a check
+    # that was already paid for, which is how 24% of the first refute run
+    # died. Brevity is asked for in the prompt; max_tokens is what actually
+    # bounds the response.
+    reason: Optional[str] = None
+
+
+FACT_SYS = (
+    "You write one-line curiosities about marine animals for people who swim "
+    "the same ocean bay every morning and already recognise most of what they "
+    "pass.\n\n"
+    "Return has_fact=false unless you are confident of something genuinely "
+    "notable about THIS species. Most species do not have one, and a blank is "
+    "a good answer. Do not stretch a family-level trait to fill the gap: if "
+    "the fact is equally true of every wrasse, it is not a fact about this "
+    "wrasse.\n\n"
+    "What counts as notable, roughly in order:\n"
+    "- the colours a swimmer recognises are sexes or life stages of one animal\n"
+    "- what it does at night, when nobody is watching it\n"
+    "- where its name came from, when the name is odd\n"
+    "- venom, spines or a defence, stated as plain fact\n"
+    "- a lifespan far longer or shorter than it looks\n"
+    "- breeding, nest-guarding or courtship a swimmer might witness\n"
+    "- a feeding or movement habit that is strange rather than merely typical\n\n"
+    "Rules for the sentence: one sentence, under 140 characters, present "
+    "tense, no species name (the reader is looking at it), no adjectives of "
+    "praise like remarkable or fascinating, and NO advice — never tell the "
+    "reader to look for it, avoid it, or do anything at all. State the fact "
+    "and stop.")
+
+FACT_REFUTE_SYS = (
+    "You are checking a claim about a marine species for factual error. Assume "
+    "it is wrong and try to show that.\n\n"
+    "Set true_of_this_species=false if the claim is false, if it is actually "
+    "true of a different species or only of the wider family, or if you cannot "
+    "confirm it. Uncertainty is a refutation: a claim that survives only "
+    "because nobody can check it should not survive.\n"
+    "Set it true only if you positively know the claim holds for this species.\n\n"
+    "Keep reason under 300 characters. One or two sentences, no preamble.")
+
+
+def stage_facts(species: list, force: bool, refute: bool = True) -> dict:
+    """One curiosity per species where one honestly exists, then an adversarial
+    second opinion on the ones that will be read most."""
+    cache = {} if force else (cache_read("facts.json") or {})
+    todo = [s for s in species if str(s["taxon_id"]) not in cache]
     if not todo:
-        log("5e/6 shape by name  every species already has a shape")
+        log(f"5f/6 facts       {len(cache):>4} (cached)")
+    else:
+        _require_key("5f/6 facts")
+        log(f"5f/6 facts       {len(todo)} on {FACT_MODEL} (~${len(todo)*0.0086:.2f})")
+        client = anthropic.Anthropic()
+
+        def ask(s):
+            tid = str(s["taxon_id"])
+            try:
+                r = client.messages.parse(
+                    model=FACT_MODEL, max_tokens=400, system=FACT_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']})"}],
+                    output_format=SpeciesFact)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                log(f"    fact failed {s['name']}: {type(e).__name__}")
+                return tid, None
+
+        done = 0
+        by_tid = {str(s["taxon_id"]): s for s in todo}
+        with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+            for fut in as_completed([pool.submit(ask, s) for s in todo]):
+                tid, out = fut.result()
+                done += 1
+                if out is None:
+                    cache[tid] = {"status": "error"}
+                elif out.has_fact and out.fact:
+                    cache[tid] = {"status": "found", "fact": out.fact.strip(),
+                                  "category": out.category, "checked": None}
+                else:
+                    cache[tid] = {"status": "none"}
+                if done % 50 == 0:                    # paid work, checkpoint it
+                    cache_write("facts.json", cache)
+                    log(f"      {done}/{len(todo)}")
+        cache_write("facts.json", cache)
+
+    found = [t for t, v in cache.items() if v.get("status") == "found"]
+    log(f"5f/6 facts       {len(found)} of {len(cache)} species have one "
+        f"({len(found)/max(1,len(cache))*100:.0f}%)")
+
+    if not refute:
+        return cache
+    rank = {str(s["taxon_id"]): s for s in species}
+    pool_ = sorted((t for t in found if rank.get(t)),
+                   key=lambda t: -rank[t]["annual"])[:FACT_REFUTE_TOP]
+    pool_ = [t for t in pool_ if cache[t].get("checked") is None]
+    if not pool_:
+        log("5g/6 fact check  all checked")
+        return cache
+    _require_key("5g/6 fact check")
+    log(f"5g/6 fact check  {len(pool_)} most-seen on {FACT_REFUTE_MODEL} "
+        f"(~${len(pool_)*0.037:.2f})")
+    client = anthropic.Anthropic()
+
+    def check(tid):
+        s = rank[tid]
+        # The structured output comes back malformed perhaps one time in ten —
+        # once with "true_of_this_species=false" appended into the reason
+        # string. It is not the claim that is unparseable, it is that attempt:
+        # every one of these succeeded when simply asked again. Retrying is the
+        # difference between checking a fact and silently dropping it.
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=FACT_REFUTE_MODEL, max_tokens=1200,
+                    system=FACT_REFUTE_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']}). "
+                               f"Claim: {cache[tid]['fact']}"}],
+                    output_format=FactVerdict)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    check failed {s['name']}: {type(e).__name__}"
+                        f" (after {attempt} tries)")
+                    return tid, None
+                time.sleep(0.5 * attempt)
+        return tid, None
+
+    killed, kept, done, errors = [], 0, 0, 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool2:
+        for fut in as_completed([pool2.submit(check, t) for t in pool_]):
+            tid, v = fut.result()
+            done += 1
+            if v is None:
+                # Unverified is not the same as verified. Leave checked unset so
+                # a later run retries it, and the app can tell the difference.
+                cache[tid]["checked"] = None
+                errors += 1
+                continue
+            if v.true_of_this_species:
+                cache[tid]["checked"] = True
+                kept += 1
+            else:
+                killed.append((rank[tid]["annual"], rank[tid]["name"],
+                               cache[tid]["fact"], v.reason or ""))
+                # Keep the category on the corpse. Replacing the whole record
+                # meant a refuted fact lost the one field that says what KIND
+                # of claim it was, so "which categories does the model get
+                # wrong" became unanswerable over 94 refutations.
+                cache[tid] = {"status": "refuted", "was": cache[tid]["fact"],
+                              "category": cache[tid].get("category"),
+                              "why": v.reason}
+            if done % 40 == 0:
+                cache_write("facts.json", cache)
+                # Say something. The refute pass ran silently for minutes with
+                # no way to tell progress from a stall except by stat-ing the
+                # cache file.
+                log(f"      {done}/{len(pool_)}  {kept} held, {len(killed)} refuted")
+    cache_write("facts.json", cache)
+    killed.sort(reverse=True)
+    log(f"5g/6 fact check  {kept} held, {len(killed)} refuted and dropped"
+        + (f", {errors} could not be checked" if errors else ""))
+    for a, n, f, why in killed[:10]:
+        log(f"      {a:4d}  {n[:24]:24s} {f[:60]}")
+        if why:
+            log(f"            -> {why[:80]}")
+    print(SPEND.report())
+    return cache
+
+def stage_shape_by_name(species: list, tags: dict) -> dict:
+    _require_key("5e/6 shape by name")
+    client = anthropic.Anthropic()
+    # EVERY species, not just the ones whose photo failed. Shape is a property
+    # of the animal — a wrasse is torpedo-shaped whatever angle it was shot
+    # from — so reading it off a single photograph was the wrong instrument all
+    # along. It is also why shape needed a ballot: two reads of the same
+    # picture disagreed 24% of the time, which is variance in the photograph,
+    # not in the fish.
+    #
+    # An unclear photograph is now a separate problem with a separate fix:
+    # replace the photograph. See tools/photo-overrides.json.
+    todo = [s for s in species
+            if str(s["taxon_id"]) in tags
+            and not tags[str(s["taxon_id"])].get("shape_from")]
+    if not todo:
+        log("5e/6 shape by name  all cached")
         return tags
-    log(f"5e/6 shape by name  {len(todo)} species whose photo could not give one")
+    log(f"5e/6 shape by name  {len(todo)} species (~${len(todo)*0.0088:.2f})")
 
     def ask(s):
         tid = str(s["taxon_id"])
@@ -1786,16 +2084,37 @@ def stage_shape_by_name(species: list, tags: dict) -> dict:
             log(f"    failed on {s['name']}: {type(e).__name__}")
             return tid, None
 
-    got = 0
+    # The completion loop only gets (tid, out) back — the species that produced
+    # it is out of scope here. Look it up rather than reaching for the closure
+    # variable: doing that raised NameError on the first differing shape and
+    # threw away every answer in the run, all of them already paid for.
+    by_tid = {str(s["taxon_id"]): s for s in todo}
+    got, changed, done = 0, [], 0
     with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
         for fut in as_completed([pool.submit(ask, s) for s in todo]):
             tid, out = fut.result()
+            done += 1
             if out and out.photo_usable and out.shape:   # reusing the ballot schema
+                sp = by_tid[tid]
+                was = tags[tid].get("shape")
                 tags[tid]["shape"] = out.shape
                 tags[tid]["shape_from"] = "species knowledge, not the photograph"
+                if was and was != out.shape:
+                    tags[tid]["shape_was_photo"] = was
+                    changed.append((sp["annual"], sp["name"], was, out.shape))
+                tags[tid].pop("shape_contested", None)   # no longer photo-dependent
                 got += 1
+            # Checkpoint. Anything already answered is money spent; a crash or a
+            # Ctrl-C after this point costs re-running only the tail.
+            if done % 40 == 0:
+                cache_write("tags.json", tags)
+                log(f"      {done}/{len(todo)}  {got} resolved")
     cache_write("tags.json", tags)
-    log(f"5e/6 shape by name  {got} of {len(todo)} resolved without a human")
+    changed.sort(reverse=True)
+    log(f"5e/6 shape by name  {got} of {len(todo)} resolved; {len(changed)} differ "
+        f"from the photo read")
+    for a, n, was, now in changed[:12]:
+        log(f"      {a:4d}  {n[:28]:28s} {was} -> {now}")
     print(SPEND.report())
     return tags
 
@@ -1843,7 +2162,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -1928,6 +2247,13 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "size_basis": (sizes.get(tid) or {}).get("basis"),
             "size_source": (sizes.get(tid) or {}).get("source"),
             "max_cm": (sizes.get(tid) or {}).get("max_cm"),
+            "size_estimated": (sizes.get(tid) or {}).get("typical_estimated") or False,
+            "size_measure": (sizes.get(tid) or {}).get("measure"),
+            # Model knowledge, never an observation. The app must show it as
+            # such — same treatment as an estimated size.
+            "fact": ((facts or {}).get(tid) or {}).get("fact"),
+            "fact_category": ((facts or {}).get(tid) or {}).get("category"),
+            "fact_checked": bool(((facts or {}).get(tid) or {}).get("checked")),
         }
         if t:
             rec.update({
@@ -2063,6 +2389,11 @@ def main() -> int:
                          "whose red is badly suppressed. Water eats red first, so "
                          "a brown animal can be tagged grey; 34%% of these photos "
                          "are affected. The displayed photo is never altered.")
+    ap.add_argument("--facts", action="store_true",
+                    help="look up one curiosity per species, then have the "
+                         "stronger model try to refute the most-seen ones")
+    ap.add_argument("--no-fact-check", action="store_true",
+                    help="skip the adversarial pass over the top 150 facts")
     ap.add_argument("--name-shapes", action="store_true",
                     help="for species whose photographs gave no shape, ask by name "
                          "instead. A sea cucumber's body plan is a fact about the "
@@ -2105,8 +2436,15 @@ def main() -> int:
         season = stage_season(species, args.force)
         photos = stage_photos(species, args.force, slugs)
         sizes = stage_size(species, args.force)
+        # The paid lookup is opt-in; folding in cached answers and the
+        # hand-researched overrides is free, so it happens on every run. Gating
+        # the overrides behind --typical meant a hand-checked size only reached
+        # the app on a run that also spent money.
+        typ = cache_read("typical.json") or {}
         if args.typical:
             typ = stage_typical(species, sizes, args.force, limit=args.typical_limit)
+        typ = apply_typical_overrides(species, typ)
+        if typ:
             sizes = stage_size(species, True, typical=typ)   # rebuild with it
 
         previous = {}
@@ -2132,6 +2470,10 @@ def main() -> int:
             tags = stage_colour(species, tags)
         if args.name_shapes and not args.skip_tags:
             tags = stage_shape_by_name(species, tags)
+        facts = cache_read("facts.json") or {}
+        if args.facts:
+            facts = stage_facts(species, args.force,
+                                refute=not args.no_fact_check)
         if args.vote and not args.skip_tags:
             tags = stage_vote(species, tags)
         if previous:
@@ -2143,7 +2485,8 @@ def main() -> int:
             log("FishTags before the full pass; changing them later re-tags")
             log("everything AND invalidates the human review.")
             return 0
-        stage_emit(species, months, photos, tags, sizes, slugs, season)
+        stage_emit(species, months, photos, tags, sizes, slugs, season,
+                   facts=facts)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")

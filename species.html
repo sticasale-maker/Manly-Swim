@@ -506,6 +506,23 @@ function openDetail(id){
     .filter(Boolean).map(function(t){ return String(t).replace(/-/g,' '); });
   var sz=sizeLabel(s);
 
+  /* A sea star's 15 cm is an arm span, a chiton's is a shell and an urchin's is
+     the test. Printing "15 cm" flat for all three is wrong in two of them, so
+     say which ruler was used whenever it is not simple length. */
+  function measureNote(s){
+    if(!s.size_measure || s.size_measure==='total length') return '';
+    return '<br><span style="color:var(--dim);font-size:11.5px">measured '
+      + esc(s.size_measure).replace(/^(shell|body|carapace|mantle|float) /,'as $1 ')
+      + '</span>';
+  }
+  /* An estimated size is not a sourced one and must not read like it (§8). */
+  function estimateNote(s){
+    return s.size_estimated
+      ? '<br><span style="color:var(--dim);font-size:11.5px">estimated &mdash; '
+        + 'no source states a typical size for this one</span>'
+      : '';
+  }
+
   /* Only claim a typical size when we actually have one. FishBase gives a
      maximum for 315 of these species and nothing else, and printing a record
      specimen's length under "typically about" is simply false: the Yellowtail
@@ -530,6 +547,7 @@ function openDetail(id){
          like the page is padding. */
       +(s.max_cm && Math.round(s.max_cm) > Math.round(s.size_cm)
         ?'<br><span style="color:var(--dim);font-size:11.5px">Grows to '+Math.round(s.max_cm)+' cm</span>':'')
+      +measureNote(s)+estimateNote(s)
       +'</p>'
       +(s.size_source&&s.size_source.indexOf('http')===0
         ? '<p class="cap"><a href="'+esc(s.size_source)+'" target="_blank" rel="noopener">source</a></p>'
@@ -538,6 +556,18 @@ function openDetail(id){
     /* Absent is grey, never invented (§8). */
     sizeLine='<p class="lbl">Size</p><p style="font-size:12.5px;color:var(--dim)">'
       +'No size on record for this one.</p>';
+  }
+
+  /* Background, not a sighting. Every one of these was written by a model and
+     then had a second, stronger model try to refute it; only the survivors are
+     here, and a refuted claim is dropped rather than softened. It still must
+     not outrank the photo or the records above it (§8), so it sits last, in
+     quieter type, and says plainly where it came from. */
+  var factLine='';
+  if(s.fact && s.fact_checked){
+    factLine='<p class="lbl">Worth knowing</p>'
+      +'<p style="font-size:13px">'+esc(s.fact)+'</p>'
+      +'<p class="cap">Background, not a bay record.</p>';
   }
 
   el('sheet').innerHTML='<button class="x" id="xBtn" aria-label="Close">&times;</button>'
@@ -550,6 +580,7 @@ function openDetail(id){
     +'<div class="dtags">'+tags.map(function(t){ return '<span class="dtag">'+esc(t)+'</span>'; }).join('')+'</div>'
     +(s.grouping?'<p class="cap" style="margin-top:8px">Usually seen '+esc(s.grouping)+'</p>':'')
     +'<div class="block">'+sizeLine+'</div>'
+    +(factLine?'<div class="block">'+factLine+'</div>':'')
     /* Three states, because "has a season" is not the default. Measured over
        570 species with enough NSW data: 13% have a real season, 49% are flat,
        and calling the flat ones seasonal would be inventing a pattern. The bay
