@@ -618,6 +618,16 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
         log(f"3/6 photos       {len(out):>4} (cached)")
         return out
 
+    # Hand-picked photos win. Community votes reward a striking picture, not a
+    # legible one — the Eastern Fortescue's best-voted shot is an algae-covered
+    # blob that three separate checks flagged as unidentifiable. One line here
+    # beats arguing with the ranking.
+    picks = {}
+    ppath = ROOT / "tools" / "photo-overrides.json"
+    if ppath.exists():
+        picks = {k: v for k, v in json.loads(ppath.read_text("utf-8")).items()
+                 if not k.startswith("_")}
+
     log(f"3/6 photos       {len(todo)} to fetch ({len(out)} cached)")
     for i, s in enumerate(todo, 1):
         cands = fetch_photo_candidates(s["taxon_id"])
@@ -625,6 +635,33 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
             seen_none.add(str(s["taxon_id"]))   # remember the miss, don't re-ask
             continue
         slug = slugs[str(s["taxon_id"])]
+        chosen = picks.get(s["sci"])
+        if chosen:
+            # put the hand-picked observation's photo at the head of the list
+            try:
+                o = inat(f"observations/{chosen}")["results"][0]
+                ph = o["photos"][0]
+                # The attributes were read off the OLD photo, so drop the tag:
+                # a hand-picked picture with someone else's description of a
+                # different image is worse than either on its own. It re-tags
+                # on the next run, for about two cents.
+                tags_path = CACHE / "tags.json"
+                if tags_path.exists():
+                    _t = json.loads(tags_path.read_text("utf-8"))
+                    if _t.pop(str(s["taxon_id"]), None) is not None:
+                        cache_write("tags.json", _t)
+                cands.insert(0, {
+                    "photo_id": ph["id"],
+                    "url": ph["url"].replace("/square.", "/medium."),
+                    "who": o["user"]["login"],
+                    "who_name": o["user"].get("name") or "",
+                    "lic": (ph.get("license_code") or "").upper(),
+                    "obs_id": o["id"],
+                    "observed_on": o.get("observed_on"),
+                })
+                log(f"    hand-picked photo for {s['name']}")
+            except Exception as e:                     # noqa: BLE001
+                log(f"    photo override failed for {s['name']}: {e}")
         # Keep every candidate: if the vision pass rejects the first as
         # unusable we retry with the next rather than dropping the species.
         for c in cands:
@@ -659,12 +696,16 @@ FB_BASE = "https://github.com/ropensci/rfishbase/releases/download"
 
 # Bucket floors in cm, in swimmer's units. A person judges against their own
 # body, not a tape measure.
+# Anchored to the body part each label names, which the first cut was not: a
+# 70 cm Blue Groper was landing in "as long as you" because that band started
+# at 70. An arm is about 75 cm, a person about 170, so the boundaries now sit
+# where the words actually mean something.
 SIZE_BUCKETS = [
-    ("hand", 0, 15, "hand-sized"),
-    ("forearm", 15, 35, "forearm"),
-    ("arm", 35, 70, "arm's length"),
-    ("you", 70, 150, "as long as you"),
-    ("bigger", 150, 10_000, "bigger than you"),
+    ("hand", 0, 20, "hand-sized"),
+    ("forearm", 20, 45, "forearm"),
+    ("arm", 45, 90, "arm's length"),
+    ("you", 90, 180, "as long as you"),
+    ("bigger", 180, 10_000, "bigger than you"),
 ]
 
 # A species is not one size — juveniles of a big fish are common in a sheltered
