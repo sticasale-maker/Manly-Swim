@@ -2304,9 +2304,12 @@ def stage_shape_by_name(species: list, tags: dict) -> dict:
     #
     # An unclear photograph is now a separate problem with a separate fix:
     # replace the photograph. See tools/photo-overrides.json.
+    # Species with no re-usable photograph were never tagged, so requiring a
+    # tags entry here excluded exactly the 37 the app was already hiding. They
+    # have no picture; they still have a body plan, and a shape asked by name
+    # needs no photograph at all. Give them a tags record carrying shape alone.
     todo = [s for s in species
-            if str(s["taxon_id"]) in tags
-            and not tags[str(s["taxon_id"])].get("shape_from")]
+            if not (tags.get(str(s["taxon_id"])) or {}).get("shape_from")]
     if not todo:
         log("5e/6 shape by name  all cached")
         return tags
@@ -2338,6 +2341,11 @@ def stage_shape_by_name(species: list, tags: dict) -> dict:
             done += 1
             if out and out.photo_usable and out.shape:   # reusing the ballot schema
                 sp = by_tid[tid]
+                if tid not in tags:
+                    # Shape-only record: no photograph was read, so every other
+                    # attribute stays null rather than being invented to fill
+                    # the row. Absent is grey (§8).
+                    tags[tid] = {"shape_only": True}
                 was = tags[tid].get("shape")
                 tags[tid]["shape"] = out.shape
                 tags[tid]["shape_from"] = "species knowledge, not the photograph"

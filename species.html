@@ -78,6 +78,12 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 }
 .row:first-child{border-top:none}
 .row img{width:54px;height:54px;border-radius:9px;object-fit:cover;flex-shrink:0;background:rgba(17,53,65,.08)}
+.row .sil,.hero.sil{display:flex;align-items:center;justify-content:center;background:rgba(17,53,65,.06)}
+.row .sil{width:54px;height:54px;border-radius:9px;flex-shrink:0}
+.row .sil svg{width:40px;height:27px}
+.hero.sil{width:100%;height:210px;border-radius:12px}
+.hero.sil svg{width:190px;height:127px}
+.sil svg path,.sil svg ellipse,.sil svg rect{fill:var(--dim);opacity:.5}
 .row.none img{filter:grayscale(1);opacity:.5}
 .row .b{flex:1;min-width:0;display:flex;flex-direction:column}
 .row .n{
@@ -342,6 +348,19 @@ function sizeLabel(s){
    showing a month count would tell 400 species' worth of lies. Total records
    is always true. Anything anchored to the reef, and most small resident fish,
    are simply here. */
+/* A species with no re-usable photograph used to be dropped from every view,
+   which meant the app quietly knew about 37 animals it would not admit to. A
+   shape is not a photograph and cannot be mistaken for one, so it stands in:
+   the record is complete, and the absence is visible rather than silent (§8 —
+   absent is grey, never dressed up as present). */
+function silHTML(s,cls){
+  var sh=null;
+  for(var i=0;i<SHAPES.length;i++){ if(SHAPES[i].key===s.shape) sh=SHAPES[i]; }
+  if(!sh) return '';
+  return '<span class="'+cls+' sil" aria-label="No photograph — shown as a shape">'
+    +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg></span>';
+}
+
 function rowHTML(s,rank,showMonth){
   var c=s.months[NOW];
   var word = showMonth
@@ -349,7 +368,7 @@ function rowHTML(s,rank,showMonth){
     : s.annual+' record'+(s.annual===1?'':'s')+' in the bay';
   return '<button class="row" data-id="'+s.id+'">'
     +(rank?'<span class="rank">'+rank+'</span>':'')
-    +'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">'
+    +(s.img?'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">':silHTML(s,'row'))
     +'<span class="b"><span class="n">'+esc(s.name)+'</span>'
     +'<span class="s">'+esc(s.sci)+'</span>'
     +'<span class="w"><span class="dot"></span>'+word+'</span>'
@@ -360,7 +379,7 @@ function rowHTML(s,rank,showMonth){
 }
 
 function renderNow(){
-  var list=DATA.species.filter(function(s){ return s.months[NOW]>0 && s.img; })
+  var list=DATA.species.filter(function(s){ return s.months[NOW]>0 && (s.img||s.shape); })
     .sort(function(a,b){ return b.months[NOW]-a.months[NOW]; }).slice(0,40);
   el('view').innerHTML=
     '<div class="strip">'
@@ -434,7 +453,8 @@ function morphWhy(s){
 function matches(s){ return hardMatch(s); }
 
 function renderId(){
-  var all=DATA.species.filter(function(s){ return s.img; });
+  /* Photoless species are shown as silhouettes rather than dropped. */
+  var all=DATA.species.filter(function(s){ return s.img || s.shape; });
   var hits=all.filter(matches);
   /* Most likely first: what is actually about this month, then how often the
      animal is seen here at all. */
@@ -619,7 +639,11 @@ function openDetail(id){
 
   el('sheet').innerHTML='<button class="x" id="xBtn" aria-label="Close">&times;</button>'
     +'<div class="grab"></div>'
-    +'<img class="hero" src="species/'+esc(s.img)+'" alt="'+esc(s.name)+'">'
+    +(s.img
+        ?'<img class="hero" src="species/'+esc(s.img)+'" alt="'+esc(s.name)+'">'
+        :silHTML(s,'hero')
+         +'<p class="cap">No re-usable photograph of this one has been taken in '
+         +'the bay, so it is shown as its shape.</p>')
     +'<p class="attrib">'+(s.credit?'Photo &copy; '+esc(s.credit)+' &middot; iNaturalist &middot; taken in this bay':'')
     +(s.obs_url?' &middot; <a href="'+esc(s.obs_url)+'" target="_blank" rel="noopener">observation</a>':'')
     +(s.distinctive?'<br>Look for: '+esc(s.distinctive):'')+'</p>'
