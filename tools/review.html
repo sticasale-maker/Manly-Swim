@@ -18,10 +18,10 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--shell);color:var(--shell-text);
   font-family:'Inter',system-ui,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
-.bar{display:flex;align-items:center;gap:16px;padding:10px 18px;
+.bar{display:flex;align-items:center;gap:10px;padding:10px 12px;flex-wrap:wrap;
   border-bottom:1px solid var(--rule);position:sticky;top:0;background:var(--shell);z-index:5}
 .bar h1{font-family:'Bebas Neue',Impact,sans-serif;font-weight:400;font-size:22px;
-  letter-spacing:1px;color:#eaf3f6}
+  letter-spacing:1px;color:#eaf3f6;white-space:nowrap;flex-shrink:0}
 .bar .sub{font-size:12px;color:var(--shell-dim)}
 .bar .grow{flex:1}
 button{font:inherit;cursor:pointer;border:none;border-radius:8px}
@@ -80,7 +80,7 @@ button{font:inherit;cursor:pointer;border:none;border-radius:8px}
 </head>
 <body>
 <div class="bar">
-  <h1>Who Lives Here</h1>
+  <h1>Shape review</h1>
   <span class="sub" id="pos">loading…</span>
   <span class="grow"></span>
   <span class="sub" id="edits">0 corrections</span>
@@ -114,21 +114,20 @@ let edits = JSON.parse(localStorage.getItem(STORE) || '{}');
    animal, no shape at all, or a well-recorded species with no size. Everything
    already corrected by hand drops out entirely. */
 function priority(s){
-  if (s.hand_checked) return 0;             // a person has already ruled on it
+  if (s.hand_checked) return 0;                 // already ruled on
+  // A shape taken from what the species IS does not need a person to check a
+  // photograph — that was the whole point of asking by name. Nobody should be
+  // shown a murky picture and asked what shape a sea cucumber is.
+  if (s.shape_from) return 0;
   let p = 0;
-  if (s.shape_contested)   p += 4000;       // ballots could not agree
-  if (s.photo_ok === false) p += 3000;      // photo may show another animal
-  if (s.photo_caveat)      p += 2000;       // no candidate showed the whole animal
-  if (!s.shape)            p += 1500;
-  if (s.confidence === 'low') p += 900;
-  if (s.size_cm == null && (s.annual || 0) >= 20) p += 400;
+  if (s.shape_contested)    p += 4000;          // ballots disagreed
+  if (!s.shape)             p += 3000;          // no shape at all
+  if (s.photo_ok === false) p += 2000;          // photo may be another animal
+  if (s.photo_caveat)       p += 1200;          // no whole-animal photo
+  if (s.confidence === 'low') p += 600;
   return p ? p + Math.min(s.annual || 0, 500) / 500 * 250 : 0;
 }
 
-/* Load each file separately and say WHICH one failed and why. A single catch
-   around Promise.all reported "can't read the data" for three quite different
-   problems — opened as file://, run from the Drive copy that has no dataset,
-   or a genuine 404 — and left nothing to act on. */
 async function grab(url){
   let res;
   try {
@@ -203,8 +202,7 @@ function render(){
   }
   const s = QUEUE[i];
   document.getElementById('pos').textContent = `${i+1} of ${QUEUE.length}`;
-  const shape = currentValue(s,'shape'), colour = currentValue(s,'colour');
-  const grouping = currentValue(s,'grouping'), size = currentValue(s,'size_cm');
+  const shape = currentValue(s,'shape');
 
   const flags = [];
   if (s.shape_contested) flags.push(['hot','shape contested']);
@@ -228,10 +226,10 @@ function render(){
     <div class="panel">
       <div class="nm">${s.name}</div>
       <div class="sci">${s.sci || ''}</div>
-      <div class="recs">${s.annual} records in the bay</div>
+      <div class="recs">${s.annual} record${s.annual===1?'':'s'} in the bay</div>
       <div class="flags">${flags.map(([c,t]) => `<span class="flag ${c}">${t}</span>`).join('')}</div>
 
-      <p class="lbl">Shape ${shape ? '— ' + shape : '— none'}</p>
+      <p class="lbl">Shape ${shape ? '— ' + shape.replace(/-/g,' ') : '— none yet'}</p>
       <div class="shapes">${SHAPES.map((sh,n) => `
         <button class="sh ${sh.key===shape?'on':''} ${sh.key===s.shape&&sh.key!==shape?'was':''}"
           data-shape="${sh.key}" title="${sh.label}">
@@ -239,39 +237,21 @@ function render(){
           <span class="t">${sh.label}</span>
           <span class="k">${n<9?n+1:''}</span>
         </button>`).join('')}</div>
-
-      <p class="lbl">Colour</p>
-      <div class="chips">${COLOURS.map(c => `
-        <button class="chip ${c===colour?'on':''}" data-colour="${c}">${c}</button>`).join('')}</div>
-
-      <p class="lbl">Typical size (cm)</p>
-      <div class="row">
-        <input type="number" id="sz" value="${size ?? ''}" placeholder="what an adult usually is">
-      </div>
-      <p class="hint">${s.size_source ? 'currently ' + s.size_source : 'no source'}
-        ${s.max_cm ? ' · grows to ' + s.max_cm + ' cm' : ''}</p>
-
-      <p class="lbl">Grouping — a photo can't show this</p>
-      <div class="chips">${GROUPING.map(g => `
-        <button class="chip ${g===grouping?'on':''}" data-group="${g}">${g}</button>`).join('')}</div>
-
+      ${s.shape_votes && s.shape_votes.length > 1
+        ? `<p class="hint">The machine read this photo ${s.shape_votes.length} times and said:
+           <b>${s.shape_votes.map(v=>v.replace(/-/g,' ')).join('</b>, <b>')}</b>.</p>` : ''}
+      ${s.distinctive ? `<p class="hint">Look for: ${s.distinctive}</p>` : ''}
       <div class="foot">
         <button class="btn ghost" id="prev">&larr; Back</button>
         <button class="btn" id="next">Looks right &rarr;</button>
       </div>
-      <p class="keys"><b>1</b>–<b>9</b> pick shape · <b>Enter</b> accept &amp; next ·
+      <p class="keys"><b>1</b>–<b>9</b> pick shape · <b>Enter</b> looks right, next ·
         <b>&larr;</b> <b>&rarr;</b> move · <b>s</b> skip</p>
     </div>
   </div>`;
 
   app.querySelectorAll('[data-shape]').forEach(b =>
     b.onclick = () => setValue(s,'shape',b.dataset.shape));
-  app.querySelectorAll('[data-colour]').forEach(b =>
-    b.onclick = () => setValue(s,'colour', b.dataset.colour===colour?null:b.dataset.colour));
-  app.querySelectorAll('[data-group]').forEach(b =>
-    b.onclick = () => setValue(s,'grouping', b.dataset.group===grouping?null:b.dataset.group));
-  document.getElementById('sz').onchange = e =>
-    setValue(s,'size_cm', e.target.value ? Number(e.target.value) : null);
   document.getElementById('next').onclick = () => { i++; render(); };
   document.getElementById('prev').onclick = () => { i = Math.max(0,i-1); render(); };
 }

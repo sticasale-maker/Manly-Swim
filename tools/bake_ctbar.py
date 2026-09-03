@@ -1740,6 +1740,66 @@ def stage_plausible(species: list, tags: dict, force: bool = False) -> dict:
     return tags
 
 
+# ── Stage 5e: shape from the species, where the photograph failed ────────────
+#
+# The vision prompt forbids importing remembered facts, which is right for
+# DESCRIBING a photograph — it stops invented detail. But when every candidate
+# photo is unusable, that rule left the species with no shape at all and pushed
+# it to a human, which is absurd for an animal whose body plan is not in doubt.
+# Nobody needs to be asked what shape a sea cucumber is.
+#
+# So: for those species only, ask by NAME and not from an image. This is a
+# knowledge question with a settled answer for any well-described body plan,
+# and the model is told to decline where the group genuinely varies.
+
+SHAPE_BY_NAME_SYS = (
+    "Give the body silhouette of the named marine species, choosing only from "
+    "the supplied list. You are answering from what is known about the animal, "
+    "not from a photograph.\n\n"
+    "Most marine groups have a settled body plan: a sea cucumber is a soft "
+    "elongate sausage, a barnacle is fixed to the rock, a sea star is radial. "
+    "Answer confidently in those cases.\n\n"
+    "Set confident false when the group genuinely varies in body plan and the "
+    "species is not one you know, rather than guessing from the family.")
+
+
+def stage_shape_by_name(species: list, tags: dict) -> dict:
+    client = anthropic.Anthropic()
+    todo = [s for s in species
+            if str(s["taxon_id"]) in tags and not tags[str(s["taxon_id"])].get("shape")]
+    if not todo:
+        log("5e/6 shape by name  every species already has a shape")
+        return tags
+    log(f"5e/6 shape by name  {len(todo)} species whose photo could not give one")
+
+    def ask(s):
+        tid = str(s["taxon_id"])
+        try:
+            resp = client.messages.parse(
+                model=MODEL, max_tokens=500, system=SHAPE_BY_NAME_SYS,
+                messages=[{"role": "user", "content":
+                           f"{s['sci']} ({s['name']}) — which body silhouette?"}],
+                output_format=ShapeVote)
+            SPEND.add(resp.usage)
+            return tid, resp.parsed_output
+        except Exception as e:                             # noqa: BLE001
+            log(f"    failed on {s['name']}: {type(e).__name__}")
+            return tid, None
+
+    got = 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(ask, s) for s in todo]):
+            tid, out = fut.result()
+            if out and out.photo_usable and out.shape:   # reusing the ballot schema
+                tags[tid]["shape"] = out.shape
+                tags[tid]["shape_from"] = "species knowledge, not the photograph"
+                got += 1
+    cache_write("tags.json", tags)
+    log(f"5e/6 shape by name  {got} of {len(todo)} resolved without a human")
+    print(SPEND.report())
+    return tags
+
+
 # ── Stage 6: emit ────────────────────────────────────────────────────────────
 
 def report_disagreement(before: dict, after: dict, species: list) -> None:
@@ -1888,6 +1948,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
                 "distinctive": t.get("distinctive"),
                 "confidence": t.get("confidence"),
                 "photo_caveat": t.get("photo_caveat"),
+                "shape_from": t.get("shape_from"),
                 "photo_ok": t.get("photo_ok"),
                 "photo_shows": t.get("photo_shows"),
                 "shape_contested": t.get("shape_contested", False),
@@ -1902,6 +1963,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
                            "slug": rec["slug"],
                                "confidence": t.get("confidence"),
                 "photo_caveat": t.get("photo_caveat"),
+                "shape_from": t.get("shape_from"),
                 "photo_ok": t.get("photo_ok"),
                 "photo_shows": t.get("photo_shows"),
                 "shape_contested": t.get("shape_contested", False),
@@ -2001,6 +2063,10 @@ def main() -> int:
                          "whose red is badly suppressed. Water eats red first, so "
                          "a brown animal can be tagged grey; 34%% of these photos "
                          "are affected. The displayed photo is never altered.")
+    ap.add_argument("--name-shapes", action="store_true",
+                    help="for species whose photographs gave no shape, ask by name "
+                         "instead. A sea cucumber's body plan is a fact about the "
+                         "species, not something to squint at a bad photo for.")
     ap.add_argument("--vote", action="store_true",
                     help="settle the shape axis by ballot: cast cheap shape-only "
                          "reads until each species has two that agree. Measured at "
@@ -2064,6 +2130,8 @@ def main() -> int:
             tags = stage_plausible(species, tags)
         if args.colour and not args.skip_tags:
             tags = stage_colour(species, tags)
+        if args.name_shapes and not args.skip_tags:
+            tags = stage_shape_by_name(species, tags)
         if args.vote and not args.skip_tags:
             tags = stage_vote(species, tags)
         if previous:
