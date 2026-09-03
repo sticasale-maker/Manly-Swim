@@ -993,13 +993,15 @@ def _typical_lookup(client, sci: str, common: str):
 
 
 def stage_typical(species: list, sizes: dict, force: bool, limit: int = 0,
-                  min_cm: float = 40.0, retry: bool = True) -> dict:
+                  min_cm: float = 0.0, retry: bool = True) -> dict:
     """Look up typical length where it will actually change a size bucket.
 
-    Measured: max-vs-typical puts a species in a different bucket 85% of the
-    time above 80 cm, 70% at 40-80 cm, but only ~35% below 40 cm — where a 12 cm
-    maximum and an 8 cm typical are both "hand-sized" anyway. So the lookup is
-    filtered to animals big enough for the distinction to matter.
+    The 40cm floor this used to carry was a mistake. It was reasoned from
+    BUCKET error, which does concentrate in big animals — but it left 288
+    species never looked up at all, every one of them still printing a
+    maximum. Southern Maori Wrasse sat at exactly 40cm with 261 bay records,
+    excluded by a > that should have been >=. At $0.021 a species there is no
+    reason to be clever about which ones deserve checking.
     """
     cache = {} if force else (cache_read("typical.json") or {})
     # Entries written before the status field existed still hold a good answer;
@@ -1733,6 +1735,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         log(f"    {len(corrections)} hand corrections loaded from tag-overrides.json")
 
     out, review, no_photo, no_tag, corrected = [], [], 0, 0, 0
+    missing_img = 0
     no_size = sum(1 for s in species if str(s["taxon_id"]) not in sizes)
     for s in species:
         tid = str(s["taxon_id"])
@@ -1743,7 +1746,16 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         if not t:
             no_tag += 1
 
+        # Only the candidate actually used for tagging gets downloaded, so the
+        # fallback to cands[0] could name a file that was never fetched. That
+        # shipped 11 species — Banjo Ray among them, at 226 records — with a
+        # broken image and a photographer's credit underneath it. Fetch it if
+        # it is missing; if that fails, carry neither the image nor the credit.
         photo = (t or {}).get("photo") or (cands[0] if cands else None)
+        if photo and not (OUT_DIR / photo["file"]).exists():
+            if not download_square(photo["url"], OUT_DIR / photo["file"]):
+                missing_img += 1
+                photo = None
         m = by_taxon.get(tid, [0] * 12)
 
         rec = {
@@ -1864,6 +1876,8 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
     log(f"  tagged           {len(tags)}")
     log(f"  no photo         {no_photo}   (no re-usable licence in the bay)")
     log(f"  untagged         {no_tag}   (photo too poor to describe)")
+    if missing_img:
+        log(f"  image unfetchable {missing_img}   (no picture, and no credit shown)")
     log(f"  hand-corrected   {corrected}   (tools/tag-overrides.json)")
     log(f"  no size          {no_size}   (unmatched in FishBase — renders grey)")
     log(f"  NEEDS REVIEW     {len(review)}   -> species/ctbar-review.json")
