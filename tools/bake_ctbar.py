@@ -711,6 +711,33 @@ def _cm(v) -> Optional[float]:
         return None
 
 
+# Genus moves since the FishBase/SeaLifeBase releases. Explicit, because the
+# alternative heuristics both fail: matching on a unique species epithet gave
+# the Oak Chiton (Onithochiton quercinus) the length of a cone snail (Conus
+# quercinus) — unique only because the chiton is absent from the database —
+# and checking family cannot work, since our genus is missing from the data by
+# definition, which is why we are here.
+#
+# Every entry is a decision someone made and can be checked. Scientific names
+# throughout: common names collide (two species here are both "Silver
+# Trevally") and are not identifiers.
+GENUS_MOVES = {
+    "Ascarosepion":       "Sepia",         # cuttlefish, 2023
+    "Plectroglyphidodon": "Stegastes",     # damselfish
+    "Pycnochromis":       "Chromis",       # damselfish
+    "Azurina":            "Chromis",       # damselfish
+    "Ferdauia":           "Carangoides",   # trevally
+    "Platycaranx":        "Carangoides",   # trevally
+    "Verconia":           "Noumea",        # nudibranch
+}
+
+
+def _known_move(sci: str, cand: dict) -> bool:
+    """Only accept an epithet match when the candidate sits in the genus this
+    species is actually recorded as having moved from."""
+    return GENUS_MOVES.get(sci.split()[0]) == (cand.get("Genus") or "").strip()
+
+
 def stage_size(species: list, force: bool, typical: dict = None) -> dict:
     cached = None if force else cache_read("size.json")
     if cached:
@@ -760,8 +787,15 @@ def stage_size(species: list, force: bool, typical: dict = None) -> dict:
             if rec is None and sci in syn:
                 rec, how = by_code.get(syn[sci]), "synonym"
             if rec is None:
+                # Last resort for post-2021 genus moves — Ascarosepion <- Sepia,
+                # Plectroglyphidodon <- Stegastes, Pycnochromis <- Chromis.
+                #
+                # Uniqueness alone is NOT enough: Onithochiton quercinus is a
+                # chiton, Conus quercinus a cone snail, and the epithet was
+                # "unique" only because the chiton is absent from the data. So
+                # the move has to be one we have recorded, by name.
                 cands = by_epithet.get(sci.split()[-1], [])
-                if len(cands) == 1:            # unique across all of FishBase
+                if len(cands) == 1 and _known_move(sci, cands[0]):
                     rec, how = cands[0], "epithet"
             # A researched typical length is a SOURCE in its own right, not just
             # a refinement of a FishBase figure. Bailing out here when FishBase
