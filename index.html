@@ -2915,6 +2915,9 @@
   .summary-water-follows { margin-top: 11px; }
   .summary-after-follows { margin-top: 11px; }
   .summary-viz-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 11px; }
+  /* display:flex beats the plain [hidden] attribute, so the row needs this to
+     actually disappear when renderUnderwaterCommunity finds nothing to put in it. */
+  .summary-viz-row[hidden] { display: none; }
   #db-app-vis { margin-bottom: 6px; }
   #db-app-vis[hidden] { display: none; }
   .summary-after-follows[hidden] { display: none; }
@@ -4785,18 +4788,21 @@
                it — the reports are theirs and the attribution is not ours to
                drop. Ids kept (#db-sub, #db-inline-summary) so the dive-report
                renderer needs no change. -->
-          <div class="summary-viz-row">
+          <!-- STARTS HIDDEN, all of it. The VIZ credit and the skeleton loaders used
+               to be baked into this markup, so they painted before any script ran -
+               which with the reports switched off meant a swimmer saw "Courtesy of
+               VIZ" and two loading bars for a feed that is never going to answer.
+               renderUnderwaterCommunity() decides what this row shows, and shows the
+               row only if something is in it. -->
+          <div class="summary-viz-row" hidden>
             <span class="summary-wx-icon" aria-hidden="true">🐠</span>
             <div class="summary-item-text">
               <!-- The app's own visibility and sightings LEAD the beat, above the
                    VIZ credit — the credit belongs to the dive-report prose below
                    it, not to the community votes, which are the app's own. -->
               <div id="db-app-vis" hidden></div>
-              <div id="db-sub" style="color:var(--dim);font-size:11px;margin-bottom:4px;">Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently</div>
-              <div id="db-inline-summary" style="line-height:1.5;">
-                <div class="banner-skeleton"></div>
-                <div class="banner-skeleton short"></div>
-              </div>
+              <div id="db-sub" style="color:var(--dim);font-size:11px;margin-bottom:4px;" hidden></div>
+              <div id="db-inline-summary" style="line-height:1.5;" hidden></div>
             </div>
           </div>
           </div>
@@ -15733,6 +15739,20 @@ function renderUnderwaterCommunity() {
   const line = (communitySummaryLine() || '').trim();
   if (line) { el.innerHTML = emphasise(line); el.hidden = false; }
   else { el.textContent = ''; el.hidden = true; }
+
+  // The whole beat goes if there is nothing in it. With the VIZ reports off, an
+  // empty row is not blank space - it is a 🐠 sitting on its own against a
+  // heading, which reads as something that failed to load rather than as a
+  // section that has nothing to say today.
+  const row = el.closest('.summary-viz-row');
+  if (row) {
+    const sub    = document.getElementById('db-sub');
+    const inline = document.getElementById('db-inline-summary');
+    const has = !!line
+      || (sub && !sub.hidden && sub.textContent.trim())
+      || (inline && !inline.hidden && inline.textContent.trim());
+    row.hidden = !has;
+  }
 }
 // Re-append the community clause to the stored base text once reports arrive
 // (the summary itself only generates once, so we patch the water line in place).
@@ -18294,8 +18314,29 @@ const SIGHTINGS_TABLE_URL = BB_SUPABASE_URL + '/rest/v1/site_sightings';
 const SIGHTINGS_SITE_ID   = 'cabbage-tree-bay';   // must match the id used in VIZ Forecast
 const SIGHTING_MAX_AGE_DAYS = 14;                 // older than this falls back to a generic note
 
+// ── VIZ DIVE REPORTS ARE OFF ────────────────────────────────────────────────
+// Marco, 3 Sep 2026: the Facebook account the extract runs on is compromised
+// and Facebook now demands a 2FA code that cannot be supplied, so nothing new
+// is arriving and nothing will until the pipeline runs on a different account.
+//
+// WHY IT COULD NOT JUST BE LEFT TO AGE OUT. SIGHTING_MAX_AGE_DAYS is 14, so the
+// last report (31 Aug) would have kept its place in the Oracle for another
+// eleven days, carrying only a small "may be out of date" flag. A model must
+// never outrank a real observation - but a dead observation must not outrank a
+// fresh silence either, and a swimmer reading a fortnight-old report under
+// today's heading has been told something false about today.
+//
+// The RENDERER IS LEFT INTACT, not deleted: the reports come back the day the
+// extract runs on a new account, and this is one word to restore. The app's own
+// visibility votes and sightings (#db-app-vis) are untouched - they are the
+// app's own community data and have nothing to do with the Facebook group.
+const VIZ_REPORTS_ENABLED = false;
+
 let _latestSighting = null;
 async function fetchLatestSighting() {
+  // Nothing is arriving, so do not spend a round trip on a phone in a car park
+  // asking for it. Two requests, one of them a 20-row scan.
+  if (!VIZ_REPORTS_ENABLED) { _latestSighting = null; return null; }
   const headers = { 'apikey': BB_SUPABASE_KEY, 'Authorization': 'Bearer ' + BB_SUPABASE_KEY };
   try {
     // 1) Exact site match
@@ -18334,6 +18375,17 @@ function applySightingToBanner(s) {
   const subEl    = document.getElementById('db-sub');
   const inlineEl = document.getElementById('db-inline-summary');
 
+  // Switched off: clear both, drop the modal's copy, and let the underwater beat
+  // collapse to the app's own votes (or disappear, if there are none either).
+  if (!VIZ_REPORTS_ENABLED) {
+    if (subEl)    { subEl.textContent = '';    subEl.hidden = true; }
+    if (inlineEl) { inlineEl.textContent = ''; inlineEl.hidden = true; }
+    _diversSummary = null;
+    _diversStamp = null;
+    renderUnderwaterCommunity();
+    return;
+  }
+
   // Tolerate alternate column names from the VIZ Forecast writer
   const summary = s && (s.summary || s.report_summary || s.note || s.notes || s.text);
   const stamp   = s && (s.updated_at || s.created_at || s.reported_at || s.last_updated || s.date);
@@ -18358,19 +18410,30 @@ function applySightingToBanner(s) {
     ? ' <span style="color:var(--yellow)">· may be out of date</span>'
     : '';
 
+  // Both elements now START hidden in the markup, so every path that writes text
+  // has to unhide as well - otherwise switching VIZ_REPORTS_ENABLED back on would
+  // fill nodes that never become visible, which is a silent failure.
   if (!recent || !s || !summary) {
-    if (subEl) subEl.textContent = '';
-    if (inlineEl) inlineEl.textContent = 'No recent underwater reports — check the VIZ group for the latest from the water.';
+    if (subEl) { subEl.textContent = ''; subEl.hidden = true; }
+    if (inlineEl) {
+      inlineEl.textContent = 'No recent underwater reports — check the VIZ group for the latest from the water.';
+      inlineEl.hidden = false;
+    }
     _diversSummary = null;
     _diversStamp = null;
+    renderUnderwaterCommunity();
     return;
   }
 
-  if (subEl) subEl.innerHTML = when ? ('Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated ' + when + staleNote) : 'Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently';
-  if (inlineEl) inlineEl.textContent = summary;
+  if (subEl) {
+    subEl.innerHTML = when ? ('Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated ' + when + staleNote) : 'Courtesy of <a href="https://www.facebook.com/groups/sydviz" target="_blank" rel="noopener" style="color:var(--ocean);text-decoration:none;font-weight:600;">VIZ</a>, updated recently';
+    subEl.hidden = false;
+  }
+  if (inlineEl) { inlineEl.textContent = summary; inlineEl.hidden = false; }
 
   _diversSummary = summary;
   _diversStamp = when;
+  renderUnderwaterCommunity();
 }
 
 // ── Diver reports modal ──
