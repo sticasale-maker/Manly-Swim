@@ -125,6 +125,24 @@ function priority(s){
   return p ? p + Math.min(s.annual || 0, 500) / 500 * 250 : 0;
 }
 
+/* Load each file separately and say WHICH one failed and why. A single catch
+   around Promise.all reported "can't read the data" for three quite different
+   problems — opened as file://, run from the Drive copy that has no dataset,
+   or a genuine 404 — and left nothing to act on. */
+async function grab(url){
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw {url, why: location.protocol === 'file:'
+      ? 'the page is open as a file:// path, and browsers block fetch from the filesystem'
+      : 'the request failed: ' + e.message};
+  }
+  if (!res.ok) throw {url, why: `the server returned ${res.status}`};
+  try { return await res.json(); }
+  catch (e) { throw {url, why: 'the file is not valid JSON'}; }
+}
+
 async function boot(){
   let data, shapes;
   try {
