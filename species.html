@@ -451,38 +451,39 @@ function seasonBucket(s){
    Drawn as twelve bars because the shape IS the point — a wave that builds
    through summer, breaks in April and is gone by spring. A sentence saying
    "more in autumn" would carry almost none of it. */
-/* The bay's own calendar, which is a different question from the visitors':
-   not "when do the travellers come" but "when is there most to see at all".
-   April both ways — 2,570 sightings and 348 of the 640 species — against
-   July's 816. And the tail: 173 species have been recorded here exactly once
-   in twenty-eight years, which is worth saying because it sets expectations.
-   Most of this list is not a checklist to complete. */
-function yearHTML(){
+/* THE BAY'S YEAR PANEL WAS REMOVED, AND THIS IS THE REASON.
+   It charted raw sightings by month and called April the richest. But raw
+   sightings and the number of distinct species move together at r +0.90 —
+   which is what you see when more people simply find more of everything — and
+   species per 100 sightings is LOWEST in April (13.5) and highest in July
+   (27.8). April is not richer water. It is when most people look.
+
+   The whole seasonality was de-biased against exactly this earlier, and then
+   this panel put the bias back on the screen in a prettier form. If you are
+   tempted to plot bay counts by month again, plot a SHARE of that month's
+   effort instead, the way the visitors panel now does.
+
+   What survived is the one line that effort cannot fake: a species recorded
+   once has been recorded once however many people were looking. */
+function onceHTML(){
   var y=(DATA.provenance||{}).year;
-  if(!y || !y.months) return '';
-  var m=y.months, mx=Math.max.apply(null,m);
-  return '<div class="vis">'
-    +'<p class="lbl" style="margin-top:0">The bay\u2019s year</p>'
-    +'<div class="visbars">'
-    + m.map(function(c,i){
-        var h=Math.max(2,Math.round(c/mx*46));
-        return '<span class="vb'+(i===NOW?' on':'')+'" title="'+FULL[i]+': '+c
-          +' sightings, '+y.distinct[i]+' species">'
-          +'<i style="height:'+h+'px"></i><b>'+FULL[i].charAt(0)+'</b></span>'; }).join('')
-    +'</div>'
-    +'<p class="cap">'+FULL[y.busiest]+' is the richest month, with '
-    + y.months[y.busiest].toLocaleString()+' sightings and '+y.distinct[y.busiest]
-    +' of the '+DATA.species.length+' species. '+FULL[y.quietest]+' is the thinnest, with '
-    + y.months[y.quietest].toLocaleString()+'.</p>'
-    +'<p class="cap">'+y.seen_once+' of these species have been recorded here exactly '
-    +'once. This is a record of what has turned up, not a list to work through.</p>'
-    +'</div>';
+  if(!y || !y.seen_once) return '';
+  return '<p class="cap" style="margin:0 0 10px">'+y.seen_once+' of these '
+    + DATA.species.length+' species have been recorded here exactly once. This is '
+    +'a record of what has turned up, not a list to work through.</p>';
 }
 
 function visitorsHTML(){
   var v=(DATA.provenance||{}).visitors, y=(DATA.provenance||{}).year;
   if(!v || !v.months) return '';
-  var m=v.months, mx=Math.max.apply(null,m), now=NOW;
+  /* Plotted as a SHARE of everything recorded that month, not as raw counts.
+     Raw counts rise in summer partly because more people are in the water, and
+     that is the confound this whole page keeps having to answer for. A share
+     has the effort in its denominator: 0.7% of November against 23.4% of
+     April is a statement about the fish. */
+  var all=(y&&y.months)||null, raw=v.months;
+  var m=all ? raw.map(function(c,i){ return all[i] ? c/all[i]*100 : 0; }) : raw;
+  var mx=Math.max.apply(null,m), now=NOW;
   return '<div class="vis">'
     +'<p class="lbl" style="margin-top:0">Summer visitors</p>'
     +'<p style="font-size:13px">'+v.taxa.length+' species ride the current down '
@@ -491,12 +492,18 @@ function visitorsHTML(){
     +'<div class="visbars">'
     + m.map(function(c,i){
         var h=Math.max(2,Math.round(c/mx*46));
-        return '<span class="vb'+(i===now?' on':'')+'" title="'+FULL[i]+': '+c+'">'
+        return '<span class="vb'+(i===now?' on':'')+'" title="'+FULL[i]+': '
+          +(all?c.toFixed(1)+'% of that month ('+raw[i]+' sightings)':c)+'">'
           +'<i style="height:'+h+'px"></i><b>'+FULL[i].charAt(0)+'</b></span>'; }).join('')
     +'</div>'
-    +'<p class="cap">Sightings peak in '+FULL[v.peak]+' ('+m[v.peak]+') and fall to '
-    +m[v.trough]+' in '+FULL[v.trough]+'. They settle here as young fish and do '
-    +'not survive a Sydney winter.'
+    +'<p class="cap">'
+    +(all
+      ?'They are '+m[v.peak].toFixed(0)+'% of everything recorded in '+FULL[v.peak]
+       +' and '+m[v.trough].toFixed(1)+'% in '+FULL[v.trough]+' — a share, so it is '
+       +'not simply that more people swim in summer. '
+      :'Sightings peak in '+FULL[v.peak]+' ('+raw[v.peak]+') and fall to '
+       +raw[v.trough]+' in '+FULL[v.trough]+'. ')
+    +'They settle here as young fish and do not survive a Sydney winter.'
     /* The lag is the interesting part and it was measured, not assumed: the
        same month agrees only weakly, two months earlier almost exactly. They
        are answering the water that was there while they were still drifting. */
@@ -570,7 +577,7 @@ function renderNow(){
          return '<button class="chip'+(NOWMODE===m[0]?' on':'')+'" data-now="'+m[0]+'">'
            +m[1]+'</button>'; }).join('')
     +'</div>'
-    +(NOWMODE==='top' ? yearHTML()+visitorsHTML() : '')
+    +(NOWMODE==='top' ? visitorsHTML()+onceHTML() : '')
     +'<p class="lbl">In '+FULL[NOW]+'</p>'
     +(list.length
       /* The "less often" list shows the ANNUAL count, not the month's. "Seen 0
