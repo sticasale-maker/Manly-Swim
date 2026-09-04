@@ -698,16 +698,19 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
             try:
                 o = inat(f"observations/{chosen}")["results"][0]
                 ph = o["photos"][0]
-                # The attributes were read off the OLD photo, so drop the tag:
-                # a hand-picked picture with someone else's description of a
-                # different image is worse than either on its own. It re-tags
-                # on the next run, for about two cents.
-                tags_path = CACHE / "tags.json"
-                if tags_path.exists():
-                    _t = json.loads(tags_path.read_text("utf-8"))
-                    if _t.pop(str(s["taxon_id"]), None) is not None:
-                        cache_write("tags.json", _t)
+                # The attributes were read off the OLD photo and must not
+                # survive a hand-pick — but deleting the whole record here is
+                # the wrong instrument, and it cost ten species their shape.
+                # A tag holds two different kinds of thing: a description of a
+                # photograph, which is now wrong, and a shape asked from the
+                # species name, which is not.
+                #
+                # stage_tags already drops a record whose photo has left the
+                # candidate list, and it does so through kept_shape, which
+                # carries the shape across. Leave the record alone and let the
+                # staleness rule take it.
                 cands.insert(0, {
+                    "place": (o.get("place_guess") or "").split(",")[0].strip(),
                     "photo_id": ph["id"],
                     "url": ph["url"].replace("/square.", "/medium."),
                     "who": o["user"]["login"],
@@ -2855,6 +2858,17 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         current = {c.get("photo_id") for c in cands}
         photo = (tagged if tagged and tagged.get("photo_id") in current
                  else (cands[0] if cands else tagged))
+        # A tag record stores the candidate as it looked when the tag was
+        # written, so 114 of them predate the place field and the caption came
+        # out with no location at all — and the hand-picked ones never had one,
+        # because the override builds its own candidate. The place is not part
+        # of the description, it is a property of the photograph, so take it
+        # from the live candidate list rather than re-tagging to acquire it.
+        if photo and not photo.get("place"):
+            for c in cands:
+                if c.get("photo_id") == photo.get("photo_id") and c.get("place"):
+                    photo = {**photo, "place": c["place"]}
+                    break
         if photo and not (OUT_DIR / photo["file"]).exists():
             if not download_square(photo["url"], OUT_DIR / photo["file"]):
                 missing_img += 1
