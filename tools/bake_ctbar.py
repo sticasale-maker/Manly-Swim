@@ -939,6 +939,8 @@ def stage_size(species: list, force: bool, typical: dict = None) -> dict:
 # clarity or school holidays, and claiming a season on that is the error this
 # whole stage exists to avoid.
 
+BAY_MIN_FOR_AGREEMENT = 12   # fewer bay records than this and r is noise
+SEASON_BAY_MIN = 0.30        # below this the bay does not back the NSW season
 NSW_PLACE = 6744           # New South Wales
 SEASON_MIN_RECORDS = 24    # ~2 a month before a shape is worth reading
 # Measured against species whose behaviour is known. The busiest THREE months
@@ -2479,6 +2481,70 @@ def apply_morph_overrides(species: list, morphs: dict) -> dict:
             + (f", {unknown} name not in the list" if unknown else ""))
     return morphs
 
+def season_bay_agreement(species: list, months: dict, season: dict) -> dict:
+    """How well each species' NSW season matches what the BAY actually recorded.
+
+    The season is derived entirely from NSW, so the bay's own monthly counts are
+    an independent check on whether it transfers. Measured over the 49 seasonal
+    species with enough bay records: median r = +0.76, 47 of 49 positive, against
+    a chance baseline of +0.25 (chance is not zero because bay and NSW observing
+    share a calendar). So it does transfer — mostly.
+
+    Mostly is the point. Rough Leatherjacket has 215 bay records and r = +0.03:
+    NSW says September and the bay says nothing of the kind. Estuary Cobbler is
+    -0.17, actively backwards. Saying "more often seen in September" about those
+    is a small error. Saying "you won't see it" is the swimmer standing in the
+    water looking at one, which is the failure the whole app is written to avoid.
+
+    So the number is emitted and the UI spends it asymmetrically: the positive
+    claim may lean on NSW alone, the negative one may not.
+    """
+    # stage_months returns {"by_taxon": {...}, "effort": [...]}, not a bare map
+    # of taxon -> counts. Reaching straight for .values() got the two top-level
+    # keys instead of 640 species.
+    by_taxon = months.get("by_taxon", months)
+    tot = [0] * 12
+    for m in by_taxon.values():
+        if not isinstance(m, list):
+            continue
+        for i, c in enumerate(m[:12]):
+            tot[i] += c
+
+    def corr(a, b):
+        ma, mb = sum(a) / 12, sum(b) / 12
+        na = sum((x - ma) ** 2 for x in a)
+        nb = sum((y - mb) ** 2 for y in b)
+        if na <= 0 or nb <= 0:
+            return None
+        return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / ((na * nb) ** 0.5)
+
+    out, tested = {}, 0
+    for s in species:
+        tid = str(s["taxon_id"])
+        sea = season.get(tid) or {}
+        m = by_taxon.get(str(s["taxon_id"])) or by_taxon.get(s["taxon_id"])
+        if not isinstance(m, list):
+            continue
+        if sea.get("state") != "real" or not sea.get("share") or not m:
+            continue
+        # BAY_MIN_FOR_AGREEMENT: below this the correlation is noise, and a
+        # noisy +0.9 is more dangerous than an honest null.
+        if sum(m) < BAY_MIN_FOR_AGREEMENT:
+            continue
+        bay = [m[i] / tot[i] if tot[i] else 0 for i in range(12)]
+        t = sum(bay) or 1
+        r = corr([x / t for x in bay], sea["share"])
+        if r is None:
+            continue
+        out[tid] = round(r, 3)
+        tested += 1
+    if tested:
+        vals = sorted(out.values())
+        log(f"2c/6 season check {tested} seasonal species testable against bay "
+            f"records; median r {vals[len(vals)//2]:+.2f}, "
+            f"{sum(1 for v in vals if v >= SEASON_BAY_MIN)} confirmed locally")
+    return out
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -2599,7 +2665,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -2694,6 +2760,9 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             # Only verified sets ship. A wrong second appearance is worse than
             # none: it puts the species under a colour it never wears, which is
             # the same findability failure pointing the other way.
+            # null = never tested against the bay, which is NOT the same as
+            # tested and disagreed. The UI must treat it as unproven, not false.
+            "season_bay_r": (agree or {}).get(tid),
             "morphs": (((morphs or {}).get(tid) or {}).get("morphs")
                        if ((morphs or {}).get(tid) or {}).get("checked") else None),
         }
@@ -2882,6 +2951,7 @@ def main() -> int:
         slugs = assign_slugs(species)
         months = stage_months(species, args.force)
         season = stage_season(species, args.force)
+        agree = season_bay_agreement(species, months, season["species"])
         photos = stage_photos(species, args.force, slugs)
         sizes = stage_size(species, args.force)
         # The paid lookup is opt-in; folding in cached answers and the
@@ -2946,7 +3016,7 @@ def main() -> int:
             log("everything AND invalidates the human review.")
             return 0
         stage_emit(species, months, photos, tags, sizes, slugs, season,
-                   facts=facts, morphs=morphs)
+                   facts=facts, morphs=morphs, agree=agree)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")

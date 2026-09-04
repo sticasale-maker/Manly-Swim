@@ -368,7 +368,7 @@ function silHTML(s,cls){
   var sh=null;
   for(var i=0;i<SHAPES.length;i++){ if(SHAPES[i].key===s.shape) sh=SHAPES[i]; }
   if(!sh) return '';
-  return '<span class="'+cls+' sil" aria-label="No photograph — shown as a shape">'
+  return '<span class="'+(cls?cls+' ':'')+'sil" aria-label="No photograph — shown as a shape">'
     +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg></span>';
 }
 
@@ -379,7 +379,7 @@ function rowHTML(s,rank,showMonth){
     : s.annual+' record'+(s.annual===1?'':'s')+' in the bay';
   return '<button class="row" data-id="'+s.id+'">'
     +(rank?'<span class="rank">'+rank+'</span>':'')
-    +(s.img?'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">':silHTML(s,'row'))
+    +(s.img?'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">':silHTML(s,''))
     +'<span class="b"><span class="n">'+esc(s.name)+'</span>'
     +'<span class="s">'+esc(s.sci)+'</span>'
     +'<span class="w"><span class="dot"></span>'+word+'</span>'
@@ -389,18 +389,91 @@ function rowHTML(s,rank,showMonth){
     +(seen(s.id)?'<span class="seen">&#10003;</span>':'')+'</button>';
 }
 
+/* Which species are in season, and which are not.
+
+   The season is computed entirely from NSW, so the BAY's own monthly counts
+   are an independent check on whether it transfers. Over the 49 seasonal
+   species with enough bay records it does: median r +0.76, 46 confirmed.
+
+   The three that failed are why this is not a straight filter. Rough
+   Leatherjacket has 215 bay records and r +0.03 — NSW calls it a September
+   fish and the bay flatly does not agree. Estuary Cobbler is -0.17, backwards.
+   A species that has been TESTED AND FAILED is excluded from both lists: the
+   bay is the place the reader is standing, and when it contradicts NSW it wins.
+
+   A species never tested (too few bay records) is a different case, and the
+   two claims are not equally safe. "More often now" leans on NSW alone; being
+   wrong means someone does not see a fish. "Less often now" may not, because
+   being wrong means telling a swimmer they will not see something they are
+   looking at. Never say "you won't see it" — only that it is seen less often,
+   which survives being wrong. */
+var SEASON_HI=1.35/12, SEASON_LO=0.65/12, BAY_MIN_R=0.30;
+var NOWMODE='top';
+
+function seasonBucket(s){
+  if(s.season!=='real' || !s.season_share) return null;
+  var r=s.season_bay_r, share=s.season_share[NOW];
+  if(r!=null && r<BAY_MIN_R) return null;         // the bay tested it and disagreed
+  if(share>=SEASON_HI) return 'more';
+  if(share<=SEASON_LO) return (r!=null && r>=BAY_MIN_R) ? 'less' : null;
+  return null;
+}
+
 function renderNow(){
-  var list=DATA.species.filter(function(s){ return s.months[NOW]>0 && (s.img||s.shape); })
+  var withImg=DATA.species.filter(function(s){ return s.img||s.shape; });
+  var top=withImg.filter(function(s){ return s.months[NOW]>0; })
     .sort(function(a,b){ return b.months[NOW]-a.months[NOW]; }).slice(0,40);
+  var more=withImg.filter(function(s){ return seasonBucket(s)==='more'; })
+    .sort(function(a,b){ return b.season_share[NOW]-a.season_share[NOW]; });
+  var less=withImg.filter(function(s){ return seasonBucket(s)==='less'; })
+    .sort(function(a,b){ return a.season_share[NOW]-b.season_share[NOW]; });
+
+  var list = NOWMODE==='more' ? more : NOWMODE==='less' ? less : top;
+  var blurb = NOWMODE==='more'
+      ? 'These are at their most likely in '+FULL[NOW]+' — a bigger share of '
+        +'the year\u2019s sightings falls now than in any average month.'
+      : NOWMODE==='less'
+      ? 'Seen less often in '+FULL[NOW]+'. Not absent \u2014 the bay keeps its '
+        +'own counsel and these do turn up \u2014 just a thinner month for them.'
+      : 'From ten years of observations by 206 contributors';
+  var head = NOWMODE==='more' ? 'More often seen in '+FULL[NOW]
+           : NOWMODE==='less' ? 'Less often seen in '+FULL[NOW]
+           : 'Most often seen around now';
+
   el('view').innerHTML=
     '<div class="strip">'
     +'<div class="live"><span style="font-size:19px">&#128032;</span><span>'
-    +'<span class="t">Most often seen around now</span>'
-    +'<span class="d">From ten years of observations by 206 contributors</span></span></div>'
+    +'<span class="t">'+head+'</span>'
+    +'<span class="d">'+blurb+'</span></span></div>'
+    +'<div class="chips" style="margin-bottom:10px">'
+    +  [['top','Seen most'],['more','More often now'],['less','Less often now']]
+       .map(function(m){
+         return '<button class="chip'+(NOWMODE===m[0]?' on':'')+'" data-now="'+m[0]+'">'
+           +m[1]+'</button>'; }).join('')
+    +'</div>'
     +'<p class="lbl">In '+FULL[NOW]+'</p>'
-    +'<div class="rows">'+list.map(function(s,i){ return rowHTML(s,i+1,true); }).join('')+'</div>'
+    +(list.length
+      /* The "less often" list shows the ANNUAL count, not the month's. "Seen 0
+         times here in September" under a heading about September reads as "you
+         will not see it", which is the one thing this list must not say — and
+         for these species it is weak evidence besides. Most are tropical strays
+         with a handful of bay records in total, so a zero in any given month is
+         what rarity looks like, not what a season looks like. The annual figure
+         puts it back in proportion. */
+      ?'<div class="rows">'+list.map(function(s,i){
+          return rowHTML(s, NOWMODE==='top'?i+1:null, NOWMODE!=='less'); }).join('')+'</div>'
+      :'<p class="empty">Nothing to show for '+FULL[NOW]+'.<br>'
+       +'Only species with a season the bay\u2019s own records back up appear here.</p>')
+    +(NOWMODE==='less'
+      ?'<p class="cap">Only species whose season the bay\u2019s own records confirm '
+       +'are listed. A thin month is not an absence, and the app will not tell you '
+       +'what you cannot see.</p>':'')
     +'<p class="stamp">Counts as at '+DATA.generated_at.slice(0,10)+' &middot; rebuilt quarterly</p>'
     +'</div>';
+
+  el('view').querySelectorAll('[data-now]').forEach(function(b){
+    b.onclick=function(){ NOWMODE=b.dataset.now; renderNow(); };
+  });
 }
 
 var COLOURS=[['grey','Silver / grey','#b9c4c9'],['brown','Brown','#8a6a45'],
