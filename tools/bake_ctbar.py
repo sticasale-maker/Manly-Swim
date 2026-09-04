@@ -1470,9 +1470,15 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
     for tid in list(tags):
         why = _stale_against_schema(tags[tid] or {})
         if not why:
+            # Stale means the tagged photo is GONE from the candidate list, not
+            # that it is no longer first. stage_tags walks the candidates until
+            # one is usable, so ~50 species are legitimately tagged from the
+            # second or third — comparing against [0] alone called every one of
+            # them replaced, dropped them, and (with no key in that shell) left
+            # them with no tags and no shape at all.
             was = ((tags[tid] or {}).get("photo") or {}).get("photo_id")
-            now = (photos.get(tid) or [{}])[0].get("photo_id")
-            if was is not None and now is not None and was != now:
+            current = {c.get("photo_id") for c in (photos.get(tid) or [])}
+            if was is not None and current and was not in current:
                 why = "photo replaced"
         if why:
             stale[why] += 1
@@ -1480,6 +1486,21 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
     if stale:
         log("    retired vocabulary, re-tagging: "
             + ", ".join(f"{v}x {k}" for k, v in stale.most_common(5)))
+        # Write the shrunken cache NOW, as the new baseline.
+        #
+        # The guard in cache_write refuses a write that loses half the entries,
+        # because that is what an accidental subset looks like. A deliberate
+        # re-tag looks identical to it: dropping 493 stale records left 131, and
+        # the first checkpoint tried to write 151 over 624 and was refused. The
+        # run then kept going — a thread pool drains before the exception
+        # surfaces — so every one of 509 calls was made and every one was
+        # thrown away.
+        #
+        # The deletion above is explicit, counted and logged. Recording it
+        # immediately makes it the thing later checkpoints are measured
+        # against, so they grow rather than shrink and the guard still catches
+        # the accident it was written for.
+        cache_write("tags.json", tags, allow_shrink=True)
     todo = [s for s in species
             if str(s["taxon_id"]) in photos and str(s["taxon_id"]) not in tags]
 
@@ -1502,6 +1523,7 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
     # the injected JSON schema costs far more than the prompt text does.
     est_in, est_out = 2_708, 415
     est = len(todo) * (est_in / 1e6 * PRICE_IN + est_out / 1e6 * PRICE_OUT)
+    _require_key("5/6 tags")
     log(f"5/6 tags         {len(todo)} to tag ({len(tags)} already done)")
     log(f"    estimated ~${est:.2f} on {MODEL} — actual cost reported at the end")
     client = anthropic.Anthropic()
@@ -1521,7 +1543,18 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
             # subclass. Catch the whole family, plus anything else, and skip the
             # species: it stays out of the cache, so a re-run picks it up.
             try:
-                t = tag_one(client, s["name"], img)
+                # Retry like every other paid stage. 194 calls were lost to
+                # transient HTTP 400s in one run with no second attempt, and a
+                # skipped species is a species with no colour at all.
+                t = None
+                for attempt in (1, 2, 3):
+                    try:
+                        t = tag_one(client, s["name"], img)
+                        break
+                    except anthropic.APIStatusError as e:
+                        if attempt == 3 or e.status_code not in (400, 429, 500, 502, 503, 529):
+                            raise
+                        time.sleep(1.5 * attempt)
             except anthropic.APIStatusError as e:
                 log(f"    HTTP {e.status_code} on {s['name']} — skipped")
                 return tid, None
@@ -1556,6 +1589,13 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
             done += 1
             if t:
                 tags[tid] = t
+                # restore per result, not at the end of the stage. The
+                # end-of-stage restore never runs if the stage dies, and
+                # the checkpoint would then hold a shape taken from the
+                # photograph — quietly undoing the name pass for exactly
+                # the species that had just been re-tagged.
+                if tid in kept_shape:
+                    tags[tid].update(kept_shape[tid])
             if done % 20 == 0:
                 log(f"    {done}/{len(todo)} tagged")
                 cache_write("tags.json", tags)      # checkpoint; API calls cost money
@@ -2802,7 +2842,19 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         # animals in 601 last time. Re-tagging restores the check and rewrites
         # the description; until then the picture is current and the colour
         # words describe the one it replaced.
-        photo = (cands[0] if cands else None) or (t or {}).get("photo")
+        # Prefer the photograph the VISION PASS settled on, but only while it is
+        # still one of the current candidates.
+        #
+        # Both halves matter. The tagger walks the candidates and rejects any it
+        # cannot describe, so its choice is the vetted one: for 46 species it
+        # passed over the best-voted shot precisely because that shot was
+        # unusable. But when the candidate list is replaced wholesale — as it
+        # was moving from the bay to NSW — the tagged photo is simply gone, and
+        # trusting it then would have kept 504 replaced pictures invisible.
+        tagged = (t or {}).get("photo")
+        current = {c.get("photo_id") for c in cands}
+        photo = (tagged if tagged and tagged.get("photo_id") in current
+                 else (cands[0] if cands else tagged))
         if photo and not (OUT_DIR / photo["file"]).exists():
             if not download_square(photo["url"], OUT_DIR / photo["file"]):
                 missing_img += 1
