@@ -407,7 +407,15 @@ function rowHTML(s,rank,showMonth){
    being wrong means telling a swimmer they will not see something they are
    looking at. Never say "you won't see it" — only that it is seen less often,
    which survives being wrong. */
-var SEASON_HI=1.35/12, SEASON_LO=0.65/12, BAY_MIN_R=0.30;
+/* SEASON_MIN_SEEN is the floor that makes "more often now" mean anything.
+   Concentration is a RATIO: a species with twelve records and three in
+   September scores as a September animal, and you will still never see one.
+   September's list read Port Jackson Shark seen 80 times, then Clown Doris
+   seen 3, then five species seen once — which is not a list of what you are
+   likely to meet, it is a list of rare things that happen to be clustered.
+   Requiring five sightings in the bay in that month leaves only species you
+   have a real chance of swimming past. */
+var SEASON_HI=1.35/12, SEASON_LO=0.65/12, BAY_MIN_R=0.30, SEASON_MIN_SEEN=5;
 var NOWMODE='top';
 
 function seasonBucket(s){
@@ -421,7 +429,7 @@ function seasonBucket(s){
        a spring animal; it cannot say this bay has one when the bay's own
        records say otherwise, and the row contradicting its own heading is
        worse than the row being absent. */
-    return (s.months && s.months[NOW] > 0) ? 'more' : null;
+    return (s.months && s.months[NOW] >= SEASON_MIN_SEEN) ? 'more' : null;
   }
   if(share<=SEASON_LO) return (r!=null && r>=BAY_MIN_R) ? 'less' : null;
   return null;
@@ -483,8 +491,17 @@ function renderNow(){
          puts it back in proportion. */
       ?'<div class="rows">'+list.map(function(s,i){
           return rowHTML(s, NOWMODE==='top'?i+1:null, NOWMODE!=='less'); }).join('')+'</div>'
-      :'<p class="empty">Nothing to show for '+FULL[NOW]+'.<br>'
-       +'Only species with a season the bay\u2019s own records back up appear here.</p>')
+      :'<p class="empty">Nothing at its peak in '+FULL[NOW]+'.<br>'
+       +(NOWMODE==='more'
+         ?'The visitors that have a season here arrive with the autumn current \u2014 '
+          +'March to June is when this list is long. Spring is quiet for them, and an '
+          +'empty list is the honest answer rather than a thin one padded out.'
+         :'Only species whose season the bay\u2019s own records back up appear here.')
+       +'</p>')
+    +(NOWMODE==='more' && list.length && list.length<5
+      ?'<p class="cap">A short list because '+FULL[NOW]+' is a quiet month here. '
+       +'The seasonal visitors come with the autumn current; March to June is when '
+       +'this fills up.</p>':'')
     +(NOWMODE==='less'
       ?'<p class="cap">Only species whose season the bay\u2019s own records confirm '
        +'are listed. A thin month is not an absence, and the app will not tell you '
