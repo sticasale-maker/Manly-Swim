@@ -29,6 +29,8 @@ Only the vision stages. Measured, not estimated:
 | shape by name | `--name-shapes` | $0.0055 | asks what the animal *is*, not what the photo shows |
 | curiosity | `--facts` | $0.0086 | Haiku; ~40% return one, the rest decline |
 | fact check | with `--facts` | ~$0.037 | Opus tries to refute every fact; see below |
+| morphs | `--morphs` | $0.0101 | second appearances (sex, juvenile), then refuted |
+| retire facts | `--retire-facts` | $0.0066 | drops prose the morph data already says |
 
 Everything keys on iNaturalist taxon id, so a re-run only pays for what is
 genuinely new — about 30 species a year.
@@ -54,10 +56,29 @@ Two traps, both paid for once already:
   `TypeError`s, resolved nothing, and still printed a coverage table and
   "Done" — a run that looked clean and had done no work at all.
 
+## Two review pages, and why the first one is empty
+
+    python -m http.server 8000     # from the REPO CLONE, not the Drive copy
+
+- `tools/review.html` — shape/tag review. **Currently empty, and correctly so.**
+  It returns priority 0 for any species whose shape came from the name rather
+  than a photograph, and that is now all 640. Do not read an empty queue as a
+  broken page.
+- `tools/morph-review.html` — the 93 species carrying a second appearance,
+  most-seen first. This is the one worth a person's time: a wrong morph files a
+  species under a colour it never wears, which is the exact failure the feature
+  exists to prevent, pointing the other way. Rulings download as
+  `tools/morph-overrides.json`; re-running `python tools/bake_ctbar.py` with no
+  flags is enough to apply them, no API calls.
+
+The eleven species whose morphs were independently corroborated by their own
+verified facts are parked at the END of that queue and badged, rather than
+skipped — two model passes agreeing is evidence, not proof.
+
 ## The overrides outrank the model
 
-`size-overrides.json`, `behaviour-overrides.json`, `typical-overrides.json`
-and `tag-overrides.json` are
+`size-overrides.json`, `behaviour-overrides.json`, `typical-overrides.json`,
+`fact-overrides.json`, `morph-overrides.json` and `tag-overrides.json` are
 read *after* the vision pass and *before* emit. A hand decision is never in the
 blast radius of a re-bake, a vocabulary change or a re-tag.
 

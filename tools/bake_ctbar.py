@@ -2394,6 +2394,44 @@ def stage_retire_facts(species: list, facts: dict, morphs: dict) -> dict:
     print(SPEND.report())
     return facts
 
+def apply_morph_overrides(species: list, morphs: dict) -> dict:
+    """Hand rulings on morph sets, read immediately before emit.
+
+    A morph is the one attribute where a wrong value files a species under a
+    colour it never wears — the failure the whole feature exists to prevent,
+    pointing the other way. The refute pass caught 9 of 102, but it is a second
+    model checking a first, and agreement between two passes is evidence rather
+    than proof. This is where a person overrules both, and the ruling survives
+    every regeneration.
+
+    Keyed by scientific name. null drops the set; an object with a morphs list
+    replaces it. Produced by tools/morph-review.html.
+    """
+    path = ROOT / "tools" / "morph-overrides.json"
+    if not path.exists():
+        return morphs
+    ov = {k: v for k, v in json.loads(path.read_text("utf-8")).items()
+          if not k.startswith("_")}
+    by_sci = {s["sci"]: str(s["taxon_id"]) for s in species}
+    dropped = replaced = unknown = 0
+    for sci, rule in ov.items():
+        tid = by_sci.get(sci)
+        if tid is None:
+            unknown += 1
+            continue
+        if rule is None or (isinstance(rule, dict) and not rule.get("morphs")):
+            morphs[tid] = {"status": "ruled-out-by-hand",
+                           "was": (morphs.get(tid) or {}).get("morphs")}
+            dropped += 1
+        else:
+            morphs[tid] = {"status": "found", "checked": True, "by_hand": True,
+                           "morphs": rule["morphs"]}
+            replaced += 1
+    if dropped or replaced or unknown:
+        log(f"5m/6 morph rulings {dropped} dropped, {replaced} corrected by hand"
+            + (f", {unknown} name not in the list" if unknown else ""))
+    return morphs
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -2843,6 +2881,9 @@ def main() -> int:
         morphs = cache_read("morphs.json") or {}
         if args.morphs:
             morphs = stage_morphs(species, args.force)
+        # Applied on every run, paid stage or not: a hand ruling must not need
+        # an API call to reach the app.
+        morphs = apply_morph_overrides(species, morphs)
         if args.retire_facts:
             facts = stage_retire_facts(species, facts, morphs)
             facts = apply_fact_overrides(species, facts)   # a ruling still wins
