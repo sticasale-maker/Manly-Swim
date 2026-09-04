@@ -60,7 +60,12 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .visbars{display:flex;align-items:flex-end;gap:4px;height:62px;margin:10px 0 4px}
 .vb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
 .vb i{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--ocean);opacity:.55}
+.vb{border:0;background:transparent;cursor:pointer;padding:0}
+.vb i{transition:opacity .12s}
+.vb:hover i{opacity:.85}
 .vb b{font-size:9px;font-weight:600;color:var(--dim)}
+.vb.sel i{opacity:1;box-shadow:0 0 0 2px var(--ocean)}
+.vb.sel b{color:var(--text);text-decoration:underline}
 .vb.on i{opacity:1}
 .vb.on b{color:var(--text)}
 .stamp{font-size:9.5px;color:var(--dim);letter-spacing:.2px;text-align:right;margin-top:8px}
@@ -424,6 +429,7 @@ function rowHTML(s,rank,showMonth){
    Requiring five sightings in the bay in that month leaves only species you
    have a real chance of swimming past. */
 var SEASON_HI=1.35/12, SEASON_LO=0.65/12, BAY_MIN_R=0.30, SEASON_MIN_SEEN=5;
+var VISMONTH=null;   // which bar of the visitors chart is open, if any
 var NOWMODE='top';
 
 function seasonBucket(s){
@@ -473,6 +479,42 @@ function onceHTML(){
     +'a record of what has turned up, not a list to work through.</p>';
 }
 
+/* Tapping a bar opens the species behind it.
+
+   Ranked by how much of a species' OWN year falls in that month, not by how
+   many were seen — the chart above is already a share for the same reason, and
+   a species with 40 records will otherwise sit above one with 8 in every month
+   regardless of season. The bay count comes along so the reader can see how
+   thin the evidence is: "62% of its year, seen 3 times here" is an honest thing
+   to show and a misleading thing to hide. */
+function monthListHTML(mi){
+  var v=(DATA.provenance||{}).visitors;
+  if(!v || mi==null) return '';
+  var set={}; v.taxa.forEach(function(t){ set[t]=1; });
+  var rows=DATA.species.filter(function(s){
+      return set[s.taxon_id] && s.season_share && (s.months||[])[mi]>0; })
+    .sort(function(a,b){ return b.season_share[mi]-a.season_share[mi]; })
+    .slice(0,12);
+  if(!rows.length){
+    return '<p class="cap" style="margin-top:8px">Not one of them was recorded here in '
+      + FULL[mi]+'. That is the point of the low bar rather than a gap in the data.</p>';
+  }
+  return '<p class="lbl" style="margin:12px 0 6px">Most seasonal in '+FULL[mi]+'</p>'
+    +'<div class="rows">'
+    + rows.map(function(s){
+        var pct=Math.round(s.season_share[mi]*100);
+        return '<button class="row" data-id="'+s.id+'">'
+          +(s.img?'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">':silHTML(s,''))
+          +'<span class="b"><span class="n">'+esc(s.name)+'</span>'
+          +'<span class="s">'+esc(s.sci)+'</span>'
+          +'<span class="w"><span class="dot"></span>'+pct+'% of its year falls in '
+          + FULL[mi]+'</span>'
+          +'<span class="w" style="color:var(--dim)">seen '+s.months[mi]+' time'
+          +(s.months[mi]===1?'':'s')+' here in '+FULL[mi]+'</span></span>'
+          +(seen(s.id)?'<span class="seen">&#10003;</span>':'')+'</button>'; }).join('')
+    +'</div>';
+}
+
 function visitorsHTML(){
   var v=(DATA.provenance||{}).visitors, y=(DATA.provenance||{}).year;
   if(!v || !v.months) return '';
@@ -492,9 +534,10 @@ function visitorsHTML(){
     +'<div class="visbars">'
     + m.map(function(c,i){
         var h=Math.max(2,Math.round(c/mx*46));
-        return '<span class="vb'+(i===now?' on':'')+'" title="'+FULL[i]+': '
+        return '<button class="vb'+(i===now?' on':'')+(i===VISMONTH?' sel':'')
+          +'" data-vm="'+i+'" title="'+FULL[i]+': '
           +(all?c.toFixed(1)+'% of that month ('+raw[i]+' sightings)':c)+'">'
-          +'<i style="height:'+h+'px"></i><b>'+FULL[i].charAt(0)+'</b></span>'; }).join('')
+          +'<i style="height:'+h+'px"></i><b>'+FULL[i].charAt(0)+'</b></button>'; }).join('')
     +'</div>'
     +'<p class="cap">'
     +(all
@@ -511,7 +554,9 @@ function visitorsHTML(){
         +(['','a month','two months','three months'][y.sst_lag]||y.sst_lag+' months')
         +' earlier far more closely '
         +'than the water they arrive into.' : '')
-    +'</p></div>';
+    +'</p>'
+    + monthListHTML(VISMONTH)
+    +'</div>';
 }
 
 function renderNow(){
@@ -608,7 +653,18 @@ function renderNow(){
     +'</div>';
 
   el('view').querySelectorAll('[data-now]').forEach(function(b){
-    b.onclick=function(){ NOWMODE=b.dataset.now; renderNow(); };
+    b.onclick=function(){ NOWMODE=b.dataset.now; VISMONTH=null; renderNow(); };
+  });
+  el('view').querySelectorAll('[data-vm]').forEach(function(b){
+    b.onclick=function(){
+      var m=+b.dataset.vm;
+      VISMONTH = (VISMONTH===m) ? null : m;   // tap the same bar to close
+      renderNow();
+      if(VISMONTH!=null){
+        var sel=el('view').querySelector('.vb.sel');
+        if(sel) sel.scrollIntoView({block:'nearest'});
+      }
+    };
   });
 }
 
