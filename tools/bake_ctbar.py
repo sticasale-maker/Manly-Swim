@@ -125,6 +125,23 @@ import anthropic
 # ── Constants ────────────────────────────────────────────────────────────────
 
 PLACE_ID = 71836          # Cabbage Tree Bay — the polygon IS the aquatic reserve
+# 6744 is AUSTRALIA, not New South Wales. The constant has been named
+# NSW_PLACE since the first cut and the app's copy says "read across NSW", so
+# every seasonality figure shipped so far is actually pooled across the whole
+# continent — Queensland's tropics averaged in with Tasmania's. For a Blue
+# Groper, endemic to this coast, the two are nearly the same set. For a Moorish
+# Idol they are not remotely.
+#
+# Corrected 4 Sep 2026. Pooling a season across the continent averages
+# Queensland's tropics with Tasmania's, which is meaningless for a species that
+# spans both and merely noisy for one that does not. It also plausibly explains
+# the mismatches the bay check turned up: Rough Leatherjacket read as a
+# September fish across Australia while the bay flatly disagreed, which is what
+# continent-wide pooling produces when a species peaks at different times at
+# different latitudes.
+AU_PLACE = 6744           # Australia
+NSW_PLACE = 6825          # New South Wales — what the season should always have used
+NSW_PLACE_REAL = NSW_PLACE
 # Every animal group a swimmer meets in the bay, not just the ray-finned fish.
 # Scoping this to Actinopterygii (which is what "Fishes of Cabbage Tree Bay"
 # implies) silently dropped the animals people care about MOST: Spotted
@@ -565,25 +582,65 @@ def stage_months(species: list, force: bool) -> dict:
 
 # ── Stage 3: one re-usable in-bay photograph per species ─────────────────────
 
+# THE PHOTO POOL IS NSW, NOT THE BAY.
+#
+# It was the bay for one bad reason: the first cut set place_id on the photo
+# query and everything downstream inherited it, including a caption that read
+# "taken in this bay". Nobody asked for that. A photograph is here to show what
+# the species looks like; the bay RECORDS are what tie it to this water, and
+# they are unaffected. Plectaster decanus photographed at Bare Island is the
+# same animal as one off Shelly.
+#
+# The restriction cost real quality. Cabbage Tree Bay yields a handful of
+# re-usable shots per species and sometimes none — 37 species were hidden
+# outright for want of a licence rather than a sighting, and the poor photos
+# that drove the whole hand-override mechanism (a head-on Port Jackson, an
+# algae-covered Eastern Fortescue) were poor because they were the only ones
+# there. Across NSW the pool is often hundreds deep.
+#
+# The caption names where the shot was taken, because the old one asserted the
+# bay and that must not sit under a photograph from elsewhere.
+PHOTO_PLACE = NSW_PLACE_REAL
+
+# Every species gets a picture, or the app is hiding animals it knows about.
+# The ladder loosens one constraint at a time and records which rung it landed
+# on, so a shot that is merely the best available is not passed off as the best.
+# Research grade is given up before the licence is, because an unverified
+# identification risks showing the WRONG ANIMAL — the failure that makes an ID
+# guide worthless — while a distant photo of the right one still teaches you
+# what it looks like.
+PHOTO_TIERS = [
+    ("nsw",        dict(place_id=NSW_PLACE_REAL, quality_grade="research")),
+    ("australia",  dict(place_id=AU_PLACE,       quality_grade="research")),
+    ("anywhere",   dict(quality_grade="research")),
+    ("unverified", dict()),
+]
+
+
 def fetch_photo_candidates(taxon_id: int, n: int = 3) -> list:
-    """Best CC-licensed photos of this species taken INSIDE the reserve.
-    Ordered by community votes, so the clearest shots come first."""
-    d = inat("observations", place_id=PLACE_ID, taxon_id=taxon_id,
-             photo_license=PHOTO_LICENCES, quality_grade="research",
-             order_by="votes", per_page=n)
-    out = []
-    for o in d.get("results", []):
-        for p in o.get("photos", [])[:1]:
-            out.append({
-                "photo_id": p["id"],
-                "url": p["url"].replace("/square.", "/medium."),
-                "who": o["user"]["login"],
-                "who_name": o["user"].get("name") or "",
-                "lic": (p.get("license_code") or "").upper(),
-                "obs_id": o["id"],
-                "observed_on": o.get("observed_on"),
-            })
-    return out
+    """Best CC-licensed photos of this species, loosening the net until one
+    turns up. Best-voted first within each rung."""
+    for tier, extra in PHOTO_TIERS:
+        d = inat("observations", taxon_id=taxon_id,
+                 photo_license=PHOTO_LICENCES, order_by="votes",
+                 per_page=n, **extra)
+        out = []
+        for o in d.get("results", []):
+            for p in o.get("photos", [])[:1]:
+                out.append({
+                    "photo_id": p["id"],
+                    "url": p["url"].replace("/square.", "/medium."),
+                    "who": o["user"]["login"],
+                    "who_name": o["user"].get("name") or "",
+                    "lic": (p.get("license_code") or "").upper(),
+                    "obs_id": o["id"],
+                    "observed_on": o.get("observed_on"),
+                    "place": (o.get("place_guess") or "").split(",")[0].strip(),
+                    "tier": tier,
+                })
+        if out:
+            return out
+    return []
 
 
 def download_square(url: str, dest: Path) -> bool:
@@ -672,7 +729,7 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
             cache_write("photos.json", {**out, "_none": sorted(seen_none)})
 
     cache_write("photos.json", {**out, "_none": sorted(seen_none)})
-    log(f"3/6 photos       {len(out):>4} species have a re-usable in-bay photo"
+    log(f"3/6 photos       {len(out):>4} species have a photo"
         f"  ({len(seen_none)} have none)")
     return out
 
@@ -941,7 +998,6 @@ def stage_size(species: list, force: bool, typical: dict = None) -> dict:
 
 BAY_MIN_FOR_AGREEMENT = 12   # fewer bay records than this and r is noise
 SEASON_BAY_MIN = 0.30        # below this the bay does not back the NSW season
-NSW_PLACE = 6744           # New South Wales
 SEASON_MIN_RECORDS = 24    # ~2 a month before a shape is worth reading
 # Measured against species whose behaviour is known. The busiest THREE months
 # was the wrong test: it called Port Jackson Shark flat, because its winter
@@ -1389,12 +1445,35 @@ def _stale_against_schema(tag: dict) -> Optional[str]:
 def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dict:
     tags = {} if force else (cache_read("tags.json") or {})
 
+    # A shape asked by NAME outranks anything read off a photograph, so it must
+    # survive a re-tag. tags[tid] = t replaces the whole record, which would
+    # quietly hand 640 species' shapes back to the picture they were taken off
+    # — the better-sourced value losing to the weaker one, silently, for money.
+    kept_shape = {tid: {k: v for k, v in (t or {}).items()
+                        if k in ("shape", "shape_from", "shape_was_photo")}
+                  for tid, t in tags.items() if (t or {}).get("shape_from")}
+
     # Drop anything the current vocabulary can no longer express, so an enum
     # change re-tags exactly the species it affects and no others.
+    #
+    # And drop anything whose PHOTOGRAPH has changed. A tag is a description of
+    # a particular image — colour, markings, finish, tail all come from looking
+    # at it — so when the picture is replaced the description is of something
+    # the reader can no longer see. Widening the photo pool from the bay to NSW
+    # changed 504 pictures at once, and without this every one of them would
+    # have kept a caption written about the shot it replaced.
+    #
+    # kept_shape is captured above, before any of this, so a shape asked by
+    # name is not thrown away with the photo description that surrounds it.
     import collections
     stale = collections.Counter()
     for tid in list(tags):
         why = _stale_against_schema(tags[tid] or {})
+        if not why:
+            was = ((tags[tid] or {}).get("photo") or {}).get("photo_id")
+            now = (photos.get(tid) or [{}])[0].get("photo_id")
+            if was is not None and now is not None and was != now:
+                why = "photo replaced"
         if why:
             stale[why] += 1
             del tags[tid]
@@ -1481,6 +1560,9 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
                 log(f"    {done}/{len(todo)} tagged")
                 cache_write("tags.json", tags)      # checkpoint; API calls cost money
 
+    for tid, keep in kept_shape.items():
+        if tid in tags:
+            tags[tid].update(keep)
     cache_write("tags.json", tags)
     log(f"5/6 tags         {len(tags):>4} tagged")
     print(SPEND.report())
@@ -2708,7 +2790,19 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         # shipped 11 species — Banjo Ray among them, at 226 records — with a
         # broken image and a photographer's credit underneath it. Fetch it if
         # it is missing; if that fails, carry neither the image nor the credit.
-        photo = (t or {}).get("photo") or (cands[0] if cands else None)
+        # The CURRENT pick wins over whatever the tagger happened to look at.
+        #
+        # Reading it off the tag was right while the two could not diverge. They
+        # can now: widening the photo pool from the bay to NSW replaced 504
+        # pictures, and every one of them would have stayed invisible because
+        # the tag still pointed at the old file.
+        #
+        # The cost is that a fresh pick has not been through the vision pass, so
+        # nothing has checked it shows the right animal — that caught 4 wrong
+        # animals in 601 last time. Re-tagging restores the check and rewrites
+        # the description; until then the picture is current and the colour
+        # words describe the one it replaced.
+        photo = (cands[0] if cands else None) or (t or {}).get("photo")
         if photo and not (OUT_DIR / photo["file"]).exists():
             if not download_square(photo["url"], OUT_DIR / photo["file"]):
                 missing_img += 1
@@ -2742,6 +2836,10 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "licence": photo["lic"] if photo else None,
             "obs_url": (f"https://www.inaturalist.org/observations/{photo['obs_id']}"
                         if photo else None),
+            "photo_place": (photo or {}).get("place"),
+            # "unverified" means the identification is not community-confirmed.
+            # The app must not present that as settled.
+            "photo_tier": (photo or {}).get("tier"),
             "last_seen": photo.get("observed_on") if photo else None,
             "size_cm": (sizes.get(tid) or {}).get("cm"),
             "size_low_cm": (sizes.get(tid) or {}).get("cm_low"),
