@@ -2802,6 +2802,67 @@ def stage_best_photo(species: list, photos: dict, force: bool) -> dict:
     print(SPEND.report())
     return picks
 
+def bay_provenance(species: list) -> dict:
+    """How many observations the app is built on, by how many people, since when.
+
+    Hardcoded in the page as "ten years of observations by 206 contributors",
+    and both halves had gone stale: 302 people have contributed now, and the
+    record reaches back to 1998 rather than ten years. A number typed into a
+    sentence has no way of aging with the data behind it, which is the whole
+    reason it drifted.
+    """
+    total = sum(s.get("annual") or 0 for s in species)
+    out = {"observations": total, "species": len(species)}
+    try:
+        d = inat("observations/observers", place_id=PLACE_ID, taxon_id=TAXA,
+                 verifiable="true", per_page=1)
+        out["contributors"] = d.get("total_results")
+        f = inat("observations", place_id=PLACE_ID, taxon_id=TAXA,
+                 verifiable="true", order_by="observed_on", order="asc", per_page=1)
+        r = (f.get("results") or [{}])[0].get("observed_on")
+        if r:
+            out["since"] = str(r)[:4]
+    except Exception as e:                                   # noqa: BLE001
+        log(f"    provenance lookup failed: {type(e).__name__}")
+    log(f"1b/6 provenance  {out.get('observations'):,} observations by "
+        f"{out.get('contributors')} people since {out.get('since')}")
+    return out
+
+def summer_visitors(species: list, season: dict) -> dict:
+    """The species that arrive on the current and do not last the winter.
+
+    The East Australian Current carries tropical larvae south each summer.
+    They settle here, are seen through autumn, and are gone by spring — they do
+    not survive a Sydney winter. The record shows it plainly and at a scale
+    worth putting on the page: their combined sightings run 601 in April to 7
+    in November, and they are an eighth of everything ever recorded in the bay.
+
+    Defined as a real season peaking February to June that has all but emptied
+    by September and October. That is deliberately the shape of the pattern
+    rather than a list of families, so a resident species with the same timing
+    would qualify and a tropical one that overwinters would not.
+    """
+    sea = (season or {}).get("species") or {}
+    out, months = [], [0] * 12
+    for s in species:
+        v = sea.get(str(s["taxon_id"])) or {}
+        sh = v.get("share")
+        if v.get("state") != "real" or not sh:
+            continue
+        if v.get("peak") not in (1, 2, 3, 4, 5):
+            continue
+        if sh[8] > (1 / 12) * 0.65 or sh[9] > (1 / 12) * 0.65:
+            continue
+        out.append(s["taxon_id"])
+        for i, c in enumerate((s.get("months") or [])[:12]):
+            months[i] += c
+    if not out:
+        return {}
+    peak, trough = months.index(max(months)), months.index(min(months))
+    log(f"2d/6 visitors    {len(out)} species arrive on the current; "
+        f"sightings peak {max(months)} and fall to {min(months)}")
+    return {"taxa": out, "months": months, "peak": peak, "trough": trough}
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -2925,7 +2986,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None, prov: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -3147,6 +3208,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
 
     out.sort(key=lambda r: -r["annual"])
     doc = {
+        "provenance": prov or {},
         "generated_at": now.isoformat(timespec="seconds"),
         "source": {
             "place_id": PLACE_ID,
@@ -3270,8 +3332,15 @@ def main() -> int:
 
         slugs = assign_slugs(species)
         months = stage_months(species, args.force)
+        prov = bay_provenance(species)
+        # needs months, so it runs after stage_months
+        _vis = None
         season = stage_season(species, args.force)
         agree = season_bay_agreement(species, months, season["species"])
+        for _s in species:
+            _s["months"] = (months.get("by_taxon") or {}).get(str(_s["taxon_id"])) or [0]*12
+        _vis = summer_visitors(species, season)
+        prov["visitors"] = _vis
         photos = stage_photos(species, args.force, slugs)
         picks = cache_read("photo-picks.json") or {}
         if args.best_photo:
@@ -3362,7 +3431,7 @@ def main() -> int:
             return 0
         stage_emit(species, months, photos, tags, sizes, slugs, season,
                    facts=facts, morphs=morphs, agree=agree,
-                   picks=picks)
+                   picks=picks, prov=prov)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")

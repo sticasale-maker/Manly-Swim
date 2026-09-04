@@ -55,6 +55,14 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   background:var(--card);border:1px solid var(--border);border-radius:var(--radius);
   padding:12px 14px;margin-bottom:10px;color:var(--text);
 }
+.vis{background:rgba(17,53,65,.05);border:1px solid rgba(17,53,65,.10);
+  border-radius:12px;padding:11px 13px;margin-bottom:12px}
+.visbars{display:flex;align-items:flex-end;gap:4px;height:62px;margin:10px 0 4px}
+.vb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}
+.vb i{display:block;width:100%;border-radius:3px 3px 0 0;background:var(--ocean);opacity:.55}
+.vb b{font-size:9px;font-weight:600;color:var(--dim)}
+.vb.on i{opacity:1}
+.vb.on b{color:var(--text)}
 .stamp{font-size:9.5px;color:var(--dim);letter-spacing:.2px;text-align:right;margin-top:8px}
 
 /* ── live band: real reports outrank anything modelled (§8) ──────────── */
@@ -435,6 +443,34 @@ function seasonBucket(s){
   return null;
 }
 
+/* The species that arrive on the East Australian Current and do not last the
+   winter. This is the biggest seasonal thing in the record and it was nowhere
+   on the page: 89 species, an eighth of everything ever seen here, running from
+   601 sightings in April to 7 in November.
+
+   Drawn as twelve bars because the shape IS the point — a wave that builds
+   through summer, breaks in April and is gone by spring. A sentence saying
+   "more in autumn" would carry almost none of it. */
+function visitorsHTML(){
+  var v=(DATA.provenance||{}).visitors;
+  if(!v || !v.months) return '';
+  var m=v.months, mx=Math.max.apply(null,m), now=NOW;
+  return '<div class="vis">'
+    +'<p class="lbl" style="margin-top:0">Summer visitors</p>'
+    +'<p style="font-size:13px">'+v.taxa.length+' species ride the current down '
+    +'each summer and are gone by spring. Between them they are about an eighth '
+    +'of everything ever recorded here.</p>'
+    +'<div class="visbars">'
+    + m.map(function(c,i){
+        var h=Math.max(2,Math.round(c/mx*46));
+        return '<span class="vb'+(i===now?' on':'')+'" title="'+FULL[i]+': '+c+'">'
+          +'<i style="height:'+h+'px"></i><b>'+FULL[i].charAt(0)+'</b></span>'; }).join('')
+    +'</div>'
+    +'<p class="cap">Sightings peak in '+FULL[v.peak]+' ('+m[v.peak]+') and fall to '
+    +m[v.trough]+' in '+FULL[v.trough]+'. They settle here as young fish and do '
+    +'not survive a Sydney winter.</p></div>';
+}
+
 function renderNow(){
   var withImg=DATA.species.filter(function(s){ return s.img||s.shape; });
   var top=withImg.filter(function(s){ return s.months[NOW]>0; })
@@ -464,7 +500,17 @@ function renderNow(){
       : NOWMODE==='less'
       ? 'Seen less often in '+FULL[NOW]+'. Not absent \u2014 the bay keeps its '
         +'own counsel and these do turn up \u2014 just a thinner month for them.'
-      : 'From ten years of observations by 206 contributors';
+      : (function(){
+          /* Was "ten years of observations by 206 contributors", both halves
+             typed in and both gone stale — 302 people have contributed now and
+             the record reaches back to 1998. A number in a sentence cannot age
+             with the data behind it, so these come from the file. */
+          var p=DATA.provenance||{};
+          return p.observations
+            ? p.observations.toLocaleString()+' observations of '+p.species
+              +' species by '+p.contributors+' people, '+p.since+' to now'
+            : 'From a decade of observations by the people who swim here';
+        })();
   var head = NOWMODE==='more' ? 'More often seen in '+FULL[NOW]
            : NOWMODE==='less' ? 'Less often seen in '+FULL[NOW]
            : 'Most often seen around now';
@@ -488,6 +534,7 @@ function renderNow(){
          return '<button class="chip'+(NOWMODE===m[0]?' on':'')+'" data-now="'+m[0]+'">'
            +m[1]+'</button>'; }).join('')
     +'</div>'
+    +(NOWMODE==='top' ? visitorsHTML() : '')
     +'<p class="lbl">In '+FULL[NOW]+'</p>'
     +(list.length
       /* The "less often" list shows the ANNUAL count, not the month's. "Seen 0
