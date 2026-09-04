@@ -1445,7 +1445,7 @@ def _stale_against_schema(tag: dict) -> Optional[str]:
     return None
 
 
-def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dict:
+def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks: dict = None) -> dict:
     tags = {} if force else (cache_read("tags.json") or {})
 
     # A shape asked by NAME outranks anything read off a photograph, so it must
@@ -1483,9 +1483,15 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
             # them replaced, dropped them, and (with no key in that shell) left
             # them with no tags and no shape at all.
             was = ((tags[tid] or {}).get("photo") or {}).get("photo_id")
-            current = {c.get("photo_id") for c in (photos.get(tid) or [])}
+            cl = photos.get(tid) or []
+            current = {c.get("photo_id") for c in cl}
+            shown = (picks or {}).get(tid, {}).get("photo_id") or (
+                cl[0].get("photo_id") if cl else None)
             if was is not None and current and was not in current:
                 why = "photo replaced"
+            elif was is not None and shown is not None and was != shown:
+                # The description belongs to a photograph nobody will see now.
+                why = "a different photo chosen"
         if why:
             stale[why] += 1
             del tags[tid]
@@ -2673,6 +2679,129 @@ def season_bay_agreement(species: list, months: dict, season: dict) -> dict:
             f"{sum(1 for v in vals if v >= SEASON_BAY_MIN)} confirmed locally")
     return out
 
+# CHOOSING THE PHOTOGRAPH, INSTEAD OF INHERITING A POPULARITY CONTEST.
+#
+# iNaturalist ranks by community votes, which reward a good photograph. An
+# identification guide needs a legible one, and those are different things.
+# Auditing the first hundred species by eye produced twenty replacements and
+# four repeatable failure modes:
+#
+#   the face over the profile   6 of 8 top Blue Groper shots are head-on
+#   the curiosity over the animal   a bleached snapper SKULL ranked first;
+#                                   squid EGGS ranked fourth
+#   the dead over the living    Sixspine Leatherjacket washed up on rock
+#   the catch over the fish     half the top Bluefish shots are in a hand
+#
+# Two of the hundred were not even the right animal, both ranked first: the
+# snapper skull, and a MUSSEL filed as a Smooth Toadfish.
+#
+# The criterion is statable, so it does not need eyes: one whole living animal,
+# side on, in the water. This shows the model every candidate at once and asks
+# it to choose, which is the same judgement made 540 more times.
+
+class PhotoChoice(BaseModel):
+    best: int                    # index into the candidates shown
+    whole_animal: bool
+    in_water: bool
+    wrong_animal: bool
+    why: Optional[str] = None
+
+
+BEST_PHOTO_SYS = (
+    "You are choosing which photograph best identifies a marine species for a "
+    "swimmer who has just seen it and wants to name it.\n\n"
+    "Choose the one showing ONE WHOLE LIVING ANIMAL, SIDE ON, IN THE WATER.\n\n"
+    "Strongly prefer, in order:\n"
+    "1. the whole animal in frame, not a head or a crop of its middle\n"
+    "2. side on rather than face on — a portrait fills a frame and identifies "
+    "nothing\n"
+    "3. alive and underwater — not held in a hand, not in a bag or a boat, not "
+    "washed up, not a shell or a skull or an egg mass\n"
+    "4. one animal, not a school or a pair that could be two species\n"
+    "5. sharp and well lit, the body pattern legible\n\n"
+    "A beautiful photograph that fails these is the wrong choice. Return the "
+    "index of the best candidate even when all are poor, and set the flags to "
+    "describe the one you chose. Set wrong_animal only if the chosen picture "
+    "plainly shows a different species from the one named.")
+
+
+def stage_best_photo(species: list, photos: dict, force: bool) -> dict:
+    """Pick the most legible candidate per species, not the best-voted one."""
+    picks = {} if force else (cache_read("photo-picks.json") or {})
+    todo = [s for s in species
+            if str(s["taxon_id"]) not in picks
+            and len(photos.get(str(s["taxon_id"])) or []) > 1]
+    if not todo:
+        log(f"3b/6 best photo  {len(picks):>4} (cached)")
+        return picks
+    _require_key("3b/6 best photo")
+    log(f"3b/6 best photo  {len(todo)} species with a choice to make "
+        f"(~${len(todo)*0.021:.2f})")
+    client = anthropic.Anthropic()
+
+    def choose(s):
+        tid = str(s["taxon_id"])
+        cands = (photos.get(tid) or [])[:3]
+        blocks, kept = [], []
+        for c in cands:
+            f = OUT_DIR / c["file"]
+            if not f.exists() and not download_square(c["url"], f):
+                continue
+            try:
+                b64 = base64.standard_b64encode(f.read_bytes()).decode()
+            except Exception:                                # noqa: BLE001
+                continue
+            blocks.append({"type": "text", "text": f"Candidate {len(kept)}:"})
+            blocks.append({"type": "image", "source": {
+                "type": "base64", "media_type": "image/webp", "data": b64}})
+            kept.append(c)
+        if len(kept) < 2:
+            return tid, None, kept
+        blocks.append({"type": "text",
+                       "text": f"Which candidate best identifies {s['name']} "
+                               f"({s['sci']})?"})
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=MODEL, max_tokens=500, system=BEST_PHOTO_SYS,
+                    messages=[{"role": "user", "content": blocks}],
+                    output_format=PhotoChoice)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output, kept
+            except Exception as e:                           # noqa: BLE001
+                if attempt == 3:
+                    log(f"    failed on {s['name']}: {type(e).__name__}")
+                    return tid, None, kept
+                time.sleep(1.5 * attempt)
+        return tid, None, kept
+
+    moved, done = [], 0
+    rank = {str(s["taxon_id"]): s for s in todo}
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(choose, s) for s in todo]):
+            tid, out, kept = fut.result()
+            done += 1
+            if out is not None and 0 <= out.best < len(kept):
+                picks[tid] = {"photo_id": kept[out.best]["photo_id"],
+                              "was": kept[0]["photo_id"],
+                              "whole": out.whole_animal, "in_water": out.in_water,
+                              "wrong": out.wrong_animal, "why": out.why}
+                if out.best != 0:
+                    moved.append((rank[tid]["annual"], rank[tid]["name"], out.why))
+            if done % 40 == 0:
+                cache_write("photo-picks.json", picks, allow_shrink=True)
+                log(f"      {done}/{len(todo)}  {len(moved)} moved off the top vote")
+    cache_write("photo-picks.json", picks, allow_shrink=True)
+    moved.sort(reverse=True)
+    poor = [t for t, v in picks.items()
+            if not v.get("whole") or not v.get("in_water") or v.get("wrong")]
+    log(f"3b/6 best photo  {len(moved)} of {len(todo)} moved off the best-voted shot; "
+        f"{len(poor)} still imperfect after choosing")
+    for a, n, why in moved[:10]:
+        log(f"      {a:4d}  {n[:26]:26s} {(why or '')[:56]}")
+    print(SPEND.report())
+    return picks
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -2796,7 +2925,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -2860,10 +2989,28 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         # unusable. But when the candidate list is replaced wholesale — as it
         # was moving from the bay to NSW — the tagged photo is simply gone, and
         # trusting it then would have kept 504 replaced pictures invisible.
+        # Precedence: the chosen photograph, then the one the tagger vetted,
+        # then the best-voted. stage_best_photo puts its choice at the head of
+        # the candidate list, so preferring cands[0] when a pick exists is the
+        # same as preferring the pick — but the tagged photo is still IN the
+        # list, and the vetted-photo rule below would otherwise keep showing it
+        # and make all 332 choices inert.
         tagged = (t or {}).get("photo")
         current = {c.get("photo_id") for c in cands}
-        photo = (tagged if tagged and tagged.get("photo_id") in current
-                 else (cands[0] if cands else tagged))
+        # The tagger has the last word, because it is the only step that has
+        # LOOKED at the picture it is about to describe. Where it walked past
+        # the chosen photograph to a later candidate, it did so because it could
+        # not describe the chosen one — three species, and in each the tagger is
+        # better evidence than the chooser. Everywhere else the two now agree,
+        # so this also keeps the description and the picture in step.
+        chosen = (picks or {}).get(tid, {}).get("photo_id")
+        if tagged and tagged.get("photo_id") in current:
+            photo = tagged
+        elif chosen:
+            photo = next((c for c in cands if c.get("photo_id") == chosen),
+                         cands[0] if cands else tagged)
+        else:
+            photo = cands[0] if cands else tagged
         # A tag record stores the candidate as it looked when the tag was
         # written, so 114 of them predate the place field and the caption came
         # out with no location at all — and the hand-picked ones never had one,
@@ -3073,6 +3220,9 @@ def main() -> int:
     ap.add_argument("--retire-facts", action="store_true",
                     help="drop facts that only restate the morph data, so the "
                          "same claim does not live in two places and drift")
+    ap.add_argument("--best-photo", action="store_true",
+                    help="have the vision pass choose the most legible candidate "
+                         "per species instead of taking the best-voted one")
     ap.add_argument("--morphs", action="store_true",
                     help="find species whose sexes or juveniles look like "
                          "different animals, so the filter can match either")
@@ -3123,6 +3273,19 @@ def main() -> int:
         season = stage_season(species, args.force)
         agree = season_bay_agreement(species, months, season["species"])
         photos = stage_photos(species, args.force, slugs)
+        picks = cache_read("photo-picks.json") or {}
+        if args.best_photo:
+            picks = stage_best_photo(species, photos, args.force)
+        # Reorder on EVERY run, not only when the choosing stage runs. Leaving
+        # it inside the flag meant the tagger still walked from the best-voted
+        # shot while the emit showed the chosen one, so 286 species were
+        # described from a photograph nobody would see.
+        for _tid, _v in (picks or {}).items():
+            cl = photos.get(_tid) or []
+            for _i, _c in enumerate(cl):
+                if _c.get("photo_id") == _v.get("photo_id") and _i:
+                    cl.insert(0, cl.pop(_i))
+                    break
         sizes = stage_size(species, args.force)
         # The paid lookup is opt-in; folding in cached answers and the
         # hand-researched overrides is free, so it happens on every run. Gating
@@ -3150,7 +3313,7 @@ def main() -> int:
             tags = cache_read("tags.json") or {}
         else:
             tags = stage_tags(species, photos, args.force or args.force_tags,
-                              sample=args.sample)
+                              sample=args.sample, picks=picks)
 
         if args.check_photos and not args.skip_tags:
             tags = stage_plausible(species, tags)
@@ -3198,7 +3361,8 @@ def main() -> int:
             log("everything AND invalidates the human review.")
             return 0
         stage_emit(species, months, photos, tags, sizes, slugs, season,
-                   facts=facts, morphs=morphs, agree=agree)
+                   facts=facts, morphs=morphs, agree=agree,
+                   picks=picks)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")
