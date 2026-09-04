@@ -976,27 +976,74 @@ def stage_season(species: list, force: bool) -> dict:
             page += 1
         log(f"    month {m:>2}  {d['total_results']:>4} species across NSW")
 
+    # Dividing by raw effort OVER-corrects, and the proof is in the species that
+    # have no season at all. A flat species should sit at 8.3% every month; the
+    # 343 of them averaged 10.0% in June and 6.4% in October, tracking the
+    # inverse of effort. June has the least observing, so dividing by that small
+    # denominator inflated every June share — and with it a third of the
+    # seasonal verdicts, which were reading the calendar of the observers.
+    #
+    # So the flat species become the control. Whatever drives the residual —
+    # what people go out looking for, water clarity, the mix of taxa recorded in
+    # summer — it applies to them too, and dividing it out needs no theory of
+    # which cause it was.
+    #
+    # This is mildly circular: "flat" was itself decided on the biased shares.
+    # The pool is the species that stayed under the bar DESPITE the inflation,
+    # which makes it a conservative baseline — a clear improvement, not an exact
+    # correction.
+    def normalise(m):
+        share = [m[i] / effort[i] if effort[i] else 0 for i in range(12)]
+        tot = sum(share) or 1
+        return [x / tot for x in share]
+
+    def read_shape(share):
+        best = max(range(12), key=lambda i: sum(share[(i + j) % 12] for j in range(4)))
+        return best, sum(share[(best + j) % 12] for j in range(4))
+
+    # pass one: effort-normalised only, to find the species with no season
+    first = {}
+    for s in species:
+        m = months.get(s["taxon_id"])
+        if not m or sum(m) < SEASON_MIN_RECORDS:
+            continue
+        share = normalise(m)
+        first[str(s["taxon_id"])] = (share, read_shape(share)[1])
+
+    control = [sh for sh, w in first.values() if w < SEASON_STRONG]
+    if len(control) >= 50:
+        baseline = [sum(sh[i] for sh in control) / len(control) for i in range(12)]
+        flattest = max(baseline) / max(1e-9, min(baseline))
+        log(f"2b/6 season      baseline from {len(control)} season-less species; "
+            f"month bias spans {flattest:.2f}x before correction")
+    else:
+        baseline = [1 / 12] * 12          # too few to trust; leave it alone
+        log(f"2b/6 season      only {len(control)} season-less species — "
+            f"correcting nothing")
+
     out = {}
     for s in species:
         m = months.get(s["taxon_id"])
         if not m:
+            # No NSW records at all. Skipping left the field null and relied on
+            # the app treating null the same as unknown, which it happens to do
+            # — say it instead of depending on that.
+            out[str(s["taxon_id"])] = {"state": "unknown", "records": 0}
             continue
         total = sum(m)
         if total < SEASON_MIN_RECORDS:
             out[str(s["taxon_id"])] = {"state": "unknown", "records": total}
             continue
-        # normalise by how much observing happened each month, then read the shape
-        share = [m[i] / effort[i] if effort[i] else 0 for i in range(12)]
-        tot = sum(share) or 1
-        share = [x / tot for x in share]
-        best = max(range(12), key=lambda i: sum(share[(i + j) % 12] for j in range(4)))
-        window = sum(share[(best + j) % 12] for j in range(4))
-        peak = share.index(max(share))
+        share = normalise(m)
+        adj = [share[i] / baseline[i] if baseline[i] else 0 for i in range(12)]
+        tot = sum(adj) or 1
+        share = [x / tot for x in adj]
+        best, window = read_shape(share)
         out[str(s["taxon_id"])] = {
             "state": "real" if window >= SEASON_STRONG else "flat",
             "records": total,
             "share": [round(x, 4) for x in share],
-            "peak": peak,
+            "peak": share.index(max(share)),
             "concentration": round(window, 3),
             "window_from": best,
         }
