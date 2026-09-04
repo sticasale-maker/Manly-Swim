@@ -28,6 +28,7 @@ a{color:inherit}
 button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 
 /* ── top bar ─────────────────────────────────────────────────────────── */
+:root{--head:52px}   /* measured from .top at boot; this is only the fallback */
 .top{
   display:flex;align-items:center;gap:10px;padding:14px 2px 10px;position:sticky;top:0;
   background:var(--deep);z-index:20;
@@ -108,11 +109,19 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 }
 
 /* ── identikit ───────────────────────────────────────────────────────── */
+/* Pinned. The identikit is the thing you are building, and it was scrolling
+   away exactly when it became useful — by the time you had picked a shape, a
+   size and a colour, the drawing of what you remembered was off the top of the
+   screen. Negative margins cancel the strip's padding so it spans the full
+   width when stuck, and the background has to be opaque or the chips scroll
+   through it. Sits below the page header's z-index, not above it. */
 .idkit{
-  display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:12px;
-  background:rgba(17,53,65,.05);border:1px solid rgba(17,53,65,.10);margin-bottom:12px;
+  display:flex;align-items:center;gap:12px;padding:10px 14px;
+  background:var(--card);border-bottom:1px solid rgba(17,53,65,.12);
+  position:sticky;top:var(--head);z-index:15;
+  margin:-12px -14px 12px;border-radius:0;
 }
-.idkit .fish{width:116px;flex-shrink:0}
+.idkit .fish{width:96px;flex-shrink:0}
 .idkit svg{display:block;width:100%;height:auto}
 .idkit .t{
   font-family:'Bebas Neue',Impact,sans-serif;font-size:16px;letter-spacing:.7px;
@@ -217,8 +226,8 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
     <span class="spacer"></span>
   </div>
   <div class="tabs">
-    <button class="tab on" id="tabNow">What's about now</button>
-    <button class="tab" id="tabId">Identify</button>
+    <button class="tab on" id="tabId">Identify</button>
+    <button class="tab" id="tabNow">What's about now</button>
   </div>
   <div id="view"><div class="empty">Loading the bay…</div></div>
 </div>
@@ -229,7 +238,9 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 (function(){
 'use strict';
 
-var DATA=null, SHAPES=[], MODE='now', SEL={shape:null,colour:null,mark:null,size:null}, Q='';
+/* Identify opens by default now that it sits first — a leading tab that is not
+   the one you land on reads as a mis-click waiting to happen. */
+var DATA=null, SHAPES=[], MODE='id', SEL={shape:null,colour:null,mark:null,size:null}, Q='';
 var MON=['J','F','M','A','M','J','J','A','S','O','N','D'];
 var FULL=['January','February','March','April','May','June','July','August',
           'September','October','November','December'];
@@ -689,7 +700,16 @@ function openDetail(id){
 }
 function closeDetail(){ el('scrim').classList.remove('open'); }
 
-function render(){ if(MODE==='now') renderNow(); else renderId(); }
+/* Measure rather than hardcode: the header is two lines on a narrow phone and
+   one on a wide one, and a wrong offset shows either a gap or a chip sliding
+   under the identikit. */
+function syncHead(){
+  var t=document.querySelector('.top');
+  if(t) document.documentElement.style.setProperty('--head', Math.round(t.getBoundingClientRect().height)+'px');
+}
+addEventListener('resize', syncHead);
+
+function render(){ syncHead(); if(MODE==='now') renderNow(); else renderId(); }
 
 document.addEventListener('click',function(e){
   var t=e.target.closest?e.target.closest('[data-id],[data-shape],[data-colour],[data-mark],[data-size]'):null;
