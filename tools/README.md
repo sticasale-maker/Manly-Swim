@@ -75,6 +75,22 @@ The eleven species whose morphs were independently corroborated by their own
 verified facts are parked at the END of that queue and badged, rather than
 skipped — two model passes agreeing is evidence, not proof.
 
+## Shape does not live in the tag record
+
+`name-shapes.json` in the cache holds every shape asked from the species name,
+and it is re-applied to the tags on **every** run, before the hand overrides.
+Precedence is: a person's ruling, then the species, then the photograph.
+
+It lives apart because a tag *describes a photograph* and a shape does not. While
+the two shared a record, the shape was collateral in every photo operation and
+was silently reverted three times in one day — by a re-tag, by a hand-picked
+photograph deleting the record to force one, and by a stage dropping records it
+wrongly believed stale. Each was patched where it happened; none of those
+patches were the fix.
+
+The test worth repeating after any change here: delete a species' whole tag
+record, re-run with `--skip-tags`, and check its shape is unchanged.
+
 ## The overrides outrank the model
 
 `size-overrides.json`, `behaviour-overrides.json`, `typical-overrides.json`,

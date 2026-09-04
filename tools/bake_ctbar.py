@@ -1452,6 +1452,9 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0) -> dic
     # survive a re-tag. tags[tid] = t replaces the whole record, which would
     # quietly hand 640 species' shapes back to the picture they were taken off
     # — the better-sourced value losing to the weaker one, silently, for money.
+    # kept_shape is a belt over braces now: name-shapes.json is re-applied on
+    # every run regardless of what happens to a tag record. Left in place so a
+    # crash mid-stage cannot show a photo-derived shape at the next emit.
     kept_shape = {tid: {k: v for k, v in (t or {}).items()
                         if k in ("shape", "shape_from", "shape_was_photo")}
                   for tid, t in tags.items() if (t or {}).get("shape_from")}
@@ -2686,8 +2689,17 @@ def stage_shape_by_name(species: list, tags: dict) -> dict:
     # tags entry here excluded exactly the 37 the app was already hiding. They
     # have no picture; they still have a body plan, and a shape asked by name
     # needs no photograph at all. Give them a tags record carrying shape alone.
-    todo = [s for s in species
-            if not (tags.get(str(s["taxon_id"])) or {}).get("shape_from")]
+    # Kept in its OWN file, not inside the tag record.
+    #
+    # A tag describes a photograph. A shape asked from the species name does
+    # not, and storing it there made it collateral in every photo operation:
+    # it was silently reverted three separate times in one day — by a re-tag,
+    # by a hand-picked photograph deleting the record, and by a stage that
+    # dropped records it wrongly believed stale. Each was patched where it
+    # happened. None of that is needed once the value lives somewhere a photo
+    # operation cannot reach.
+    shapes = cache_read("name-shapes.json") or {}
+    todo = [s for s in species if str(s["taxon_id"]) not in shapes]
     if not todo:
         log("5e/6 shape by name  all cached")
         return tags
@@ -2719,25 +2731,19 @@ def stage_shape_by_name(species: list, tags: dict) -> dict:
             done += 1
             if out and out.photo_usable and out.shape:   # reusing the ballot schema
                 sp = by_tid[tid]
-                if tid not in tags:
-                    # Shape-only record: no photograph was read, so every other
-                    # attribute stays null rather than being invented to fill
-                    # the row. Absent is grey (§8).
-                    tags[tid] = {"shape_only": True}
-                was = tags[tid].get("shape")
-                tags[tid]["shape"] = out.shape
-                tags[tid]["shape_from"] = "species knowledge, not the photograph"
+                was = (tags.get(tid) or {}).get("shape")
+                shapes[tid] = {"shape": out.shape,
+                               "from": "species knowledge, not the photograph"}
                 if was and was != out.shape:
-                    tags[tid]["shape_was_photo"] = was
+                    shapes[tid]["was_photo"] = was
                     changed.append((sp["annual"], sp["name"], was, out.shape))
-                tags[tid].pop("shape_contested", None)   # no longer photo-dependent
                 got += 1
             # Checkpoint. Anything already answered is money spent; a crash or a
             # Ctrl-C after this point costs re-running only the tail.
             if done % 40 == 0:
-                cache_write("tags.json", tags)
+                cache_write("name-shapes.json", shapes)
                 log(f"      {done}/{len(todo)}  {got} resolved")
-    cache_write("tags.json", tags)
+    cache_write("name-shapes.json", shapes)
     changed.sort(reverse=True)
     log(f"5e/6 shape by name  {got} of {len(todo)} resolved; {len(changed)} differ "
         f"from the photo read")
@@ -3152,6 +3158,18 @@ def main() -> int:
             tags = stage_colour(species, tags)
         if args.name_shapes and not args.skip_tags:
             tags = stage_shape_by_name(species, tags)
+        # Applied on every run, from its own store, before the hand overrides.
+        # Precedence: a person's ruling, then the species, then the photograph.
+        _named = cache_read("name-shapes.json") or {}
+        for _tid, _v in _named.items():
+            rec = tags.setdefault(_tid, {"shape_only": True})
+            rec["shape"] = _v["shape"]
+            rec["shape_from"] = _v.get("from", "species knowledge, not the photograph")
+            if _v.get("was_photo"):
+                rec["shape_was_photo"] = _v["was_photo"]
+            rec.pop("shape_contested", None)
+        if _named:
+            log(f"5e/6 shape store  {len(_named)} shapes applied from name-shapes.json")
         facts = cache_read("facts.json") or {}
         if args.facts:
             facts = stage_facts(species, args.force,
