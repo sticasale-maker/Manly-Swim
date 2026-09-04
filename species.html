@@ -68,6 +68,10 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .vb.sel b{color:var(--text);text-decoration:underline}
 .vb.on i{opacity:1}
 .vb.on b{color:var(--text)}
+.rangemap{position:relative;width:100%;aspect-ratio:1/1;border-radius:10px;
+  overflow:hidden;background:rgba(17,53,65,.06);border:1px solid rgba(17,53,65,.10)}
+.rangemap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.rangemap .pts{mix-blend-mode:multiply}
 .stamp{font-size:9.5px;color:var(--dim);letter-spacing:.2px;text-align:right;margin-top:8px}
 
 /* ── live band: real reports outrank anything modelled (§8) ──────────── */
@@ -487,6 +491,44 @@ function onceHTML(){
    regardless of season. The bay count comes along so the reader can see how
    thin the evidence is: "62% of its year, seen 3 times here" is an honest thing
    to show and a misleading thing to hide. */
+/* Where the animal lives, centred on Australia.
+
+   The page could say what something looks like and when it turns up, and had
+   no way to say whether it belongs here. That is the summer-visitor story from
+   the other end and it reads instantly as a picture: the Eastern Blue Groper
+   is one tight cluster on this coast and nowhere else on earth, while the
+   Moorish Idol runs in a band across the whole Indo-Pacific and merely calls
+   in. A sentence cannot do that as fast as a map can.
+
+   Two stacked tiles from GBIF — a plain basemap and an occurrence layer — so
+   there is no mapping library, no API key and nothing to keep up to date. Zoom
+   2 tile 3/2 covers 90-180E and the equator to 66S: Australia whole, with
+   enough of the Coral Sea and the Tasman to show where a visitor came from.
+
+   Occurrences, not a modelled range. A hex is somewhere a person recorded the
+   animal, so empty ocean means nobody looked as often as it means nothing
+   lives there — said plainly in the caption rather than left to be assumed. */
+var GBIF_TILE='2/3/2', GBIF_MAP='https://tile.gbif.org/3857/omt/';
+function rangeHTML(s){
+  if(!s.gbif) return '';
+  var d='https://api.gbif.org/v2/map/occurrence/density/'+GBIF_TILE
+        +'@2x.png?srs=EPSG:3857&style=classic.poly&bin=hex&hexPerTile=45&taxonKey='+s.gbif;
+  return '<p class="lbl">Where it lives</p>'
+    +'<div class="rangemap">'
+    /* Not lazy. The card is built the moment it is opened, so there is nothing
+       to defer — and a lazy image inside a container the browser has not laid
+       out yet simply never loads. */
+    +'<img class="base" src="'+GBIF_MAP+GBIF_TILE+'@2x.png?style=gbif-light" alt="" '
+    +'decoding="async">'
+    +'<img class="pts" src="'+esc(d)+'" alt="Recorded occurrences of '+esc(s.name)
+    +'" decoding="async">'
+    +'</div>'
+    +'<p class="cap">Every place this species has been recorded, from GBIF. '
+    +'Australia is centre; the map reaches from the equator to below Tasmania. '
+    +'Blank water can mean nobody has looked there as easily as it can mean the '
+    +'animal is absent.</p>';
+}
+
 function monthListHTML(mi){
   var v=(DATA.provenance||{}).visitors;
   if(!v || mi==null) return '';
@@ -932,6 +974,7 @@ function openDetail(id){
     +'<div class="dtags">'+tags.map(function(t){ return '<span class="dtag">'+esc(t)+'</span>'; }).join('')+'</div>'
     +(s.grouping?'<p class="cap" style="margin-top:8px">Usually seen '+esc(s.grouping)+'</p>':'')
     +'<div class="block">'+sizeLine+'</div>'
+    +(function(){ var r=rangeHTML(s); return r?'<div class="block">'+r+'</div>':''; })()
     +(morphLine?'<div class="block">'+morphLine+'</div>':'')
     +(factLine?'<div class="block">'+factLine+'</div>':'')
     /* Three states, because "has a season" is not the default. Of 589 species

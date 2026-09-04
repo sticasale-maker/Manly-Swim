@@ -2927,6 +2927,90 @@ def bay_year(species: list, visitors: dict) -> dict:
             f"visitors track SST {best} months earlier (r {br:+.2f})")
     return out
 
+def _get_json(url: str):
+    """Plain JSON GET for services that are not iNaturalist."""
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    return json.loads(urllib.request.urlopen(req, timeout=40).read())
+
+
+def _gbif_accept(sci: str, d: dict):
+    """Take a GBIF match only when it is certainly the same animal.
+
+    EXACT is obviously fine. Beyond that there are two cases worth taking and a
+    great many worth refusing.
+
+    An EXACT match sometimes hides in the alternatives while the headline
+    answer is a family — Chrysophrys auratus came back as "Sparidae" with the
+    real species sitting underneath it.
+
+    And Latin adjectives agree in gender with the genus, so the same fish is
+    spelled tenuicaudata or tenuicaudatus, cubicum or cubicus, annularis or
+    annulatus, depending on which genus it currently sits in. Those are not
+    different species and refusing them costs the Southern Eagle Ray its map.
+    Accepted only when the genus is identical and the epithets differ solely in
+    their ending, which is what gender agreement can do and what a different
+    species cannot.
+    """
+    def species_key(rec):
+        return (rec.get("usageKey") if rec.get("rank") == "SPECIES"
+                and rec.get("usageKey") else None)
+
+    if d.get("matchType") == "EXACT" and species_key(d):
+        return species_key(d)
+    for alt in (d.get("alternatives") or []):
+        if alt.get("matchType") == "EXACT" and species_key(alt):
+            return species_key(alt)
+
+    want = sci.split()
+    for rec in [d] + list(d.get("alternatives") or []):
+        got = (rec.get("scientificName") or "").split()
+        if (rec.get("matchType") == "FUZZY" and species_key(rec)
+                and (rec.get("confidence") or 0) >= 90
+                and len(want) >= 2 and len(got) >= 2
+                and want[0] == got[0]):
+            a, b = want[1], got[1]
+            stem = min(len(a), len(b)) - 3          # allow only the ending to move
+            if stem >= 4 and a[:stem] == b[:stem] and abs(len(a) - len(b)) <= 2:
+                return species_key(rec)
+    return None
+
+def stage_gbif_keys(species: list, force: bool) -> dict:
+    """Match each species to GBIF, so the card can show where it lives.
+
+    The page can say what an animal looks like and when it turns up, and had no
+    way to say whether it belongs here. That distinction is the whole summer
+    visitor story seen from the other end: the Eastern Blue Groper sits in one
+    tight cluster on this coast and nowhere else on earth, while the Moorish
+    Idol runs in a band across the entire Indo-Pacific and only calls in here.
+
+    Only the key is stored. The map itself is two tiles fetched by the browser
+    when a card opens, so nothing is downloaded for the 639 cards nobody looks
+    at, and no map data is baked into a file that would go stale.
+    """
+    keys = {} if force else (cache_read("gbif.json") or {})
+    todo = [s for s in species if str(s["taxon_id"]) not in keys]
+    if not todo:
+        log(f"3c/6 gbif        {len(keys):>4} (cached)")
+        return keys
+    log(f"3c/6 gbif        {len(todo)} to match (free)")
+    ok = 0
+    for i, s in enumerate(todo, 1):
+        tid = str(s["taxon_id"])
+        try:
+            d = _get_json("https://api.gbif.org/v1/species/match?verbose=true&name="
+                          + urllib.parse.quote(s["sci"]))
+            keys[tid] = _gbif_accept(s["sci"], d)
+            ok += 1 if keys[tid] else 0
+        except Exception:                                    # noqa: BLE001
+            pass
+        if i % 100 == 0:
+            cache_write("gbif.json", keys, allow_shrink=True)
+            log(f"      {i}/{len(todo)}")
+    cache_write("gbif.json", keys, allow_shrink=True)
+    matched = sum(1 for v in keys.values() if v)
+    log(f"3c/6 gbif        {matched} of {len(keys)} matched exactly")
+    return keys
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -3050,7 +3134,7 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None, prov: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None, prov: dict = None, gbif: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -3194,6 +3278,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "max_cm": (sizes.get(tid) or {}).get("max_cm"),
             "size_estimated": (sizes.get(tid) or {}).get("typical_estimated") or False,
             "size_measure": (sizes.get(tid) or {}).get("measure"),
+            "gbif": (gbif or {}).get(tid),
             # Model knowledge, never an observation. The app must show it as
             # such — same treatment as an estimated size.
             "fact": ((facts or {}).get(tid) or {}).get("fact"),
@@ -3420,6 +3505,7 @@ def main() -> int:
                 if _c.get("photo_id") == _v.get("photo_id") and _i:
                     cl.insert(0, cl.pop(_i))
                     break
+        gbif = stage_gbif_keys(species, args.force)
         sizes = stage_size(species, args.force)
         # The paid lookup is opt-in; folding in cached answers and the
         # hand-researched overrides is free, so it happens on every run. Gating
@@ -3496,7 +3582,7 @@ def main() -> int:
             return 0
         stage_emit(species, months, photos, tags, sizes, slugs, season,
                    facts=facts, morphs=morphs, agree=agree,
-                   picks=picks, prov=prov)
+                   picks=picks, prov=prov, gbif=gbif)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")
