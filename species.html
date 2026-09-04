@@ -451,8 +451,36 @@ function seasonBucket(s){
    Drawn as twelve bars because the shape IS the point — a wave that builds
    through summer, breaks in April and is gone by spring. A sentence saying
    "more in autumn" would carry almost none of it. */
+/* The bay's own calendar, which is a different question from the visitors':
+   not "when do the travellers come" but "when is there most to see at all".
+   April both ways — 2,570 sightings and 348 of the 640 species — against
+   July's 816. And the tail: 173 species have been recorded here exactly once
+   in twenty-eight years, which is worth saying because it sets expectations.
+   Most of this list is not a checklist to complete. */
+function yearHTML(){
+  var y=(DATA.provenance||{}).year;
+  if(!y || !y.months) return '';
+  var m=y.months, mx=Math.max.apply(null,m);
+  return '<div class="vis">'
+    +'<p class="lbl" style="margin-top:0">The bay\u2019s year</p>'
+    +'<div class="visbars">'
+    + m.map(function(c,i){
+        var h=Math.max(2,Math.round(c/mx*46));
+        return '<span class="vb'+(i===NOW?' on':'')+'" title="'+FULL[i]+': '+c
+          +' sightings, '+y.distinct[i]+' species">'
+          +'<i style="height:'+h+'px"></i><b>'+FULL[i].charAt(0)+'</b></span>'; }).join('')
+    +'</div>'
+    +'<p class="cap">'+FULL[y.busiest]+' is the richest month, with '
+    + y.months[y.busiest].toLocaleString()+' sightings and '+y.distinct[y.busiest]
+    +' of the '+DATA.species.length+' species. '+FULL[y.quietest]+' is the thinnest, with '
+    + y.months[y.quietest].toLocaleString()+'.</p>'
+    +'<p class="cap">'+y.seen_once+' of these species have been recorded here exactly '
+    +'once. This is a record of what has turned up, not a list to work through.</p>'
+    +'</div>';
+}
+
 function visitorsHTML(){
-  var v=(DATA.provenance||{}).visitors;
+  var v=(DATA.provenance||{}).visitors, y=(DATA.provenance||{}).year;
   if(!v || !v.months) return '';
   var m=v.months, mx=Math.max.apply(null,m), now=NOW;
   return '<div class="vis">'
@@ -468,7 +496,15 @@ function visitorsHTML(){
     +'</div>'
     +'<p class="cap">Sightings peak in '+FULL[v.peak]+' ('+m[v.peak]+') and fall to '
     +m[v.trough]+' in '+FULL[v.trough]+'. They settle here as young fish and do '
-    +'not survive a Sydney winter.</p></div>';
+    +'not survive a Sydney winter.'
+    /* The lag is the interesting part and it was measured, not assumed: the
+       same month agrees only weakly, two months earlier almost exactly. They
+       are answering the water that was there while they were still drifting. */
+    +(y && y.sst_lag ? ' Their numbers follow the water temperature of '
+        +(['','a month','two months','three months'][y.sst_lag]||y.sst_lag+' months')
+        +' earlier far more closely '
+        +'than the water they arrive into.' : '')
+    +'</p></div>';
 }
 
 function renderNow(){
@@ -534,7 +570,7 @@ function renderNow(){
          return '<button class="chip'+(NOWMODE===m[0]?' on':'')+'" data-now="'+m[0]+'">'
            +m[1]+'</button>'; }).join('')
     +'</div>'
-    +(NOWMODE==='top' ? visitorsHTML() : '')
+    +(NOWMODE==='top' ? yearHTML()+visitorsHTML() : '')
     +'<p class="lbl">In '+FULL[NOW]+'</p>'
     +(list.length
       /* The "less often" list shows the ANNUAL count, not the month's. "Seen 0

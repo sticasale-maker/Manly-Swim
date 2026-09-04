@@ -2863,6 +2863,70 @@ def summer_visitors(species: list, season: dict) -> dict:
         f"sightings peak {max(months)} and fall to {min(months)}")
     return {"taxa": out, "months": months, "peak": peak, "trough": trough}
 
+# Sea-surface temperature at the bay, monthly mean over 2016-2025, from the
+# Open-Meteo marine archive.
+#
+# READ THIS BEFORE REUSING IT. The swim app's sea-temperature tile has exactly
+# ONE source — the community reading scraped from a Facebook post — and
+# Open-Meteo is deliberately never used for it. That rule is about reporting
+# what the water is doing TODAY, where a model must not stand in for someone
+# who actually got in. These twelve numbers are a ten-year average used to
+# explain why the summer visitors turn up when they do. They are never shown as
+# a reading, never presented as current, and never reach the swim app. Baked as
+# constants rather than fetched so this cannot quietly become a live feed.
+BAY_SST_CLIMATOLOGY = [22.7, 23.6, 23.2, 22.0, 20.9, 19.4,
+                       18.0, 18.0, 18.7, 19.4, 20.4, 21.2]
+
+
+def bay_year(species: list, visitors: dict) -> dict:
+    """The bay's own calendar: when it is busiest, most varied, and rarest.
+
+    April is the peak of everything, not only of the visitors — 2,570 sightings
+    and 348 distinct species against July's 816. And the record has a long tail
+    almost nobody sees: 173 of the 640 species have been recorded here exactly
+    once in twenty-eight years.
+    """
+    months = [0] * 12
+    distinct = [0] * 12
+    for s in species:
+        m = (s.get("months") or [0] * 12)[:12]
+        for i, c in enumerate(m):
+            months[i] += c
+            if c:
+                distinct[i] += 1
+    once = sum(1 for s in species if (s.get("annual") or 0) == 1)
+    twice = sum(1 for s in species if (s.get("annual") or 0) <= 2)
+    out = {"months": months, "distinct": distinct,
+           "busiest": months.index(max(months)),
+           "quietest": months.index(min(months)),
+           "most_varied": distinct.index(max(distinct)),
+           "seen_once": once, "seen_twice_or_less": twice,
+           "sst": BAY_SST_CLIMATOLOGY}
+
+    # How closely the visitors follow the water, and at what delay. Measured
+    # rather than asserted: same-month agreement is only +0.44, two months
+    # earlier is +0.93. The fish are answering the temperature that was there
+    # when they were drifting, not the one they arrive into.
+    vm = (visitors or {}).get("months")
+    if vm:
+        def corr(a, b):
+            ma, mb = sum(a) / 12, sum(b) / 12
+            na = sum((x - ma) ** 2 for x in a)
+            nb = sum((y - mb) ** 2 for y in b)
+            return (sum((x - ma) * (y - mb) for x, y in zip(a, b))
+                    / ((na * nb) ** 0.5)) if na and nb else 0
+        best, br = 0, -2
+        for lag in range(4):
+            sh = BAY_SST_CLIMATOLOGY[-lag:] + BAY_SST_CLIMATOLOGY[:-lag] if lag else BAY_SST_CLIMATOLOGY
+            r = corr(vm, sh)
+            if r > br:
+                best, br = lag, r
+        out["sst_lag"] = best
+        out["sst_r"] = round(br, 2)
+        log(f"2e/6 bay year    busiest {out['busiest']+1}, {once} species seen once; "
+            f"visitors track SST {best} months earlier (r {br:+.2f})")
+    return out
+
 def stage_shape_by_name(species: list, tags: dict) -> dict:
     _require_key("5e/6 shape by name")
     client = anthropic.Anthropic()
@@ -3341,6 +3405,7 @@ def main() -> int:
             _s["months"] = (months.get("by_taxon") or {}).get(str(_s["taxon_id"])) or [0]*12
         _vis = summer_visitors(species, season)
         prov["visitors"] = _vis
+        prov["year"] = bay_year(species, _vis)
         photos = stage_photos(species, args.force, slugs)
         picks = cache_read("photo-picks.json") or {}
         if args.best_photo:
