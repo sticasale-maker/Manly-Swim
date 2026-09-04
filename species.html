@@ -414,7 +414,15 @@ function seasonBucket(s){
   if(s.season!=='real' || !s.season_share) return null;
   var r=s.season_bay_r, share=s.season_share[NOW];
   if(r!=null && r<BAY_MIN_R) return null;         // the bay tested it and disagreed
-  if(share>=SEASON_HI) return 'more';
+  if(share>=SEASON_HI){
+    /* The bay has to have seen it this month at least once. Without this the
+       list printed "Roundbelly Cowfish — seen 0 times here in September" under
+       a heading saying September is when you see it. NSW can say a species is
+       a spring animal; it cannot say this bay has one when the bay's own
+       records say otherwise, and the row contradicting its own heading is
+       worse than the row being absent. */
+    return (s.months && s.months[NOW] > 0) ? 'more' : null;
+  }
   if(share<=SEASON_LO) return (r!=null && r>=BAY_MIN_R) ? 'less' : null;
   return null;
 }
@@ -423,10 +431,19 @@ function renderNow(){
   var withImg=DATA.species.filter(function(s){ return s.img||s.shape; });
   var top=withImg.filter(function(s){ return s.months[NOW]>0; })
     .sort(function(a,b){ return b.months[NOW]-a.months[NOW]; }).slice(0,40);
+  /* Ordered by how likely you are to MEET the animal, not by how tight its
+     season is. Sorting on concentration read as though the lists were
+     inverted: "more often now" led with a sidegill slug and a sea star that
+     happen to peak in September, while the Port Jackson Shark — 248 records in
+     this bay, 80 of them in September — sat sixth. And "less often now" led
+     with species nobody here has seen in any month, instead of the Moorish
+     Idol and the butterflyfishes, which people know and genuinely will not
+     see now. A seasonal claim about an animal you have never met tells you
+     nothing; the same claim about one you know is the whole point. */
   var more=withImg.filter(function(s){ return seasonBucket(s)==='more'; })
-    .sort(function(a,b){ return b.season_share[NOW]-a.season_share[NOW]; });
+    .sort(function(a,b){ return b.annual-a.annual; });
   var less=withImg.filter(function(s){ return seasonBucket(s)==='less'; })
-    .sort(function(a,b){ return a.season_share[NOW]-b.season_share[NOW]; });
+    .sort(function(a,b){ return b.annual-a.annual; });
 
   var list = NOWMODE==='more' ? more : NOWMODE==='less' ? less : top;
   var blurb = NOWMODE==='more'
@@ -733,7 +750,7 @@ function openDetail(id){
        hid 37 species outright. The photo shows the species; the records above
        are what tie it to this water. */
     +'<p class="attrib">'+(s.credit?'Photo &copy; '+esc(s.credit)+' &middot; iNaturalist'
-        +(s.photo_place?' &middot; '+esc(s.photo_place):''):'')
+        +(s.photo_place?' &middot; '+esc(String(s.photo_place).replace(/^["'\s]+|["'\s]+$/g,'')):''):'')
     +(s.obs_url?' &middot; <a href="'+esc(s.obs_url)+'" target="_blank" rel="noopener">observation</a>':'')
     +(s.distinctive?'<br>Look for: '+esc(s.distinctive):'')+'</p>'
     +'<p class="dname">'+esc(s.name)+'</p><p class="dsci">'+esc(s.sci)+'</p>'
