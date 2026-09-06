@@ -2125,6 +2125,46 @@ SHAPE_BY_NAME_SYS = (
 _KEY_CHECKED = None      # None until one real call has proved it
 
 
+def check_key() -> int:
+    """Say whether the credential works, before a run that depends on it.
+
+    Costs one token. Touches nothing. Worth having as its own switch because
+    the three failures look alike from the outside and want different fixes:
+    a key that is absent, a key the API rejects, and an account with no credit
+    are 'no output', 401 and 400 respectively, and only the first two are
+    about the key at all.
+    """
+    k = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    if not k:
+        print("NO KEY. Neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is set in\n"
+              "this shell. In PowerShell it lives only in the window you set it in:\n"
+              '  $env:ANTHROPIC_API_KEY = "sk-ant-..."')
+        return 2
+    print(f"key present: {len(k)} characters, {k[:7]}...{k[-4:]}")
+    try:
+        r = anthropic.Anthropic().messages.create(
+            model=MODEL, max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}])
+        print(f"ACCEPTED by {MODEL}. The paid stages will run.")
+        return 0
+    except Exception as e:                                  # noqa: BLE001
+        name, msg = type(e).__name__, str(e)
+        low = msg.lower()
+        print(f"REJECTED — {name}")
+        if "credit balance" in low or "billing" in low:
+            print("  This is BILLING, not the key: the key is valid and the account\n"
+                  "  has no credit. Top up and re-run; nothing else needs changing.")
+        elif "rate" in low or "429" in msg:
+            print("  A rate or spend LIMIT, not the key. Wait, or raise the limit.")
+        elif "Authentication" in name or "401" in msg or "invalid x-api-key" in low:
+            print("  The key itself was refused. It is mistyped, revoked, or from\n"
+                  "  another account. A low balance does NOT produce this — that is a\n"
+                  "  400 about the credit balance.")
+        else:
+            print("  Not an authentication failure. Could be the network.")
+        print(f"  {msg[:220]}")
+        return 1
+
 def _require_key(stage: str):
     """Fail before spending, and before a whole stage reports a false success.
 
@@ -3913,6 +3953,9 @@ def main() -> int:
     ap.add_argument("--facts", action="store_true",
                     help="look up one curiosity per species, then have the "
                          "stronger model try to refute the most-seen ones")
+    ap.add_argument("--check-key", action="store_true",
+                    help="say whether ANTHROPIC_API_KEY works, and stop. One "
+                         "token, no files touched")
     ap.add_argument("--reshape", metavar="SHAPE",
                     help="re-ask the shape of every species currently filed "
                          "under SHAPE, from the species name")
@@ -3953,6 +3996,8 @@ def main() -> int:
     args = ap.parse_args()
 
     MODEL = args.model
+    if args.check_key:
+        raise SystemExit(check_key())
     if args.price:
         PRICE_IN, PRICE_OUT = args.price
 
