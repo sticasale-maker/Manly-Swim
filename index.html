@@ -24936,10 +24936,18 @@ else theftLoad();
      blur, which reads as a bug rather than as water. */
   #shakeFish .pby-lens {
     position: absolute; border-radius: 50%;
-    -webkit-backdrop-filter: blur(3.5px) brightness(1.05) saturate(1.06);
-    backdrop-filter: blur(3.5px) brightness(1.05) saturate(1.06);
-    -webkit-mask-image: radial-gradient(closest-side, #000 26%, rgba(0,0,0,.5) 60%, transparent 100%);
-    mask-image: radial-gradient(closest-side, #000 26%, rgba(0,0,0,.5) 60%, transparent 100%);
+    /* Marco's numbers, 7 Sep 2026: glass 4.5, bright 0.98, core 4%.
+       brightness UNDER one, which is the opposite of what I had. The page is
+       pale, and a patch that lightens it reads as a lens flare; one that
+       darkens very slightly reads as water with something in it. And a 4% core
+       means the falloff starts almost at the centre, so there is no disc at
+       all -- just a gradient that happens to be strongest where the animal is.
+       Blur stays in px rather than scaling with the sprite: it is the
+       thickness of the water, not a property of the fish. */
+    -webkit-backdrop-filter: blur(4.5px) brightness(.98) saturate(1.06);
+    backdrop-filter: blur(4.5px) brightness(.98) saturate(1.06);
+    -webkit-mask-image: radial-gradient(closest-side, #000 4%, rgba(0,0,0,.5) 38%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 4%, rgba(0,0,0,.5) 38%, transparent 100%);
     will-change: transform;
   }
 </style>
@@ -25260,10 +25268,11 @@ else theftLoad();
     shadow.style.filter = 'brightness(0) blur(' + Math.max(3, w * 0.040).toFixed(1) + 'px)';
     shadow.style.opacity = '0.50';
 
-    /* Wider than it is tall and hung on the same pivot, so it lies along the
-       body and turns with it. 2.05 x 1.45 of the sprite is enough to show past
-       the animal on every side without becoming a headlight. */
-    var lw = Math.round(w * 2.05), lh = Math.round(h * 1.45);
+    /* 1.9 x 2.9 of the sprite box, hung on the same pivot and turning with it.
+       The ray's box is 242 x 193, so those multipliers come out 1.9w by 2.31w:
+       the patch is elongated ACROSS the body rather than along it, which is
+       the axis the animal actually pushes water on. */
+    var lw = Math.round(w * 1.9), lh = Math.round(h * 2.9);
     var lens = document.createElement('div');
     lens.className = 'pby-lens';
     lens.style.width = lw + 'px';
