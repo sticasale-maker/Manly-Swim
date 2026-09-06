@@ -199,14 +199,14 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .facet.done .fn{color:var(--ocean)}
 .facet.open .fn{color:var(--ocean)}
 .facet{
-  width:100%;display:flex;align-items:center;gap:10px;background:transparent;
+  width:100%;display:flex;align-items:center;gap:8px;background:transparent;
   border:0;border-bottom:1px solid var(--border);padding:16px 2px;
   text-align:left;cursor:pointer;color:var(--text);
 }
 .facet.open{border-bottom-color:transparent}
 .facet .fl{
   font-family:'Bebas Neue',Impact,sans-serif;font-size:19px;letter-spacing:1.5px;
-  text-transform:uppercase;color:var(--dim);flex:0 0 104px;
+  text-transform:uppercase;color:var(--dim);flex:0 0 82px;
 }
 .facet.open .fl{color:var(--ocean)}
 .facet .fv{font-size:17px;font-weight:500;color:var(--dim);flex:1 1 auto}
@@ -247,11 +247,12 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .shapes{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:7px}
 .sh{
   border:1.5px solid rgba(17,53,65,.15);border-radius:10px;padding:5px 3px 3px;
+  background:var(--sheet);
   display:flex;flex-direction:column;align-items:center;
 }
 .sh svg{width:100%;height:auto}
 .sh svg path,.sh svg rect{fill:var(--text)}
-.sh svg circle{fill:var(--card)}
+.sh svg circle{fill:var(--sheet)}
 .sh .t{font-size:12.5px;color:var(--dim);text-align:center;line-height:1.2;margin-top:3px}
 .sh.on{background:var(--ocean);border-color:var(--ocean)}
 .sh.on .t{color:#fff}
@@ -260,16 +261,25 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 
 .chips{display:flex;flex-wrap:wrap;gap:7px}
 .chip{
-  display:inline-flex;align-items:center;gap:7px;font-size:16px;font-weight:600;
-  padding:11px 17px;border-radius:22px;border:1.5px solid rgba(17,53,65,.18);
-  color:var(--dim);line-height:1.35;
+  display:inline-flex;align-items:center;gap:7px;font-size:18.5px;font-weight:600;
+  padding:13px 19px;border-radius:24px;border:1.5px solid rgba(17,53,65,.22);
+  /* Filled, not outlined. On the sand card an outline-only pill reads as a
+     label with a box drawn round it; a pale fill reads as something to press,
+     and takes the text from 4.3:1 on sand to 12:1 on this. The colour pills
+     set their own background inline and are unaffected. */
+  background:var(--sheet);color:var(--text);line-height:1.3;
 }
 .chip .sw{width:13px;height:13px;border-radius:50%;border:1px solid rgba(17,53,65,.25)}
+.chip .mk{width:30px;height:20px;flex:0 0 30px;display:block}
+.chip .mk svg{display:block;width:100%;height:100%}
 /* Dead ends are greyed, not hidden. Removing them would leave the reader
    wondering where "hand-sized" went; showing them flat says the option exists
    and has nothing behind it, which is the same rule the rest of the page uses
    for absent data (§8). */
-.chip.dead{opacity:.34;cursor:default;background:transparent}
+.chip.dead{
+  cursor:default;background:transparent;color:var(--dim);
+  border-style:dashed;border-color:rgba(17,53,65,.30);opacity:.8;
+}
 .chip.dead:active{transform:none}
 .chip.on{background:var(--ocean);border-color:var(--ocean);color:#fff}
 .chip.on .sw{border-color:rgba(255,255,255,.6)}
@@ -864,6 +874,39 @@ var COLOURS=[['grey','Silver / grey','#b9c4c9'],['brown','Brown','#8a6a45'],
   ['white','White','#e8edef'],['black','Black','#2b3338'],['yellow','Yellow','#e8c33f'],
   ['blue','Blue','#3d7fb5'],['green','Green','#5e8a52'],['red','Red','#b0392f'],
   ['orange','Orange','#d98338'],['pink','Pink','#dd8fa2'],['purple','Purple','#8f6fa8']];
+/* Each marking drawn, not just named.
+
+   The colour step became something you see rather than read, and markings are
+   the same kind of question: "net or scribble" is four words for a thing the
+   eye recognises instantly and the phrase describes slowly. Every swatch is
+   the same 30x20 patch of flank, so the patterns are comparable with each
+   other rather than each being its own little illustration.
+
+   The ground stays pale and the pattern stays dark in BOTH states, including
+   when the pill is picked and turns ocean. A swatch that inverted with the
+   pill would be a second thing changing for one tap, and the pattern is the
+   part that has to stay legible. */
+var MARK_ART={
+  'plain':'',
+  'bars-across':'<path d="M7 0v20M15 0v20M23 0v20" stroke="#113541" stroke-width="3.4" fill="none"/>',
+  'stripes-along':'<path d="M0 6h30M0 13h30" stroke="#113541" stroke-width="3" fill="none"/>',
+  'spots':'<g fill="#113541"><circle cx="7" cy="6" r="2.4"/><circle cx="16" cy="12" r="2.4"/>'
+    +'<circle cx="24" cy="5" r="2.4"/><circle cx="10" cy="15" r="2.4"/><circle cx="24" cy="15" r="2.4"/></g>',
+  'blotchy-mottled':'<g fill="#113541"><ellipse cx="8" cy="7" rx="5.5" ry="4"/>'
+    +'<ellipse cx="21" cy="6" rx="4" ry="3"/><ellipse cx="17" cy="15" rx="6" ry="3.6"/>'
+    +'<ellipse cx="27" cy="14" rx="3" ry="2.6"/></g>',
+  'one-dark-spot':'<circle cx="19" cy="10" r="5.2" fill="#113541"/>',
+  'dark-eye-bar':'<path d="M8 0v20" stroke="#113541" stroke-width="5" fill="none"/>'
+    +'<circle cx="8" cy="10" r="2.2" fill="#eaf0f3"/>',
+  'net-or-scribble':'<path d="M0 0l30 20M30 0L0 20M15 0v20M0 10h30" stroke="#113541" '
+    +'stroke-width="1.6" fill="none" opacity=".85"/>'
+};
+function markArt(k){
+  return '<span class="mk"><svg viewBox="0 0 30 20" aria-hidden="true">'
+    +'<rect width="30" height="20" rx="3" fill="#eaf0f3"/>'+(MARK_ART[k]||'')
+    +'<rect width="30" height="20" rx="3" fill="none" stroke="rgba(17,53,65,.28)" stroke-width="1.5"/>'
+    +'</svg></span>';
+}
 var MARKS=[['plain','Plain'],['bars-across','Bars across'],['stripes-along','Stripes along'],
   ['spots','Spots'],['blotchy-mottled','Blotchy'],['one-dark-spot','One dark spot'],
   ['dark-eye-bar','Bar through the eye'],['net-or-scribble','Net or scribble']];
@@ -995,7 +1038,12 @@ function wizardHTML(){
     t='Four taps to name it';
     sub='Shape first &mdash; it is what people actually retain.';
   } else if(done<4){
-    t='Tap '+(done+1)+' of 4 &mdash; '+esc(cur?cur[2]:'');
+    /* The number of the row you are LOOKING at, not how many you have
+       answered. Tapping straight to Markings with only Shape done used to
+       read "Tap 2 of 4 - any markings?", which is two different steps in one
+       sentence. */
+    var at=0; FACETS.forEach(function(f,i){ if(f[0]===open) at=i; });
+    t='Tap '+(at+1)+' of 4 &mdash; '+esc(cur?cur[2]:'');
     sub=FACETS.filter(function(f){ return !!SEL[f[0]]; })
       .map(function(f){ return esc(String(facetValue(f[0])).replace(/-/g,' ')); }).join(' &middot; ');
     if(cur&&cur[3]) sub+=' <span style="opacity:.75">&mdash; this one '+cur[3]+'</span>';
@@ -1075,7 +1123,7 @@ function renderId(){
     + facetHTML('mark','Markings','<div class="chips">'
         + MARKS.map(function(m){
             return '<button class="chip'+(SEL.mark===m[0]?' on':'')+'" data-mark="'+m[0]+'">'
-              +m[1]+'</button>'; }).join('')
+              +markArt(m[0])+m[1]+'</button>'; }).join('')
         +'</div>', 4)
     +'</div>'
 
