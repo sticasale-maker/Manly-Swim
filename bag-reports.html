@@ -3,270 +3,591 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stolen bags — admin</title>
+<title>South Steyne thefts — swimmers' citizen reporting</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  /* Same palette as the swim app itself (index.html --ocean/--deep), so this
-     reads as part of the same product rather than a bare admin tool bolted on. */
-  :root{
-    --deep:#113541; --ocean:#4a8fad; --dim:#5b7683; --bg:#eaf0f3;
-    --card:#fff; --line:rgba(17,53,65,0.14); --red:#c0392b; --amber:#e8a400;
+/* ===========================================================================
+   Stolen bags — evidence pack
+   ---------------------------------------------------------------------------
+   This page is a DOCUMENT, not a screen dashboard. Everything below is laid out
+   as A4 pages: what you see scrolling is what comes out of the printer, so the
+   thing you hand to police is the thing you checked. That is why .sheet carries
+   real millimetre dimensions on screen as well as in print.
+
+   Two rules the design has to survive:
+     * It must read in black and white. Station printers are mono, so nothing
+       may depend on colour alone — every state also carries a border, a weight
+       or a word.
+     * Nothing may be silently dropped. Case sheets are built from an explicit
+       field map, and any column in the data that the map does not cover is
+       printed anyway under "Other recorded fields" (see audit() in the JS).
+   ========================================================================== */
+
+:root{
+  --ink:#0f2b35; --ink2:#37545f; --dim:#6b858f;
+  --rule:#c3d4da; --rule2:#e2ebef; --wash:#f4f8fa;
+  --paper:#fff; --bg:#e6edf0;
+  --accent:#15687f; --accent2:#2ea578;
+  --red:#a8281a; --amber:#7d5600;
+}
+*{box-sizing:border-box}
+html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{
+  margin:0;color:var(--ink);
+  font:13.2px/1.55 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:
+    radial-gradient(ellipse 900px 500px at 12% -8%, rgba(21,104,127,.13), transparent 62%),
+    radial-gradient(ellipse 800px 520px at 100% 10%, rgba(46,165,120,.10), transparent 58%),
+    var(--bg);
+  background-attachment:fixed;
+}
+
+/* ── toolbar (screen only) ────────────────────────────────────────────────── */
+.bar{
+  position:sticky;top:0;z-index:40;display:flex;gap:9px;align-items:center;flex-wrap:wrap;
+  padding:9px 14px;background:rgba(12,44,55,.96);color:#fff;
+  box-shadow:0 2px 14px rgba(10,40,52,.28);backdrop-filter:blur(6px);
+}
+.bar .t{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1.3px;margin-right:2px}
+.bar .sp{flex:1}
+.bar .n{font-size:12px;opacity:.75;letter-spacing:.3px}
+button,select,input[type=text]{font:inherit;font-size:13px}
+button,select{
+  padding:6px 13px;border-radius:999px;border:1.5px solid rgba(255,255,255,.28);
+  background:rgba(255,255,255,.07);color:#fff;cursor:pointer;
+}
+select option{color:#0f2b35}
+button:hover{background:rgba(255,255,255,.16)}
+button.primary{background:linear-gradient(100deg,#1d86a4,#2ea578);border-color:transparent;font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+.bar label{font-size:12px;display:flex;align-items:center;gap:5px;opacity:.85;cursor:pointer}
+
+/* ── the page stack ───────────────────────────────────────────────────────── */
+.stack{padding:16px 0 40px}
+#pgCover{display:flex;flex-direction:column}
+#pgCover .hand{margin-top:auto}
+.sheet{
+  width:210mm;min-height:297mm;margin:0 auto 16px;padding:15mm 15mm 18mm;
+  background:var(--paper);box-shadow:0 6px 26px rgba(14,52,66,.16);
+  position:relative;
+}
+@media(max-width:236mm){
+  .sheet{width:auto;max-width:100%;min-height:0;padding:16px;margin-bottom:12px}
+  .maprow{grid-template-columns:1fr}
+  .chartgrid{grid-template-columns:1fr}
+  .fields{grid-template-columns:1fr 1fr}
+}
+
+/* ── document furniture ───────────────────────────────────────────────────── */
+.masthead{border-bottom:2.5px solid var(--ink);padding-bottom:9px;margin-bottom:3px}
+.masthead h1{
+  font-family:'Bebas Neue',sans-serif;font-size:41px;line-height:.98;letter-spacing:1.6px;
+  margin:0;text-transform:uppercase;
+}
+.masthead .kind{
+  font-size:10.5px;letter-spacing:2.4px;text-transform:uppercase;color:var(--accent);
+  font-weight:700;margin-bottom:5px;
+}
+.masthead .strap{font-size:15.5px;color:var(--ink2);margin-top:4px;font-weight:500;letter-spacing:.15px}
+.masthead .place{font-size:12.4px;color:var(--dim);margin-top:2px}
+
+/* Handover slip. The pack changes hands on paper, so who handed it to whom gets
+   recorded on the paper — printed rules, wide enough to actually write on. */
+.hand{border:1px solid var(--rule);border-left:3px solid var(--ink);padding:10px 12px 13px;margin-top:11px}
+.hand .hl{display:block;font-size:9.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim);font-weight:700}
+.hrows{display:grid;grid-template-columns:1fr 1.55fr;gap:2px 22px;margin-top:1px}
+.hrows .fld{padding-top:8px}
+.hrows .fld.wide{grid-column:1 / -1}
+.hrows .fld b{display:block;font-size:9.4px;letter-spacing:1.15px;text-transform:uppercase;color:var(--ink2);font-weight:600}
+.hrows .line{border-bottom:1px solid var(--ink);height:11mm}
+.pagehead{
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  border-bottom:1.5px solid var(--ink);padding-bottom:5px;margin-bottom:11px;
+}
+.pagehead h2{
+  font-family:'Bebas Neue',sans-serif;font-size:25px;letter-spacing:1.3px;margin:0;
+  text-transform:uppercase;
+}
+.pagehead .cnt{font-size:11px;color:var(--dim);letter-spacing:.4px;white-space:nowrap}
+h3.sec{
+  font-size:10.5px;letter-spacing:1.9px;text-transform:uppercase;color:var(--accent);
+  margin:15px 0 7px;font-weight:700;border-bottom:1px solid var(--rule2);padding-bottom:3px;
+}
+h3.sec:first-child{margin-top:0}
+.lede{font-size:13px;color:var(--ink2);margin:0 0 10px;max-width:62em}
+.fine{font-size:10.7px;line-height:1.5;color:var(--dim)}
+
+/* ── cover blocks ─────────────────────────────────────────────────────────── */
+.docmeta{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:0;
+  border:1px solid var(--rule);margin:11px 0 0;
+}
+.docmeta div{padding:7px 10px;border-right:1px solid var(--rule2);border-bottom:1px solid var(--rule2)}
+.docmeta div:nth-child(2n){border-right:0}
+.docmeta b{
+  display:block;font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;
+  color:var(--dim);font-weight:700;margin-bottom:2px;
+}
+.docmeta span{font-size:12.6px}
+.docmeta .ed{
+  font:inherit;font-size:12.6px;border:0;border-bottom:1px dashed var(--rule);
+  padding:0 0 1px;width:100%;background:transparent;color:var(--ink);border-radius:0;
+}
+.docmeta .ed:focus{outline:none;border-bottom-color:var(--accent);background:rgba(21,104,127,.05)}
+
+.custody{
+  border:1px solid var(--rule);border-left:3px solid var(--accent);
+  background:var(--wash);padding:10px 12px;margin-top:11px;
+}
+.custody b{display:block;font-size:9.5px;letter-spacing:1.3px;text-transform:uppercase;color:var(--dim);margin-bottom:4px}
+.custody .who{font-size:15px;font-weight:600;letter-spacing:.1px}
+.custody .con{font-size:12.6px;color:var(--ink2);margin-top:2px}
+.custody .con a{color:var(--ink2)}
+
+.figs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 0}
+.fig{border:1px solid var(--rule);border-top:3px solid var(--accent);padding:8px 9px 7px}
+.fig .n{font-family:'Bebas Neue',sans-serif;font-size:33px;line-height:1;letter-spacing:.5px}
+.fig .l{font-size:9.6px;letter-spacing:.85px;text-transform:uppercase;color:var(--dim);margin-top:2px;line-height:1.35}
+.fig.warn{border-top-color:var(--red)} .fig.warn .n{color:var(--red)}
+.fig.good{border-top-color:var(--accent2)}
+
+/* findings */
+.finds{margin:4px 0 0;padding:0;list-style:none}
+.finds li{
+  border-bottom:1px solid var(--rule2);padding:6px 0;display:flex;gap:10px;
+  break-inside:avoid;
+}
+.finds li:last-child{border-bottom:0}
+.finds .k{
+  flex:0 0 20px;height:20px;border-radius:50%;background:var(--ink);color:#fff;
+  font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;
+  margin-top:1px;
+}
+.finds li.hot .k{background:var(--red)}
+.finds .b{flex:1;min-width:0;display:block}
+.finds .h{display:block;font-weight:700;font-size:13.4px;letter-spacing:.1px}
+.finds .d{display:block;font-size:12.4px;color:var(--ink2);margin-top:1px}
+.finds .soft{
+  display:inline-block;font-size:9.2px;letter-spacing:.9px;text-transform:uppercase;
+  border:1px solid var(--rule);color:var(--dim);border-radius:3px;padding:0 4px;
+  margin-left:6px;vertical-align:1px;font-weight:600;
+}
+.caveat{border:1px solid var(--rule);padding:9px 11px;margin-top:10px;background:var(--wash)}
+.caveat ul{column-count:2;column-gap:18px}
+.caveat li{break-inside:avoid}
+.caveat ul{margin:5px 0 0;padding-left:17px}
+.caveat li{margin-bottom:3px}
+
+/* ── map ──────────────────────────────────────────────────────────────────── */
+.maprow{display:grid;grid-template-columns:104mm 1fr;gap:4mm;align-items:start}
+.mapbox{position:relative;width:100%}
+.mapbox canvas{display:block;width:100%;height:auto;border:1px solid var(--rule)}
+.pinlist{font-size:11.3px;border-collapse:collapse;width:100%}
+.pinlist td{padding:3px 4px;border-bottom:1px solid var(--rule2);vertical-align:top}
+.pinlist td.k{width:19px}
+.pinlist .kn{
+  display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
+  border-radius:50%;background:var(--ink);color:#fff;font-size:9.6px;font-weight:700;
+}
+.pinlist .w{color:var(--ink2)}
+.pinlist .nc{color:var(--dim);font-style:italic}
+.mlegend{display:flex;align-items:center;gap:9px;font-size:10.7px;color:var(--dim);margin-top:7px}
+.mlegend .ramp{
+  height:9px;width:96px;border:1px solid var(--rule);
+  background:linear-gradient(90deg,rgba(168,40,26,.14),rgba(168,40,26,.85));
+}
+
+/* ── charts ───────────────────────────────────────────────────────────────── */
+.chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px 16px}
+.chart .cap{font-size:12.2px;color:var(--ink2);margin:0 0 4px}
+.chart svg{width:100%;height:auto;overflow:visible;display:block}
+.wide{grid-column:1 / -1}
+
+/* window bars: one row per report, showing the unattended window on a 24h axis */
+.wins{width:100%;border-collapse:collapse;font-size:10.8px}
+.wins td{padding:1.5px 4px;vertical-align:middle;border:0}
+.wins td.k{width:20px} .wins td.d{white-space:nowrap;color:var(--ink2);width:74px}
+.wins td.t{white-space:nowrap;color:var(--dim);width:96px;text-align:right;font-variant-numeric:tabular-nums}
+.wins .track{position:relative;height:11px;background:var(--rule2);border:1px solid var(--rule2)}
+.wins .seg{position:absolute;top:0;bottom:0;background:var(--ink);border-radius:1px}
+.wins .seg.short{background:var(--red)}
+.winax{position:relative;height:13px;margin:2px 0 0}
+.winax span{position:absolute;font-size:9.4px;color:var(--dim);transform:translateX(-50%)}
+
+/* ── case sheets ──────────────────────────────────────────────────────────── */
+.case{
+  border:1px solid var(--rule);border-top:3px solid var(--ink);
+  padding:0 0 9px;margin-bottom:11px;break-inside:avoid;page-break-inside:avoid;
+}
+.case.flagged{border-top-color:var(--amber)}
+.chead{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  padding:7px 11px;background:var(--wash);border-bottom:1px solid var(--rule2);
+}
+.chead .kn{
+  width:25px;height:25px;border-radius:50%;background:var(--ink);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex:none;
+}
+.chead .ttl{font-weight:700;font-size:14.2px;letter-spacing:.1px}
+.chead .rid{font-size:10.6px;color:var(--dim);letter-spacing:.5px}
+.chead .sp{flex:1}
+.cbody{padding:9px 11px 0}
+.grp{margin-bottom:8px}
+.grp>b{
+  display:block;font-size:9.3px;letter-spacing:1.5px;text-transform:uppercase;
+  color:var(--accent);font-weight:700;border-bottom:1px solid var(--rule2);
+  padding-bottom:2px;margin-bottom:5px;
+}
+.fields{display:grid;grid-template-columns:repeat(3,1fr);gap:5px 12px}
+.fields.two{grid-template-columns:repeat(2,1fr)}
+.f{min-width:0}
+.f>b{display:block;font-size:9.4px;letter-spacing:.75px;text-transform:uppercase;color:var(--dim);font-weight:600}
+.f span b{font-weight:700}
+.f span{font-size:12.6px;display:block;word-wrap:break-word;overflow-wrap:break-word}
+.f.full{grid-column:1 / -1}
+.none{color:var(--dim);font-style:italic;font-size:11.8px}
+.quote{
+  border-left:2.5px solid var(--rule);padding:2px 0 2px 9px;margin:2px 0 0;
+  font-size:12.6px;color:var(--ink);white-space:pre-wrap;
+}
+.wherewrap{display:grid;grid-template-columns:76px 1fr;gap:10px;align-items:start}
+.wherewrap canvas{width:76px;height:76px;display:block;border:1px solid var(--rule)}
+.wherewrap .nomap{
+  width:76px;height:76px;border:1px dashed var(--rule);display:flex;align-items:center;
+  justify-content:center;text-align:center;font-size:9.4px;color:var(--dim);padding:4px;
+}
+.evimg{max-width:118px;max-height:118px;border:1px solid var(--rule);display:block}
+.cfoot{
+  margin:7px 11px 0;padding-top:5px;border-top:1px solid var(--rule2);
+  font-size:9.9px;color:var(--dim);display:flex;gap:14px;flex-wrap:wrap;
+}
+
+/* chips + pills — every one carries a border so mono printing still separates them */
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:1px}
+.chip{border:1px solid var(--rule);padding:1px 6px;font-size:11.4px;border-radius:3px;background:#fff}
+.chip.key{border-color:var(--red);color:var(--red);font-weight:600}
+.pill{
+  display:inline-block;padding:1px 7px;border-radius:99px;font-size:10.2px;font-weight:700;
+  letter-spacing:.5px;text-transform:uppercase;border:1.2px solid;
+}
+.pill.ok{color:var(--accent);border-color:var(--accent);background:rgba(21,104,127,.07)}
+.pill.bad{color:var(--red);border-color:var(--red);background:rgba(168,40,26,.07)}
+.pill.warnp{color:var(--amber);border-color:var(--amber);background:rgba(125,86,0,.08)}
+.pill.rec{color:#1d7a52;border-color:#1d7a52;background:rgba(29,122,82,.08)}
+.pill.plain{color:var(--dim);border-color:var(--rule)}
+
+/* ── index table ──────────────────────────────────────────────────────────── */
+table.idx{border-collapse:collapse;width:100%;font-size:9.6px}
+table.idx th,table.idx td{border:1px solid var(--rule2);padding:3px 4px;text-align:left;vertical-align:top}
+table.idx .w{white-space:nowrap}
+table.idx td{line-height:1.35}
+table.idx th{
+  background:var(--wash);font-size:8.9px;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--ink2);white-space:nowrap;
+}
+table.idx td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.idx tr.flag td{background:rgba(125,86,0,.07)}
+table.idx tfoot td{font-weight:700;background:var(--wash)}
+
+/* ── excluded / status blocks ─────────────────────────────────────────────── */
+.excl{border:1.5px solid var(--red);padding:10px 12px;margin:0 auto 16px;width:210mm;max-width:100%;background:#fff}
+.excl h3{margin:0 0 4px;font-size:13px;color:var(--red);letter-spacing:.3px}
+.msg{padding:13px 15px;font-size:13px;line-height:1.55;margin:0 auto 14px;width:210mm;max-width:100%;background:#fff;border-left:3px solid var(--accent)}
+.msg.err{border-left-color:var(--red)}
+.authcard{width:210mm;max-width:100%;margin:16px auto;background:#fff;padding:18px 20px;box-shadow:0 6px 26px rgba(14,52,66,.16)}
+.authcard h2{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:1.2px;margin:0 0 3px}
+.authcard input{padding:7px 10px;border:1.5px solid var(--rule);border-radius:7px;min-width:270px;color:var(--ink);background:#fff}
+.authcard button{background:linear-gradient(100deg,#1d86a4,#2ea578);border-color:transparent;font-weight:600}
+.hide{display:none!important}
+
+/* running footer, repeated on every printed page by position:fixed */
+.runfoot{display:none}
+
+/* ── print ────────────────────────────────────────────────────────────────── */
+@media print{
+  @page{ size:A4 portrait; margin:12mm 11mm 16mm; }
+  html,body{background:#fff!important}
+  body{font-size:10.4pt}
+  .bar,.noprint,.authcard,.excl{display:none!important}
+  .stack{padding:0}
+  .sheet{
+    width:auto;min-height:0;margin:0;padding:0;box-shadow:none;
+    break-after:page;page-break-after:always;
   }
-  *{box-sizing:border-box}
-  body{
-    margin:0;color:var(--deep);
-    font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
-    /* Soft underwater-light wash instead of a flat grey — two large, faint
-       radial glows (sun through water) over the base ocean tint. Fixed so it
-       doesn't scroll away and reads as a backdrop, not a texture to notice. */
-    background:
-      radial-gradient(ellipse 800px 500px at 15% -5%, rgba(74,143,173,0.16), transparent 60%),
-      radial-gradient(ellipse 700px 500px at 100% 15%, rgba(46,139,120,0.12), transparent 55%),
-      var(--bg);
-    background-attachment:fixed;
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+  .sheet.flow{break-after:auto;page-break-after:auto}
+  .masthead h1{font-size:30pt}
+  .pagehead h2{font-size:17pt}
+  .fig .n{font-size:22pt}
+  .hrows .line{height:10mm}
+  .masthead .strap{font-size:12.5pt}
+  .case{break-inside:avoid;page-break-inside:avoid}
+  .finds li{break-inside:avoid}
+  tr,img,canvas{break-inside:avoid;page-break-inside:avoid}
+  a{color:inherit;text-decoration:none}
+  /* position:fixed repeats on every printed page in Chrome, Edge and Safari,
+     which is the only way to get a running footer without a paginator. It sits
+     in the bottom page margin, so it can never land on top of content. */
+  .runfoot{
+    display:flex;justify-content:space-between;gap:12px;
+    position:fixed;bottom:-11mm;left:0;right:0;
+    font-size:7.4pt;color:#6b858f;border-top:.5pt solid #c3d4da;padding-top:3px;
   }
-  header{
-    background:linear-gradient(100deg,var(--deep),#1b6c8a 65%,#1c7d8f);
-    color:#fff;padding:16px 18px 20px;position:sticky;top:0;z-index:10;
-    display:flex;flex-wrap:wrap;gap:12px;align-items:center;
-    /* A shallow wave along the bottom edge instead of a hard line. */
-    clip-path:polygon(0 0,100% 0,100% 92%,75% 100%,50% 93%,25% 100%,0 92%);
-    padding-bottom:26px;
-  }
-  header h1{
-    font-family:'Bebas Neue',sans-serif; font-size:26px; letter-spacing:1.2px;
-    margin:0;flex:1;min-width:200px;text-transform:uppercase;
-  }
-  header h1 .wave{ margin-right:2px; filter:drop-shadow(0 1px 1px rgba(0,0,0,.15)); }
-  header .meta{font-size:12px;opacity:.8}
-  .wrap{padding:14px;max-width:1400px;margin:0 auto}
-  .card{
-    background:var(--card);border-radius:12px;padding:15px 14px 13px;margin-bottom:12px;
-    box-shadow:0 3px 14px rgba(23,80,105,.10);
-    border-top:3px solid transparent;
-    border-image:linear-gradient(90deg,var(--ocean),#2ea578) 1;
-  }
-  .card h2{
-    font-size:19px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);
-    margin:0 0 3px;display:flex;align-items:center;gap:7px;
-  }
-  .card h2 .ic{ font-size:16px;filter:saturate(1.15) }
-  .card .sub{font-size:15px;color:var(--dim);margin-bottom:8px}
-  /* The bar charts are inline SVG scaled by viewBox, so their text grows with
-     container width — uncapped, a wide desktop screen balloons the axis labels
-     to 30-40px while these fixed-size titles stay put. Capping the chart's own
-     width keeps its text proportionate at a glance, whatever the screen. */
-  #timeline, #dow, #hour { max-width: 460px; }
-  button,select{font:inherit;padding:7px 13px;border-radius:999px;border:1.5px solid var(--line);
-                background:#fff;color:var(--deep);cursor:pointer}
-  button.primary{background:linear-gradient(100deg,var(--ocean),#2ea578);border-color:transparent;color:#fff}
-  button:disabled{opacity:.45;cursor:default}
-  input[type=text]{font:inherit;padding:7px 10px;border-radius:8px;border:1.5px solid var(--line);
-                   min-width:260px}
-  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
-  .tile{
-    background:var(--card);border-radius:12px;padding:12px 14px;
-    box-shadow:0 3px 10px rgba(23,80,105,.09);
-    border-left:3px solid var(--ocean);
-  }
-  .tile .n{font-family:'Bebas Neue',sans-serif;font-size:38px;font-weight:400;line-height:1;color:var(--deep)}
-  .tile .l{font-size:12.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);margin-top:3px}
-  .tile.warn{border-left-color:var(--red)}
-  .tile.warn .n{color:var(--red)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
-  /* Timeline, day-of-week and hour-of-day side by side — three small charts
-     stacked full-width each used to cost three screens of scrolling for what
-     reads fine shoulder to shoulder. */
-  /* Map on the left filling its card, the three small charts stacked in a
-     column to its right — the map is naturally tall, so this uses that
-     height instead of leaving it beside a blank strip of card. */
-  /* auto: the map column sizes to whatever explicit pixel width heatmap() gives
-     .mapbox (computed from the charts column's real rendered height, so the two
-     cards' bottoms line up) — not a fixed fr split, which can't know that height
-     until the three chart cards have actually rendered. */
-  .dash-top{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
-  @media(max-width:900px){.dash-top{grid-template-columns:1fr}}
-  .dash-charts{display:flex;flex-direction:column;gap:12px}
-  .mapbox{position:relative}
-  .mapbox canvas{display:block;width:100%;height:auto;border-radius:10px;border:1.5px solid var(--line)}
-  .legend{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:14px;margin-top:10px;flex-wrap:wrap}
-  .legend .bar{height:10px;width:140px;border-radius:6px;margin:0;
-    background:linear-gradient(90deg,#3b6ea5,#49b0a0,#e8d24a,#e07a2b,#c0392b)}
-  .legend .bar-labels{display:flex;justify-content:space-between;width:140px}
-  table{border-collapse:collapse;width:100%;font-size:12.5px}
-  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
-  th{position:sticky;top:0;background:#f4f8fa;font-size:11px;letter-spacing:.6px;
-     text-transform:uppercase;color:var(--dim);white-space:nowrap;z-index:1}
-  td.num{text-align:right;white-space:nowrap}
-  td.wrap-txt{min-width:220px;max-width:340px}
-  .tablewrap{overflow:auto;max-height:70vh;border-radius:10px;border:1px solid var(--line)}
-  .pill{display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600}
-  .pill.yes{background:rgba(27,108,138,.14);color:var(--ocean)}
-  .pill.no{background:rgba(192,57,43,.12);color:var(--red)}
-  .pill.rec{background:rgba(46,139,87,.15);color:#2e8b57}
-  .pill.sus{background:rgba(232,164,0,.2);color:#8a6100}
-  td img{width:54px;height:54px;object-fit:cover;border-radius:6px;display:block}
-  .msg{padding:14px;border-radius:10px;font-size:13px;line-height:1.5}
-  .msg.err{background:rgba(192,57,43,.1);border-left:3px solid var(--red)}
-  .msg.info{background:rgba(27,108,138,.09);border-left:3px solid var(--ocean)}
-  .axis{font-size:10px;fill:var(--dim)}
-  .note{font-size:11.5px;color:var(--dim);margin-top:8px;line-height:1.5}
-  .hide{display:none}
+  .docmeta .ed{border-bottom:0}
+}
 </style>
 </head>
 <body>
 
-<header>
-  <h1><span class="wave" aria-hidden="true">🌊</span>Stolen bags — admin</h1>
-  <span class="meta" id="hMeta"></span>
+<div class="bar noprint">
+  <span class="t">South Steyne thefts — citizen reporting</span>
+  <span class="n" id="hMeta"></span>
+  <span class="sp"></span>
   <select id="range">
     <option value="30">Last 30 days</option>
-    <option value="90" selected>Last 90 days</option>
+    <option value="90">Last 90 days</option>
     <option value="365">Last 12 months</option>
-    <option value="3650">Everything</option>
+    <option value="3650" selected>Everything</option>
   </select>
   <button id="reload">Refresh</button>
-  <button id="csv" class="primary">Export CSV</button>
-</header>
-
-<div class="wrap">
-
-  <div id="auth" class="card hide">
-    <h2>Admin token</h2>
-    <div class="sub">Same token as the stats screen. Stored on this device only.</div>
-    <input type="text" id="tokenIn" placeholder="admin token" autocomplete="off" spellcheck="false">
-    <button class="primary" id="tokenGo">Unlock</button>
-    <div class="note">Or open this page with <code>?token=YOUR_ADMIN_TOKEN</code> once.</div>
-  </div>
-
-  <div id="status"></div>
-
-  <div id="main" class="hide">
-    <div class="tiles" id="tiles"></div>
-
-    <div class="dash-top" style="margin-top:12px">
-      <div class="card">
-        <h2><span class="ic">🗺️</span>Where bags are taken</h2>
-        <div class="sub">Every reported spot, over the promenade map. Warmer means more reports in the same place.</div>
-        <div class="mapbox"><canvas id="heat"></canvas></div>
-        <div class="legend">
-          <b>Density</b>
-          <div>
-            <div class="bar"></div>
-            <div class="bar-labels"><span>one</span><span>many</span></div>
-          </div>
-          <span id="heatNote"></span>
-        </div>
-      </div>
-
-      <div class="dash-charts">
-        <div class="card">
-          <h2><span class="ic">📈</span>Reports over time</h2>
-          <div class="sub">One bar per day, by the day the bag was taken.</div>
-          <div id="timeline"></div>
-        </div>
-        <div class="card">
-          <h2><span class="ic">📆</span>By day of the week</h2>
-          <div class="sub">Which days they work.</div>
-          <div id="dow"></div>
-        </div>
-        <div class="card">
-          <h2><span class="ic">🕒</span>By time of day</h2>
-          <div class="sub" id="hourSub">Which hours they work.</div>
-          <div id="hour"></div>
-          <label class="note" style="display:block;margin-top:10px">
-            <input type="checkbox" id="spread"> Count every hour unattended, not just when left
-          </label>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2><span class="ic">🧳</span>Every report</h2>
-      <div class="sub">All fields, newest first. Includes rows flagged <b>suspect</b> or hidden &mdash; you decide what is junk, not the app.</div>
-      <div class="tablewrap"><table id="tbl"></table></div>
-      <div class="note">
-        Free text and photos here go to police, never to the group. If a report names or describes an
-        individual, mark it <b>suspect</b> in SQL rather than deleting it &mdash; the row stays in the
-        record but drops out of any summary.
-      </div>
-    </div>
-  </div>
+  <button id="csv">CSV</button>
+  <button id="print" class="primary">Print / PDF</button>
 </div>
+
+<div id="auth" class="authcard hide">
+  <h2>Admin token</h2>
+  <p class="fine" style="margin:0 0 9px">The same token as the stats screen. Stored on this device only — the data itself never loads without it.</p>
+  <input type="text" id="tokenIn" placeholder="admin token" autocomplete="off" spellcheck="false">
+  <button id="tokenGo">Unlock</button>
+  <p class="fine" style="margin:9px 0 0">Or open this page once with <code>?token=YOUR_ADMIN_TOKEN</code>.</p>
+</div>
+
+<div id="status"></div>
+
+<div id="main" class="stack hide">
+
+  <!-- ══ 1. Cover, key figures, patterns ══════════════════════════════════ -->
+  <section class="sheet" id="pgCover">
+    <div class="masthead">
+      <div class="kind">Incident pack &nbsp;·&nbsp; bags stolen from swimmers</div>
+      <h1>South Steyne thefts</h1>
+      <div class="strap">Swimmers&rsquo; citizen reporting</div>
+      <div class="place">South Steyne, Cabbage Tree Bay and Fairy Bower &mdash; Manly, NSW</div>
+    </div>
+
+    <div class="docmeta" id="docmeta"></div>
+
+    <div class="custody">
+      <b>Data collected and provided by</b>
+      <div class="who">Marco Bordieri</div>
+      <div class="con">
+        <a href="mailto:sticasale@gmail.com">sticasale@gmail.com</a>
+        &nbsp;·&nbsp; 0405 461 023
+      </div>
+      <div class="fine" style="margin-top:5px">
+        Reports are lodged by swimmers through the Manly Swim app
+        (app.viz.net.au/Manly-Swim). Records are insert-only and server-timestamped;
+        the reporter can add a police event number or a recovery outcome afterwards,
+        and can change nothing else. Happy to make the underlying records or a live
+        export available on request.
+      </div>
+    </div>
+
+    <h3 class="sec">Key figures</h3>
+    <div class="figs" id="figs"></div>
+    <p class="fine" id="coverFoot" style="margin-top:9px"></p>
+
+    <!-- Filled in by hand at the counter: the pack is handed over on paper, so
+         the handover is recorded on paper too. Prints with the rest. -->
+    <div class="hand">
+      <b class="hl">Handover &mdash; to be completed by hand</b>
+      <div class="hrows">
+        <div class="fld"><b>Date</b><div class="line"></div></div>
+        <div class="fld"><b>Presented by</b><div class="line"></div></div>
+        <div class="fld wide"><b>Presented to</b><div class="line"></div></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ══ 1b. Summary and patterns ═════════════════════════════════════════ -->
+  <section class="sheet" id="pgFind">
+    <div class="pagehead"><h2>Summary &mdash; what the reports show</h2><span class="cnt" id="findCnt"></span></div>
+    <p class="lede" id="findsLede"></p>
+    <ul class="finds" id="finds"></ul>
+
+    <div class="caveat">
+      <b style="font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--dim)">How to read this pack</b>
+      <ul class="fine" id="caveats"></ul>
+    </div>
+  </section>
+
+  <!-- ══ 2. Where ═════════════════════════════════════════════════════════ -->
+  <section class="sheet" id="pgMap">
+    <div class="pagehead"><h2>Where the bags were taken</h2><span class="cnt" id="mapCnt"></span></div>
+    <p class="lede">Each pin is one report, numbered the same way throughout this pack. The
+      shading darkens where reports fall on the same spot. Pins are placed by the reporter
+      on the app's own map of the bay at the time of lodging.</p>
+    <div class="maprow">
+      <div>
+        <div class="mapbox"><canvas id="heat"></canvas></div>
+        <div class="mlegend"><span>One report</span><span class="ramp"></span><span>Several, same spot</span></div>
+      </div>
+      <div>
+        <table class="pinlist" id="pinlist"></table>
+        <p class="fine" id="mapNote" style="margin-top:8px"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 3. When ══════════════════════════════════════════════════════════ -->
+  <section class="sheet" id="pgTime">
+    <div class="pagehead"><h2>When</h2><span class="cnt" id="timeCnt"></span></div>
+    <p class="lede">A theft cannot be placed at a moment — only inside the window between the
+      bag being put down and being found gone. The windows are drawn individually below;
+      the charts count the hour the bag was <i>put down</i> unless the toolbar switch is on.</p>
+
+    <div class="chartgrid">
+      <div class="chart"><h3 class="sec">By time of day</h3><div class="cap" id="hourCap"></div><div id="hour"></div><label class="fine noprint" style="display:block;margin-top:5px;cursor:pointer"><input type="checkbox" id="spread"> count every hour the bag sat there, not just the hour it was put down</label></div>
+      <div class="chart"><h3 class="sec">By day of the week</h3><div class="cap" id="dowCap"></div><div id="dow"></div></div>
+      <div class="chart wide"><h3 class="sec">Over the period</h3><div class="cap" id="tlCap"></div><div id="timeline"></div></div>
+    </div>
+
+    <h3 class="sec">The unattended window, report by report</h3>
+    <div id="wins"></div>
+  </section>
+
+  <!-- ══ 4. What was taken ════════════════════════════════════════════════ -->
+  <section class="sheet" id="pgWhat">
+    <div class="pagehead"><h2>What was taken, and what happened next</h2><span class="cnt" id="whatCnt"></span></div>
+    <div class="chartgrid">
+      <div class="chart wide"><h3 class="sec">Items reported taken</h3><div class="cap" id="itemCap"></div><div id="items"></div></div>
+      <div class="chart"><h3 class="sec">Was the bag in plain sight?</h3><div class="cap"></div><div id="vis"></div></div>
+      <div class="chart"><h3 class="sec">Value reported, per incident</h3><div class="cap" id="valCap"></div><div id="vals"></div></div>
+      <div class="chart wide"><h3 class="sec">Reaching NSW Police</h3><div class="cap" id="polCap"></div><div id="police"></div></div>
+    </div>
+    <h3 class="sec">Trackers</h3>
+    <div id="trackers"></div>
+  </section>
+
+  <!-- ══ 5. Case sheets ═══════════════════════════════════════════════════ -->
+  <section class="sheet flow" id="pgCases">
+    <div class="pagehead"><h2>Individual reports</h2><span class="cnt" id="caseCnt"></span></div>
+    <p class="lede">One sheet per report, in the order the bags were taken. Every field held
+      on the record appears here, including the reporter's own words, unedited.</p>
+    <div id="cases"></div>
+  </section>
+
+  <!-- ══ 6. Index ═════════════════════════════════════════════════════════ -->
+  <section class="sheet" id="pgIndex">
+    <div class="pagehead"><h2>Index of reports</h2><span class="cnt" id="idxCnt"></span></div>
+    <table class="idx" id="idx"></table>
+    <p class="fine" style="margin-top:9px" id="idxNote"></p>
+  </section>
+
+  <div class="excl hide" id="excl"></div>
+</div>
+
+<div class="runfoot" id="runfoot"></div>
 
 <script>
 // =============================================================================
-// Stolen bags — admin dashboard
+// Stolen bags — evidence pack
 // =============================================================================
-// Reads the full table through list_bag_thefts(token), which is gated server-side
-// by intro_is_admin(). Every number on this page is computed here from the raw
-// rows, so what you see is the evidence itself rather than a pre-baked summary.
+// Reads the whole table through list_bag_thefts(token), gated server-side by
+// intro_is_admin(). Every number here is computed from the raw rows in this
+// file, so the document is the evidence rather than a pre-baked summary.
 //
-// Nothing on this page is public. The swimmer-facing app deliberately shows no
-// totals at all — see migrations/bag_theft_admin_only.sql.
+// Two things this page will not do:
+//   * It will not put a WITHDRAWN report in the pack. Those rows still come back
+//     from the RPC so an operator can see that somebody pulled out, and they are
+//     listed on screen only (see #excl) — migrations/bag_theft_consent_and_claim.sql
+//     is explicit that they must not be passed on.
+//   * It will not print claim_hash. That is the reporter's identity proof.
+// Rows marked 'suspect' or hidden ARE included and flagged: deciding what is junk
+// is an investigator's job, not the app's.
 
 const SB_URL = 'https://gkspukabnfbzrvjoewpc.supabase.co';
 const SB_KEY = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
 const TZ     = 'Australia/Sydney';
 // Must stay in sync with THF_MAP_SRC in index.html — loc_x/loc_y are normalized
-// 0..1 against whichever image was on screen when the report was submitted, so
-// a mismatched crop here plots dots in the wrong relative spot. Swapped to the
-// larger 'Artboard 1.png' 2026-08-15 alongside the report form; reports lodged
-// before that date were normalized against the old bag_map.png crop and will
-// sit slightly off on this map.
+// 0..1 against whichever image was on screen when the report was submitted, so a
+// mismatched crop plots pins in the wrong relative spot. Swapped to the larger
+// 'Artboard 1.png' 2026-08-15 alongside the report form; anything lodged before
+// that was normalized against the old bag_map.png crop and sits slightly off.
 const MAP_SRC = 'Artboard 1.png';
 
-let ROWS = [];
+let ROWS = [], PACK = [], GONE = [];
+let MAPIMG = null;
 
 // ── token ────────────────────────────────────────────────────────────────────
-function token() {
+function token(){
   const q = new URLSearchParams(location.search).get('token');
-  if (q) { try { localStorage.setItem('swim_admin_token', q); } catch (e) {} return q; }
-  try { return localStorage.getItem('swim_admin_token') || ''; } catch (e) { return ''; }
+  if (q){ try{ localStorage.setItem('swim_admin_token', q); }catch(e){} return q; }
+  try{ return localStorage.getItem('swim_admin_token') || ''; }catch(e){ return ''; }
 }
 
-// ── time helpers, all in Sydney ──────────────────────────────────────────────
-const fmt = (d, o) => new Intl.DateTimeFormat('en-AU', Object.assign({ timeZone: TZ }, o)).format(d);
-const dayKey  = d => fmt(d, { year: 'numeric', month: '2-digit', day: '2-digit' })
-                      .split('/').reverse().join('-');           // yyyy-mm-dd
-const hourOf  = d => +fmt(d, { hour: '2-digit', hour12: false });
-const dowOf   = d => fmt(d, { weekday: 'short' });
-const stamp   = d => fmt(d, { day: '2-digit', month: 'short', year: '2-digit',
-                              hour: 'numeric', minute: '2-digit' });
+// ── formatting, all in Sydney ────────────────────────────────────────────────
+const fmt = (d,o) => new Intl.DateTimeFormat('en-AU', Object.assign({timeZone:TZ}, o)).format(d);
+const dayKey = d => fmt(d,{year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-');
+const hourOf = d => +fmt(d,{hour:'2-digit',hour12:false});
+const minOf  = d => +fmt(d,{minute:'2-digit'});
+const dowOf  = d => fmt(d,{weekday:'short'});
+const dateS  = d => fmt(d,{day:'numeric',month:'short',year:'numeric'});
+const dateSh = d => fmt(d,{day:'numeric',month:'short'});
+const timeS  = d => fmt(d,{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').toLowerCase();
+const stamp  = d => dateS(d) + ', ' + timeS(d);
 const DOW = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const hFrac = d => hourOf(d) + minOf(d)/60;
+const mins  = r => Math.round((new Date(r.missed_at) - new Date(r.left_at)) / 60000);
+const dur   = m => m == null || !isFinite(m) ? '—'
+              : m < 60 ? m + ' min'
+              : (m % 60 === 0 ? (m/60) + (m/60 === 1 ? ' hr' : ' hrs')
+                              : Math.floor(m/60) + ' hr ' + (m%60) + ' min');
+const money = v => '$' + Number(v||0).toLocaleString('en-AU');
+const plural = (n,s,p) => n + ' ' + (n === 1 ? s : (p || s + 's'));
 
-function esc(s) {
+function esc(s){
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+const NONE = '<span class="none">not recorded</span>';
+// Absent data reads grey and says so — it must never look like a recorded value
+// (the same rule the app's own tiles follow).
+function fv(v, wrap){
+  if (v == null || v === '' || (Array.isArray(v) && !v.length)) return NONE;
+  return wrap ? wrap(v) : esc(v);
+}
+
+const VIS_L   = { visible:'In plain sight', covered:'Covered or tucked away', unsure:'Not sure' };
+const TRACK_L = { none:'None', airtag:'AirTag', tile:'Tile', other:'Other tracker', unsure:'Not sure' };
+const POL_L   = { yes:'Reported', will:'Not yet — intends to', not_yet:'Not yet', no:'No, and does not intend to' };
 
 // ── load ─────────────────────────────────────────────────────────────────────
-async function load() {
-  const t = token();
-  const statusEl = document.getElementById('status');
-  if (!t) {
+async function load(){
+  const t = token(), statusEl = document.getElementById('status');
+  if (!t){
     document.getElementById('auth').classList.remove('hide');
     document.getElementById('main').classList.add('hide');
     return;
   }
   document.getElementById('auth').classList.add('hide');
-  statusEl.innerHTML = '<div class="msg info">Loading…</div>';
+  statusEl.innerHTML = '<div class="msg">Loading…</div>';
 
   const days = +document.getElementById('range').value;
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/rpc/list_bag_thefts`, {
-      method: 'POST',
-      headers: { apikey: SB_KEY, Authorization: 'Bearer ' + SB_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ p_token: t, p_days: days })
+  try{
+    const r = await fetch(SB_URL + '/rest/v1/rpc/list_bag_thefts', {
+      method:'POST',
+      headers:{ apikey:SB_KEY, Authorization:'Bearer ' + SB_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({ p_token:t, p_days:days })
     });
-    if (!r.ok) {
-      const body = await r.text();
-      const bad = /not authorised/.test(body);
+    if (!r.ok){
+      const body = await r.text(), bad = /not authorised/.test(body);
       statusEl.innerHTML = '<div class="msg err">' + (bad
-        ? 'That token was refused. Check it, or open with <code>?token=…</code>.'
-        : 'Could not load (HTTP ' + r.status + '). ' + esc(body.slice(0, 200))) + '</div>';
+        ? 'That token was refused. Check it, or open the page with <code>?token=…</code>.'
+        : 'Could not load (HTTP ' + r.status + '). ' + esc(body.slice(0,200))) + '</div>';
       if (bad) document.getElementById('auth').classList.remove('hide');
       return;
     }
@@ -274,274 +595,785 @@ async function load() {
     statusEl.innerHTML = '';
     document.getElementById('main').classList.remove('hide');
     render();
-  } catch (e) {
+  }catch(e){
     statusEl.innerHTML = '<div class="msg err">Network error: ' + esc(e.message) + '</div>';
   }
 }
 
 // ── render ───────────────────────────────────────────────────────────────────
-function render() {
-  const n = ROWS.length;
-  document.getElementById('hMeta').textContent =
-    n + (n === 1 ? ' report' : ' reports') + ' · times shown in Sydney time';
+function render(){
+  // The pack is chronological by when the bag was put down, and the position in
+  // that order IS the report number — pin 4 on the map, case 4, row 4 in the
+  // index are the same incident. One number, used everywhere.
+  GONE = ROWS.filter(r => r.withdrawn);
+  PACK = ROWS.filter(r => !r.withdrawn)
+             .sort((a,b) => new Date(a.left_at) - new Date(b.left_at));
+  PACK.forEach((r,i) => r._k = i + 1);
 
-  tiles();
-  // Charts first — heatmap() measures the rendered height of .dash-charts to
-  // size the map so its bottom edge lines up with "By time of day", which is
-  // only known once these three have actually laid out.
-  timeline();
-  dowChart();
-  hourChart();
-  heatmap();
-  table();
+  document.getElementById('hMeta').textContent =
+    PACK.length + ' in pack' + (GONE.length ? ' · ' + GONE.length + ' withdrawn, excluded' : '')
+    + ' · Sydney time';
+
+  docmeta();
+  figures();
+  findings();
+  caveats();
+  timeCharts();
+  whatCharts();
+  cases();
+  indexTable();
+  withdrawnBlock();
+  runfoot();
+  heatmap();        // last: needs the image, and paints case thumbnails too
 }
 
-function tiles() {
-  const val = ROWS.reduce((a, r) => a + (r.value_aud || 0), 0);
-  const pol = ROWS.filter(r => r.police === 'yes').length;
-  const rec = ROWS.filter(r => r.recovered).length;
-  const evt = ROWS.filter(r => r.event_number).length;
-  const trk = ROWS.filter(r => r.tracker && r.tracker !== 'none' && r.tracker !== 'unsure').length;
-  const mins = ROWS.map(r => (new Date(r.missed_at) - new Date(r.left_at)) / 60000).filter(m => m > 0);
-  const med = mins.length ? mins.slice().sort((a, b) => a - b)[Math.floor(mins.length / 2)] : 0;
+function span(){
+  if (!PACK.length) return null;
+  const a = new Date(PACK[0].left_at), b = new Date(PACK[PACK.length-1].left_at);
+  return { a, b, days: Math.max(1, Math.round((b - a) / 86400000) + 1) };
+}
+
+function docmeta(){
+  const s = span(), sel = document.getElementById('range');
+  const rangeTxt = sel.options[sel.selectedIndex].text;
+  const flagged = PACK.filter(r => r.status === 'suspect' || r.hidden).length;
+  const cells = [
+    ['Period covered', s ? dateS(s.a) + ' – ' + dateS(s.b) + '  (' + plural(s.days,'day') + ')' : 'no reports in range'],
+    ['Reports in this pack', PACK.length + (flagged ? '  ·  ' + flagged + ' flagged for review' : '')],
+    ['Query window', rangeTxt + ' of lodgements'],
+    ['Prepared', stamp(new Date())],
+    ['Reference', '<input class="ed" id="mRef" placeholder="your reference (optional)">'],
+    ['NSW Police event numbers', PACK.filter(r => r.event_number).length + ' of ' + PACK.length + ' reports carry one']
+  ];
+  document.getElementById('docmeta').innerHTML = cells.map(([k,v]) =>
+    '<div><b>' + esc(k) + '</b><span>' + v + '</span></div>').join('');
+  document.getElementById('coverFoot').innerHTML =
+    'This pack contains ' + plural(PACK.length,'individual report sheet') + ', a location map with numbered '
+    + 'pins, timing analysis and an index. The number against a report is the same on every page. '
+    + 'Compiled from the Manly Swim community reporting database, ' + esc(stamp(new Date())) + '.';
+
+  const ref = document.getElementById('mRef');
+  if (ref){
+    try{ ref.value = localStorage.getItem('swim_pack_ref') || ''; }catch(e){}
+    ref.oninput = () => { try{ localStorage.setItem('swim_pack_ref', ref.value); }catch(e){} };
+  }
+}
+
+function figures(){
+  const R = PACK;
+  const val = R.reduce((a,r) => a + (r.value_aud || 0), 0);
+  const pol = R.filter(r => r.police === 'yes').length;
+  const evt = R.filter(r => r.event_number).length;
+  const rec = R.filter(r => r.recovered).length;
+  const trk = R.filter(r => r.tracker && r.tracker !== 'none' && r.tracker !== 'unsure').length;
+  const keys= R.filter(r => r.keys_taken).length;
+  const ms  = R.map(mins).filter(m => m >= 0).sort((a,b) => a-b);
+  const med = ms.length ? ms[Math.floor(ms.length/2)] : null;
+  const s   = span();
 
   const t = [
-    [ROWS.length, 'reports', ''],
-    ['$' + val.toLocaleString(), 'value taken', ''],
-    [pol, 'reported to police', pol < ROWS.length ? 'warn' : ''],
-    [evt, 'with event number', ''],
-    [rec, 'recovered', ''],
-    [trk, 'had a tracker', ''],
-    [Math.round(med) + 'm', 'median time unattended', '']
+    [R.length, 'reports in pack', ''],
+    [money(val), 'total value reported', ''],
+    [med == null ? '—' : dur(med), 'median time the bag was unattended', ''],
+    [s ? (s.days / Math.max(1,R.length)).toFixed(1) : '—', 'days between reports, on average', ''],
+    [pol + ' / ' + R.length, 'reported to NSW Police', pol < R.length ? 'warn' : 'good'],
+    [evt, 'with an event number', evt < pol ? 'warn' : ''],
+    [keys, 'where house or car keys were taken', keys ? 'warn' : ''],
+    [trk, 'bags carrying a tracker', trk ? 'good' : '']
   ];
-  document.getElementById('tiles').innerHTML = t.map(([n, l, c]) =>
-    `<div class="tile ${c}"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join('');
+  document.getElementById('figs').innerHTML = t.map(([n,l,c]) =>
+    '<div class="fig ' + c + '"><div class="n">' + esc(n) + '</div><div class="l">' + esc(l) + '</div></div>').join('');
 }
 
-// ── heatmap ──────────────────────────────────────────────────────────────────
-// Accumulates soft blobs into an alpha layer, then colours it through a ramp —
-// so two reports in the same doorway read hotter than two spread down the path.
-function heatmap() {
+// ── the patterns block ───────────────────────────────────────────────────────
+// Written from the rows, every claim carrying its own count. Anything that leans
+// on a distribution is marked "small sample" until there are enough reports for
+// the shape to mean anything — a peak day out of four reports is noise, and a
+// pack that says so is worth more than one that doesn't.
+function findings(){
+  const R = PACK, n = R.length, F = [];
+  const host = document.getElementById('finds'), lede = document.getElementById('findsLede');
+  if (!n){
+    lede.textContent = 'No reports in the selected window.';
+    document.getElementById('findCnt').textContent = '';
+    document.getElementById('coverFoot').textContent = '';
+    host.innerHTML = ''; return;
+  }
+  const s = span();
+  const soft = n < 8;
+  const add = (h,d,hot,sm) => F.push({ h, d, hot:!!hot, sm: sm === undefined ? false : sm });
+
+  // 1. rate
+  add('Bags are being taken at a steady rate, not in one incident',
+      plural(n,'report') + ' over ' + plural(s.days,'day') + ' — on average one every '
+      + (s.days / n).toFixed(1) + ' days. First ' + dateS(s.a) + ', most recent ' + dateS(s.b) + '.');
+
+  // 2. densest 3-hour band of "bag put down"
+  const hrs = new Array(24).fill(0);
+  R.forEach(r => hrs[hourOf(new Date(r.left_at))]++);
+  let bh = 0, bv = 0;
+  for (let h = 0; h < 24; h++){
+    const v = hrs[h] + hrs[(h+1)%24] + hrs[(h+2)%24];
+    if (v > bv){ bv = v; bh = h; }
+  }
+  if (bv >= 2){
+    const lbl = h => (h % 12 || 12) + (h < 12 ? 'am' : 'pm');
+    add('They happen in the morning swim window',
+        bv + ' of ' + n + ' bags were put down between ' + lbl(bh) + ' and ' + lbl((bh+3)%24)
+        + ' — ' + Math.round(bv/n*100) + '% of reports inside a three-hour band.',
+        bv/n >= 0.6, soft);
+  }
+
+  // 3. weekday / weekend
+  const we = R.filter(r => { const d = dowOf(new Date(r.left_at)); return d === 'Sat' || d === 'Sun'; }).length;
+  if (n >= 4 && (we === 0 || we === n || we/n >= .6 || we/n <= .15)){
+    add(we/n >= .5 ? 'Weighted to the weekend' : 'Weighted to weekdays',
+        we + ' of ' + n + ' on a Saturday or Sunday, ' + (n-we) + ' midweek.', false, soft);
+  }
+
+  // 4. how long the bag was down
+  const ms = R.map(mins).filter(m => m >= 0).sort((a,b) => a-b);
+  if (ms.length){
+    const med = ms[Math.floor(ms.length/2)];
+    const quick = ms.filter(m => m <= 30).length;
+    add('The bag is gone quickly',
+        'Median unattended window ' + dur(med) + ' (shortest ' + dur(ms[0]) + ', longest '
+        + dur(ms[ms.length-1]) + '). '
+        + (quick ? quick + ' of ' + n + ' were taken inside a window of half an hour or less.'
+                 : 'The theft can only be placed somewhere inside these windows.'),
+        quick >= 2);
+  }
+
+  // 5. clustering on the map — single-link on normalized map coordinates. No
+  //    metres: the map calibration has not been re-checked since the artwork was
+  //    swapped, and a distance quoted to the metre would be false precision.
+  const pins = R.filter(r => r.loc_x != null && r.loc_y != null);
+  if (pins.length >= 2){
+    const seen = new Set(); let best = [];
+    pins.forEach(p => {
+      if (seen.has(p.id)) return;
+      const cl = [p]; seen.add(p.id);
+      for (let g = 0; g < cl.length; g++){
+        pins.forEach(q => {
+          if (seen.has(q.id)) return;
+          const dx = q.loc_x - cl[g].loc_x, dy = (q.loc_y - cl[g].loc_y) * 2.22;  // map is 1350x3001
+          if (Math.hypot(dx, dy) < .075){ cl.push(q); seen.add(q.id); }
+        });
+      }
+      if (cl.length > best.length) best = cl;
+    });
+    if (best.length >= 2){
+      const notes = best.map(r => r.loc_note).filter(Boolean);
+      add('Reports cluster on the same stretch',
+          best.length + ' of ' + plural(pins.length,'pinned report') + ' fall within one small section of the foreshore — '
+          + 'pins ' + best.map(r => r._k).sort((a,b) => a-b).join(', ') + ' on the map. '
+          + (notes.length ? 'Reporters described it as: “' + notes.slice(0,3).map(t => String(t).trim()).join('”, “') + '”.' : ''),
+          best.length >= 3, best.length < 3);
+    }
+  }
+
+  // 6. bursts
+  const byDay = {};
+  R.forEach(r => { const k = dayKey(new Date(r.left_at)); (byDay[k] = byDay[k] || []).push(r); });
+  const multi = Object.entries(byDay).filter(([,v]) => v.length > 1);
+  if (multi.length){
+    add('More than one bag taken on the same day',
+        multi.map(([k,v]) => v.length + ' on ' + dateS(new Date(k + 'T12:00:00'))).join('; ')
+        + '. Same-day repeats point at one person working a stretch rather than passing opportunism.', true);
+  }
+
+  // 7. trackers — the one field that turns a missing bag into a direction of travel
+  const trk = R.filter(r => r.tracker && r.tracker !== 'none' && r.tracker !== 'unsure');
+  const ping = R.filter(r => r.tracker_ping);
+  if (ping.length){
+    add('There are tracker pings on record',
+        plural(ping.length,'report') + ' recorded a last known tracker location: '
+        + ping.map(r => '#' + r._k).join(', ') + '. These are the reports with a direction of travel attached.', true);
+  } else if (trk.length){
+    add('Bags carried trackers, but no ping was recorded',
+        trk.length + ' of ' + n + ' bags had an AirTag, Tile or similar; none of those reports captured a last location.',
+        false);
+  } else {
+    add('No bag in this pack carried a tracker',
+        'Nothing here gives a direction of travel after the bag left the beach.', false);
+  }
+
+  // 8. what reaches police
+  const pol = R.filter(r => r.police === 'yes').length;
+  const evt = R.filter(r => r.event_number).length;
+  if (pol < n){
+    add('Not every theft reaches a police report',
+        pol + ' of ' + n + ' reports say they were made to NSW Police'
+        + (evt ? ', and ' + evt + ' carry an event number' : ', and none carry an event number')
+        + '. The rest are only in this dataset — the recorded crime figure for this stretch is lower than what is happening on it.',
+        pol / n < .6);
+  } else {
+    add('Every report here also went to NSW Police',
+        'All ' + n + ' say a police report was made' + (evt ? '; ' + evt + ' carry an event number.' : '.'), false);
+  }
+
+  // 9. keys
+  const keys = R.filter(r => r.keys_taken);
+  if (keys.length){
+    add('House or car keys went with the bag',
+        plural(keys.length,'report') + ' (' + keys.map(r => '#' + r._k).join(', ')
+        + ') included keys — an address exposure, not only a property loss.', keys.length >= 2);
+  }
+
+  // 10. was it visible
+  const cov = R.filter(r => r.bag_visible === 'covered').length;
+  const visi = R.filter(r => r.bag_visible === 'visible').length;
+  if (cov + visi >= 3){
+    add(cov > visi ? 'Bags were taken even when covered' : 'Bags were mostly taken in plain sight',
+        visi + ' left in plain sight, ' + cov + ' covered or tucked away'
+        + (cov ? '. A covered bag being taken means someone was looking through belongings, not spotting a wallet in passing.' : '.'),
+        false, soft);
+  }
+
+  // 11. items
+  const cnt = {};
+  R.forEach(r => (r.items || []).forEach(i => cnt[i] = (cnt[i]||0)+1));
+  const top = Object.entries(cnt).sort((a,b) => b[1]-a[1]).slice(0,4);
+  if (top.length){
+    add('What goes with the bag',
+        top.map(([k,v]) => k.toLowerCase() + ' (' + v + ')').join(', ')
+        + '. Total value put at ' + money(R.reduce((a,r) => a + (r.value_aud||0), 0)) + ' across ' + plural(n,'report') + '.');
+  }
+
+  // 12. recovery
+  const rec = R.filter(r => r.recovered).length;
+  add(rec ? plural(rec,'bag') + ' recovered' : 'Nothing has been recovered',
+      rec ? R.filter(r => r.recovered).map(r => '#' + r._k + (r.recovered_note ? ' — ' + r.recovered_note : '')).join('; ')
+          : 'No report in this pack records property coming back.', !rec && n >= 3);
+
+  // 13. data integrity, stated rather than hidden
+  const ips = {};
+  R.forEach(r => { if (r.ip_hash) ips[r.ip_hash] = (ips[r.ip_hash]||0)+1; });
+  const dup = Object.values(ips).filter(v => v > 1).length;
+  const flagged = R.filter(r => r.status === 'suspect' || r.hidden).length;
+  const bits = [];
+  if (dup) bits.push(dup + (dup === 1 ? ' network hash appears' : ' network hashes appear') + ' on more than one report — possibly one person reporting twice, possibly a household');
+  if (flagged) bits.push(flagged + ' flagged for review and left in, marked, rather than removed');
+  if (GONE.length) bits.push(GONE.length + ' withdrawn by the reporter and excluded from this pack');
+  if (bits.length) add('Known limits of this dataset', bits.join('; ') + '.', false);
+
+  document.getElementById('findCnt').textContent =
+    plural(F.length,'observation') + ' from ' + plural(n,'report');
+
+  lede.textContent = n >= 12
+    ? 'Computed from all ' + n + ' reports in the pack.'
+    : 'Computed from ' + plural(n,'report') + '. At this size these are observations to check, not conclusions — items marked “small sample” lean on a distribution too thin to carry weight on its own.';
+
+  host.innerHTML = F.map((f,i) =>
+    '<li class="' + (f.hot ? 'hot' : '') + '"><span class="k">' + (i+1) + '</span><span class="b">'
+    + '<span class="h">' + esc(f.h) + (f.sm ? '<span class="soft">small sample</span>' : '') + '</span>'
+    + '<span class="d">' + esc(f.d).replace(/&quot;/g,'"') + '</span></span></li>').join('');
+}
+
+function caveats(){
+  const c = [
+    'Every time is Sydney local time. <b>created_at</b> is server time and cannot be edited by the reporter; the left / noticed times are the swimmer’s own account.',
+    'A theft is a <b>window, not a moment</b>. We know only that the bag went between being put down and being found gone.',
+    'Reports are lodged by members of the public and are <b>unverified</b>. Rows we have flagged as doubtful are left in and marked, so the decision stays with you.',
+    'The app collects <b>no description of any person</b>, by design, and holds no name, email or phone for any reporter — identity is a random claim code, and only its hash is stored.',
+    'Map pins are placed by the reporter on the app’s map. Treat them as “about here”, not as a survey fix. Latitude and longitude are derived from the pin.'
+  ];
+  if (GONE.length) c.push('<b>' + plural(GONE.length,'report') + ' withdrawn</b> by the reporter after lodging '
+    + (GONE.length === 1 ? 'is' : 'are') + ' excluded from this pack entirely.');
+  document.getElementById('caveats').innerHTML = c.map(x => '<li>' + x + '</li>').join('');
+}
+
+// ── charts: hand-drawn SVG, no libraries, prints as vector ───────────────────
+function bars(host, labels, values, opts){
+  opts = opts || {};
+  // Drawn in real pixels: the viewBox is measured off the container, so a label
+  // is the size it says it is. A fixed 0-100 viewBox stretched across a
+  // full-width container inflates 4px text to 26px, which is what made the
+  // timeline axis a wall of overlapping months.
+  const W = Math.max(240, Math.round(host.clientWidth || 340));
+  const H = opts.h || 150, padX = 6, base = 20, top = 15;
+  const max = Math.max(1, ...values);
+  const bw = (W - padX*2) / values.length;
+  const body = values.map((v,i) => {
+    const h = (H - base - top) * (v / max);
+    const x = padX + i*bw, y = H - base - h;
+    const hot = opts.hot && v === max && v > 0;
+    return '<rect x="' + (x + bw*.13).toFixed(1) + '" y="' + y.toFixed(1)
+      + '" width="' + (bw*.74).toFixed(1) + '" height="' + h.toFixed(1)
+      + '" fill="' + (hot ? '#a8281a' : '#15687f') + '"></rect>'
+      + (v ? '<text x="' + (x + bw/2).toFixed(1) + '" y="' + (y - 4).toFixed(1)
+           + '" text-anchor="middle" style="font:700 10.5px Inter,system-ui,sans-serif;fill:#0f2b35">'
+           + v + '</text>' : '');
+  }).join('');
+  const axis = labels.map((l,i) => l == null ? '' :
+    '<text x="' + (padX + i*bw + bw/2).toFixed(1) + '" y="' + (H - 6)
+    + '" text-anchor="middle" style="font:9.5px Inter,system-ui,sans-serif;fill:#6b858f">'
+    + esc(l) + '</text>').join('');
+  host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H
+    + '" style="width:100%;height:auto;overflow:visible">'
+    + '<line x1="' + padX + '" y1="' + (H-base) + '" x2="' + (W-padX) + '" y2="' + (H-base)
+    + '" stroke="#c3d4da" stroke-width="1"></line>' + body + axis + '</svg>';
+}
+
+// Horizontal bars for named categories — reads better than rotated tick labels
+// when the label is a phrase rather than an hour.
+function hbars(host, rows, opts){
+  opts = opts || {};
+  const max = Math.max(1, ...rows.map(r => r[1]));
+  host.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:11.6px">'
+    + rows.map(([l,v,hot]) =>
+      '<tr><td style="padding:1.5px 7px 1.5px 0;white-space:nowrap;color:#37545f">' + esc(l) + '</td>'
+      + '<td style="padding:1.5px 0;width:100%">'
+      + '<div style="height:11px;background:' + (hot ? '#a8281a' : '#15687f') + ';width:'
+      + Math.max(v ? 2 : 0, v/max*100) + '%;min-width:' + (v ? '2px' : '0') + '"></div></td>'
+      + '<td style="padding:1.5px 0 1.5px 7px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums">'
+      + esc(opts.fmt ? opts.fmt(v) : v) + '</td></tr>').join('')
+    + '</table>';
+}
+
+function timeCharts(){
+  const R = PACK;
+  document.getElementById('timeCnt').textContent = plural(R.length,'report');
+
+  // hour of day
+  const spread = document.getElementById('spread').checked;
+  const c = new Array(24).fill(0);
+  R.forEach(r => {
+    const a = new Date(r.left_at), b = new Date(r.missed_at);
+    if (!spread){ c[hourOf(a)]++; return; }
+    const h = Math.min(24, Math.max(1, Math.ceil((b - a)/3600000)));
+    for (let i = 0; i < h; i++) c[hourOf(new Date(a.getTime() + i*3600000))]++;
+  });
+  document.getElementById('hourCap').textContent = spread
+    ? 'Every clock hour each bag sat unattended.'
+    : 'The hour the bag was put down.';
+  bars(document.getElementById('hour'),
+       c.map((_,h) => h % 3 === 0 ? (h % 12 || 12) + (h < 12 ? 'a' : 'p') : null), c, { hot:true });
+
+  // day of week
+  const d = {}; DOW.forEach(k => d[k] = 0);
+  R.forEach(r => { const k = dowOf(new Date(r.left_at)); if (k in d) d[k]++; });
+  document.getElementById('dowCap').textContent = 'The day the bag was put down.';
+  bars(document.getElementById('dow'), DOW, DOW.map(k => d[k]), { hot:true });
+
+  // timeline
+  const host = document.getElementById('timeline');
+  if (!R.length){ host.innerHTML = '<p class="none">Nothing to show.</p>'; }
+  else{
+    const cnt = {};
+    R.forEach(r => { const k = dayKey(new Date(r.left_at)); cnt[k] = (cnt[k]||0)+1; });
+    const keys = Object.keys(cnt).sort();
+    // Calendar arithmetic anchored in UTC at BOTH ends. Parsing the key as local
+    // time and reading it back as UTC disagrees by a day for any browser off
+    // UTC+0, which used to drop reports off this chart entirely.
+    const [y0,m0,d0] = keys[0].split('-').map(Number);
+    const [y1,m1,d1] = keys[keys.length-1].split('-').map(Number);
+    const s0 = Date.UTC(y0,m0-1,d0), s1 = Date.UTC(y1,m1-1,d1);
+    const n = Math.round((s1 - s0)/86400000) + 1;
+    const every = Math.max(1, Math.ceil(n/9));
+    const out = [], lab = [];
+    for (let i = 0; i < n; i++){
+      const dd = new Date(s0 + i*86400000);
+      out.push(cnt[dd.toISOString().slice(0,10)] || 0);
+      lab.push(i % every === 0 ? fmt(dd,{day:'numeric',month:'short'}) : null);
+    }
+    document.getElementById('tlCap').textContent =
+      'One bar per day, by the day the bag was taken. ' + plural(n,'day') + ' shown.';
+    bars(host, lab, out, { hot:true, h:120 });
+  }
+
+  windows();
+}
+
+// One row per report: where the unattended window sits on a 24-hour clock. This
+// is the honest picture of the data — a filled band, not a point.
+function windows(){
+  const R = PACK, host = document.getElementById('wins');
+  if (!R.length){ host.innerHTML = '<p class="none">Nothing to show.</p>'; return; }
+  const rows = R.map(r => {
+    const a = new Date(r.left_at), b = new Date(r.missed_at);
+    const x0 = hFrac(a), m = mins(r);
+    const x1 = Math.min(24, x0 + m/60);
+    const over = (x0 + m/60) > 24;
+    return '<tr><td class="k"><span class="kn" style="width:16px;height:16px;font-size:9px">' + r._k + '</span></td>'
+      + '<td class="d">' + esc(dateSh(a)) + ' ' + esc(dowOf(a)) + '</td>'
+      + '<td><div class="track"><div class="seg' + (m <= 30 ? ' short' : '') + '" style="left:'
+      + (x0/24*100) + '%;width:' + Math.max(.8, (x1-x0)/24*100) + '%"></div></div></td>'
+      + '<td class="t">' + esc(timeS(a)) + '–' + esc(timeS(b)) + (over ? '+' : '')
+      + ' · ' + esc(dur(m)) + '</td></tr>';
+  }).join('');
+  const ticks = [0,3,6,9,12,15,18,21,24].map(h =>
+    '<span style="left:calc(' + (h/24*100) + '% )">' + (h === 24 ? '12a' : (h % 12 || 12) + (h < 12 ? 'a' : 'p')) + '</span>').join('');
+  host.innerHTML = '<table class="wins">' + rows + '</table>'
+    + '<div style="display:grid;grid-template-columns:20px 74px 1fr 96px"><span></span><span></span>'
+    + '<div class="winax">' + ticks + '</div><span></span></div>'
+    + '<p class="fine" style="margin-top:6px">Each band runs from the bag being put down to it being found gone. '
+    + 'Bands in red closed inside thirty minutes. A band ending in “+” ran past midnight.</p>';
+}
+
+function whatCharts(){
+  const R = PACK;
+  document.getElementById('whatCnt').textContent = plural(R.length,'report');
+
+  // items
+  const cnt = {};
+  R.forEach(r => (r.items || []).forEach(i => cnt[i] = (cnt[i]||0)+1));
+  const other = R.filter(r => r.items_other).length;
+  const rows = Object.entries(cnt).sort((a,b) => b[1]-a[1]);
+  document.getElementById('itemCap').textContent = rows.length
+    ? 'Counted across ' + plural(R.length,'report') + (other ? '; ' + other + ' also listed something in free text (shown on the case sheets).' : '.')
+    : 'No itemised losses recorded.';
+  hbars(document.getElementById('items'), rows.map(([k,v],i) => [k, v, i === 0]));
+
+  // visibility
+  const v = { visible:0, covered:0, unsure:0, none:0 };
+  R.forEach(r => { const k = r.bag_visible; if (k in v) v[k]++; else v.none++; });
+  hbars(document.getElementById('vis'), [
+    ['In plain sight', v.visible], ['Covered / tucked away', v.covered],
+    ['Not sure', v.unsure], ['Not recorded', v.none]
+  ]);
+
+  // value bands
+  const bands = [['Under $200',0],['$200–$499',0],['$500–$999',0],['$1,000–$2,499',0],['$2,500+',0],['Not given',0]];
+  R.forEach(r => {
+    const x = r.value_aud;
+    if (x == null) bands[5][1]++;
+    else if (x < 200) bands[0][1]++;
+    else if (x < 500) bands[1][1]++;
+    else if (x < 1000) bands[2][1]++;
+    else if (x < 2500) bands[3][1]++;
+    else bands[4][1]++;
+  });
+  const vals = R.map(r => r.value_aud).filter(x => x != null).sort((a,b) => a-b);
+  document.getElementById('valCap').textContent = vals.length
+    ? 'Median ' + money(vals[Math.floor(vals.length/2)]) + ', highest ' + money(vals[vals.length-1]) + '.'
+    : 'No values given.';
+  hbars(document.getElementById('vals'), bands);
+
+  // police
+  const p = { yes:0, will:0, not_yet:0, no:0 };
+  R.forEach(r => { if (r.police in p) p[r.police]++; });
+  const evt = R.filter(r => r.event_number).length;
+  document.getElementById('polCap').textContent =
+    p.yes + ' of ' + R.length + ' reports state a police report was made; ' + evt + ' carry an event number.';
+  hbars(document.getElementById('police'), [
+    ['Reported to NSW Police', p.yes],
+    ['— of those, with an event number', evt],
+    ['Intends to report', p.will],
+    ['Not yet', p.not_yet, p.not_yet > 0],
+    ['Will not report', p.no, p.no > 0]
+  ]);
+
+  // trackers
+  const t = R.filter(r => r.tracker && r.tracker !== 'none');
+  const ping = R.filter(r => r.tracker_ping);
+  document.getElementById('trackers').innerHTML = t.length
+    ? '<table class="idx"><thead><tr><th>#</th><th>Tracker</th><th>Last known location as reported</th></tr></thead><tbody>'
+      + t.map(r => '<tr><td class="n">' + r._k + '</td><td>' + esc(TRACK_L[r.tracker] || r.tracker) + '</td><td>'
+        + fv(r.tracker_ping) + '</td></tr>').join('')
+      + '</tbody></table>'
+      + '<p class="fine" style="margin-top:6px">' + (ping.length
+          ? 'A last known location is the one field here that gives a direction of travel after the bag left the beach.'
+          : 'None of these reports captured a last known location.') + '</p>'
+    : '<p class="none">No bag in this pack carried a tracker.</p>';
+}
+
+// ── map ──────────────────────────────────────────────────────────────────────
+// Density as stacked translucent halos in one colour rather than a rainbow ramp:
+// overlapping reports darken naturally, and it survives a mono printer, which a
+// blue-to-red ramp does not.
+function heatmap(){
   const cv = document.getElementById('heat');
-  const pts = ROWS.filter(r => r.loc_x != null && r.loc_y != null);
-  document.getElementById('heatNote').textContent = pts.length
-    ? pts.length + ' of ' + ROWS.length + ' reports have a map pin. Dots are individual reports.'
-    : 'No reports carry a map pin yet.';
+  const pts = PACK.filter(r => r.loc_x != null && r.loc_y != null);
+  document.getElementById('mapCnt').textContent = pts.length + ' of ' + PACK.length + ' pinned';
+  document.getElementById('mapNote').innerHTML = pts.length
+    ? plural(pts.length,'report') + ' of ' + PACK.length + ' carry a map pin. Pins placed before '
+      + '15 August 2026 were set on a slightly different crop of the same artwork and can sit a little off.'
+    : 'No report in this pack carries a map pin.';
+
+  // pin list beside the map
+  document.getElementById('pinlist').innerHTML = PACK.map(r =>
+    '<tr><td class="k"><span class="kn">' + r._k + '</span></td>'
+    + '<td><span class="w">' + esc(dateSh(new Date(r.left_at))) + ', ' + esc(timeS(new Date(r.left_at))) + '</span><br>'
+    + (r.loc_note ? esc(r.loc_note)
+       : (r.loc_x != null ? '<span class="nc">pin only, no description</span>'
+                          : '<span class="nc">no pin placed</span>')) + '</td></tr>').join('');
 
   const img = new Image();
   img.onload = () => {
-    // Sized to match the charts column's height, not the card's own width —
-    // the goal is the two cards' BOTTOM edges lining up so the whole dashboard
-    // (map + all three charts) fits one screenshot box above "Every report".
-    // Two passes: .mapbox has no width until we give it one, and the "auto"
-    // grid track would otherwise collapse it near 0 — which wraps the header/
-    // legend text onto many lines and inflates the chrome-height measurement
-    // below. Seed a plausible width first, measure, THEN set the real one.
-    cv.parentElement.style.width = Math.min(300, img.naturalWidth) + 'px';
-    const chartsH = document.querySelector('.dash-charts').getBoundingClientRect().height;
-    const card = cv.closest('.card');
-    const prevDisplay = cv.style.display;
-    cv.style.display = 'none';
-    const chromeH = card.getBoundingClientRect().height;
-    cv.style.display = prevDisplay;
-    const targetH = Math.max(80, chartsH - chromeH);
-    const H = Math.min(targetH, img.naturalHeight);
-    const W = Math.round(H * img.naturalWidth / img.naturalHeight);
-    cv.parentElement.style.width = W + 'px';
+    MAPIMG = img;
+    caseThumbs();
+    // Drawn at the image's own resolution so it prints sharp; CSS scales it down.
+    const W = img.naturalWidth, H = img.naturalHeight;
     cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
     g.drawImage(img, 0, 0, W, H);
     if (!pts.length) return;
 
-    // 1) alpha accumulation
-    const off = document.createElement('canvas');
-    off.width = W; off.height = H;
-    const og = off.getContext('2d');
-    const R = Math.max(16, Math.round(W * 0.09));
+    const R = Math.max(30, W * .085);
+    g.save();
     pts.forEach(p => {
-      const x = p.loc_x * W, y = p.loc_y * H;
-      const grd = og.createRadialGradient(x, y, 0, x, y, R);
-      grd.addColorStop(0, 'rgba(0,0,0,0.42)');
-      grd.addColorStop(1, 'rgba(0,0,0,0)');
-      og.fillStyle = grd;
-      og.beginPath(); og.arc(x, y, R, 0, Math.PI * 2); og.fill();
+      const x = p.loc_x*W, y = p.loc_y*H;
+      const grd = g.createRadialGradient(x, y, 0, x, y, R);
+      grd.addColorStop(0, 'rgba(168,40,26,0.36)');
+      grd.addColorStop(1, 'rgba(168,40,26,0)');
+      g.fillStyle = grd;
+      g.beginPath(); g.arc(x, y, R, 0, Math.PI*2); g.fill();
     });
+    g.restore();
 
-    // 2) colour ramp over the accumulated alpha
-    const id = og.getImageData(0, 0, W, H), d = id.data;
-    const ramp = [[59,110,165],[73,176,160],[232,210,74],[224,122,43],[192,57,43]];
-    for (let i = 0; i < d.length; i += 4) {
-      const a = d[i + 3];
-      if (!a) continue;
-      const t = Math.min(1, a / 190) * (ramp.length - 1);
-      const k = Math.min(ramp.length - 2, Math.floor(t)), f = t - k;
-      d[i]     = ramp[k][0] + (ramp[k + 1][0] - ramp[k][0]) * f;
-      d[i + 1] = ramp[k][1] + (ramp[k + 1][1] - ramp[k][1]) * f;
-      d[i + 2] = ramp[k][2] + (ramp[k + 1][2] - ramp[k][2]) * f;
-      d[i + 3] = Math.min(210, a * 1.7);
-    }
-    og.putImageData(id, 0, 0);
-    g.drawImage(off, 0, 0);
-
-    // 3) the individual pins, so exact spots stay visible under the blur — and
-    // still easy to find even when it's the only report on the map, not just
-    // when several overlap into a hot blob. A higher floor than the raw W ratio
-    // would give, since the map is now sized to match the chart column's height
-    // (often narrower than it used to render at) rather than the card's full
-    // width — dots must stay readable at that smaller size too.
-    const pinR = Math.max(9, W * 0.026);
+    // numbered pins on top — the number is the whole point, so it gets a white
+    // halo and sits above the density wash
+    const r0 = Math.max(17, W * .026);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
     pts.forEach(p => {
-      const x = p.loc_x * W, y = p.loc_y * H;
-      g.beginPath(); g.arc(x, y, pinR, 0, Math.PI * 2);
-      g.fillStyle = 'rgba(255,255,255,0.95)';
-      g.fill();
-      g.lineWidth = Math.max(2, pinR * 0.3); g.strokeStyle = 'rgba(9,26,33,0.85)'; g.stroke();
-      g.beginPath(); g.arc(x, y, pinR * 0.46, 0, Math.PI * 2);
-      g.fillStyle = '#c0392b';
-      g.fill();
+      const x = p.loc_x*W, y = p.loc_y*H;
+      g.beginPath(); g.arc(x, y, r0*1.28, 0, Math.PI*2);
+      g.fillStyle = 'rgba(255,255,255,.94)'; g.fill();
+      g.beginPath(); g.arc(x, y, r0, 0, Math.PI*2);
+      g.fillStyle = '#0f2b35'; g.fill();
+      g.lineWidth = Math.max(2, r0*.12); g.strokeStyle = '#fff'; g.stroke();
+      g.fillStyle = '#fff';
+      g.font = '700 ' + Math.round(r0*1.16) + 'px Inter, system-ui, sans-serif';
+      g.fillText(String(p._k), x, y + r0*.06);
     });
+  };
+  img.onerror = () => {
+    document.getElementById('mapNote').innerHTML =
+      '<b>Map artwork did not load</b> (' + esc(MAP_SRC) + '). Pin coordinates are still listed on every case sheet.';
   };
   img.src = MAP_SRC;
 }
 
-// ── charts (hand-drawn SVG: no libraries, works offline) ─────────────────────
-function bars(host, labels, values, opts) {
-  opts = opts || {};
-  const W = 100, H = 38, pad = 3;             // viewBox units, scales to any width
-  const max = Math.max(1, ...values);
-  const bw = (W - pad * 2) / values.length;
-  const body = values.map((v, i) => {
-    const h = (H - 13) * (v / max);
-    const x = pad + i * bw, y = H - 9 - h;
-    const hot = opts.hot && v === max && v > 0;
-    return `<rect x="${x + bw * 0.14}" y="${y}" width="${bw * 0.72}" height="${h}"
-              rx="${Math.min(1, bw * 0.2)}" fill="${hot ? '#c0392b' : '#1b6c8a'}"></rect>`
-      + (v ? `<text x="${x + bw / 2}" y="${y - 1.3}" text-anchor="middle"
-              style="font-size:4.2px;font-weight:700;fill:var(--deep)">${v}</text>` : '');
-  }).join('');
-  const axis = labels.map((l, i) => l == null ? '' :
-    `<text x="${pad + i * bw + bw / 2}" y="${H - 1.5}" text-anchor="middle"
-       style="font-size:4px;fill:var(--dim)">${esc(l)}</text>`).join('');
-  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;overflow:visible">
-      ${body}${axis}</svg>`;
-}
-
-function timeline() {
-  const host = document.getElementById('timeline');
-  if (!ROWS.length) { host.innerHTML = '<div class="note">Nothing to show.</div>'; return; }
-  const counts = {};
-  ROWS.forEach(r => { const k = dayKey(new Date(r.left_at)); counts[k] = (counts[k] || 0) + 1; });
-  const keys = Object.keys(counts).sort();
-  // Pure calendar-date arithmetic, UTC-anchored — NOT `new Date(key + 'T00:00:00')`
-  // then `.toISOString().slice(0,10)`. Those two steps read the date in different
-  // timezone frames (local-time parse, then a UTC-time read back), so they silently
-  // disagree by a day for any browser not sitting at exactly UTC+0, which meant the
-  // generated keys missed the real dayKey() keys in `counts` and reports vanished
-  // from the chart (3 reports rendering as 2, discovered 2026-08-15). Date.UTC()
-  // for both ends keeps every step in the same frame, so this can't drift.
-  const [y0, m0, d0] = keys[0].split('-').map(Number);
-  const [y1, m1, d1] = keys[keys.length - 1].split('-').map(Number);
-  const startUTC = Date.UTC(y0, m0 - 1, d0), endUTC = Date.UTC(y1, m1 - 1, d1);
-  const span = Math.round((endUTC - startUTC) / 86400000) + 1;
-  // Cap at ~7 labels regardless of span — the earlier "label every day" fix
-  // (for a 3-day window) became a wall of overlapping unreadable text the
-  // moment the window grew past a couple of weeks.
-  const every = Math.max(1, Math.ceil(span / 7));
-  const out = [], labels = [];
-  for (let i = 0; i < span; i++) {
-    const dUTC = new Date(startUTC + i * 86400000);
-    const k = dUTC.toISOString().slice(0, 10);
-    out.push(counts[k] || 0);
-    labels.push(i % every === 0 ? fmt(dUTC, { day: 'numeric', month: 'short' }) : null);
-  }
-  bars(host, labels, out, { hot: true });
-}
-
-function dowChart() {
-  const c = {}; DOW.forEach(d => c[d] = 0);
-  ROWS.forEach(r => { const k = dowOf(new Date(r.left_at)); if (k in c) c[k]++; });
-  bars(document.getElementById('dow'), DOW, DOW.map(d => c[d]), { hot: true });
-}
-
-function hourChart() {
-  const spread = document.getElementById('spread').checked;
-  const c = new Array(24).fill(0);
-  ROWS.forEach(r => {
-    const a = new Date(r.left_at), b = new Date(r.missed_at);
-    if (!spread) { c[hourOf(a)]++; return; }
-    // every clock hour the bag sat there gets a count
-    const hrs = Math.min(24, Math.max(1, Math.ceil((b - a) / 3600000)));
-    for (let i = 0; i < hrs; i++) c[hourOf(new Date(a.getTime() + i * 3600000))]++;
+// A zoomed crop around each pin, so a case sheet stands on its own if it is
+// photocopied away from the map page.
+function caseThumbs(){
+  if (!MAPIMG) return;
+  PACK.forEach(r => {
+    const cv = document.getElementById('thumb' + r._k);
+    if (!cv || r.loc_x == null) return;
+    const iw = MAPIMG.naturalWidth, ih = MAPIMG.naturalHeight;
+    const S  = Math.min(iw, ih) * .30;
+    const cx = r.loc_x*iw, cy = r.loc_y*ih;
+    const sx = Math.max(0, Math.min(iw - S, cx - S/2));
+    const sy = Math.max(0, Math.min(ih - S, cy - S/2));
+    const W = 228;
+    cv.width = W; cv.height = W;
+    const g = cv.getContext('2d');
+    g.drawImage(MAPIMG, sx, sy, S, S, 0, 0, W, W);
+    const px = (cx - sx)/S*W, py = (cy - sy)/S*W, r0 = 17;
+    g.beginPath(); g.arc(px, py, r0*1.3, 0, Math.PI*2);
+    g.fillStyle = 'rgba(255,255,255,.94)'; g.fill();
+    g.beginPath(); g.arc(px, py, r0, 0, Math.PI*2);
+    g.fillStyle = '#0f2b35'; g.fill();
+    g.lineWidth = 2.2; g.strokeStyle = '#fff'; g.stroke();
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '700 19px Inter, system-ui, sans-serif';
+    g.fillText(String(r._k), px, py + 1);
   });
-  document.getElementById('hourSub').textContent = spread
-    ? 'Every hour each bag was left unattended.'
-    : 'The hour each bag was put down.';
-  const labels = c.map((_, h) => h % 3 === 0 ? (h % 12 || 12) + (h < 12 ? 'a' : 'p') : null);
-  bars(document.getElementById('hour'), labels, c, { hot: true });
 }
 
-// ── table ────────────────────────────────────────────────────────────────────
-const COLS = [
-  ['#',            r => r.id],
-  ['Lodged',       r => stamp(new Date(r.created_at))],
-  ['Bag left',     r => stamp(new Date(r.left_at))],
-  ['Noticed gone', r => stamp(new Date(r.missed_at))],
-  ['Unattended',   r => Math.round((new Date(r.missed_at) - new Date(r.left_at)) / 60000) + ' min'],
-  ['Where',        r => r.loc_note],
-  ['Lat, lng',     r => r.lat == null ? '' : r.lat.toFixed(5) + ', ' + r.lng.toFixed(5)],
-  ['Pin x/y',      r => r.loc_x == null ? '' : r.loc_x.toFixed(3) + ' / ' + r.loc_y.toFixed(3)],
-  ['Taken',        r => (r.items || []).join(', ')],
-  ['Also',         r => r.items_other],
-  ['Value',        r => r.value_aud == null ? '' : '$' + Number(r.value_aud).toLocaleString()],
-  ['Keys',         r => r.keys_taken ? '<span class="pill no">yes</span>' : ''],
-  ['Bag',          r => r.bag_desc],
-  ['In sight',     r => r.bag_visible],
-  ['Tracker',      r => r.tracker === 'none' ? '' : r.tracker],
-  ['Last ping',    r => r.tracker_ping],
-  ['Police',       r => r.police === 'yes' ? '<span class="pill yes">yes</span>'
-                        : '<span class="pill no">' + esc(r.police) + '</span>'],
-  ['Event number', r => r.event_number],
-  ['Photo',        r => r.photo_url ? '<a href="' + esc(r.photo_url) + '" target="_blank" rel="noopener">'
-                        + '<img src="' + esc(r.photo_url) + '" alt=""></a>' : ''],
-  ['What happened', r => r.what_happened],
-  ['Impact',       r => r.impact],
-  ['Recovered',    r => r.recovered ? '<span class="pill rec">yes</span>' : ''],
-  ['Recovery note', r => r.recovered_note],
-  ['Status',       r => (r.status !== 'new' ? '<span class="pill sus">' + esc(r.status) + '</span>' : '')
-                        + (r.hidden ? ' <span class="pill sus">hidden</span>' : '')],
-  // Truncated one-way hash of the reporter's network, the only thing that can
-  // show one source lodging many reports. It reverses to nothing.
-  ['Source',       r => (r.ip_hash || '').slice(0, 8)]
-];
-const RAW_HTML = new Set(['Keys','Police','Photo','Recovered','Status']);
-const WRAPPED  = new Set(['Where','Taken','Also','Bag','Last ping','What happened','Impact','Recovery note']);
+// ── case sheets ──────────────────────────────────────────────────────────────
+// Every key the record carries is either in COVERED below or gets printed by the
+// audit block at the bottom of the sheet. A column added to the table later shows
+// up in the pack by itself instead of disappearing quietly.
+const COVERED = new Set([
+  'id','created_at','left_at','missed_at','lat','lng','loc_x','loc_y','loc_note',
+  'items','items_other','value_aud','keys_taken','bag_desc','bag_visible',
+  'tracker','tracker_ping','police','event_number','photo_url','what_happened',
+  'impact','recovered','recovered_note','recovered_at','ip_hash','status','hidden',
+  'withdrawn','withdrawn_at'
+]);
+const NEVER = new Set(['claim_hash','_k']);   // identity proof: never rendered, never exported
 
-function table() {
-  const head = '<thead><tr>' + COLS.map(c => `<th>${esc(c[0])}</th>`).join('') + '</tr></thead>';
-  const rows = ROWS.map(r => '<tr>' + COLS.map(([name, get]) => {
-    let v;
-    try { v = get(r); } catch (e) { v = ''; }
-    const cls = (name === '#' || name === 'Value') ? ' class="num"'
-              : WRAPPED.has(name) ? ' class="wrap-txt"' : '';
-    return `<td${cls}>${RAW_HTML.has(name) ? (v || '') : esc(v)}</td>`;
-  }).join('') + '</tr>').join('');
-  document.getElementById('tbl').innerHTML = head + '<tbody>' + rows + '</tbody>';
+function f(label, v, cls){
+  return '<div class="f ' + (cls||'') + '"><b>' + esc(label) + '</b><span>' + v + '</span></div>';
 }
 
-// ── CSV for police ───────────────────────────────────────────────────────────
-function csv() {
-  if (!ROWS.length) return;
-  const keys = Object.keys(ROWS[0]).filter(k => k !== 'claim_hash');  // never export the hash
+function caseSheet(r){
+  const left = new Date(r.left_at), miss = new Date(r.missed_at), made = new Date(r.created_at);
+  const m = mins(r);
+  const flagged = r.status === 'suspect' || r.hidden;
+
+  const pills = [];
+  if (r.police === 'yes') pills.push('<span class="pill ok">police report</span>');
+  else pills.push('<span class="pill bad">' + esc((POL_L[r.police] || r.police).toLowerCase()) + '</span>');
+  if (r.event_number) pills.push('<span class="pill ok">E' + esc(String(r.event_number).replace(/^E/i,'')) + '</span>');
+  if (r.keys_taken) pills.push('<span class="pill bad">keys taken</span>');
+  if (r.tracker && r.tracker !== 'none' && r.tracker !== 'unsure') pills.push('<span class="pill warnp">tracker</span>');
+  if (r.recovered) pills.push('<span class="pill rec">recovered</span>');
+  if (r.status === 'suspect') pills.push('<span class="pill warnp">flagged: suspect</span>');
+  if (r.status === 'verified') pills.push('<span class="pill ok">verified</span>');
+  if (r.hidden) pills.push('<span class="pill warnp">hidden from summaries</span>');
+
+  const items = (r.items || []).map(i =>
+    '<span class="chip' + (/key/i.test(i) ? ' key' : '') + '">' + esc(i) + '</span>').join('');
+
+  // where — thumbnail plus the numbers behind the pin
+  const thumb = r.loc_x != null
+    ? '<canvas id="thumb' + r._k + '" width="228" height="228"></canvas>'
+    : '<div class="nomap">no pin<br>placed</div>';
+
+  const audit = Object.keys(r)
+    .filter(k => !COVERED.has(k) && !NEVER.has(k) && r[k] != null && r[k] !== '')
+    .map(k => f(k.replace(/_/g,' '), esc(Array.isArray(r[k]) ? r[k].join(', ') : r[k])))
+    .join('');
+
+  return '<div class="case' + (flagged ? ' flagged' : '') + '">'
+    + '<div class="chead"><span class="kn">' + r._k + '</span>'
+      + '<span class="ttl">' + esc(dateS(left)) + ' · ' + esc(dowOf(left)) + ' · ' + esc(timeS(left)) + '</span>'
+      + '<span class="rid">record #' + esc(r.id) + '</span>'
+      + '<span class="sp"></span>' + pills.join(' ') + '</div>'
+    + '<div class="cbody">'
+
+    + '<div class="grp"><b>The window</b><div class="fields">'
+      + f('Bag put down', esc(stamp(left)))
+      + f('Found gone', esc(stamp(miss)))
+      + f('Unattended for', '<b>' + esc(dur(m)) + '</b>')
+    + '</div></div>'
+
+    + '<div class="grp"><b>Where</b><div class="wherewrap">' + thumb + '<div class="fields two">'
+      + f('As described by the reporter', fv(r.loc_note), 'full')
+      + f('Coordinates (GDA2020)', r.lat == null ? NONE : esc(r.lat.toFixed(6) + ', ' + r.lng.toFixed(6)))
+      + f('Map pin (x, y)', r.loc_x == null ? NONE : esc(r.loc_x.toFixed(4) + ', ' + r.loc_y.toFixed(4)))
+    + '</div></div></div>'
+
+    + '<div class="grp"><b>Property taken</b><div class="fields">'
+      + f('Itemised', items ? '<div class="chips">' + items + '</div>' : NONE, 'full')
+      + f('Also taken, in the reporter’s words', fv(r.items_other), 'full')
+      + f('Approximate value', r.value_aud == null ? NONE : '<b>' + esc(money(r.value_aud)) + '</b>')
+      + f('Keys taken', r.keys_taken ? '<span class="pill bad">yes — address exposed</span>' : 'No')
+      + f('The bag', fv(r.bag_desc))
+      + f('In plain sight?', fv(VIS_L[r.bag_visible] || r.bag_visible))
+      + f('Tracker', fv(r.tracker === 'none' ? null : (TRACK_L[r.tracker] || r.tracker)))
+      + f('Last known tracker location', fv(r.tracker_ping))
+    + '</div></div>'
+
+    + '<div class="grp"><b>Police</b><div class="fields">'
+      + f('Reported to NSW Police', fv(POL_L[r.police] || r.police))
+      + f('Event number', r.event_number ? '<b>' + esc(r.event_number) + '</b>' : NONE)
+      + f('Property recovered', r.recovered
+          ? '<span class="pill rec">yes</span>' + (r.recovered_at ? ' ' + esc(dateS(new Date(r.recovered_at))) : '')
+          : 'Not as at ' + esc(dateS(new Date())))
+    + '</div></div>'
+
+    + '<div class="grp"><b>The reporter’s account</b><div class="fields">'
+      + f('What happened', r.what_happened ? '<div class="quote">' + esc(r.what_happened) + '</div>' : NONE, 'full')
+      + f('Effect on them', r.impact ? '<div class="quote">' + esc(r.impact) + '</div>' : NONE, 'full')
+      + (r.recovered_note ? f('Recovery note', '<div class="quote">' + esc(r.recovered_note) + '</div>', 'full') : '')
+      + (r.photo_url ? f('Photograph supplied',
+          '<a href="' + esc(r.photo_url) + '" target="_blank" rel="noopener">'
+          + '<img class="evimg" src="' + esc(r.photo_url) + '" alt="photograph supplied with report ' + r._k + '"></a>', 'full') : '')
+    + '</div></div>'
+
+    + (audit ? '<div class="grp"><b>Other recorded fields</b><div class="fields">' + audit + '</div></div>' : '')
+    + '</div>'
+
+    + '<div class="cfoot">'
+      + '<span>Lodged ' + esc(stamp(made)) + ' (server time)</span>'
+      + '<span>Record #' + esc(r.id) + '</span>'
+      + '<span>Status: ' + esc(r.status) + (r.hidden ? ', hidden' : '') + '</span>'
+      + '<span>Source hash ' + esc((r.ip_hash || '—').slice(0,10)) + '</span>'
+    + '</div></div>';
+}
+
+function cases(){
+  document.getElementById('caseCnt').textContent = plural(PACK.length,'report');
+  document.getElementById('cases').innerHTML = PACK.length
+    ? PACK.map(caseSheet).join('')
+    : '<p class="none">No reports in the selected window.</p>';
+}
+
+// ── index ────────────────────────────────────────────────────────────────────
+// A finding aid, not a second copy: thirteen columns would not fit A4 portrait
+// without shredding the two that matter (where, and what went). Day folds into
+// the date, the event number sits with the police status, and everything that
+// can be one line is held on one line so the wrapping happens where it should.
+const POL_SHORT = { yes:'Yes', will:'Will report', not_yet:'Not yet', no:'Will not' };
+
+function indexTable(){
+  const R = PACK;
+  document.getElementById('idxCnt').textContent = plural(R.length,'report');
+  const head = [['#','n'],['Date','w'],['Window','w'],['Unattended','w'],['Where',''],
+                ['Taken',''],['Value','n'],['Tracker','w'],['Police','w'],['Outcome','w'],['Record','n']];
+  const body = R.map(r => {
+    const a = new Date(r.left_at), b = new Date(r.missed_at);
+    const it = (r.items || []).join(', ')
+             + (r.items_other ? ((r.items||[]).length ? '; ' : '') + r.items_other : '');
+    const pol = (POL_SHORT[r.police] || r.police)
+              + (r.event_number ? '<br><span style="color:#37545f">' + esc(r.event_number) + '</span>' : '');
+    const out = r.recovered
+              ? 'Recovered' + (r.recovered_at ? '<br><span style="color:#37545f">' + esc(dateSh(new Date(r.recovered_at))) + '</span>' : '')
+              : '—';
+    return '<tr' + (r.status === 'suspect' || r.hidden ? ' class="flag"' : '') + '>'
+      + '<td class="n"><b>' + r._k + '</b></td>'
+      + '<td class="w">' + esc(dowOf(a)) + ' ' + esc(dateSh(a)) + '</td>'
+      + '<td class="w">' + esc(timeS(a)) + '–' + esc(timeS(b)) + '</td>'
+      + '<td class="w n">' + esc(dur(mins(r))) + '</td>'
+      + '<td>' + esc(r.loc_note || '—') + '</td>'
+      + '<td>' + esc(it || '—') + '</td>'
+      + '<td class="n">' + (r.value_aud == null ? '—' : esc(money(r.value_aud))) + '</td>'
+      + '<td class="w">' + esc(r.tracker === 'none' ? '—' : (TRACK_L[r.tracker] || r.tracker)) + '</td>'
+      + '<td class="w">' + pol + '</td>'
+      + '<td class="w">' + out + '</td>'
+      + '<td class="n">#' + esc(r.id) + '</td></tr>';
+  }).join('');
+  const total = R.reduce((a,r) => a + (r.value_aud||0), 0);
+  document.getElementById('idx').innerHTML =
+    '<thead><tr>' + head.map(([h,c]) => '<th class="' + c + '">' + esc(h) + '</th>').join('') + '</tr></thead>'
+    + '<tbody>' + body + '</tbody>'
+    + '<tfoot><tr><td colspan="6">' + plural(R.length,'report') + ' &mdash; every field for each one is on its case sheet</td>'
+    + '<td class="n">' + esc(money(total)) + '</td><td colspan="4"></td></tr></tfoot>';
+  const flagged = R.filter(r => r.status === 'suspect' || r.hidden).length;
+  document.getElementById('idxNote').innerHTML =
+    'Times are Sydney local. &ldquo;Window&rdquo; runs from the bag being put down to it being found gone. '
+    + 'The police column carries the NSW Police event number underneath the status where one was given. '
+    + (flagged ? 'Shaded rows are flagged for review and are included deliberately, so the judgement stays with you. ' : '')
+    + 'Record numbers are the database primary key and are stable &mdash; quote them in any correspondence.';
+}
+
+// ── withdrawn: on screen, never in the pack ──────────────────────────────────
+function withdrawnBlock(){
+  const el = document.getElementById('excl');
+  if (!GONE.length){ el.classList.add('hide'); return; }
+  el.classList.remove('hide');
+  el.innerHTML = '<h3>' + plural(GONE.length,'withdrawn report') + ' — excluded from this pack</h3>'
+    + '<p class="fine">These reporters withdrew after lodging. They stay visible here so you can see that '
+    + 'they exist, and they are left out of every page above, the index, the charts and the CSV. '
+    + 'They must not be passed on. This block does not print.</p>'
+    + '<table class="idx" style="margin-top:7px"><thead><tr><th>Record</th><th>Bag left</th>'
+    + '<th>Withdrawn</th><th>Where</th></tr></thead><tbody>'
+    + GONE.map(r => '<tr><td class="n">#' + esc(r.id) + '</td><td>' + esc(stamp(new Date(r.left_at))) + '</td>'
+      + '<td>' + (r.withdrawn_at ? esc(stamp(new Date(r.withdrawn_at))) : '—') + '</td>'
+      + '<td>' + esc(r.loc_note || '—') + '</td></tr>').join('')
+    + '</tbody></table>';
+}
+
+function runfoot(){
+  const s = span();
+  document.getElementById('runfoot').innerHTML =
+    '<span>Swimmer-reported bag thefts — Cabbage Tree Bay &amp; South Steyne, Manly NSW'
+    + (s ? ' · ' + esc(dateS(s.a)) + ' to ' + esc(dateS(s.b)) : '') + '</span>'
+    + '<span>Marco Bordieri · sticasale@gmail.com · 0405 461 023 · prepared ' + esc(dateS(new Date())) + '</span>';
+}
+
+// ── CSV ──────────────────────────────────────────────────────────────────────
+// The pack only: withdrawn rows are not in PACK, and claim_hash is never written.
+function csv(){
+  if (!PACK.length) return;
+  const keys = Object.keys(PACK[0]).filter(k => !NEVER.has(k));
   const q = v => {
     if (v == null) return '';
     const s = Array.isArray(v) ? v.join('; ') : String(v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
   };
-  const body = [keys.join(',')].concat(ROWS.map(r => keys.map(k => q(r[k])).join(','))).join('\r\n');
-  const blob = new Blob(['﻿' + body], { type: 'text/csv;charset=utf-8' });
+  const body = [['pack_no'].concat(keys).join(',')]
+    .concat(PACK.map(r => [r._k].concat(keys.map(k => q(r[k]))).join(',')))
+    .join('\r\n');
+  const blob = new Blob(['﻿' + body], { type:'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'stolen-bag-reports-' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.download = 'bag-thefts-evidence-pack-' + new Date().toISOString().slice(0,10) + '.csv';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
 }
@@ -550,11 +1382,17 @@ function csv() {
 document.getElementById('reload').onclick = load;
 document.getElementById('range').onchange = load;
 document.getElementById('csv').onclick = csv;
-document.getElementById('spread').onchange = hourChart;
+document.getElementById('print').onclick = () => window.print();
+document.getElementById('spread').onchange = timeCharts;
+let _rz;
+addEventListener('resize', () => {
+  clearTimeout(_rz);
+  _rz = setTimeout(() => { if (PACK.length){ timeCharts(); whatCharts(); } }, 180);
+});
 document.getElementById('tokenGo').onclick = () => {
   const v = document.getElementById('tokenIn').value.trim();
   if (!v) return;
-  try { localStorage.setItem('swim_admin_token', v); } catch (e) {}
+  try{ localStorage.setItem('swim_admin_token', v); }catch(e){}
   load();
 };
 document.getElementById('tokenIn').addEventListener('keydown', e => {
