@@ -375,7 +375,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
    to change. Hashed, not timestamped, so a re-bake that changes nothing leaves
    the URL alone and the cache stays warm. Do not edit by hand — the bake
    rewrites this exact line. */
-var DATA_V={ctbar:"403761bc5f",shapes:"d9207e7321"};
+var DATA_V={ctbar:"403761bc5f",shapes:"e10e0e54c8"};
 var DATA=null, SHAPES=[], MODE='id', SEL={shape:null,colour:null,mark:null,size:null}, Q='';
 /* Which of the four questions is expanded. One at a time, because all four
    open came to 705px on a 375px phone — a full screen of controls before a
@@ -1090,7 +1090,14 @@ function renderId(){
 
     +'<div class="facets">'
     + facetHTML('shape','Shape','<div class="shapes">'
-        + SHAPES.map(function(sh){
+        /* A shape with nothing in it is not shown at all.
+           Two new ones ship before the species have been moved into them, and
+           an empty tile is worse than a missing one: it is the first tap, so a
+           swimmer who picks it gets an empty list before they have told the
+           page anything. They appear on their own once the re-ask has run. */
+        + SHAPES.filter(function(sh){
+            return DATA.species.some(function(s){ return s.shape===sh.key; }); })
+          .map(function(sh){
             return '<button class="sh'+(SEL.shape===sh.key?' on':'')+'" data-shape="'+sh.key+'">'
               +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg>'
               +'<span class="t">'+esc(sh.label)+'</span></button>'; }).join('')

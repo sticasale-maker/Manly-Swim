@@ -240,7 +240,9 @@ SPEND = Spend()
 
 Shape = Literal[
     "torpedo",            # classic streamlined fish — bream, trevally, kingfish
-    "deep-flat-sided",    # tall and laterally compressed — old wife, butterflyfish
+    "deep-flat-sided",     # deep and oval: bream, sweep, damsel, drummer
+    "plate-round",         # as tall as long: butterflyfish, Old Wife, moony
+    "diamond-snouted",     # leatherjacket, triggerfish: diamond + long snout    # tall and laterally compressed — old wife, butterflyfish
     "long-slender",       # pencil-shaped — hulafish, garfish, barracuda
     "flat-on-bottom",     # depressed, lies on the seabed — flathead, stargazer
     "ray-like",           # disc with wings — rays, skates
@@ -3308,6 +3310,78 @@ def merge_markings(ms: list) -> list:
     return out
 
 
+def stage_reshape(species: list, tags: dict, only: str, limit: int = 0) -> dict:
+    """Re-ask the shape of everything currently filed under one shape.
+
+    "Deep, flat-sided" held 197 species, 31% of the list and nearly twice the
+    next shape, because it was the bucket for anything laterally compressed --
+    a butterflyfish, a leatherjacket and a bream are all deep and flat-sided
+    and look nothing like each other from a metre away.
+
+    Asked from the NAME, not the photograph, for the same reason the shape
+    store exists: a species has one shape and a photograph is one angle of it.
+    Answers land in name-shapes.json, which already outranks anything the
+    vision pass decided.
+
+    What this does NOT fix, and it is worth knowing before paying for it: a
+    genus-level sort says the split lands about 25 plate, 23 diamond, 149 still
+    oval. The oval remainder is mostly damsels, cardinals and surgeonfish,
+    which are separated by colour rather than by outline -- so this takes the
+    worst bucket from 197 to about 149 and the shape axis is then at its
+    natural resolution.
+    """
+    shapes = cache_read("name-shapes.json") or {}
+    todo = [s for s in species
+            if (tags.get(str(s["taxon_id"])) or {}).get("shape") == only]
+    todo.sort(key=lambda s: -s["annual"])
+    if limit:
+        todo = todo[:limit]
+    if not todo:
+        log(f"5n/6 reshape     nothing filed under {only}")
+        return tags
+
+    _require_key("5n/6 reshape")
+    log(f"5n/6 reshape     {len(todo)} filed as {only}, re-asked on {MODEL} "
+        f"(~${len(todo)*0.009:.2f})")
+    client = anthropic.Anthropic()
+
+    def ask(s):
+        tid = str(s["taxon_id"])
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=MODEL, max_tokens=400, system=SHAPE_BY_NAME_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']})"}],
+                    output_format=ShapeVote)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    reshape failed {s['name']}: {type(e).__name__}")
+                    return tid, None
+                time.sleep(0.5 * attempt)
+        return tid, None
+
+    by_tid = {str(s["taxon_id"]): s for s in todo}
+    moved, done = collections.Counter(), 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(ask, s) for s in todo]):
+            tid, out = fut.result()
+            done += 1
+            if out is None:
+                continue
+            shapes[tid] = {"shape": out.shape,
+                           "from": "species knowledge, not the photograph"}
+            moved[out.shape] += 1
+            if done % 50 == 0:
+                cache_write("name-shapes.json", shapes)
+                log(f"      {done}/{len(todo)}")
+    cache_write("name-shapes.json", shapes)
+    log(f"5n/6 reshape     {len(todo)} re-asked: "
+        + ", ".join(f"{v} {k}" for k, v in moved.most_common()))
+    return tags
+
 def stage_gbif_keys(species: list, force: bool) -> dict:
     """Match each species to GBIF, so the card can show where it lives.
 
@@ -3789,6 +3863,11 @@ def main() -> int:
     ap.add_argument("--facts", action="store_true",
                     help="look up one curiosity per species, then have the "
                          "stronger model try to refute the most-seen ones")
+    ap.add_argument("--reshape", metavar="SHAPE",
+                    help="re-ask the shape of every species currently filed "
+                         "under SHAPE, from the species name")
+    ap.add_argument("--reshape-limit", type=int, default=0, metavar="N",
+                    help="re-ask only the N most-seen of them (trial run)")
     ap.add_argument("--repair-facts", action="store_true",
                     help="rewrite refuted facts around the checker's objection, "
                          "then put the rewrite through the same checker")
@@ -3896,6 +3975,8 @@ def main() -> int:
             tags = stage_colour(species, tags)
         if args.name_shapes and not args.skip_tags:
             tags = stage_shape_by_name(species, tags)
+        if args.reshape:
+            tags = stage_reshape(species, tags, args.reshape, args.reshape_limit)
         # Applied on every run, from its own store, before the hand overrides.
         # Precedence: a person's ruling, then the species, then the photograph.
         _named = cache_read("name-shapes.json") or {}
