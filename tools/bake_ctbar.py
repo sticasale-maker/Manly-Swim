@@ -1387,6 +1387,37 @@ def stage_typical(species: list, sizes: dict, force: bool, limit: int = 0,
             log(f"    lookup failed {s['name']}: {type(e).__name__}")
             return str(s["taxon_id"]), (None, 0.0)
 
+    def promote(tid, cand):
+        """Put the photograph the tagger actually used at the head of the list.
+
+        THIS IS WHAT STOPPED AN INFINITE RE-TAG. The tagger walks the
+        candidates until one shows the whole animal, so a species whose first
+        photograph is a close-up is legitimately described from the second or
+        third. The emit, meanwhile, shows the first. The staleness rule then
+        compares the two, finds the caption is about a picture nobody will see,
+        deletes the record and buys it again -- and the tagger picks the same
+        second photograph, so it happens again on the next run, and the next.
+
+        Eight species were caught in that: Samsonfish, blacklip abalone, Common
+        Tent Shell, Eastern Gobbleguts, Sieve-patterned Moray, Southern Peacock
+        Sole, Whitestreak Grubfish and Arctides antipodarum. $0.39 a run,
+        every run, for ever, and the same eight names in the log each time.
+
+        Promoting is the honest end of it rather than teaching the staleness
+        rule to look away: the caption and the picture agree afterwards, which
+        is the thing the rule exists to enforce.
+        """
+        cl = photos.get(tid) or []
+        pid = (cand or {}).get("photo_id")
+        if not cl or pid is None or cl[0].get("photo_id") == pid:
+            return False
+        for i, c in enumerate(cl):
+            if c.get("photo_id") == pid:
+                cl.insert(0, cl.pop(i))
+                return True
+        return False
+
+    promoted = 0
     with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
         for fut in as_completed([pool.submit(look, s) for s in todo]):
             tid, (rec, cost) = fut.result()
@@ -1708,6 +1739,8 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks:
         for fut in as_completed(futures):
             tid, t = fut.result()
             done += 1
+            if t and promote(tid, t.get("photo")):
+                promoted += 1
             if t:
                 tags[tid] = t
                 # restore per result, not at the end of the stage. The
@@ -1724,6 +1757,9 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks:
     for tid, keep in kept_shape.items():
         if tid in tags:
             tags[tid].update(keep)
+    if promoted:
+        cache_write("photos.json", photos, allow_shrink=True)
+        log(f"    {promoted} photo lists reordered to the picture that was described")
     cache_write("tags.json", tags)
     log(f"5/6 tags         {len(tags):>4} tagged")
     print(SPEND.report())
