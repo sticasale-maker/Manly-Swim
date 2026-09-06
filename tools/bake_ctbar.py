@@ -3462,6 +3462,28 @@ MARK_MERGE = {"spots": "spotted-or-blotchy",
               "net-or-scribble": "spotted-or-blotchy"}
 
 
+_ESCAPED = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+
+def unescape_prose(t):
+    """Turn a literal backslash-u-2013 in model prose into the dash it means.
+
+    Five of the first 22 repaired facts came back with the ESCAPE SEQUENCE as
+    six literal characters rather than the character: the Dusky Flathead read
+    "Males reach only about 60\\u201365 cm" and would have rendered exactly
+    that to a swimmer. The model is quoting an en dash the way it would appear
+    in a JSON source file, and nothing between there and the page turns it
+    back.
+
+    Applied to every model-written string at emit rather than to the fact
+    alone, because the same hand writes the morph descriptions and the
+    look-for line and nothing stops it happening there too.
+    """
+    if not t or "\\u" not in t:
+        return t
+    return _ESCAPED.sub(lambda m: chr(int(m.group(1), 16)), t)
+
+
 def merge_markings(ms: list) -> list:
     out = []
     for m in ms:
@@ -3853,7 +3875,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "gbif": (gbif or {}).get(tid),
             # Model knowledge, never an observation. The app must show it as
             # such — same treatment as an estimated size.
-            "fact": ((facts or {}).get(tid) or {}).get("fact"),
+            "fact": unescape_prose(((facts or {}).get(tid) or {}).get("fact")),
             "fact_category": ((facts or {}).get(tid) or {}).get("category"),
             "fact_checked": bool(((facts or {}).get(tid) or {}).get("checked")),
             # A hand ruling never went through the refute pass, so the card
