@@ -103,6 +103,7 @@ WHAT COMES FROM WHERE
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import os
@@ -3058,6 +3059,61 @@ def _gbif_accept(sci: str, d: dict):
                 return species_key(rec)
     return None
 
+def stamp_data_version() -> None:
+    """Put a content hash of the data files into species.html's fetch URLs.
+
+    species.html fetches species/ctbar.json with no version on it, so a
+    returning reader is served whatever their browser cached until it expires.
+    Found the hard way: a local rebuild kept showing 640 species until the test
+    server moved to a different port. On the live site the same thing happens
+    behind Fastly, and the reader has no port to change.
+
+    Hashed rather than timestamped, so a re-bake that produces identical bytes
+    leaves the URL alone and the cache stays warm — which is most re-bakes, as
+    the whole pipeline is cached and re-emits constantly. Written by the bake
+    rather than by hand, for the same reason CI stamps APP_BUILD: a version a
+    person has to remember to bump is a version that silently goes stale.
+    """
+    page = ROOT / "species.html"
+    if not page.exists():
+        return
+    def short(name: str) -> str:
+        f = OUT_DIR / name
+        if not f.exists():
+            return "0"
+        raw = f.read_bytes()
+        # Hash the DATA, not the clock. ctbar.json carries a generated_at, so
+        # hashing the bytes gave a new version on every run — including the
+        # many runs that re-emit an unchanged file from cache, which would push
+        # 910 KB at every reader for nothing. Dropping the stamp means the
+        # version moves when the counts move.
+        #
+        # The reader then keeps the older "counts as at" date until something
+        # actually changes. That understates freshness and never overstates it,
+        # which is the right way round: identical counts ARE the old counts.
+        try:
+            doc = json.loads(raw)
+            if isinstance(doc, dict) and "generated_at" in doc:
+                doc = {k: v for k, v in doc.items() if k != "generated_at"}
+                raw = json.dumps(doc, sort_keys=True,
+                                 separators=(",", ":")).encode("utf-8")
+        except Exception:                                    # noqa: BLE001
+            pass                                             # hash the bytes
+        return hashlib.sha256(raw).hexdigest()[:10]
+
+    want = f'var DATA_V={{ctbar:"{short("ctbar.json")}",shapes:"{short("shapes.json")}"}};'
+    html = page.read_text("utf-8")
+    m = re.search(r"^var DATA_V=\{[^}]*\};$", html, re.M)
+    if not m:
+        log("6/6 emit         WARNING: no DATA_V line in species.html, not stamped")
+        return
+    if m.group(0) == want:
+        log("6/6 emit         data version unchanged, cache stays warm")
+        return
+    page.write_text(html[:m.start()] + want + html[m.end():], "utf-8")
+    log(f"6/6 emit         species.html stamped {want[10:-1]}")
+    log("                 COMMIT species.html with the data, or readers keep the old copy")
+
 def stage_gbif_keys(species: list, force: bool) -> dict:
     """Match each species to GBIF, so the card can show where it lives.
 
@@ -3474,6 +3530,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
     imgs = len(list(IMG_DIR.glob("*.webp"))) if IMG_DIR.exists() else 0
     img_kb = sum(p.stat().st_size for p in IMG_DIR.glob("*.webp")) // 1024 if imgs else 0
 
+    stamp_data_version()
     log(f"6/6 emit         species/ctbar.json  {kb} KB, {len(out)} species")
     log(f"                 species/img/        {imgs} files, {img_kb} KB")
     print()
