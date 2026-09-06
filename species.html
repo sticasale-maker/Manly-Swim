@@ -375,7 +375,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
    to change. Hashed, not timestamped, so a re-bake that changes nothing leaves
    the URL alone and the cache stays warm. Do not edit by hand — the bake
    rewrites this exact line. */
-var DATA_V={ctbar:"fc6acf4eee",shapes:"d9207e7321"};
+var DATA_V={ctbar:"403761bc5f",shapes:"d9207e7321"};
 var DATA=null, SHAPES=[], MODE='id', SEL={shape:null,colour:null,mark:null,size:null}, Q='';
 /* Which of the four questions is expanded. One at a time, because all four
    open came to 705px on a 375px phone — a full screen of controls before a
@@ -442,21 +442,18 @@ function idkit(shapeKey,hue,marks,finish){
     for(x=6;x<W;x+=11) m+='<rect x="'+x+'" y="-2" width="4.4" height="'+(H+4)+'" fill="'+ink+'" opacity=".72"/>';
   if(marks.indexOf('stripes-along')>=0)
     for(x=5;x<H;x+=8) m+='<rect x="-2" y="'+x+'" width="'+(W+4)+'" height="3.1" fill="'+ink+'" opacity=".72"/>';
-  if(marks.indexOf('spots')>=0)
-    for(var a=0,px=7;px<W;px+=10,a++) for(var b=0,py=7;py<H;py+=9,b++)
-      if((a+b)%2===0) m+='<circle cx="'+px+'" cy="'+py+'" r="2.1" fill="'+ink+'" opacity=".66"/>';
-  if(marks.indexOf('blotchy-mottled')>=0)
+  /* One pattern for the three that merged: soft blotches with hard dots over
+     them, so the preview fish shows the range the answer now covers. */
+  if(marks.indexOf('spotted-or-blotchy')>=0){
     [[14,18,7,5],[30,30,9,6],[48,16,8,5.5],[62,32,7.5,5],[24,40,6.5,4],[54,42,6,4]]
-      .forEach(function(o){ m+='<ellipse cx="'+o[0]+'" cy="'+o[1]+'" rx="'+o[2]+'" ry="'+o[3]+'" fill="'+ink+'" opacity=".4"/>'; });
+      .forEach(function(o){ m+='<ellipse cx="'+o[0]+'" cy="'+o[1]+'" rx="'+o[2]+'" ry="'+o[3]+'" fill="'+ink+'" opacity=".38"/>'; });
+    for(var a=0,px=9;px<W;px+=13,a++) for(var b=0,py=9;py<H;py+=12,b++)
+      if((a+b)%2===0) m+='<circle cx="'+px+'" cy="'+py+'" r="2.1" fill="'+ink+'" opacity=".6"/>';
+  }
   if(marks.indexOf('one-dark-spot')>=0)
     m+='<circle cx="'+(W*0.66)+'" cy="'+(H*0.42)+'" r="5.4" fill="'+ink+'" opacity=".8"/>';
   if(marks.indexOf('dark-eye-bar')>=0&&eye)
     m+='<rect x="'+(eye[0]-3.4)+'" y="-2" width="6.8" height="'+(H+4)+'" fill="'+ink+'" opacity=".8"/>';
-  if(marks.indexOf('net-or-scribble')>=0)
-    for(x=-H;x<W+H;x+=9){
-      m+='<path d="M'+x+' -2 L'+(x+H+4)+' '+(H+2)+'" stroke="'+ink+'" stroke-width="1.5" fill="none" opacity=".45"/>';
-      m+='<path d="M'+x+' '+(H+2)+' L'+(x+H+4)+' -2" stroke="'+ink+'" stroke-width="1.5" fill="none" opacity=".3"/>';
-    }
 
   var uid=Math.abs((shapeKey+hue+finish+marks.join()).split('').reduce(
     function(p,c){ return ((p<<5)-p+c.charCodeAt(0))|0; },0));
@@ -890,16 +887,15 @@ var MARK_ART={
   'plain':'',
   'bars-across':'<path d="M7 0v20M15 0v20M23 0v20" stroke="#113541" stroke-width="3.4" fill="none"/>',
   'stripes-along':'<path d="M0 6h30M0 13h30" stroke="#113541" stroke-width="3" fill="none"/>',
-  'spots':'<g fill="#113541"><circle cx="7" cy="6" r="2.4"/><circle cx="16" cy="12" r="2.4"/>'
-    +'<circle cx="24" cy="5" r="2.4"/><circle cx="10" cy="15" r="2.4"/><circle cx="24" cy="15" r="2.4"/></g>',
-  'blotchy-mottled':'<g fill="#113541"><ellipse cx="8" cy="7" rx="5.5" ry="4"/>'
-    +'<ellipse cx="21" cy="6" rx="4" ry="3"/><ellipse cx="17" cy="15" rx="6" ry="3.6"/>'
-    +'<ellipse cx="27" cy="14" rx="3" ry="2.6"/></g>',
+  /* One swatch covering the whole range it now stands for: a couple of soft
+     blotches and a couple of hard dots, so the pill does not quietly pick a
+     favourite out of the three it replaced. */
+  'spotted-or-blotchy':'<g fill="#113541"><ellipse cx="8" cy="7" rx="5.5" ry="4"/>'
+    +'<ellipse cx="20" cy="14" rx="5" ry="3.2"/><circle cx="22" cy="5" r="2.3"/>'
+    +'<circle cx="6" cy="15" r="2.1"/></g>',
   'one-dark-spot':'<circle cx="19" cy="10" r="5.2" fill="#113541"/>',
   'dark-eye-bar':'<path d="M8 0v20" stroke="#113541" stroke-width="5" fill="none"/>'
-    +'<circle cx="8" cy="10" r="2.2" fill="#eaf0f3"/>',
-  'net-or-scribble':'<path d="M0 0l30 20M30 0L0 20M15 0v20M0 10h30" stroke="#113541" '
-    +'stroke-width="1.6" fill="none" opacity=".85"/>'
+    +'<circle cx="8" cy="10" r="2.2" fill="#eaf0f3"/>'
 };
 function markArt(k){
   return '<span class="mk"><svg viewBox="0 0 30 20" aria-hidden="true">'
@@ -907,9 +903,11 @@ function markArt(k){
     +'<rect width="30" height="20" rx="3" fill="none" stroke="rgba(17,53,65,.28)" stroke-width="1.5"/>'
     +'</svg></span>';
 }
+/* Six, not eight. Spots, blotches and scribble were one answer pretending to
+   be three -- see MARK_MERGE in the baker for the overlap that settled it. */
 var MARKS=[['plain','Plain'],['bars-across','Bars across'],['stripes-along','Stripes along'],
-  ['spots','Spots'],['blotchy-mottled','Blotchy'],['one-dark-spot','One dark spot'],
-  ['dark-eye-bar','Bar through the eye'],['net-or-scribble','Net or scribble']];
+  ['spotted-or-blotchy','Spotted or blotchy'],['one-dark-spot','One dark spot'],
+  ['dark-eye-bar','Bar through the eye']];
 
 /* Shape, size and the search box EXCLUDE. Colour and markings only DEMOTE.
    Water eats red first, so 34% of these photos have their red badly

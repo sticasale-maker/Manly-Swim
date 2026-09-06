@@ -3278,6 +3278,36 @@ def stamp_data_version() -> None:
     log(f"6/6 emit         species.html stamped {want[10:-1]}")
     log("                 COMMIT species.html with the data, or readers keep the old copy")
 
+# Spots, blotches and scribble are ONE answer to a swimmer.
+#
+# The vision pass keeps all three, because a photograph can carry the
+# difference and there is no reason to throw the distinction away in the cache.
+# What the picker asks a person is a different question, and the tagger's own
+# output says these three are not separable by eye: 35% of the species tagged
+# blotchy are ALSO tagged spots, and 42% of the scribbled ones are blotchy too.
+# If a model reading a still photograph cannot hold the line, a swimmer
+# recalling two seconds of moving fish certainly cannot, and asking them to is
+# worse than not asking: pick "spots" and a blotchy animal is demoted for a
+# distinction that was never really there.
+#
+# Bars-across and stripes-along overlap 7%. That one is real and stays.
+#
+# Merged at EMIT, not in the vocabulary, so the underlying tags survive and
+# this is one line to undo.
+MARK_MERGE = {"spots": "spotted-or-blotchy",
+              "blotchy-mottled": "spotted-or-blotchy",
+              "net-or-scribble": "spotted-or-blotchy"}
+
+
+def merge_markings(ms: list) -> list:
+    out = []
+    for m in ms:
+        m = MARK_MERGE.get(m, m)
+        if m not in out:
+            out.append(m)
+    return out
+
+
 def stage_gbif_keys(species: list, force: bool) -> dict:
     """Match each species to GBIF, so the card can show where it lives.
 
@@ -3617,7 +3647,7 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
                 # Behaviour cannot come from a still, so it comes from the file.
                 "grouping": behaviour.get(s["sci"]),
                 "grouping_source": "curated" if behaviour.get(s["sci"]) else None,
-                "markings": t.get("markings") or [],
+                "markings": merge_markings(t.get("markings") or []),
                 "where": t.get("where"),
                 "distinctive": t.get("distinctive"),
                 "confidence": t.get("confidence"),
@@ -3650,6 +3680,14 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
         if fix:
             corrected += 1
             rec["hand_checked"] = True
+            # A hand correction is written straight onto the record, which
+            # walked it round merge_markings: the Bump-head Mola kept
+            # "blotchy-mottled" after the merge and became the one species in
+            # 641 filed under a marking the picker no longer offers. Any
+            # vocabulary the override file uses is normalised here, so an old
+            # entry stays correct instead of quietly going unreachable.
+            if "markings" in fix:
+                rec["markings"] = merge_markings(rec["markings"] or [])
             rec.pop("shape_contested", None)     # a person settled it
             # A hand-entered size must drag its bucket with it, or the detail
             # sheet says 30 cm while the filter still files it under 40.
