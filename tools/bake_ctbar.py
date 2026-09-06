@@ -2119,7 +2119,21 @@ SHAPE_BY_NAME_SYS = (
     "elongate sausage, a barnacle is fixed to the rock, a sea star is radial. "
     "Answer confidently in those cases.\n\n"
     "Set confident false when the group genuinely varies in body plan and the "
-    "species is not one you know, rather than guessing from the family.")
+    "species is not one you know, rather than guessing from the family.\n\n"
+    "THREE OF THE CHOICES ARE ALL DEEP AND LATERALLY COMPRESSED, and the line "
+    "between them is the whole reason they are separate entries. Read them in "
+    "this order and take the first that fits:\n"
+    "  plate-round      as tall as it is long, or very nearly -- a disc. "
+    "Butterflyfishes, angelfishes, bannerfishes, the Moorish Idol, Old Wife, "
+    "batfishes, moonyfishes, boarfishes.\n"
+    "  diamond-snouted  a diamond body drawn out into a long tapering snout, "
+    "usually with a spine standing over the eye. Leatherjackets, filefishes, "
+    "triggerfishes.\n"
+    "  deep-flat-sided  deep but clearly longer than tall, the ordinary "
+    "oval fish. Breams, snappers, drummers, sweeps, luderick, morwongs, "
+    "damselfishes, cardinalfishes, surgeonfishes, trevallies.\n"
+    "deep-flat-sided is the fallback of the three, not the default. If the "
+    "animal is a disc or carries a leatherjacket's snout, say so.")
 
 
 _KEY_CHECKED = None      # None until one real call has proved it
