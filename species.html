@@ -857,6 +857,10 @@ function matches(s){ return hardMatch(s); }
    Tapping a chosen chip clears it, as it always did; the row also carries an X
    so a collapsed answer can be dropped without opening it. */
 var FACETS=[['shape','Shape'],['size','Size'],['colour','Colour'],['mark','Markings']];
+function nextUnanswered(){
+  for(var i=0;i<FACETS.length;i++) if(!SEL[FACETS[i][0]]) return FACETS[i][0];
+  return null;   // all four answered: close up and hand the screen to the list
+}
 function facetValue(k){
   if(k==='shape'){
     var out=null;
@@ -1154,7 +1158,7 @@ document.addEventListener('click',function(e){
   /* The X on a row sits inside the row's own button, so it has to be read
      first or the tap would only toggle the row open. */
   var cl=e.target.closest?e.target.closest('[data-clear]'):null;
-  if(cl){ SEL[cl.dataset.clear]=null; renderId(); return; }
+  if(cl){ SEL[cl.dataset.clear]=null; OPEN=cl.dataset.clear; renderId(); return; }
   var fa=e.target.closest?e.target.closest('[data-facet]'):null;
   if(fa){ OPEN=(OPEN===fa.dataset.facet)?null:fa.dataset.facet; renderId(); return; }
   var t=e.target.closest?e.target.closest('[data-id],[data-shape],[data-colour],[data-mark],[data-size]'):null;
@@ -1163,10 +1167,14 @@ document.addEventListener('click',function(e){
   var k=t.dataset.shape?'shape':t.dataset.colour?'colour':t.dataset.mark?'mark':'size';
   var v=t.dataset[k==='mark'?'mark':k];
   SEL[k]=(SEL[k]===v)?null:v;
-  /* Answering closes the question, so the fish come up the screen instead of
-     sitting under a grid you have finished with. Clearing leaves it open,
-     because the next thing you want after "not that colour" is another one. */
-  if(SEL[k]) OPEN=null;
+  /* Answering opens the next question you have not answered yet, in the order
+     the rows are in: Shape is what people retain, so it leads, picking one
+     opens Size, and so on. Answer the last and nothing is open, which puts the
+     fish on the screen without a grid above them.
+
+     Clearing leaves the question open, because the next thing you want after
+     "not that colour" is another colour. */
+  if(SEL[k]) OPEN=nextUnanswered();
   renderId();
 });
 /* Deliberately NO tap-to-dismiss on the backdrop. The sheet nearly fills a
