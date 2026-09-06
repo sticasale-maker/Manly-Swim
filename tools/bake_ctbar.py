@@ -580,12 +580,12 @@ def merge_extra_species(species: list) -> list:
             "name": rec["name"],
             "sci": rec["sci"],
             "annual": 0,
-            "outside": {k: rec[k] for k in ("where", "on", "count", "obs", "note")
-                        if k in rec},
+            "outside": {k: rec[k] for k in ("short", "where", "on", "count",
+                                            "obs", "note") if k in rec},
         })
         added += 1
     if added:
-        log(f"1c/6 nearby      {added} recorded at Manly, outside the reserve")
+        log(f"1c/6 nearby      {added} recorded at Manly, outside the bay count")
     return species
 
 def stage_months(species: list, force: bool) -> dict:
