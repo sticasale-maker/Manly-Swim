@@ -162,27 +162,53 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 }
 .search input::placeholder{color:var(--dim)}
 
-.shapes{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:5px}
+/* Four questions, one open at a time.
+
+   The numbers that forced this: on a 375px phone the four open grids came to
+   705px, so a swimmer scrolled a whole screen of controls before reaching a
+   single fish, and the only way the four had ever fitted was 8px shape labels
+   and 26px chips — under every readable-type and tap-target guideline there
+   is. Collapsed the four rows are ~190px, the answers stay visible as words,
+   and the type can go up rather than down. */
+.facets{margin:12px 0 6px;border-top:1px solid var(--border)}
+.facet{
+  width:100%;display:flex;align-items:center;gap:10px;background:transparent;
+  border:0;border-bottom:1px solid var(--border);padding:13px 2px;
+  text-align:left;cursor:pointer;color:var(--text);
+}
+.facet.open{border-bottom-color:transparent}
+.facet .fl{
+  font-family:'Bebas Neue',Impact,sans-serif;font-size:13.5px;letter-spacing:1.4px;
+  text-transform:uppercase;color:var(--dim);flex:0 0 82px;
+}
+.facet.open .fl{color:var(--ocean)}
+.facet .fv{font-size:14.5px;font-weight:500;color:var(--dim);flex:1 1 auto}
+.facet .fv.set{color:var(--text);font-weight:600}
+.facet .fx{font-size:20px;line-height:1;color:var(--dim);padding:0 6px;flex:0 0 auto}
+.facet .fc{font-size:13px;color:var(--dim);flex:0 0 auto;transition:transform .15s}
+.facet.open .fc{transform:rotate(180deg)}
+.fbody{padding:2px 0 13px;border-bottom:1px solid var(--border)}
+.shapes{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px}
 .sh{
-  border:1.5px solid rgba(17,53,65,.15);border-radius:10px;padding:4px 2px 2px;
+  border:1.5px solid rgba(17,53,65,.15);border-radius:10px;padding:5px 3px 3px;
   display:flex;flex-direction:column;align-items:center;
 }
 .sh svg{width:100%;height:auto}
 .sh svg path,.sh svg rect{fill:var(--text)}
 .sh svg circle{fill:var(--card)}
-.sh .t{font-size:8px;color:var(--dim);text-align:center;line-height:1.15;margin-top:1px}
+.sh .t{font-size:10.5px;color:var(--dim);text-align:center;line-height:1.2;margin-top:2px}
 .sh.on{background:var(--ocean);border-color:var(--ocean)}
 .sh.on .t{color:#fff}
 .sh.on svg path,.sh.on svg rect{fill:#fff}
 .sh.on svg circle{fill:var(--ocean)}
 
-.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{
-  display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:500;
-  padding:4px 10px;border-radius:20px;border:1.5px solid rgba(17,53,65,.18);
+  display:inline-flex;align-items:center;gap:6px;font-size:13.5px;font-weight:500;
+  padding:7px 12px;border-radius:20px;border:1.5px solid rgba(17,53,65,.18);
   color:var(--dim);line-height:1.35;
 }
-.chip .sw{width:11px;height:11px;border-radius:50%;border:1px solid rgba(17,53,65,.25)}
+.chip .sw{width:13px;height:13px;border-radius:50%;border:1px solid rgba(17,53,65,.25)}
 .chip.on{background:var(--ocean);border-color:var(--ocean);color:#fff}
 .chip.on .sw{border-color:rgba(255,255,255,.6)}
 .more{
@@ -264,6 +290,12 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 /* Identify opens by default now that it sits first — a leading tab that is not
    the one you land on reads as a mis-click waiting to happen. */
 var DATA=null, SHAPES=[], MODE='id', SEL={shape:null,colour:null,mark:null,size:null}, Q='';
+/* Which of the four questions is expanded. One at a time, because all four
+   open came to 705px on a 375px phone — a full screen of controls before a
+   single result, which is what forced the 8px shape labels and the 26px chips
+   in the first place. Collapsed, the four answers still read at a glance and
+   the type can be the size it should always have been. */
+var OPEN='shape';
 var MON=['J','F','M','A','M','J','J','A','S','O','N','D'];
 var FULL=['January','February','March','April','May','June','July','August',
           'September','October','November','December'];
@@ -776,6 +808,42 @@ function morphWhy(s){
 }
 function matches(s){ return hardMatch(s); }
 
+/* One question per row: its name, the answer so far, and a way to change it.
+
+   The row is the summary and the control. Closed it says "Colour — Red", which
+   is more than the old layout managed: there you had to scroll back up through
+   three other grids to see what you had picked. Open it shows the choices, at
+   a size someone can read in the sun with wet eyes.
+
+   Tapping a chosen chip clears it, as it always did; the row also carries an X
+   so a collapsed answer can be dropped without opening it. */
+var FACETS=[['shape','Shape'],['size','Size'],['colour','Colour'],['mark','Markings']];
+function facetValue(k){
+  if(k==='shape'){
+    var out=null;
+    SHAPES.forEach(function(sh){ if(sh.key===SEL.shape) out=sh.label; });
+    return out;
+  }
+  if(k==='size') return SEL.size?sizeLabelFor(SEL.size):null;
+  if(k==='colour'){
+    var c=null;
+    COLOURS.forEach(function(x){ if(x[0]===SEL.colour) c=x[1]; });
+    return c;
+  }
+  var m=null;
+  MARKS.forEach(function(x){ if(x[0]===SEL.mark) m=x[1]; });
+  return m;
+}
+function facetHTML(k,label,body){
+  var v=facetValue(k), open=(OPEN===k);
+  return '<button class="facet'+(open?' open':'')+'" data-facet="'+k+'">'
+    +'<span class="fl">'+label+'</span>'
+    +'<span class="fv'+(v?' set':'')+'">'+esc(v||'Any')+'</span>'
+    +(v?'<span class="fx" data-clear="'+k+'" role="img" aria-label="Clear '+label+'">&times;</span>':'')
+    +'<span class="fc">&#9662;</span></button>'
+    +(open?'<div class="fbody">'+body+'</div>':'');
+}
+
 function renderId(){
   /* Photoless species are shown as silhouettes rather than dropped. */
   var all=DATA.species.filter(function(s){ return s.img || s.shape; });
@@ -799,27 +867,28 @@ function renderId(){
     +'<div class="search"><span style="color:var(--dim)">&#128269;</span>'
     +'<input id="q" type="search" placeholder="Search '+DATA.species.length+' species…" value="'+esc(Q)+'"></div>'
 
-    +'<p class="lbl">Shape</p><div class="shapes">'
-    + SHAPES.map(function(sh){
-        return '<button class="sh'+(SEL.shape===sh.key?' on':'')+'" data-shape="'+sh.key+'">'
-          +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg>'
-          +'<span class="t">'+esc(sh.label)+'</span></button>'; }).join('')
-    +'</div>'
-
-    +'<p class="lbl">Size</p><div class="chips">'
-    + DATA.size_buckets.map(function(b){
-        return '<button class="chip'+(SEL.size===b.key?' on':'')+'" data-size="'+b.key+'">'+esc(b.label)+'</button>'; }).join('')
-    +'</div>'
-
-    +'<p class="lbl">Colour</p><div class="chips">'
-    + COLOURS.map(function(c){
-        return '<button class="chip'+(SEL.colour===c[0]?' on':'')+'" data-colour="'+c[0]+'">'
-          +'<span class="sw" style="background:'+c[2]+'"></span>'+c[1]+'</button>'; }).join('')
-    +'</div>'
-
-    +'<p class="lbl">Markings</p><div class="chips">'
-    + MARKS.map(function(m){
-        return '<button class="chip'+(SEL.mark===m[0]?' on':'')+'" data-mark="'+m[0]+'">'+m[1]+'</button>'; }).join('')
+    +'<div class="facets">'
+    + facetHTML('shape','Shape','<div class="shapes">'
+        + SHAPES.map(function(sh){
+            return '<button class="sh'+(SEL.shape===sh.key?' on':'')+'" data-shape="'+sh.key+'">'
+              +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg>'
+              +'<span class="t">'+esc(sh.label)+'</span></button>'; }).join('')
+        +'</div>')
+    + facetHTML('size','Size','<div class="chips">'
+        + DATA.size_buckets.map(function(b){
+            return '<button class="chip'+(SEL.size===b.key?' on':'')+'" data-size="'+b.key+'">'
+              +esc(b.label)+'</button>'; }).join('')
+        +'</div>')
+    + facetHTML('colour','Colour','<div class="chips">'
+        + COLOURS.map(function(c){
+            return '<button class="chip'+(SEL.colour===c[0]?' on':'')+'" data-colour="'+c[0]+'">'
+              +'<span class="sw" style="background:'+c[2]+'"></span>'+c[1]+'</button>'; }).join('')
+        +'</div>')
+    + facetHTML('mark','Markings','<div class="chips">'
+        + MARKS.map(function(m){
+            return '<button class="chip'+(SEL.mark===m[0]?' on':'')+'" data-mark="'+m[0]+'">'
+              +m[1]+'</button>'; }).join('')
+        +'</div>')
     +'</div>'
 
     +'<div class="resbar"><span class="l">'+soft.length+' match'+(soft.length===1?'':'es')+'</span>'
@@ -1036,12 +1105,22 @@ addEventListener('resize', syncHead);
 function render(){ syncHead(); if(MODE==='now') renderNow(); else renderId(); }
 
 document.addEventListener('click',function(e){
+  /* The X on a row sits inside the row's own button, so it has to be read
+     first or the tap would only toggle the row open. */
+  var cl=e.target.closest?e.target.closest('[data-clear]'):null;
+  if(cl){ SEL[cl.dataset.clear]=null; renderId(); return; }
+  var fa=e.target.closest?e.target.closest('[data-facet]'):null;
+  if(fa){ OPEN=(OPEN===fa.dataset.facet)?null:fa.dataset.facet; renderId(); return; }
   var t=e.target.closest?e.target.closest('[data-id],[data-shape],[data-colour],[data-mark],[data-size]'):null;
   if(!t) return;
   if(t.dataset.id!=null){ openDetail(t.dataset.id); return; }
   var k=t.dataset.shape?'shape':t.dataset.colour?'colour':t.dataset.mark?'mark':'size';
   var v=t.dataset[k==='mark'?'mark':k];
   SEL[k]=(SEL[k]===v)?null:v;
+  /* Answering closes the question, so the fish come up the screen instead of
+     sitting under a grid you have finished with. Clearing leaves it open,
+     because the next thing you want after "not that colour" is another one. */
+  if(SEL[k]) OPEN=null;
   renderId();
 });
 /* Deliberately NO tap-to-dismiss on the backdrop. The sheet nearly fills a
