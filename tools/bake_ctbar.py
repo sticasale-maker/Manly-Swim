@@ -3594,6 +3594,28 @@ FACT_REBALANCE_SYS = (
 def stage_rebalance(species: list, facts: dict, category: str, limit: int = 0) -> dict:
     """Swap a fact for a different KIND of fact, and never lose one doing it.
 
+    RUN ONCE, ON 20 SPECIES, AND REVERTED. Read this before running it again.
+
+    It swapped 12 of 20 and about five of those were downgrades. The Spotted
+    Wobbegong gave up "the name means shaggy beard in an Australian Aboriginal
+    language" for "lies still under ledges and hunts at night". The Green Sea
+    Turtle gave up "the green is in the fat beneath the shell, stained by a
+    lifetime of seagrass" for "hatchlings eat jellyfish and later seagrass".
+    The Kapala Stingaree gave up being named after a New South Wales fisheries
+    trawler for "carries a venomous spine".
+
+    The category was the wrong thing to optimise. A fact is weak when it is
+    GENERIC, not when it is an etymology: "hunts at night under ledges" is true
+    of a dozen animals in this dataset and "shaggy beard" is true of one. Asked
+    for any other category, the model reliably supplies the interchangeable
+    one, because that is what most species have.
+
+    Whatever replaces this has to test the replacement against the ORIGINAL for
+    specificity -- is this true of this species and few others? -- rather than
+    counting categories. The rejected offers are kept on each record under
+    rebalance_rejected so a second attempt can be measured against the first.
+    """
+
     Etymology grew to 133 of the 411 facts on the page, 32%, because "its name
     means X" is true, passes a fact checker, and is the cheapest thing a model
     can write about any species alive. Nothing was wrong with any single one of
