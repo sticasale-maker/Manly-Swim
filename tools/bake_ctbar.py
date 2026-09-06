@@ -711,12 +711,6 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
     seen_none = set(out.get("_none", [])) if isinstance(out.get("_none"), list) else set()
     out.pop("_none", None)
 
-    todo = [s for s in species
-            if str(s["taxon_id"]) not in out and str(s["taxon_id"]) not in seen_none]
-    if not todo:
-        log(f"3/6 photos       {len(out):>4} (cached)")
-        return out
-
     # Hand-picked photos win. Community votes reward a striking picture, not a
     # legible one — the Eastern Fortescue's best-voted shot is an algae-covered
     # blob that three separate checks flagged as unidentifiable. One line here
@@ -726,6 +720,33 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
     if ppath.exists():
         picks = {k: v for k, v in json.loads(ppath.read_text("utf-8")).items()
                  if not k.startswith("_")}
+
+    # A CHANGED hand-pick has to re-fetch, or it does nothing at all.
+    #
+    # The cache is keyed on the species, so once a photograph is in it the
+    # stage skips that species entirely and a new line in photo-overrides.json
+    # is read and then ignored. Silently: the log still says "cached" and the
+    # emit still ships the old picture. Found by pointing the Bump-head Mola at
+    # the fish from this bay and getting the 2016 one anyway.
+    restale = []
+    for s in species:
+        tid, want = str(s["taxon_id"]), picks.get(s["sci"])
+        if not want or tid not in out:
+            continue
+        want_obs = want["obs"] if isinstance(want, dict) else want
+        if (out[tid][0] if out[tid] else {}).get("obs_id") != want_obs:
+            restale.append(tid)
+    for tid in restale:
+        out.pop(tid, None)
+        seen_none.discard(tid)
+    if restale:
+        log(f"3/6 photos       {len(restale)} hand-pick changed, re-fetching")
+
+    todo = [s for s in species
+            if str(s["taxon_id"]) not in out and str(s["taxon_id"]) not in seen_none]
+    if not todo:
+        log(f"3/6 photos       {len(out):>4} (cached)")
+        return out
 
     log(f"3/6 photos       {len(todo)} to fetch ({len(out)} cached)")
     for i, s in enumerate(todo, 1):
@@ -743,10 +764,21 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
             seen_none.add(str(s["taxon_id"]))   # remember the miss, don't re-ask
             continue
         if chosen:
+            # An observation id, or {"obs": id, "photo": id} when the one you
+            # want is not the first. A diver who surfaces with three frames
+            # uploads them in the order they were taken, not best first, and
+            # the best of the Fairy Bower Mola is the second.
+            want_photo = None
+            if isinstance(chosen, dict):
+                chosen, want_photo = chosen["obs"], chosen.get("photo")
             # put the hand-picked observation's photo at the head of the list
             try:
                 o = inat(f"observations/{chosen}")["results"][0]
-                ph = o["photos"][0]
+                ph = next((x for x in o["photos"] if x["id"] == want_photo),
+                          o["photos"][0])
+                if want_photo and ph["id"] != want_photo:
+                    log(f"    WARNING: photo {want_photo} not on observation "
+                        f"{chosen}; using the first instead")
                 # The attributes were read off the OLD photo and must not
                 # survive a hand-pick — but deleting the whole record here is
                 # the wrong instrument, and it cost ten species their shape.
@@ -3339,6 +3371,9 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "fact": ((facts or {}).get(tid) or {}).get("fact"),
             "fact_category": ((facts or {}).get(tid) or {}).get("category"),
             "fact_checked": bool(((facts or {}).get(tid) or {}).get("checked")),
+            # A hand ruling never went through the refute pass, so the card
+            # must not present it with the same warrant as one that did.
+            "fact_by_hand": bool(((facts or {}).get(tid) or {}).get("by_hand")),
             # Only verified sets ship. A wrong second appearance is worse than
             # none: it puts the species under a colour it never wears, which is
             # the same findability failure pointing the other way.
