@@ -182,16 +182,32 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
    and 26px chips — under every readable-type and tap-target guideline there
    is. Collapsed the four rows are ~190px, the answers stay visible as words,
    and the type can go up rather than down. */
+.idkit .wiz{min-width:0;flex:1}
+.pips{display:flex;align-items:center;gap:5px;margin-top:7px}
+.pip{width:20px;height:4px;border-radius:2px;background:rgba(17,53,65,.18)}
+.pip.on{background:var(--ocean)}
+.pip.now{background:transparent;box-shadow:inset 0 0 0 1.5px var(--text)}
+.pipn{font-size:10px;color:var(--dim);margin-left:4px;letter-spacing:.3px}
+
 .facets{margin:12px 0 6px;border-top:1px solid var(--border)}
+/* The step number, and a tick once that step is answered. Small, because it is
+   a place-marker rather than a thing to read. */
+.facet .fn{
+  flex:0 0 20px;text-align:center;font-size:12px;font-weight:600;
+  color:var(--dim);font-variant-numeric:tabular-nums;
+}
+.facet.done .fn{color:var(--ocean)}
+.facet.open .fn{color:var(--ocean)}
 .facet{
   width:100%;display:flex;align-items:center;gap:10px;background:transparent;
   border:0;border-bottom:1px solid var(--border);padding:13px 2px;
   text-align:left;cursor:pointer;color:var(--text);
 }
+.facet .fl{flex:0 0 76px}
 .facet.open{border-bottom-color:transparent}
 .facet .fl{
   font-family:'Bebas Neue',Impact,sans-serif;font-size:13.5px;letter-spacing:1.4px;
-  text-transform:uppercase;color:var(--dim);flex:0 0 82px;
+  text-transform:uppercase;color:var(--dim);
 }
 .facet.open .fl{color:var(--ocean)}
 .facet .fv{font-size:14.5px;font-weight:500;color:var(--dim);flex:1 1 auto}
@@ -865,7 +881,22 @@ function matches(s){ return hardMatch(s); }
 
    Tapping a chosen chip clears it, as it always did; the row also carries an X
    so a collapsed answer can be dropped without opening it. */
-var FACETS=[['shape','Shape'],['size','Size'],['colour','Colour'],['mark','Markings']];
+/* Four taps, and the page should say so.
+   The rows already opened one at a time and advanced on their own, and nobody
+   could tell: an accordion looks like four things you MIGHT do, not like a
+   four-step job with an end. So each row is numbered, the header counts them
+   off, and the question for the step you are on is written out in words.
+
+   The third column is that question. The fourth is the honest caveat, because
+   the four steps are not equal: shape and size EXCLUDE, colour and markings
+   only DEMOTE (water eats red, so a colour describes the photograph at least
+   as much as the animal). A wizard that presented all four as the same kind of
+   answer would be lying about what the last two do. */
+var FACETS=[
+  ['shape','Shape','What shape was it?',null],
+  ['size','Size','How big was it?',null],
+  ['colour','Colour','What colour?','reorders the list rather than cutting it'],
+  ['mark','Markings','Any markings?','reorders the list rather than cutting it']];
 function nextUnanswered(){
   for(var i=0;i<FACETS.length;i++) if(!SEL[FACETS[i][0]]) return FACETS[i][0];
   return null;   // all four answered: close up and hand the screen to the list
@@ -886,9 +917,38 @@ function facetValue(k){
   MARKS.forEach(function(x){ if(x[0]===SEL.mark) m=x[1]; });
   return m;
 }
-function facetHTML(k,label,body){
+/* The counter. Four pips, the ones you have answered filled, the one you are
+   on outlined. It says what to do next in the same breath as showing how far
+   in you are, which is the whole job of a wizard header. */
+function wizardHTML(){
+  var done=FACETS.filter(function(f){ return !!SEL[f[0]]; }).length;
+  var open=OPEN||nextUnanswered();
+  var cur=null; FACETS.forEach(function(f){ if(f[0]===open) cur=f; });
+  var t,sub;
+  if(done===0){
+    t='Four taps to name it';
+    sub='Shape first &mdash; it is what people actually retain.';
+  } else if(done<4){
+    t='Tap '+(done+1)+' of 4 &mdash; '+esc(cur?cur[2]:'');
+    sub=FACETS.filter(function(f){ return !!SEL[f[0]]; })
+      .map(function(f){ return esc(String(facetValue(f[0])).replace(/-/g,' ')); }).join(' &middot; ');
+    if(cur&&cur[3]) sub+=' <span style="opacity:.75">&mdash; this one '+cur[3]+'</span>';
+  } else {
+    t='That is the four';
+    sub=FACETS.map(function(f){ return esc(String(facetValue(f[0])).replace(/-/g,' ')); }).join(' &middot; ');
+  }
+  return '<span class="t">'+t+'</span>'
+    +'<span class="s">'+sub+'</span>'
+    +'<span class="pips">'
+    + FACETS.map(function(f,i){
+        return '<span class="pip'+(SEL[f[0]]?' on':(f[0]===open?' now':''))+'"></span>'; }).join('')
+    +'<span class="pipn">'+done+' of 4</span></span>';
+}
+
+function facetHTML(k,label,body,step){
   var v=facetValue(k), open=(OPEN===k);
-  return '<button class="facet'+(open?' open':'')+'" data-facet="'+k+'">'
+  return '<button class="facet'+(open?' open':'')+(v?' done':'')+'" data-facet="'+k+'">'
+    +'<span class="fn">'+(v?'&#10003;':step)+'</span>'
     +'<span class="fl">'+label+'</span>'
     +'<span class="fv'+(v?' set':'')+'">'+esc(v||'Any')+'</span>'
     +(v?'<span class="fx" data-clear="'+k+'" role="img" aria-label="Clear '+label+'">&times;</span>':'')
@@ -907,14 +967,11 @@ function renderId(){
   var shown=soft.slice(0,80), other=off.slice(0,30);
   var softOn=!!(SEL.colour||SEL.mark);
 
-  var bits=[SEL.shape,SEL.colour,SEL.mark,
-            SEL.size?(sizeLabelFor(SEL.size)):null].filter(Boolean);
   el('view').innerHTML=
     '<div class="strip">'
     +'<div class="idkit"><span class="fish">'
     + idkit(SEL.shape||'torpedo', SEL.colour||'grey', SEL.mark?[SEL.mark]:[], null)
-    +'</span><span><span class="t">'+(bits.length?'Is this what you saw?':'Pick what you remember')+'</span>'
-    +'<span class="s">'+(bits.length?bits.map(function(b){return esc(String(b).replace(/-/g,' '));}).join(' · '):'Shape first &mdash; it is what people actually retain')+'</span></span></div>'
+    +'</span><span class="wiz">'+wizardHTML()+'</span></div>'
 
     +'<div class="search"><span style="color:var(--dim)">&#128269;</span>'
     +'<input id="q" type="search" placeholder="Search '+DATA.species.length+' species…" value="'+esc(Q)+'"></div>'
@@ -925,22 +982,22 @@ function renderId(){
             return '<button class="sh'+(SEL.shape===sh.key?' on':'')+'" data-shape="'+sh.key+'">'
               +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg>'
               +'<span class="t">'+esc(sh.label)+'</span></button>'; }).join('')
-        +'</div>')
+        +'</div>', 1)
     + facetHTML('size','Size','<div class="chips">'
         + DATA.size_buckets.map(function(b){
             return '<button class="chip'+(SEL.size===b.key?' on':'')+'" data-size="'+b.key+'">'
               +esc(b.label)+'</button>'; }).join('')
-        +'</div>')
+        +'</div>', 2)
     + facetHTML('colour','Colour','<div class="chips">'
         + COLOURS.map(function(c){
             return '<button class="chip'+(SEL.colour===c[0]?' on':'')+'" data-colour="'+c[0]+'">'
               +'<span class="sw" style="background:'+c[2]+'"></span>'+c[1]+'</button>'; }).join('')
-        +'</div>')
+        +'</div>', 3)
     + facetHTML('mark','Markings','<div class="chips">'
         + MARKS.map(function(m){
             return '<button class="chip'+(SEL.mark===m[0]?' on':'')+'" data-mark="'+m[0]+'">'
               +m[1]+'</button>'; }).join('')
-        +'</div>')
+        +'</div>', 4)
     +'</div>'
 
     +'<div class="resbar"><span class="l">'+soft.length+' match'+(soft.length===1?'':'es')+'</span>'
