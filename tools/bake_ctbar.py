@@ -2141,6 +2141,24 @@ def check_key() -> int:
               '  $env:ANTHROPIC_API_KEY = "sk-ant-..."')
         return 2
     print(f"key present: {len(k)} characters, {k[:7]}...{k[-4:]}")
+
+    # Look at the string before spending a call on it. Three of the four ways
+    # this goes wrong are visible without asking the API, and saying which one
+    # it is beats a flat "invalid".
+    if k != k.strip():
+        print("  WARNING: it has leading or trailing whitespace. A copied line\n"
+              "  often brings a newline with it, and the API counts that as part\n"
+              "  of the key.")
+    if k[:1] in "\"'" or k[-1:] in "\"'":
+        print("  WARNING: it starts or ends with a quote mark. In PowerShell the\n"
+              '  quotes go around the assignment, not inside the value:\n'
+              '    $env:ANTHROPIC_API_KEY = "sk-ant-api03-..."')
+    if not k.startswith("sk-ant-"):
+        print("  WARNING: an Anthropic API key starts sk-ant-api03-. This does\n"
+              "  not, so it is probably a different credential entirely -- a\n"
+              "  Claude Code or Console session token, say. A Claude subscription\n"
+              "  does not carry an API key: one is made at console.anthropic.com\n"
+              "  under API keys, and is billed separately from the subscription.")
     try:
         r = anthropic.Anthropic().messages.create(
             model=MODEL, max_tokens=1,
@@ -2157,9 +2175,12 @@ def check_key() -> int:
         elif "rate" in low or "429" in msg:
             print("  A rate or spend LIMIT, not the key. Wait, or raise the limit.")
         elif "Authentication" in name or "401" in msg or "invalid x-api-key" in low:
-            print("  The key itself was refused. It is mistyped, revoked, or from\n"
-                  "  another account. A low balance does NOT produce this — that is a\n"
-                  "  400 about the credit balance.")
+            print("  The key itself was refused: mistyped, revoked, or from another\n"
+                  "  account. A low balance does NOT produce this — that is a 400\n"
+                  "  about the credit balance.\n"
+                  "  Make a fresh one at console.anthropic.com > API keys. Note that\n"
+                  "  a Claude Pro or Max subscription is NOT an API key and does not\n"
+                  "  pay for API calls; the Console account needs its own credit.")
         else:
             print("  Not an authentication failure. Could be the network.")
         print(f"  {msg[:220]}")
