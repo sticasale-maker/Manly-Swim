@@ -24909,6 +24909,17 @@ else theftLoad();
   }
   #shakeFish.on { display: block; }
   #shakeFish img { position: absolute; left: 0; top: 0; will-change: transform; }
+  /* The shadow is the same sprite, flattened to black and blurred, riding the
+     same path a little down and to the right. The animal is drawn as though it
+     were crossing the surface of the glass; until now it was PRINTED on that
+     surface, because nothing under it changed as it went by. A shadow is the
+     cheapest thing that puts it above the page instead of on it.
+
+     The offset lives in left/top, deliberately, not in the transform: the
+     transform is where the animation writes its rotation, and an offset inside
+     it would swing round with the animal as it turned. Light does not orbit
+     the fish. */
+  #shakeFish img.pby-shadow { will-change: transform, filter; }
 </style>
 <div id="shakeFish" aria-hidden="true"></div>
 <script>
@@ -25204,7 +25215,26 @@ else theftLoad();
       return { transform: 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + r.toFixed(1) + 'deg)' };
     });
 
+    /* Everything about the shadow is a fraction of the animal's own width, so
+       it holds together from a 216px sprite on a phone to the desktop cap.
+       Blur is the expensive part and it is bounded by that same width -- one
+       small composited layer for ten seconds every two or three minutes, not a
+       filter over the whole viewport. */
+    var shadow = new Image();
+    shadow.alt = '';
+    shadow.className = 'pby-shadow';
+    shadow.width = w; shadow.height = h;
+    shadow.style.width = w + 'px';
+    shadow.style.marginLeft = img.style.marginLeft;
+    shadow.style.marginTop = img.style.marginTop;
+    shadow.style.transformOrigin = img.style.transformOrigin;
+    shadow.style.left = (w * 0.095).toFixed(1) + 'px';   // down and to the right:
+    shadow.style.top = (w * 0.130).toFixed(1) + 'px';    // light from upper left
+    shadow.style.filter = 'brightness(0) blur(' + Math.max(4, w * 0.060).toFixed(1) + 'px)';
+    shadow.style.opacity = '0.30';
+
     function done() {
+      if (shadow.parentNode) host.removeChild(shadow);
       if (img.parentNode) host.removeChild(img);
       if (!host.children.length) host.classList.remove('on');
       swimming = false;
@@ -25214,10 +25244,27 @@ else theftLoad();
     function start() {
       if (started) return;
       started = true;
+      // Shadow first, so it is under the animal in paint order.
+      host.appendChild(shadow);
       host.appendChild(img);
-      var anim = null;
+      var anim = null, shAnim = null;
       try {
         anim = img.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
+        shAnim = shadow.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
+        // Sync AFTER both are ready, never before.
+        //
+        // startTime is null until an animation is ready, and assigning null to
+        // the shadow's startTime does not copy a time — it un-starts it. The
+        // first build of this did exactly that and the shadow sat where it was
+        // created, a thousand pixels from the animal, for the whole pass. Two
+        // animations begun in the same task already share a start; this only
+        // tightens it, and only once there is something real to copy.
+        if (anim && shAnim && anim.ready && shAnim.ready) {
+          Promise.all([anim.ready, shAnim.ready]).then(function () {
+            try { if (anim.startTime != null) shAnim.startTime = anim.startTime; }
+            catch (e) {}
+          }).catch(function () {});
+        }
       } catch (e) { anim = null; }
       if (anim) { anim.onfinish = done; anim.oncancel = done; }
       // Belt and braces: never leave an animal stranded mid-screen.
@@ -25228,6 +25275,7 @@ else theftLoad();
     // A cached sprite can fire load before we get here, and a missing file must
     // not leave the flag stuck on.
     img.onerror = function () { swimming = false; host.classList.remove('on'); };
+    shadow.src = c.src;          // same file, already in cache by now
     img.src = c.src;
     if (img.complete && img.naturalWidth) start();
   }
