@@ -24920,29 +24920,27 @@ else theftLoad();
      it would swing round with the animal as it turned. Light does not orbit
      the fish. */
   #shakeFish img.pby-shadow { will-change: transform, filter; }
-  /* The wake. Each ring is dropped where the animal was, then expands and
-     fades where it was dropped -- the animal moves on and leaves it behind,
-     which is what a wake is.
+  /* The lens. Not a trail: one patch of disturbed water that travels WITH the
+     animal and leaves nothing behind it.
 
-     backdrop-filter is the only thing in CSS that actually alters what is
-     underneath, and it has no refraction: blur, saturate and brightness are
-     the whole vocabulary. So the water look has to come from the SHAPE and a
-     bright rim rather than from bending the page, and the blur is kept small
-     because six of these are alive at once and each one is a composited layer
-     the browser re-rasterises every frame. */
-  #shakeFish .pby-ripple {
+     A wake was built here first and thrown out. Rings dropped along the path
+     read as ripples on a pond seen from above, which is a different animal in
+     a different medium; this is a thing swimming through water you are looking
+     down into, and what that does is bend the view around itself as it goes.
+
+     backdrop-filter has no refraction -- blur, brightness and saturate are the
+     whole vocabulary -- so the illusion comes from the SHAPE and the falloff.
+     The box is elongated and rides the animal's own rotation, so it stays
+     aligned with the body through every turn, and a radial mask fades the
+     effect out at the edges. Without that mask it is a hard-edged disc of
+     blur, which reads as a bug rather than as water. */
+  #shakeFish .pby-lens {
     position: absolute; border-radius: 50%;
-    /* A DARK hairline with a light halo outside it, not a white ring. The app
-       is a pale page of white cards, and the first build's white-on-white rim
-       was invisible against exactly the surfaces the animals cross. This is
-       the way a ring of water actually reads on a bright ground: the rim goes
-       dark, and the lip just outside it catches the light. */
-    border: 1.5px solid rgba(17,53,65,.20);
-    box-shadow: inset 0 0 16px rgba(255,255,255,.40),
-                0 0 0 1.5px rgba(255,255,255,.38);
-    -webkit-backdrop-filter: blur(3px) brightness(1.05);
-    backdrop-filter: blur(3px) brightness(1.05);
-    will-change: transform, opacity;
+    -webkit-backdrop-filter: blur(3.5px) brightness(1.05) saturate(1.06);
+    backdrop-filter: blur(3.5px) brightness(1.05) saturate(1.06);
+    -webkit-mask-image: radial-gradient(closest-side, #000 26%, rgba(0,0,0,.5) 60%, transparent 100%);
+    mask-image: radial-gradient(closest-side, #000 26%, rgba(0,0,0,.5) 60%, transparent 100%);
+    will-change: transform;
   }
 </style>
 <div id="shakeFish" aria-hidden="true"></div>
@@ -25231,66 +25229,13 @@ else theftLoad();
     var ma = c.path[(c.path.length >> 1) - 1], mb = c.path[c.path.length >> 1];
     var mx = (ma[0] + mb[0]) / 2, my = (ma[1] + mb[1]) / 2;
 
-    // The same points the animation gets, kept as numbers. Asking the DOM
-    // where the animal is would force a layout every time a ring is dropped;
-    // interpolating the path costs nothing and is what the compositor is doing
-    // anyway.
-    var pts = [];
     var keys = c.path.map(function (p, i) {
       var lx = (p[0] - mx) * need, ly = (p[1] - my) * need;
       var x = ox + lx * ca - ly * sa;
       var y = oy + lx * sa + ly * ca;
       var r = c.rot[i] + ang;
-      pts.push([x, y]);
       return { transform: 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px) rotate(' + r.toFixed(1) + 'deg)' };
     });
-
-    function pointAt(p) {
-      var f = Math.max(0, Math.min(1, p)) * (pts.length - 1);
-      var i = Math.floor(f), t = f - i;
-      var a = pts[Math.min(pts.length - 1, i)], b = pts[Math.min(pts.length - 1, i + 1)];
-      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    }
-
-    // A ring every RIPPLE_EVERY for RIPPLE_MS gives about six alive at a time,
-    // and MAX_RIPPLES is the hard ceiling in case a slow frame bunches them.
-    var RIPPLE_MS = 2600, RIPPLE_EVERY = 420, MAX_RIPPLES = 7;
-    var live = [], rippleTimer = null, rippleT0 = 0;
-
-    function dropRipple(x, y) {
-      if (live.length >= MAX_RIPPLES) return;
-      var d = Math.round(w * 1.25);
-      var el = document.createElement('div');
-      el.className = 'pby-ripple';
-      el.style.width = el.style.height = d + 'px';
-      el.style.left = Math.round(x - d / 2) + 'px';
-      el.style.top = Math.round(y - d / 2) + 'px';
-      // Behind everything: the newest ring goes to the back, so the older and
-      // wider ones stay over it the way spreading water does.
-      host.insertBefore(el, host.firstChild);
-      live.push(el);
-      function gone() {
-        if (el.parentNode) el.parentNode.removeChild(el);
-        var i = live.indexOf(el); if (i >= 0) live.splice(i, 1);
-      }
-      var a = null;
-      try {
-        a = el.animate([
-          { transform: 'scale(.20)', opacity: 0 },
-          { transform: 'scale(.42)', opacity: .6, offset: .16 },
-          { transform: 'scale(1)', opacity: 0 }
-        ], { duration: RIPPLE_MS, easing: 'cubic-bezier(.22,.61,.36,1)' });
-      } catch (e) { a = null; }
-      if (a) { a.onfinish = gone; a.oncancel = gone; } else { setTimeout(gone, RIPPLE_MS); }
-    }
-
-    function stopRipples() {
-      clearInterval(rippleTimer); rippleTimer = null;
-      live.slice().forEach(function (el) {
-        if (el.parentNode) el.parentNode.removeChild(el);
-      });
-      live.length = 0;
-    }
 
     /* Everything about the shadow is a fraction of the animal's own width, so
        it holds together from a 216px sprite on a phone to the desktop cap.
@@ -25315,8 +25260,20 @@ else theftLoad();
     shadow.style.filter = 'brightness(0) blur(' + Math.max(3, w * 0.040).toFixed(1) + 'px)';
     shadow.style.opacity = '0.50';
 
+    /* Wider than it is tall and hung on the same pivot, so it lies along the
+       body and turns with it. 2.05 x 1.45 of the sprite is enough to show past
+       the animal on every side without becoming a headlight. */
+    var lw = Math.round(w * 2.05), lh = Math.round(h * 1.45);
+    var lens = document.createElement('div');
+    lens.className = 'pby-lens';
+    lens.style.width = lw + 'px';
+    lens.style.height = lh + 'px';
+    lens.style.marginLeft = (-lw * pvx) + 'px';
+    lens.style.marginTop = (-lh * pvy) + 'px';
+    lens.style.transformOrigin = (pvx * 100).toFixed(2) + '% ' + (pvy * 100).toFixed(2) + '%';
+
     function done() {
-      stopRipples();
+      if (lens.parentNode) host.removeChild(lens);
       if (shadow.parentNode) host.removeChild(shadow);
       if (img.parentNode) host.removeChild(img);
       if (!host.children.length) host.classList.remove('on');
@@ -25327,13 +25284,15 @@ else theftLoad();
     function start() {
       if (started) return;
       started = true;
-      // Shadow first, so it is under the animal in paint order.
+      // Lens under the shadow, shadow under the animal.
+      host.appendChild(lens);
       host.appendChild(shadow);
       host.appendChild(img);
-      var anim = null, shAnim = null;
+      var anim = null, shAnim = null, lensAnim = null;
       try {
         anim = img.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
         shAnim = shadow.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
+        lensAnim = lens.animate(keys, { duration: SWIM_MS, easing: 'linear', fill: 'forwards' });
         // Sync AFTER both are ready, never before.
         //
         // startTime is null until an animation is ready, and assigning null to
@@ -25342,26 +25301,18 @@ else theftLoad();
         // created, a thousand pixels from the animal, for the whole pass. Two
         // animations begun in the same task already share a start; this only
         // tightens it, and only once there is something real to copy.
-        if (anim && shAnim && anim.ready && shAnim.ready) {
-          Promise.all([anim.ready, shAnim.ready]).then(function () {
-            try { if (anim.startTime != null) shAnim.startTime = anim.startTime; }
-            catch (e) {}
-          }).catch(function () {});
+        if (anim && anim.ready) {
+          var others = [shAnim, lensAnim].filter(Boolean);
+          Promise.all([anim.ready].concat(others.map(function (a) { return a.ready; })))
+            .then(function () {
+              if (anim.startTime == null) return;
+              others.forEach(function (a) {
+                try { a.startTime = anim.startTime; } catch (e) {}
+              });
+            }).catch(function () {});
         }
       } catch (e) { anim = null; }
       if (anim) { anim.onfinish = done; anim.oncancel = done; }
-
-      // No rings over the first and last tenth: the animal is off-screen at
-      // both ends, and a ring blooming out of nothing at the edge of the
-      // screen reads as a rendering fault rather than as water.
-      rippleT0 = (window.performance && performance.now) ? performance.now() : Date.now();
-      rippleTimer = setInterval(function () {
-        var now = (window.performance && performance.now) ? performance.now() : Date.now();
-        var pr = (now - rippleT0) / SWIM_MS;
-        if (pr <= 0.10 || pr >= 0.90) return;
-        var xy = pointAt(pr);
-        dropRipple(xy[0], xy[1]);
-      }, RIPPLE_EVERY);
 
       // Belt and braces: never leave an animal stranded mid-screen.
       setTimeout(done, SWIM_MS + 900);
