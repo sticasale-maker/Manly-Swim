@@ -1566,6 +1566,7 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks:
     # name is not thrown away with the photo description that surrounds it.
     import collections
     stale = collections.Counter()
+    doomed = []
     for tid in list(tags):
         why = _stale_against_schema(tags[tid] or {})
         if not why:
@@ -1587,8 +1588,23 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks:
                 why = "a different photo chosen"
         if why:
             stale[why] += 1
+            doomed.append(tid)
+    if doomed:
+        # ASK BEFORE DELETING, not after.
+        #
+        # This swept the stale records out and then, forty lines later, checked
+        # whether there was a key to buy replacements with. Both orderings look
+        # the same on a good run and only one of them is safe: a run with no
+        # key, or with a key the API rejects, deleted eight species' tags and
+        # brought back nothing. Twice in one morning, because the second
+        # attempt was a bad key rather than a missing one and the presence
+        # check could not tell the difference.
+        #
+        # _require_key now proves the credential with one real call, and it is
+        # called here, before the first del.
+        _require_key("5/6 tags")
+        for tid in doomed:
             del tags[tid]
-    if stale:
         log("    retired vocabulary, re-tagging: "
             + ", ".join(f"{v}x {k}" for k, v in stale.most_common(5)))
         # Write the shrunken cache NOW, as the new baseline.
@@ -2106,6 +2122,9 @@ SHAPE_BY_NAME_SYS = (
     "species is not one you know, rather than guessing from the family.")
 
 
+_KEY_CHECKED = None      # None until one real call has proved it
+
+
 def _require_key(stage: str):
     """Fail before spending, and before a whole stage reports a false success.
 
@@ -2119,6 +2138,37 @@ def _require_key(stage: str):
             f"{stage} needs ANTHROPIC_API_KEY in the environment and it is not "
             f"set. Nothing was called and nothing was charged. "
             f"Export the key and re-run.")
+
+    # A key that is SET is not a key that WORKS, and the difference cost eight
+    # species their tags. stage_tags drops the records it means to replace
+    # before it spends anything -- which is right, because it is about to
+    # replace them -- so a key the API rejects deletes the old answers and
+    # brings back nothing. That is exactly the failure the presence check
+    # above was added to prevent, arriving through the one door it left open.
+    #
+    # So: one real call, one token, once per process. A 401 stops the run
+    # before anything is deleted. Anything else -- a timeout, a rate limit, a
+    # flat network -- is not a bad key and must not block a run that would
+    # otherwise succeed on retry.
+    global _KEY_CHECKED
+    if _KEY_CHECKED is None:
+        try:
+            anthropic.Anthropic().messages.create(
+                model=MODEL, max_tokens=1,
+                messages=[{"role": "user", "content": "ping"}])
+            _KEY_CHECKED = True
+        except Exception as e:                              # noqa: BLE001
+            name = type(e).__name__
+            _KEY_CHECKED = not ("Authentication" in name or "PermissionDenied" in name
+                                or " 401" in str(e) or "invalid x-api-key" in str(e).lower())
+            if not _KEY_CHECKED:
+                _KEY_ERROR = str(e)[:160]
+    if not _KEY_CHECKED:
+        raise SystemExit(
+            f"{stage}: the credential in ANTHROPIC_API_KEY was REJECTED by the "
+            f"API. Nothing was called, nothing was charged and nothing was "
+            f"deleted. Check the key is current and has not been revoked, then "
+            f"re-run.")
 
 
 # A size makes a species findable; a fact is what makes a swimmer glad they
