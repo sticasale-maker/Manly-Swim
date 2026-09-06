@@ -550,14 +550,20 @@ def stage_species(force: bool) -> list:
 def merge_extra_species(species: list) -> list:
     """Species recorded at Manly but outside the reserve boundary.
 
-    The list is built from iNaturalist place 71836, which is the Cabbage Tree
-    Bay Aquatic Reserve and stops at Fairy Bower. An animal a hundred metres
-    north of that line is in the same water a swimmer crosses to get here, and
-    is invisible to every query this file makes.
+    The list is built from iNaturalist place 71836, the Cabbage Tree Bay
+    Aquatic Reserve: 17 hectares, 36 vertices, South Steyne round to Shelly.
+    Two different things can keep an animal out of it.
 
-    Ocean Sunfish, 6 September 2026: three of them off Fairy Bower and Manly in
-    one day, none inside the polygon, so the reserve list would never show a
-    swimmer the thing half of Manly was looking at.
+    One is geography — an animal recorded north of the line is in the same
+    water a swimmer crosses to get here and is invisible to every query in this
+    file. The other, and the reason this stage exists, is that iNaturalist
+    indexes observations into places on its own schedule. The Bump-head Mola of
+    6 September 2026 sits 31 metres INSIDE the polygon and still did not appear
+    in the place's species list on the day.
+
+    Which is why the merge stands aside as soon as the real list has the taxon:
+    a lagging index catches up, and when it does the hand-added record must not
+    sit alongside the real one arguing with it.
 
     Merged AFTER the cache is read, so adding one costs no re-fetch, and the
     record carries `outside` — where it was, when, and how many — because the
