@@ -236,6 +236,12 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   color:var(--dim);line-height:1.35;
 }
 .chip .sw{width:13px;height:13px;border-radius:50%;border:1px solid rgba(17,53,65,.25)}
+/* Dead ends are greyed, not hidden. Removing them would leave the reader
+   wondering where "hand-sized" went; showing them flat says the option exists
+   and has nothing behind it, which is the same rule the rest of the page uses
+   for absent data (§8). */
+.chip.dead{opacity:.34;cursor:default;background:transparent}
+.chip.dead:active{transform:none}
 .chip.on{background:var(--ocean);border-color:var(--ocean);color:#fff}
 .chip.on .sw{border-color:rgba(255,255,255,.6)}
 .more{
@@ -871,6 +877,24 @@ function morphWhy(s){
 }
 function matches(s){ return hardMatch(s); }
 
+/* How many species survive if this facet were answered THAT way.
+   Size is the one worth asking about. Shape and size are the two axes that
+   EXCLUDE, shape is answered first so nothing else is set to conflict with it,
+   and colour and markings only demote — so the size step is the only tap in
+   the four that can leave a swimmer with nothing at all. Ray plus hand-sized
+   is empty, because rays here are not hand-sized, and the wizard was walking
+   people into that with confidence. */
+function countIf(key, val){
+  var save = SEL[key], n = 0;
+  SEL[key] = val;
+  for (var i=0;i<DATA.species.length;i++){
+    var s = DATA.species[i];
+    if ((s.img || s.shape) && hardMatch(s)) n++;
+  }
+  SEL[key] = save;
+  return n;
+}
+
 /* One question per row: its name, the answer so far, and a way to change it.
 
    The row is the summary and the control. Closed it says "Colour — Red", which
@@ -982,11 +1006,19 @@ function renderId(){
               +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg>'
               +'<span class="t">'+esc(sh.label)+'</span></button>'; }).join('')
         +'</div>', 1)
-    + facetHTML('size','Size','<div class="chips">'
-        + DATA.size_buckets.map(function(b){
-            return '<button class="chip'+(SEL.size===b.key?' on':'')+'" data-size="'+b.key+'">'
-              +esc(b.label)+'</button>'; }).join('')
-        +'</div>', 2)
+    + facetHTML('size','Size',(function(){
+        var dead=0;
+        var chips=DATA.size_buckets.map(function(b){
+          var n=(SEL.size===b.key)?1:countIf('size',b.key);
+          if(!n) dead++;
+          return '<button class="chip'+(SEL.size===b.key?' on':'')+(n?'':' dead')
+            +'" data-size="'+b.key+'"'+(n?'':' disabled')
+            +' title="'+(n?n+' of these':'nothing of that size matches what you have picked')+'">'
+            +esc(b.label)+'</button>'; }).join('');
+        return '<div class="chips">'+chips+'</div>'
+          +(dead?'<p class="cap" style="padding-top:6px">Greyed sizes have nothing '
+            +'at that shape. Change the shape, or leave the size out.</p>':'');
+      })(), 2)
     + facetHTML('colour','Colour','<div class="chips">'
         + COLOURS.map(function(c){
             return '<button class="chip'+(SEL.colour===c[0]?' on':'')+'" data-colour="'+c[0]+'">'
