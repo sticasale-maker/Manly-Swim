@@ -3614,18 +3614,7 @@ def stage_rebalance(species: list, facts: dict, category: str, limit: int = 0) -
     specificity -- is this true of this species and few others? -- rather than
     counting categories. The rejected offers are kept on each record under
     rebalance_rejected so a second attempt can be measured against the first.
-    """
 
-    Etymology grew to 133 of the 411 facts on the page, 32%, because "its name
-    means X" is true, passes a fact checker, and is the cheapest thing a model
-    can write about any species alive. Nothing was wrong with any single one of
-    them; the problem was only visible in aggregate, which is why it took a
-    category histogram to see it.
-
-    Strictly additive. The replacement must survive the SAME refuter the
-    original did, and if the model has nothing else to offer, or the refuter
-    rejects what it offers, the existing line stays exactly as it was. A run
-    can improve the mix and cannot shrink it.
     """
     cand = [s for s in species
             if (facts.get(str(s["taxon_id"])) or {}).get("status") == "found"
