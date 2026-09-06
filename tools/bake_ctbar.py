@@ -546,6 +546,48 @@ def stage_species(force: bool) -> list:
 
 # ── Stage 2: seasonality ─────────────────────────────────────────────────────
 
+def merge_extra_species(species: list) -> list:
+    """Species recorded at Manly but outside the reserve boundary.
+
+    The list is built from iNaturalist place 71836, which is the Cabbage Tree
+    Bay Aquatic Reserve and stops at Fairy Bower. An animal a hundred metres
+    north of that line is in the same water a swimmer crosses to get here, and
+    is invisible to every query this file makes.
+
+    Ocean Sunfish, 6 September 2026: three of them off Fairy Bower and Manly in
+    one day, none inside the polygon, so the reserve list would never show a
+    swimmer the thing half of Manly was looking at.
+
+    Merged AFTER the cache is read, so adding one costs no re-fetch, and the
+    record carries `outside` — where it was, when, and how many — because the
+    honest thing to print is not "0 records in the bay". Absent is grey (§8);
+    this is absent from the bay and present next door, and says so.
+    """
+    path = ROOT / "tools" / "extra-species.json"
+    if not path.exists():
+        return species
+    extra = {k: v for k, v in json.loads(path.read_text("utf-8")).items()
+             if not k.startswith("_")}
+    have = {str(s["taxon_id"]) for s in species}
+    added = 0
+    for tid, rec in extra.items():
+        if tid in have:
+            # It has since been recorded inside the reserve: the real count
+            # wins and the note is dropped rather than contradicting it.
+            continue
+        species.append({
+            "taxon_id": int(tid),
+            "name": rec["name"],
+            "sci": rec["sci"],
+            "annual": 0,
+            "outside": {k: rec[k] for k in ("where", "on", "count", "obs", "note")
+                        if k in rec},
+        })
+        added += 1
+    if added:
+        log(f"1c/6 nearby      {added} recorded at Manly, outside the reserve")
+    return species
+
 def stage_months(species: list, force: bool) -> dict:
     cached = None if force else cache_read("months.json")
     if cached:
@@ -688,11 +730,18 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
     log(f"3/6 photos       {len(todo)} to fetch ({len(out)} cached)")
     for i, s in enumerate(todo, 1):
         cands = fetch_photo_candidates(s["taxon_id"])
-        if not cands:
-            seen_none.add(str(s["taxon_id"]))   # remember the miss, don't re-ask
-            continue
+        # The hand-pick is resolved BEFORE the empty check, not after.
+        #
+        # It used to sit below it, which meant a hand-picked photograph only
+        # worked for a species that already had one — precisely backwards. A
+        # species with nothing re-usable in NSW is the only kind that cannot be
+        # fixed any other way, and it was the one kind the override could not
+        # reach. The Ocean Sunfish has no CC-licensed NSW photograph at all.
         slug = slugs[str(s["taxon_id"])]
         chosen = picks.get(s["sci"])
+        if not cands and not chosen:
+            seen_none.add(str(s["taxon_id"]))   # remember the miss, don't re-ask
+            continue
         if chosen:
             # put the hand-picked observation's photo at the head of the list
             try:
@@ -722,6 +771,9 @@ def stage_photos(species: list, force: bool, slugs: dict) -> dict:
                 log(f"    hand-picked photo for {s['name']}")
             except Exception as e:                     # noqa: BLE001
                 log(f"    photo override failed for {s['name']}: {e}")
+        if not cands:
+            seen_none.add(str(s["taxon_id"]))   # the override could not be fetched
+            continue
         # Keep every candidate: if the vision pass rejects the first as
         # unusable we retry with the next rather than dropping the species.
         for c in cands:
@@ -3246,6 +3298,9 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "name": s["name"],
             "sci": s["sci"],
             "annual": s["annual"],
+            # Where it was actually seen, when the reserve list cannot say.
+            # Carried through so the row prints the truth rather than a zero.
+            "outside": s.get("outside"),
             "months": m,                       # RAW counts — normalise with `effort`
             # Seasonality is read at NSW scale, where it is actually visible;
             # the bay's own counts above stay the local abundance figure.
@@ -3475,6 +3530,7 @@ def main() -> int:
 
     try:
         species = stage_species(args.force)
+        species = merge_extra_species(species)
         if args.limit:
             species = species[:args.limit]
             log(f"    --limit {args.limit}: {len(species)} species this run")

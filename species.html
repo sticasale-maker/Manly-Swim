@@ -427,11 +427,36 @@ function silHTML(s,cls){
     +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg></span>';
 }
 
+/* An animal recorded at Manly but outside the reserve line.
+
+   The whole page counts records inside iNaturalist place 71836, which stops at
+   Fairy Bower. For something seen a hundred metres north of that the true
+   count in the bay is zero, and printing "0 records in the bay" would be
+   accurate and useless — it reads like a data fault rather than like a fish
+   that was there yesterday. So the row says where it actually was. Absent is
+   grey, never dressed up as present (§8), and never dressed down as missing
+   either. */
+function outsideShort(s){
+  var o=s.outside; if(!o) return null;
+  var d=o.on?new Date(o.on+'T00:00:00'):null;
+  return 'Just outside the reserve'+(d?', '+d.getDate()+' '+FULL[d.getMonth()]:'');
+}
+function outsideLong(s){
+  var o=s.outside; if(!o) return '';
+  var d=o.on?new Date(o.on+'T00:00:00'):null;
+  return '<p class="lbl">Not a bay record</p>'
+    +'<p style="font-size:13px">Recorded '+esc(o.where)
+    +(d?', on '+d.getDate()+' '+FULL[d.getMonth()]+' '+d.getFullYear():'')+'.</p>'
+    +(o.note?'<p class="cap">'+esc(o.note)+'</p>':'')
+    +(o.obs?'<p class="cap"><a href="https://www.inaturalist.org/observations/'+o.obs
+      +'" target="_blank" rel="noopener">see the observation</a></p>':'');
+}
+
 function rowHTML(s,rank,showMonth){
   var c=s.months[NOW];
-  var word = showMonth
+  var word = outsideShort(s) || (showMonth
     ? 'Seen '+c+' time'+(c===1?'':'s')+' here in '+FULL[NOW]
-    : s.annual+' record'+(s.annual===1?'':'s')+' in the bay';
+    : s.annual+' record'+(s.annual===1?'':'s')+' in the bay');
   return '<button class="row" data-id="'+s.id+'">'
     +(rank?'<span class="rank">'+rank+'</span>':'')
     +(s.img?'<img loading="lazy" src="species/'+esc(s.img)+'" alt="">':silHTML(s,''))
@@ -1052,6 +1077,7 @@ function openDetail(id){
     +(s.distinctive?'<br>Look for: '+esc(s.distinctive):'')+'</p>'
     +'<p class="dname">'+esc(s.name)+'</p><p class="dsci">'+esc(s.sci)+'</p>'
     +'<div class="dtags">'+tags.map(function(t){ return '<span class="dtag">'+esc(t)+'</span>'; }).join('')+'</div>'
+    +(function(){ var o=outsideLong(s); return o?'<div class="block">'+o+'</div>':''; })()
     +(s.grouping?'<p class="cap" style="margin-top:8px">Usually seen '+esc(s.grouping)+'</p>':'')
     +(factLine?'<div class="block">'+factLine+'</div>':'')
     +'<div class="block">'+sizeLine+'</div>'
