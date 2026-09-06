@@ -375,7 +375,7 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
    to change. Hashed, not timestamped, so a re-bake that changes nothing leaves
    the URL alone and the cache stays warm. Do not edit by hand — the bake
    rewrites this exact line. */
-var DATA_V={ctbar:"b46c5b6c73",shapes:"e10e0e54c8"};
+var DATA_V={ctbar:"b46c5b6c73",shapes:"1cee7ab22d"};
 var DATA=null, SHAPES=[], MODE='id', SEL={shape:null,colour:null,mark:null,size:null}, Q='';
 /* Which of the four questions is expanded. One at a time, because all four
    open came to 705px on a 375px phone — a full screen of controls before a
@@ -927,11 +927,33 @@ function hardMatch(s){
   if(SEL.size && s.size_bucket!==SEL.size) return false;
   return true;
 }
+/* ONE TILE FOR THE THREE DEEP SHAPES.
+
+   The data still separates a butterflyfish from a bream from a leatherjacket,
+   and that separation cost $1.77 and is worth keeping. The PICKER does not ask
+   about it, and the arithmetic is why: once the three were made near
+   neighbours -- so a wrong tap could not hide the answer -- picking one
+   stopped shortening the list at all. Same 79 species either way. All it
+   bought was ordering: your 44 above the other 35.
+
+   That is not worth a three-way judgement between pictograms of animals that
+   genuinely look alike, on a distinction nobody has shown a swimmer can make.
+   So the first member of each group is the tile, the others are hidden, and a
+   tap on the tile takes the whole family equally.
+
+   The tags are still on every record. A later refinement that appears only
+   when the deep bucket is large can use them without asking anyone anything. */
 var SHAPE_KIN=[['deep-flat-sided','plate-round','diamond-snouted']];
+function kinOf(k){
+  for(var i=0;i<SHAPE_KIN.length;i++) if(SHAPE_KIN[i].indexOf(k)>=0) return SHAPE_KIN[i];
+  return null;
+}
 function nearShape(a,b){
-  for(var i=0;i<SHAPE_KIN.length;i++)
-    if(SHAPE_KIN[i].indexOf(a)>=0 && SHAPE_KIN[i].indexOf(b)>=0) return true;
-  return false;
+  var g=kinOf(b); return !!g && g.indexOf(a)>=0;
+}
+/* Hidden because another tile already stands for it. */
+function shapeHidden(k){
+  var g=kinOf(k); return !!g && g[0]!==k;
 }
 /* A record carries ONE colour, and for a lot of reef species that colour is
    the adult male. Matching only on it makes the female unfindable: someone who
@@ -948,7 +970,8 @@ function morphHit(s,field,val){
   return null;
 }
 function softMatch(s){
-  if(SEL.shape && s.shape!==SEL.shape) return false;   // kin: kept, but demoted
+  /* No shape demotion: the tile now MEANS the whole family, so a plate and
+     a bream are equally what was asked for. */
   if(SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour
      && !morphHit(s,'colour',SEL.colour)) return false;
   if(SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0
@@ -1085,8 +1108,7 @@ function renderId(){
   hits.sort(function(a,b){ return (b.months[NOW]-a.months[NOW]) || (b.annual-a.annual); });
   var soft=hits.filter(softMatch), off=hits.filter(function(s){ return !softMatch(s); });
   var shown=soft.slice(0,80), other=off.slice(0,30);
-  var softOn=!!(SEL.colour||SEL.mark||
-    (SEL.shape && SHAPE_KIN.some(function(g){ return g.indexOf(SEL.shape)>=0; })));
+  var softOn=!!(SEL.colour||SEL.mark);
 
   el('view').innerHTML=
     '<div class="strip">'
@@ -1105,7 +1127,9 @@ function renderId(){
            swimmer who picks it gets an empty list before they have told the
            page anything. They appear on their own once the re-ask has run. */
         + SHAPES.filter(function(sh){
-            return DATA.species.some(function(s){ return s.shape===sh.key; }); })
+            if(shapeHidden(sh.key)) return false;
+            var g=kinOf(sh.key)||[sh.key];
+            return DATA.species.some(function(s){ return g.indexOf(s.shape)>=0; }); })
           .map(function(sh){
             return '<button class="sh'+(SEL.shape===sh.key?' on':'')+'" data-shape="'+sh.key+'">'
               +'<svg viewBox="0 0 84 56" aria-hidden="true">'+sh.path+'</svg>'
@@ -1169,19 +1193,11 @@ function renderId(){
    "a different colour" when the swimmer picked a marking is worse than saying
    nothing: it sends them checking a filter they never touched. */
 function softLabel(){
-  var kin = SEL.shape && DATA.species.some(function(s){
-    return s.shape!==SEL.shape && nearShape(s.shape,SEL.shape); });
-  if(kin && !SEL.colour && !SEL.mark) return 'Also deep-bodied';
-  if(kin) return 'Also deep-bodied, or a different colour or markings';
   if(SEL.colour&&SEL.mark) return 'Recorded a different colour or markings';
   if(SEL.mark) return 'Recorded different markings';
   return 'Recorded a different colour';
 }
 function softWhy(){
-  if(SEL.shape && !SEL.colour && !SEL.mark)
-    return 'Deep, oval, round like a plate and diamond with a pointed snout are '
-         + 'close enough that a fish seen for two seconds could be filed under '
-         + 'any of them. These are the other two.';
   if(SEL.colour&&!SEL.mark)
     return 'Water eats red before anything else, so an animal can be photographed '
          + 'looking quite unlike itself. These match the shape.';
