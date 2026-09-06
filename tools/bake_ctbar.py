@@ -2342,7 +2342,11 @@ FACT_SYS = (
     "What counts as notable, roughly in order:\n"
     "- the colours a swimmer recognises are sexes or life stages of one animal\n"
     "- what it does at night, when nobody is watching it\n"
-    "- where its name came from, when the name is odd\n"
+    "- where its name came from, when the name is odd AND you have nothing "
+    "  better. An etymology is the cheapest thing to write about any species "
+    "  and it crowded out a third of this dataset: prefer anything the animal "
+    "  DOES over anything its name means, and offer the etymology only when "
+    "  the behaviour, the breeding and the life history are all blank to you\n"
     "- venom, spines or a defence, stated as plain fact\n"
     "- a lifespan far longer or shorter than it looks\n"
     "- breeding, nest-guarding or courtship a swimmer might witness\n"
@@ -2381,7 +2385,11 @@ FACT_REPAIR_SYS = (
     "3. Add NOTHING the claim and the objection do not between them support. "
     "You are not writing a new fact, you are rescuing the surviving part of an "
     "old one.\n"
-    "4. If nothing survives, or what survives is too thin or too generic to be "
+    "4. Prefer what the animal DOES to what its name means. An etymology is "
+    "the cheapest salvage available and it grew to a third of this dataset "
+    "that way; reach for one only when nothing about the behaviour, breeding "
+    "or life history of the animal survives the objection.\n"
+    "5. If nothing survives, or what survives is too thin or too generic to be "
     "worth reading, return has_fact=false. That is a good answer and most of "
     "the time it is the right one.\n\n"
     "Same sentence rules as before: one sentence, under 140 characters, "
@@ -3565,6 +3573,131 @@ def stage_reshape(species: list, tags: dict, only: str, limit: int = 0) -> dict:
         + ", ".join(f"{v} {k}" for k, v in moved.most_common()))
     return tags
 
+FACT_REBALANCE_SYS = (
+    "You are replacing one curiosity about a marine species with a better one. "
+    "The line it already has is given, and it is TRUE -- this is not a "
+    "correction. The problem is that it is the same KIND of fact as a third of "
+    "the others on the page: where the name came from.\n\n"
+    "Give a different kind of fact about the same species: what it does at "
+    "night, how it breeds or guards a nest, a colour or a form the sexes or "
+    "the young do not share, a lifespan far longer or shorter than it looks, a "
+    "feeding or movement habit that is strange rather than merely typical, a "
+    "venom or a defence.\n\n"
+    "Return has_fact=false if you know nothing of that sort about THIS species "
+    "and would have to stretch a family trait to fill the gap. That is a good "
+    "answer: the line it already has will be kept, and a true etymology beats "
+    "an invented behaviour every time.\n\n"
+    "One sentence, under 140 characters, present tense, no species name, no "
+    "adjectives of praise, no advice.")
+
+
+def stage_rebalance(species: list, facts: dict, category: str, limit: int = 0) -> dict:
+    """Swap a fact for a different KIND of fact, and never lose one doing it.
+
+    Etymology grew to 133 of the 411 facts on the page, 32%, because "its name
+    means X" is true, passes a fact checker, and is the cheapest thing a model
+    can write about any species alive. Nothing was wrong with any single one of
+    them; the problem was only visible in aggregate, which is why it took a
+    category histogram to see it.
+
+    Strictly additive. The replacement must survive the SAME refuter the
+    original did, and if the model has nothing else to offer, or the refuter
+    rejects what it offers, the existing line stays exactly as it was. A run
+    can improve the mix and cannot shrink it.
+    """
+    cand = [s for s in species
+            if (facts.get(str(s["taxon_id"])) or {}).get("status") == "found"
+            and (facts.get(str(s["taxon_id"])) or {}).get("category") == category
+            and (facts.get(str(s["taxon_id"])) or {}).get("fact")]
+    cand.sort(key=lambda s: -s["annual"])
+    if limit:
+        cand = cand[:limit]
+    if not cand:
+        log(f"5p/6 rebalance   no facts in category {category}")
+        return facts
+
+    _require_key("5p/6 rebalance")
+    log(f"5p/6 rebalance   {len(cand)} facts are {category}, asking for another "
+        f"kind (~${len(cand)*0.049:.2f})")
+    client = anthropic.Anthropic()
+
+    def ask(s):
+        tid = str(s["taxon_id"])
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=FACT_MODEL, max_tokens=800, system=FACT_REBALANCE_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']})\n"
+                               f"Existing line: {facts[tid]['fact']}"}],
+                    output_format=SpeciesFact)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    rebalance failed {s['name']}: {type(e).__name__}")
+                    return tid, None
+                time.sleep(0.5 * attempt)
+        return tid, None
+
+    def recheck(tid, text):
+        s = by_tid[tid]
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=FACT_REFUTE_MODEL, max_tokens=1200,
+                    system=FACT_REFUTE_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']}). Claim: {text}"}],
+                    output_format=FactVerdict)
+                SPEND.add(r.usage)
+                return r.parsed_output
+            except Exception:                               # noqa: BLE001
+                if attempt == 3:
+                    return None
+                time.sleep(0.5 * attempt)
+        return None
+
+    by_tid = {str(s["taxon_id"]): s for s in cand}
+    offers, none_offered, done = [], 0, 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(ask, s) for s in cand]):
+            tid, out = fut.result()
+            done += 1
+            if out is None:
+                continue
+            if out.has_fact and out.fact:
+                offers.append((tid, out.fact.strip(), out.category))
+            else:
+                none_offered += 1
+            if done % 50 == 0:
+                log(f"      asked {done}/{len(cand)}")
+    log(f"5p/6 rebalance   {len(offers)} alternatives offered, "
+        f"{none_offered} had nothing else to say")
+
+    swapped, refused, done = 0, 0, 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        futs = {pool.submit(recheck, t, f): (t, f, c) for t, f, c in offers}
+        for fut in as_completed(futs):
+            tid, text, cat = futs[fut]
+            v = fut.result()
+            done += 1
+            # Anything short of a clean pass leaves the existing line alone.
+            if v is not None and v.true_of_this_species:
+                facts[tid] = {**facts[tid], "fact": text, "category": cat,
+                              "checked": True, "rebalanced_from": category,
+                              "was_before_rebalance": facts[tid]["fact"]}
+                swapped += 1
+            else:
+                refused += 1
+            if done % 50 == 0:
+                cache_write("facts.json", facts)
+                log(f"      re-check {done}/{len(offers)}")
+    cache_write("facts.json", facts)
+    log(f"5p/6 rebalance   {swapped} swapped, {refused} kept their original "
+        f"({len(cand) - swapped} of {len(cand)} unchanged)")
+    return facts
+
 def stage_gbif_keys(species: list, force: bool) -> dict:
     """Match each species to GBIF, so the card can show where it lives.
 
@@ -4054,6 +4187,12 @@ def main() -> int:
                          "under SHAPE, from the species name")
     ap.add_argument("--reshape-limit", type=int, default=0, metavar="N",
                     help="re-ask only the N most-seen of them (trial run)")
+    ap.add_argument("--rebalance-facts", metavar="CATEGORY",
+                    help="ask for a different KIND of fact for every species "
+                         "whose fact is in CATEGORY; keeps the old one unless "
+                         "the replacement passes the same checker")
+    ap.add_argument("--rebalance-limit", type=int, default=0, metavar="N",
+                    help="rebalance only the N most-seen of them (trial run)")
     ap.add_argument("--repair-facts", action="store_true",
                     help="rewrite refuted facts around the checker's objection, "
                          "then put the rewrite through the same checker")
@@ -4183,6 +4322,9 @@ def main() -> int:
                                 refute=not args.no_fact_check)
         if args.repair_facts:
             facts = stage_fact_repair(species, facts, args.repair_limit)
+        if args.rebalance_facts:
+            facts = stage_rebalance(species, facts, args.rebalance_facts,
+                                    args.rebalance_limit)
         # Applied on every run, paid stage or not: a hand ruling must not need
         # an API call to reach the app.
         facts = apply_fact_overrides(species, facts)
