@@ -21292,6 +21292,14 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".aa-cp{width:30px;height:30px;padding:0;border:1px solid rgba(74,143,173,.3);border-radius:6px;background:#fff;cursor:pointer;}" +
       ".aa-cp::-webkit-color-swatch{border:none;border-radius:4px;}.aa-cp::-webkit-color-swatch-wrapper{padding:2px;}" +
       ".aa-clbl{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim,#4a5f6e);}" +
+      ".aa-tbtxt{font-size:12px;letter-spacing:.2px;}" +
+      ".aa-tbbtn[disabled]{opacity:.42;cursor:default;}" +
+      ".aa-tbbtn[disabled]:active{transform:none;}" +
+      /* The readout answers "what am I actually editing" — the size box alone
+         could not, because it was write-only and always blank. */
+      ".aa-selinfo{font-size:11px;color:var(--dim,#4a5f6e);font-variant-numeric:tabular-nums;" +
+        "flex:1 1 100%;padding:1px 2px 0;}" +
+      ".aa-when{cursor:pointer;}" +
       "#annEdBody{border:1px solid rgba(74,143,173,.25);border-radius:10px;margin-top:8px;min-height:90px;padding:10px 11px;font-size:14px;line-height:1.5;color:var(--text,#113541);outline:none;}" +
       "#annEdBody:empty:before{content:attr(data-ph);color:var(--dim,#4a5f6e);}" +
       "#annEdBody h1,#annEdBody h2,#annEdBody h3{font-family:'Bebas Neue',sans-serif;letter-spacing:.5px;line-height:1.1;margin:8px 0 5px;color:var(--deep,#113541);}" +
@@ -21367,8 +21375,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         // 2.5k tall — the same decision as "How often", but nowhere near it.
         '<label class="aa-lbl">Runs from / until</label>' +
         '<div class="aa-row">' +
-          '<div><label class="aa-lbl aa-sublbl">Starts</label><input class="aa-in" id="annInStart" type="datetime-local"></div>' +
-          '<div><label class="aa-lbl aa-sublbl">Ends</label><input class="aa-in" id="annInEnd" type="datetime-local"></div>' +
+          '<div><label class="aa-lbl aa-sublbl">Starts</label><input class="aa-in aa-when" id="annInStart" type="datetime-local"></div>' +
+          '<div><label class="aa-lbl aa-sublbl">Ends</label><input class="aa-in aa-when" id="annInEnd" type="datetime-local"></div>' +
         '</div>' +
         '<label class="aa-lbl">Title (optional)</label>' +
         '<input class="aa-in" id="annInTitle" placeholder="New tide view">' +
@@ -21392,7 +21400,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
           '<button type="button" class="aa-tbbtn" data-cmd="formatBlock" data-val="BLOCKQUOTE" aria-label="Quote">\u201d</button>' +
           '<button type="button" class="aa-tbbtn" data-cmd="insertHorizontalRule" aria-label="Divider">\u2014</button>' +
           '<span class="aa-tbsep"></span>' +
-          '<input type="number" class="aa-size" id="annSize" min="8" max="72" placeholder="px" aria-label="Font size">' +
+          '<input type="number" class="aa-size" id="annSize" min="8" max="72" placeholder="px" aria-label="Font size of the selected text">' +
+          '<button type="button" class="aa-tbbtn aa-tbtxt" id="annClearFmt" title="Strip colour, size, bold and headings back to plain text">Clear</button>' +
+          '<button type="button" class="aa-tbbtn aa-tbtxt" id="annCopyFmt" title="Remember the formatting of the selected text">Copy format</button>' +
+          '<button type="button" class="aa-tbbtn aa-tbtxt" id="annPasteFmt" title="Apply the remembered formatting to the selected text" disabled>Paste format</button>' +
+          '<span class="aa-selinfo" id="annSelInfo">nothing selected</span>' +
         '</div>' +
         '<div class="aa-tb aa-tb3">' +
           '<span class="aa-clbl">Text</span>' +
@@ -21419,7 +21431,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     document.body.appendChild(ov);
 
     $('annAdminClose').addEventListener('click', closeAnnounceAdmin);
-    ov.addEventListener('click', function (e) { if (e.target === ov) closeAnnounceAdmin(); });
+    /* Close on the backdrop only when the press STARTED on the backdrop.
+       A bare click listener fires on the nearest common ancestor of the press
+       and the release, so selecting text in the editor and letting go anywhere
+       past its edge counted as a click on the overlay — and the draft went with
+       it. Selecting text is the single most common thing anyone does in an
+       editor, which is why this fired constantly. Same lesson as the species
+       sheet, which has no backdrop-dismiss at all for this reason. */
+    var pressedOnBackdrop = false;
+    ov.addEventListener('pointerdown', function (e) { pressedOnBackdrop = (e.target === ov); });
+    ov.addEventListener('click', function (e) {
+      if (e.target === ov && pressedOnBackdrop) closeAnnounceAdmin();
+      pressedOnBackdrop = false;
+    });
 
     // Preset swatches (quick picks) — every value passes the clean() colour test.
     // The native colour inputs beside them give a fully free picker.
@@ -21436,6 +21460,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var s = window.getSelection();
       if (s && s.rangeCount && ed.contains(s.anchorNode) && ed.contains(s.focusNode)) {
         savedRange = s.getRangeAt(0).cloneRange();
+        refreshSelInfo();
       }
     });
     function restoreSel(){
@@ -21462,8 +21487,21 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // Custom font size: execCommand('fontSize') only takes 1–7, so we tag the
     // selection with size 7 then rewrite those wrappers to a real px span.
     function applyFontSize(px){
-      px = Math.max(8, Math.min(72, px | 0)); if (!px) return;
+      if (!(px | 0)) return;
       restoreSel();
+      applyFontSizeRaw(px);
+      saveDraft(); refreshSelInfo();
+    }
+    // The body of it, with no restoreSel and no save. Paste-format runs a
+    // sequence of commands over one selection and must not have the range
+    // restored from under it between steps — selectionchange keeps updating
+    // savedRange while those commands run.
+    function applyFontSizeRaw(px){
+      // Clamped HERE, not in the caller, because paste-format calls straight in
+      // with whatever it read off the source. isSize() in the sanitizer only
+      // passes 8-72px, so an unclamped value would look right in the editor and
+      // then be dropped on publish — the worst kind of failure for this feature.
+      px = Math.max(8, Math.min(72, px | 0)); if (!px) return;
       var sel = window.getSelection();
       if (!sel || !sel.rangeCount || sel.isCollapsed) return;   // nothing selected → nothing to size
       try { document.execCommand('styleWithCSS', false, false); } catch (e) {}   // want <font size=7>, not a keyword
@@ -21476,12 +21514,132 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         while (f.firstChild) sp.appendChild(f.firstChild);
         f.parentNode.replaceChild(sp, f);
       });
-      saveDraft();
+    }
+
+    /* ---- what is selected, and what to do with its formatting -------------
+
+       Three complaints, one root: the editor could apply formatting and never
+       report it. The size box was write-only and permanently blank, so the only
+       way to learn the size of a heading was to guess, retype it and look. */
+    function selStyle(){
+      var ed = $('annEdBody'); if (!ed) return null;
+      var s = window.getSelection();
+      if (!s || !s.rangeCount) return null;
+      var n = s.anchorNode; if (!n || !ed.contains(n)) return null;
+      /* Descend before reading the style. An anchor ON an element is an index
+         into its children, not a position in text — a triple-click or a
+         select-all anchors on the <p> and would report the paragraph's 14px
+         while the words inside it are a 28px bold span. */
+      while (n.nodeType === 1 && n.childNodes.length) {
+        var next = n.childNodes[Math.min(s.anchorOffset, n.childNodes.length - 1)];
+        if (!next || next === n) break;
+        n = next;
+      }
+      var el = (n.nodeType === 1) ? n : n.parentElement;
+      if (!el || !ed.contains(el)) return null;
+      var cs = getComputedStyle(el);
+      var blk = el.closest && el.closest('h1,h2,h3,blockquote,li');
+      return {
+        px: Math.round(parseFloat(cs.fontSize) || 0),
+        color: cs.color,
+        bg: cs.backgroundColor,
+        bold: (parseInt(cs.fontWeight, 10) || 400) >= 600,
+        italic: cs.fontStyle === 'italic',
+        under: String(cs.textDecorationLine || cs.textDecoration || '').indexOf('underline') >= 0,
+        block: blk ? blk.tagName : 'P',
+        collapsed: s.isCollapsed
+      };
+    }
+    var BLOCK_WORD = { H1: 'heading', H2: 'big heading', H3: 'small heading',
+                       BLOCKQUOTE: 'quote', LI: 'list item' };
+    function refreshSelInfo(){
+      var out = $('annSelInfo'), box = $('annSize');
+      if (!out) return;
+      var st = selStyle();
+      if (!st) { out.textContent = 'nothing selected'; return; }
+      // Don't fight someone typing a number into the box.
+      if (box && document.activeElement !== box) box.value = st.px || '';
+      var bits = [st.px + 'px'];
+      if (st.bold) bits.push('bold');
+      if (st.italic) bits.push('italic');
+      if (st.under) bits.push('underlined');
+      if (BLOCK_WORD[st.block]) bits.push(BLOCK_WORD[st.block]);
+      bits.push(st.collapsed ? 'cursor here' : 'selected');
+      out.textContent = bits.join(' \u00b7 ');
+    }
+
+    function hex(c){
+      var m = String(c || '').match(/rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+      if (!m) return (/^#[0-9a-f]{3,8}$/i.test(c)) ? c : null;
+      return '#' + [m[1], m[2], m[3]].map(function (v) {
+        return ('0' + (+v).toString(16)).slice(-2); }).join('');
+    }
+    function opaque(c){
+      return !!c && c !== 'transparent' && !/rgba\([^)]*,\s*0(\.0+)?\)$/i.test(c);
+    }
+
+    function clearFmt(){
+      restoreSel();
+      try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+      document.execCommand('removeFormat', false, null);
+      document.execCommand('unlink', false, null);
+      document.execCommand('formatBlock', false, 'P');
+      saveDraft(); refreshSelInfo();
+    }
+
+    /* Copy format / paste format. Everything captured here is in STYLE_OK, so
+       it survives clean() on save — a paste that looked right in the editor and
+       vanished on publish would be worse than no button. */
+    var copiedFmt = null;
+    function copyFmt(){
+      var st = selStyle();
+      if (!st) { pubMsg('Put the cursor in the text you want to copy the look of'); return; }
+      copiedFmt = st;
+      var b = $('annPasteFmt'); if (b) b.disabled = false;
+      pubMsg('Copied ' + st.px + 'px' + (st.bold ? ' bold' : '') + ' \u2014 now select text and paste it');
+    }
+    function pasteFmt(){
+      if (!copiedFmt) return;
+      restoreSel();
+      var sel = window.getSelection();
+      if (!sel || !sel.rangeCount || sel.isCollapsed) { pubMsg('Select the text to apply it to first'); return; }
+      try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+      document.execCommand('removeFormat', false, null);
+      var fg = hex(copiedFmt.color);
+      if (fg) document.execCommand('foreColor', false, fg);
+      var bg = opaque(copiedFmt.bg) && hex(copiedFmt.bg);
+      if (bg && !document.execCommand('hiliteColor', false, bg)) document.execCommand('backColor', false, bg);
+      if (copiedFmt.bold   && !document.queryCommandState('bold'))      document.execCommand('bold');
+      if (copiedFmt.italic && !document.queryCommandState('italic'))    document.execCommand('italic');
+      if (copiedFmt.under  && !document.queryCommandState('underline')) document.execCommand('underline');
+      // Size last: it rewrites nodes, which would strand the commands above.
+      applyFontSizeRaw(copiedFmt.px);
+      saveDraft(); refreshSelInfo();
+    }
+    function pubMsg(t){
+      var m = $('annPubMsg'); if (!m) return;
+      m.textContent = t;
+      clearTimeout(pubMsg._t); pubMsg._t = setTimeout(function () { m.textContent = ''; }, 3200);
     }
 
     Array.prototype.forEach.call(ov.querySelectorAll('.aa-tbbtn'), function (btn) {
       btn.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep editor focus
+      if (!btn.getAttribute('data-cmd')) return;      // Clear / Copy / Paste wire themselves
       btn.addEventListener('click', function () { runCmd(btn.getAttribute('data-cmd'), btn.getAttribute('data-val')); });
+    });
+    [['annClearFmt', clearFmt], ['annCopyFmt', copyFmt], ['annPasteFmt', pasteFmt]]
+      .forEach(function (pair) {
+        var b = $(pair[0]); if (b) b.addEventListener('click', pair[1]);
+      });
+
+    /* datetime-local opens no picker when you click the field: Chrome and Edge
+       want the little calendar glyph, and Safari shows none at all. showPicker()
+       is the supported way to ask, and throws where it is not available or not
+       user-driven, so the field still types normally when it fails. */
+    Array.prototype.forEach.call(ov.querySelectorAll('.aa-when'), function (inp) {
+      inp.addEventListener('click', function () {
+        try { if (inp.showPicker) inp.showPicker(); } catch (e) {}
+      });
     });
     // Preset swatch rows.
     [['annFore', FORE_COLORS], ['annHilite', HILITE_COLORS]].forEach(function (pair) {
@@ -21505,8 +21663,11 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // Custom font size box: apply on Enter or when it loses focus.
     var szEl = $('annSize');
     if (szEl) {
-      szEl.addEventListener('change', function () { applyFontSize(+szEl.value); szEl.value = ''; });
-      szEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); applyFontSize(+szEl.value); szEl.value = ''; } });
+      // Not blanked after use any more: the box now READS the selection as well
+      // as setting it, and refreshSelInfo puts the real size back.
+      szEl.addEventListener('change', function () { applyFontSize(+szEl.value); });
+      szEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); applyFontSize(+szEl.value); } });
+      szEl.addEventListener('blur', refreshSelInfo);
     }
     // Paste: route clipboard HTML through the SAME sanitizer, so formatted text
     // pasted from Docs/Word/web keeps only our curated set — nothing unsafe.
