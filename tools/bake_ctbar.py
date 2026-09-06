@@ -2201,6 +2201,164 @@ FACT_REFUTE_SYS = (
     "Keep reason under 300 characters. One or two sentences, no preamble.")
 
 
+class RepairedFact(BaseModel):
+    has_fact: bool
+    fact: Optional[str] = Field(None, max_length=180)
+    kept: Optional[str] = None       # what of the original the objection left standing
+
+
+FACT_REPAIR_SYS = (
+    "A one-line curiosity about a marine species was rejected by a fact "
+    "checker. You are given the claim and the checker's objection. Salvage "
+    "whatever the objection leaves standing, and nothing else.\n\n"
+    "Rules, in order of importance:\n"
+    "1. Drop every part the objection challenges. Do not argue with it.\n"
+    "2. Where the objection supplies a correction — a different figure, the "
+    "right species, the actual behaviour — use the objection's version.\n"
+    "3. Add NOTHING the claim and the objection do not between them support. "
+    "You are not writing a new fact, you are rescuing the surviving part of an "
+    "old one.\n"
+    "4. If nothing survives, or what survives is too thin or too generic to be "
+    "worth reading, return has_fact=false. That is a good answer and most of "
+    "the time it is the right one.\n\n"
+    "Same sentence rules as before: one sentence, under 140 characters, "
+    "present tense, no species name, no adjectives of praise, and no advice of "
+    "any kind. State it and stop.\n\n"
+    "In `kept`, say in a few words which part of the original you kept.")
+
+
+def stage_fact_repair(species: list, facts: dict, limit: int = 0) -> dict:
+    """Rescue the true half of a refuted fact instead of losing the whole thing.
+
+    The refute pass is all-or-nothing: one unsupported clause kills the claim
+    it sits in, and the true clauses go with it. That cost 211 of 641 species
+    their fact, including twelve of the most-seen animals in the bay — the
+    Eastern Blue Groper's line was rejected for saying that turning blue IS the
+    sex change, and the protogyny and the thirty-five years went out with it.
+
+    Reading the 211 objections, 57% use language that concedes part of the
+    claim, and many hand back the correct figure while they are at it: "litter
+    size of one is right, but newborns are 12-15 cm"; "females do grow much
+    larger, but the cut-off is ~70 cm not 60". Those are corrections, not
+    refutations, and throwing them away was waste.
+
+    So: give the model the claim AND the objection, ask for what survives, and
+    then put the rewrite through the SAME refuter at the same bar. Nothing
+    ships that has not been attacked and held. A fact that fails twice is
+    marked so it is never paid for a third time.
+    """
+    cand = [s for s in species
+            if (facts.get(str(s["taxon_id"])) or {}).get("status") == "refuted"
+            and (facts.get(str(s["taxon_id"])) or {}).get("was")
+            and (facts.get(str(s["taxon_id"])) or {}).get("why")]
+    cand.sort(key=lambda s: -s["annual"])          # most-seen first, so a
+    if limit:                                      # trial run buys the most
+        cand = cand[:limit]
+    if not cand:
+        log("5m/6 fact repair no refuted facts with an objection to work from")
+        return facts
+
+    _require_key("5m/6 fact repair")
+    log(f"5m/6 fact repair {len(cand)} refuted facts, rewrite + re-check on "
+        f"{FACT_MODEL} (~${len(cand)*0.049:.2f})")
+    client = anthropic.Anthropic()
+
+    def repair(s):
+        tid = str(s["taxon_id"])
+        rec = facts[tid]
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=FACT_MODEL, max_tokens=800, system=FACT_REPAIR_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']})\n"
+                               f"Claim: {rec['was']}\n"
+                               f"Objection: {rec['why']}"}],
+                    output_format=RepairedFact)
+                SPEND.add(r.usage)
+                return tid, r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    repair failed {s['name']}: {type(e).__name__}")
+                    return tid, None
+                time.sleep(0.5 * attempt)
+        return tid, None
+
+    def recheck(tid, text):
+        s = by_tid[tid]
+        for attempt in (1, 2, 3):
+            try:
+                r = client.messages.parse(
+                    model=FACT_REFUTE_MODEL, max_tokens=1200,
+                    system=FACT_REFUTE_SYS,
+                    messages=[{"role": "user", "content":
+                               f"{s['sci']} ({s['name']}). Claim: {text}"}],
+                    output_format=FactVerdict)
+                SPEND.add(r.usage)
+                return r.parsed_output
+            except Exception as e:                          # noqa: BLE001
+                if attempt == 3:
+                    log(f"    re-check failed {s['name']}: {type(e).__name__}")
+                    return None
+                time.sleep(0.5 * attempt)
+        return None
+
+    by_tid = {str(s["taxon_id"]): s for s in cand}
+    rewrites, gave_up, done = [], 0, 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        for fut in as_completed([pool.submit(repair, s) for s in cand]):
+            tid, out = fut.result()
+            done += 1
+            if out is None:
+                continue                                # error: retry next run
+            if not out.has_fact or not out.fact:
+                facts[tid]["status"] = "refuted-nothing-left"
+                gave_up += 1
+            else:
+                rewrites.append((tid, out.fact.strip(), out.kept or ""))
+            if done % 50 == 0:
+                cache_write("facts.json", facts)
+                log(f"      rewrite {done}/{len(cand)}")
+    cache_write("facts.json", facts)
+    log(f"5m/6 fact repair {len(rewrites)} rewritten, {gave_up} had nothing "
+        f"left to save")
+
+    if not rewrites:
+        return facts
+    kept, killed, done = [], 0, 0
+    with ThreadPoolExecutor(max_workers=TAG_WORKERS) as pool:
+        futs = {pool.submit(recheck, t, f): (t, f, k) for t, f, k in rewrites}
+        for fut in as_completed(futs):
+            tid, text, why_kept = futs[fut]
+            v = fut.result()
+            done += 1
+            if v is None:
+                continue                                # unverified: try again
+            if v.true_of_this_species:
+                old = facts[tid]
+                facts[tid] = {"status": "found", "fact": text, "checked": True,
+                              "category": old.get("category"),
+                              "repaired": True,
+                              "kept": why_kept,
+                              "was": old.get("was"),
+                              "first_why": old.get("why")}
+                kept.append((by_tid[tid]["annual"], by_tid[tid]["name"], text))
+            else:
+                facts[tid] = {**facts[tid], "status": "refuted-twice",
+                              "repair_was": text, "repair_why": v.reason or ""}
+                killed += 1
+            if done % 50 == 0:
+                cache_write("facts.json", facts)
+                log(f"      re-check {done}/{len(rewrites)}")
+    cache_write("facts.json", facts)
+
+    kept.sort(key=lambda x: -x[0])
+    log(f"5m/6 fact repair {len(kept)} SURVIVED the re-check, {killed} refuted "
+        f"again  ({len(kept)*100//max(1,len(cand))}% of {len(cand)} recovered)")
+    for annual, name, text in kept[:15]:
+        log(f"    +{annual:>4}  {name}: {text[:96]}")
+    return facts
+
 def stage_facts(species: list, force: bool, refute: bool = True) -> dict:
     """One curiosity per species where one honestly exists, then an adversarial
     second opinion on the ones that will be read most."""
@@ -3593,6 +3751,11 @@ def main() -> int:
     ap.add_argument("--facts", action="store_true",
                     help="look up one curiosity per species, then have the "
                          "stronger model try to refute the most-seen ones")
+    ap.add_argument("--repair-facts", action="store_true",
+                    help="rewrite refuted facts around the checker's objection, "
+                         "then put the rewrite through the same checker")
+    ap.add_argument("--repair-limit", type=int, default=0, metavar="N",
+                    help="repair only the N most-seen refuted facts (trial run)")
     ap.add_argument("--no-fact-check", action="store_true",
                     help="skip the adversarial pass over the top 150 facts")
     ap.add_argument("--name-shapes", action="store_true",
@@ -3711,6 +3874,8 @@ def main() -> int:
         if args.facts:
             facts = stage_facts(species, args.force,
                                 refute=not args.no_fact_check)
+        if args.repair_facts:
+            facts = stage_fact_repair(species, facts, args.repair_limit)
         # Applied on every run, paid stage or not: a hand ruling must not need
         # an API call to reach the app.
         facts = apply_fact_overrides(species, facts)
