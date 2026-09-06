@@ -21596,7 +21596,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (!st) { pubMsg('Put the cursor in the text you want to copy the look of'); return; }
       copiedFmt = st;
       var b = $('annPasteFmt'); if (b) b.disabled = false;
-      pubMsg('Copied ' + st.px + 'px' + (st.bold ? ' bold' : '') + ' \u2014 now select text and paste it');
+      pubMsg('Copied ' + st.px + 'px' + (st.bold ? ' bold' : '')
+             + (BLOCK_WORD[st.block] ? ' ' + BLOCK_WORD[st.block] : '')
+             + ' \u2014 now select text and paste it');
     }
     function pasteFmt(){
       if (!copiedFmt) return;
@@ -21604,6 +21606,22 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var sel = window.getSelection();
       if (!sel || !sel.rangeCount || sel.isCollapsed) { pubMsg('Select the text to apply it to first'); return; }
       try { document.execCommand('styleWithCSS', false, true); } catch (e) {}
+      /* The BLOCK goes first, and skipping it was the bug: a plain format
+         pasted onto a heading came out still bold. removeFormat strips the
+         formatting INSIDE an element and cannot touch the element itself, and a
+         heading is bold, Bebas and spaced by its own stylesheet -- so clearing
+         the spans inside one changed nothing anybody could see.
+
+         Un-bolding inline would not have worked either. The sanitizer's
+         font-weight test passes only bold weights, so a "font-weight:normal"
+         would look right in the editor and be dropped on publish, and the bold
+         would come straight back. Carrying the block across is the honest fix:
+         the heading IS part of the look that was copied.
+
+         LI is left alone. "List item" is not something to transfer onto a
+         paragraph without also making it a list, which nobody asked for. */
+      var blk = { H1: 'H2', H2: 'H2', H3: 'H3', BLOCKQUOTE: 'BLOCKQUOTE', P: 'P' }[copiedFmt.block];
+      if (blk) document.execCommand('formatBlock', false, blk);
       document.execCommand('removeFormat', false, null);
       var fg = hex(copiedFmt.color);
       if (fg) document.execCommand('foreColor', false, fg);
@@ -21613,7 +21631,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (copiedFmt.italic && !document.queryCommandState('italic'))    document.execCommand('italic');
       if (copiedFmt.under  && !document.queryCommandState('underline')) document.execCommand('underline');
       // Size last: it rewrites nodes, which would strand the commands above.
-      applyFontSizeRaw(copiedFmt.px);
+      // Skipped when the block already gives that size, so a plain-onto-plain
+      // paste does not litter every paragraph with a redundant 14px span.
+      var reached = selStyle();
+      if (!reached || reached.px !== copiedFmt.px) applyFontSizeRaw(copiedFmt.px);
       saveDraft(); refreshSelInfo();
     }
     function pubMsg(t){
