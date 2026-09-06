@@ -910,9 +910,28 @@ function hardMatch(s){
     var q=Q.toLowerCase();
     if((s.name+' '+s.sci).toLowerCase().indexOf(q)<0) return false;
   }
-  if(SEL.shape && s.shape!==SEL.shape) return false;
+  /* A NEAR NEIGHBOUR is demoted, not hidden.
+
+     Three of the shapes are all deep-bodied and laterally compressed, and
+     their pictograms are necessarily similar because the animals are. Shape
+     otherwise EXCLUDES, so tapping "Deep, oval" when the fish was a
+     butterflyfish used to return 44 results with the answer not among them --
+     invisible, and the swimmer never learns why. That is a worse outcome than
+     a longer list, and it is the one three similar icons invite.
+
+     So the split still ranks: pick one and you get its 44 first. Pick the
+     wrong one of the three and the other 35 are a line below rather than
+     gone. Same demote-never-hide rule the colour and marking steps already
+     run on, for the same reason -- the reader's memory is not a database key. */
+  if(SEL.shape && s.shape!==SEL.shape && !nearShape(s.shape,SEL.shape)) return false;
   if(SEL.size && s.size_bucket!==SEL.size) return false;
   return true;
+}
+var SHAPE_KIN=[['deep-flat-sided','plate-round','diamond-snouted']];
+function nearShape(a,b){
+  for(var i=0;i<SHAPE_KIN.length;i++)
+    if(SHAPE_KIN[i].indexOf(a)>=0 && SHAPE_KIN[i].indexOf(b)>=0) return true;
+  return false;
 }
 /* A record carries ONE colour, and for a lot of reef species that colour is
    the adult male. Matching only on it makes the female unfindable: someone who
@@ -929,6 +948,7 @@ function morphHit(s,field,val){
   return null;
 }
 function softMatch(s){
+  if(SEL.shape && s.shape!==SEL.shape) return false;   // kin: kept, but demoted
   if(SEL.colour && s.colour!==SEL.colour && s.colour2!==SEL.colour
      && !morphHit(s,'colour',SEL.colour)) return false;
   if(SEL.mark && (s.markings||[]).indexOf(SEL.mark)<0
@@ -1065,7 +1085,8 @@ function renderId(){
   hits.sort(function(a,b){ return (b.months[NOW]-a.months[NOW]) || (b.annual-a.annual); });
   var soft=hits.filter(softMatch), off=hits.filter(function(s){ return !softMatch(s); });
   var shown=soft.slice(0,80), other=off.slice(0,30);
-  var softOn=!!(SEL.colour||SEL.mark);
+  var softOn=!!(SEL.colour||SEL.mark||
+    (SEL.shape && SHAPE_KIN.some(function(g){ return g.indexOf(SEL.shape)>=0; })));
 
   el('view').innerHTML=
     '<div class="strip">'
@@ -1148,11 +1169,19 @@ function renderId(){
    "a different colour" when the swimmer picked a marking is worse than saying
    nothing: it sends them checking a filter they never touched. */
 function softLabel(){
+  var kin = SEL.shape && DATA.species.some(function(s){
+    return s.shape!==SEL.shape && nearShape(s.shape,SEL.shape); });
+  if(kin && !SEL.colour && !SEL.mark) return 'Also deep-bodied';
+  if(kin) return 'Also deep-bodied, or a different colour or markings';
   if(SEL.colour&&SEL.mark) return 'Recorded a different colour or markings';
   if(SEL.mark) return 'Recorded different markings';
   return 'Recorded a different colour';
 }
 function softWhy(){
+  if(SEL.shape && !SEL.colour && !SEL.mark)
+    return 'Deep, oval, round like a plate and diamond with a pointed snout are '
+         + 'close enough that a fish seen for two seconds could be filed under '
+         + 'any of them. These are the other two.';
   if(SEL.colour&&!SEL.mark)
     return 'Water eats red before anything else, so an animal can be photographed '
          + 'looking quite unlike itself. These match the shape.';
