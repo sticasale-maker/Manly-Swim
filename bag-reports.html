@@ -1520,8 +1520,21 @@ document.getElementById('range').onchange = load;
 });
 renderContact();
 
+// Default cutoff. The database opens with a lone report from October 2025,
+// well before the current run, and leaving it in flattens every rate in the
+// pack — eight thefts in a fortnight reads as "one every six weeks" once a
+// year-old incident stretches the period. This is a DEFAULT, not a filter
+// baked into the maths: the cover states it and the count it held back, the
+// caveat list tells the reader earlier reports exist on the same database, and
+// the reports themselves stay listed on screen. Clearing the field brings them
+// back, and that stays cleared, because a stored empty string is a decision
+// while a missing key is someone who has never touched the control.
+const DEFAULT_FROM = '2026-01-01';
 const fromEl = document.getElementById('from');
-try{ fromEl.value = localStorage.getItem('swim_pack_from') || ''; }catch(e){}
+try{
+  const stored = localStorage.getItem('swim_pack_from');
+  fromEl.value = (stored === null ? DEFAULT_FROM : stored);
+}catch(e){ fromEl.value = DEFAULT_FROM; }
 fromEl.onchange = () => {
   try{ localStorage.setItem('swim_pack_from', fromEl.value); }catch(e){}
   if (ROWS.length) render();
