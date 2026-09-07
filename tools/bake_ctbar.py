@@ -178,6 +178,14 @@ EXCLUDE_TAXA = {
     146186,  # Australian Water Dragon — 23 records, a lizard basking on the
              # Shelly rocks. Well recorded, genuinely present, and not something
              # a swimmer will ever be trying to identify underwater.
+    68030,  # Two-spot Red Snapper (Lutjanus bohar) — 5 bay records, and all
+             # of them doubtful. Every one of the eight NSW research-grade CC
+             # photographs filed under this name shows a small silvery fish
+             # that is plainly not a red snapper, which is a state-wide
+             # misidentification rate high enough to discredit the local
+             # records too: the same people, the same name, the same mistake.
+             # A tropical vagrant nobody can photograph correctly is not
+             # evidence that it was here. Marco's call, 8 Sep 2026.
 }
 
 API = "https://api.inaturalist.org/v1"
