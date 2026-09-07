@@ -3717,6 +3717,83 @@ def stage_rebalance(species: list, facts: dict, category: str, limit: int = 0) -
         f"({len(cand) - swapped} of {len(cand)} unchanged)")
     return facts
 
+def stage_more_links(species: list, force: bool) -> dict:
+    """Where to read more about each species, resolved once and cached.
+
+    Four sources were checked across all 640 before choosing. Fishes of
+    Australia and the Australian Museum have no API and no URL you can build
+    from a name, and Fishes of Australia is fish-only, which misses the 194
+    snails, slugs, urchins, crabs and jellies on this list. That left two:
+
+        Atlas of Living Australia   609 of 640   95%
+        Reef Life Survey            403 of 640   62%
+        at least one                614 of 640   95%
+
+    Reef Life Survey adds only five species ALA does not have, so it is not
+    worth having for coverage. It is worth having for the 403 it does hold,
+    because it is written for exactly this reader -- someone who has just
+    surfaced and wants to know what they saw -- where ALA is a taxonomic
+    database with an occurrence map. So: RLS where it exists, ALA behind it,
+    and nothing at all for the 26 neither holds. A dead link is worse than no
+    link (SS8: absent is grey, not dressed up).
+
+    Free, and cached, so it runs once. RLS is a slug probe -- it returns a
+    real 404 for a species it does not hold, which is what makes the probe
+    trustworthy -- and ALA is a name search against its API.
+    """
+    out = {} if force else (cache_read("morelinks.json") or {})
+    todo = [s for s in species if str(s["taxon_id"]) not in out]
+    if not todo:
+        have = sum(1 for v in out.values() if v.get("rls") or v.get("ala"))
+        log(f"3d/6 more links  {have} of {len(out)} (cached)")
+        return out
+    log(f"3d/6 more links  {len(todo)} to resolve (free)")
+
+    def rls(sci):
+        slug = "-".join(sci.lower().split()[:2])
+        u = "https://reeflifesurvey.com/species/" + slug + "/"
+        try:
+            r = urllib.request.urlopen(
+                urllib.request.Request(u, headers={"User-Agent": UA}), timeout=25)
+            return u if r.status == 200 else None
+        except Exception:                                    # noqa: BLE001
+            return None                                      # 404 lands here too
+
+    def ala(sci):
+        try:
+            d = _get_json("https://api.ala.org.au/species/search?q="
+                          + urllib.parse.quote('"' + sci + '"') + "&pageSize=1")
+            res = (d.get("searchResults") or {}).get("results") or []
+            g = res[0].get("guid") if res else None
+            # ALA's guid is itself a URL. Concatenating raw happens to work --
+            # their router copes -- but it produces a link with two schemes in
+            # it, which looks broken to anyone who reads the address bar and is
+            # one router change from actually being broken.
+            return ("https://bie.ala.org.au/species/"
+                    + urllib.parse.quote(g, safe="")) if g else None
+        except Exception:                                    # noqa: BLE001
+            return None
+
+    def one(s):
+        return str(s["taxon_id"]), {"rls": rls(s["sci"]), "ala": ala(s["sci"])}
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        for fut in as_completed([pool.submit(one, s) for s in todo]):
+            tid, rec = fut.result()
+            out[tid] = rec
+            done += 1
+            if done % 100 == 0:
+                cache_write("morelinks.json", out, allow_shrink=True)
+                log(f"      {done}/{len(todo)}")
+    cache_write("morelinks.json", out, allow_shrink=True)
+    r = sum(1 for v in out.values() if v.get("rls"))
+    a = sum(1 for v in out.values() if v.get("ala"))
+    both = sum(1 for v in out.values() if v.get("rls") or v.get("ala"))
+    log(f"3d/6 more links  {both} of {len(out)} have one "
+        f"({r} Reef Life Survey, {a} ALA, {len(out)-both} neither)")
+    return out
+
 def stage_gbif_keys(species: list, force: bool) -> dict:
     """Match each species to GBIF, so the card can show where it lives.
 
@@ -3877,7 +3954,8 @@ def report_disagreement(before: dict, after: dict, species: list) -> None:
 
 
 def stage_emit(species: list, months: dict, photos: dict, tags: dict,
-               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None, prov: dict = None, gbif: dict = None) -> None:
+               sizes: dict, slugs: dict, season: dict = None, facts: dict = None, morphs: dict = None, agree: dict = None, picks: dict = None, prov: dict = None, gbif: dict = None,
+           more: dict = None) -> None:
     now = datetime.now(timezone.utc)
     by_taxon, effort = months["by_taxon"], months["effort"]
 
@@ -4025,6 +4103,16 @@ def stage_emit(species: list, months: dict, photos: dict, tags: dict,
             "size_estimated": (sizes.get(tid) or {}).get("typical_estimated") or False,
             "size_measure": (sizes.get(tid) or {}).get("measure"),
             "gbif": (gbif or {}).get(tid),
+            # Reef Life Survey where it has the species, ALA behind it, and
+            # nothing at all where neither does. Named in the link, because
+            # "read more" that could go anywhere is worth less than one that
+            # says where.
+            "more_url": ((more or {}).get(tid) or {}).get("rls")
+                        or ((more or {}).get(tid) or {}).get("ala"),
+            "more_src": ("Reef Life Survey"
+                         if ((more or {}).get(tid) or {}).get("rls")
+                         else ("Atlas of Living Australia"
+                               if ((more or {}).get(tid) or {}).get("ala") else None)),
             # Model knowledge, never an observation. The app must show it as
             # such — same treatment as an estimated size.
             "fact": unescape_prose(((facts or {}).get(tid) or {}).get("fact")),
@@ -4286,6 +4374,7 @@ def main() -> int:
                     cl.insert(0, cl.pop(_i))
                     break
         gbif = stage_gbif_keys(species, args.force)
+        more = stage_more_links(species, args.force)
         sizes = stage_size(species, args.force)
         # The paid lookup is opt-in; folding in cached answers and the
         # hand-researched overrides is free, so it happens on every run. Gating
@@ -4369,7 +4458,7 @@ def main() -> int:
             return 0
         stage_emit(species, months, photos, tags, sizes, slugs, season,
                    facts=facts, morphs=morphs, agree=agree,
-                   picks=picks, prov=prov, gbif=gbif)
+                   picks=picks, prov=prov, gbif=gbif, more=more)
         print()
         log("Done. Add species/ctbar.json and species/img/ to the service-worker")
         log("precache, then commit from the repo clone — never from the Drive copy.")
