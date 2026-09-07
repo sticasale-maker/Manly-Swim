@@ -181,7 +181,7 @@ h3.sec:first-child{margin-top:0}
 .caveat li{margin-bottom:3px}
 
 /* ── map ──────────────────────────────────────────────────────────────────── */
-.maprow{display:grid;grid-template-columns:104mm 1fr;gap:4mm;align-items:start}
+.maprow{display:grid;grid-template-columns:98mm 1fr;gap:5mm;align-items:start}
 .mapbox{position:relative;width:100%}
 .mapbox canvas{display:block;width:100%;height:auto;border:1px solid var(--rule)}
 .pinlist{font-size:11.3px;border-collapse:collapse;width:100%}
@@ -302,8 +302,12 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
 .authcard button{background:linear-gradient(100deg,#1d86a4,#2ea578);border-color:transparent;font-weight:600}
 .hide{display:none!important}
 
-/* running footer, repeated on every printed page by position:fixed */
-.runfoot{display:none}
+/* Identification strip at the foot of each printed section. This was a
+   position:fixed running footer, which Chrome's paginator placed at the TOP of
+   a page and printed straight through the heading. A static strip cannot
+   overlap anything; per-page identity is carried by each case sheet's own
+   footer, and page numbers by the browser's own print header/footer option. */
+.sheetfoot{display:none}
 
 /* ── print ────────────────────────────────────────────────────────────────── */
 @media print{
@@ -316,7 +320,11 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
     width:auto;min-height:0;margin:0;padding:0;box-shadow:none;
     break-after:page;page-break-after:always;
   }
-  .sheet:last-child{break-after:auto;page-break-after:auto}
+  /* #excl (withdrawn, screen-only) is the last child of .stack, so :last-child
+     never matched the index page and its break-after emitted a blank final
+     sheet. The sheets are the only <section>s, so :last-of-type does match. */
+  .sheet:last-child,
+  .stack>.sheet:last-of-type{break-after:auto;page-break-after:auto}
   .sheet.flow{break-after:auto;page-break-after:auto}
   .masthead h1{font-size:30pt}
   .pagehead h2{font-size:17pt}
@@ -327,13 +335,10 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
   .finds li{break-inside:avoid}
   tr,img,canvas{break-inside:avoid;page-break-inside:avoid}
   a{color:inherit;text-decoration:none}
-  /* position:fixed repeats on every printed page in Chrome, Edge and Safari,
-     which is the only way to get a running footer without a paginator. It sits
-     in the bottom page margin, so it can never land on top of content. */
-  .runfoot{
-    display:flex;justify-content:space-between;gap:12px;
-    position:fixed;bottom:-11mm;left:0;right:0;
-    font-size:7.4pt;color:#6b858f;border-top:.5pt solid #c3d4da;padding-top:3px;
+  .sheetfoot{
+    display:flex;justify-content:space-between;gap:14px;
+    margin-top:11px;padding-top:3px;border-top:.5pt solid #c3d4da;
+    font-size:7.4pt;color:#6b858f;
   }
   .docmeta .ed{border-bottom:0}
 }
@@ -345,6 +350,10 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
   <span class="t">South Steyne thefts — citizen reporting</span>
   <span class="n" id="hMeta"></span>
   <span class="sp"></span>
+  <label style="font-size:12px;display:flex;align-items:center;gap:5px;opacity:.85">
+    incidents from
+    <input type="date" id="from" style="font:inherit;font-size:12px;padding:4px 7px;border-radius:7px;border:1.5px solid rgba(255,255,255,.28);background:rgba(255,255,255,.07);color:#fff">
+  </label>
   <select id="range">
     <option value="30">Last 30 days</option>
     <option value="90">Last 90 days</option>
@@ -433,7 +442,7 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
     <div class="maprow">
       <div>
         <div class="mapbox"><canvas id="heat"></canvas></div>
-        <div class="mlegend"><span>One report</span><span class="ramp"></span><span>Several, same spot</span></div>
+        <div class="mlegend"><span>One report</span><span class="ramp"></span><span>Several, same spot</span><span style="margin-left:auto">Pins on the same spot are nudged apart; the hairline points to where it happened.</span></div>
       </div>
       <div>
         <table class="pinlist" id="pinlist"></table>
@@ -490,7 +499,6 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
   <div class="excl hide" id="excl"></div>
 </div>
 
-<div class="runfoot" id="runfoot"></div>
 
 <script>
 // =============================================================================
@@ -519,7 +527,7 @@ const TZ     = 'Australia/Sydney';
 // that was normalized against the old bag_map.png crop and sits slightly off.
 const MAP_SRC = 'Artboard 1.png';
 
-let ROWS = [], PACK = [], GONE = [];
+let ROWS = [], PACK = [], GONE = [], OLD = [];
 let MAPIMG = null;
 
 // ── token ────────────────────────────────────────────────────────────────────
@@ -530,6 +538,17 @@ function token(){
 }
 
 // ── formatting, all in Sydney ────────────────────────────────────────────────
+// Cutoff on the incident date, parsed as local midnight so a report lodged on
+// the cutoff day itself is kept.
+function cutoff(){
+  const el = document.getElementById('from');
+  const v = el && el.value;
+  if (!v) return null;
+  const [y,m,d] = v.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return isNaN(dt) ? null : dt;
+}
+
 const fmt = (d,o) => new Intl.DateTimeFormat('en-AU', Object.assign({timeZone:TZ}, o)).format(d);
 const dayKey = d => fmt(d,{year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-');
 const hourOf = d => +fmt(d,{hour:'2-digit',hour12:false});
@@ -606,12 +625,21 @@ function render(){
   // that order IS the report number — pin 4 on the map, case 4, row 4 in the
   // index are the same incident. One number, used everywhere.
   GONE = ROWS.filter(r => r.withdrawn);
-  PACK = ROWS.filter(r => !r.withdrawn)
+  // Optional cutoff on the INCIDENT date, so one historic report does not sit
+  // in a pack about a current run and flatten every rate in it. Nothing goes
+  // quietly: the cover states the cutoff and what it removed, and the rows
+  // themselves stay listed on screen below.
+  const cut = cutoff();
+  const kept = ROWS.filter(r => !r.withdrawn);
+  OLD  = cut ? kept.filter(r => new Date(r.left_at) < cut) : [];
+  PACK = (cut ? kept.filter(r => new Date(r.left_at) >= cut) : kept)
              .sort((a,b) => new Date(a.left_at) - new Date(b.left_at));
   PACK.forEach((r,i) => r._k = i + 1);
 
   document.getElementById('hMeta').textContent =
-    PACK.length + ' in pack' + (GONE.length ? ' · ' + GONE.length + ' withdrawn, excluded' : '')
+    PACK.length + ' in pack'
+    + (OLD.length ? ' · ' + OLD.length + ' before cutoff' : '')
+    + (GONE.length ? ' · ' + GONE.length + ' withdrawn' : '')
     + ' · Sydney time';
 
   docmeta();
@@ -638,7 +666,9 @@ function docmeta(){
   const rangeTxt = sel.options[sel.selectedIndex].text;
   const flagged = PACK.filter(r => r.status === 'suspect' || r.hidden).length;
   const cells = [
-    ['Period covered', s ? dateS(s.a) + ' – ' + dateS(s.b) + '  (' + plural(s.days,'day') + ')' : 'no reports in range'],
+    ['Period covered', (s ? dateS(s.a) + ' – ' + dateS(s.b) + '  (' + plural(s.days,'day') + ')' : 'no reports in range')
+       + (cutoff() ? '<br><span style="font-size:11px;color:var(--dim)">incidents before '
+           + esc(dateS(cutoff())) + ' excluded' + (OLD.length ? ' (' + OLD.length + ')' : '') + '</span>' : '')],
     ['Reports in this pack', PACK.length + (flagged ? '  ·  ' + flagged + ' flagged for review' : '')],
     ['Query window', rangeTxt + ' of lodgements'],
     ['Prepared', stamp(new Date())],
@@ -887,6 +917,9 @@ function caveats(){
   ];
   if (GONE.length) c.push('<b>' + plural(GONE.length,'report') + ' withdrawn</b> by the reporter after lodging '
     + (GONE.length === 1 ? 'is' : 'are') + ' excluded from this pack entirely.');
+  if (OLD.length) c.push('This pack is limited to incidents from <b>' + esc(dateS(cutoff()))
+    + '</b> onwards; ' + plural(OLD.length,'earlier report') + ' on the same database '
+    + (OLD.length === 1 ? 'is' : 'are') + ' outside it.');
   document.getElementById('caveats').innerHTML = c.map(x => '<li>' + x + '</li>').join('');
 }
 
@@ -1129,12 +1162,38 @@ function heatmap(){
     });
     g.restore();
 
-    // numbered pins on top — the number is the whole point, so it gets a white
-    // halo and sits above the density wash
+    // Numbered pins on top — the number is the whole point, so it gets a white
+    // halo and sits above the density wash.
+    //
+    // Reports pile up on the same few spots (the hooks, mostly), and stacked
+    // discs hide each other's numbers, which is the one thing this map is for.
+    // A pin that would land on one already placed is pushed out along a golden
+    // angle until it is clear, and a hairline runs back to the true position —
+    // so the map stays legible without moving the evidence. The density wash
+    // underneath is still drawn at the real coordinates.
     const r0 = Math.max(17, W * .026);
+    const minD = r0 * 2.2;
+    const placed = [];
     g.textAlign = 'center'; g.textBaseline = 'middle';
     pts.forEach(p => {
-      const x = p.loc_x*W, y = p.loc_y*H;
+      const tx = p.loc_x*W, ty = p.loc_y*H;
+      let x = tx, y = ty;
+      for (let k = 1; k < 60 && placed.some(q => Math.hypot(q.x - x, q.y - y) < minD); k++){
+        const a = k * 2.39996323;                        // golden angle, no clumping
+        const rad = minD * (0.85 + 0.3 * Math.floor(k / 6));
+        x = Math.min(W - r0*1.4, Math.max(r0*1.4, tx + Math.cos(a)*rad));
+        y = Math.min(H - r0*1.4, Math.max(r0*1.4, ty + Math.sin(a)*rad));
+      }
+      placed.push({ x, y });
+
+      if (Math.hypot(x - tx, y - ty) > 1){
+        g.beginPath(); g.moveTo(tx, ty); g.lineTo(x, y);
+        g.lineWidth = Math.max(1.6, r0*.11); g.strokeStyle = 'rgba(255,255,255,.85)'; g.stroke();
+        g.lineWidth = Math.max(.9, r0*.055); g.strokeStyle = 'rgba(15,43,53,.8)'; g.stroke();
+        g.beginPath(); g.arc(tx, ty, Math.max(2.5, r0*.16), 0, Math.PI*2);
+        g.fillStyle = '#0f2b35'; g.fill();
+      }
+
       g.beginPath(); g.arc(x, y, r0*1.28, 0, Math.PI*2);
       g.fillStyle = 'rgba(255,255,255,.94)'; g.fill();
       g.beginPath(); g.arc(x, y, r0, 0, Math.PI*2);
@@ -1342,26 +1401,47 @@ function indexTable(){
 // ── withdrawn: on screen, never in the pack ──────────────────────────────────
 function withdrawnBlock(){
   const el = document.getElementById('excl');
-  if (!GONE.length){ el.classList.add('hide'); return; }
+  if (!GONE.length && !OLD.length){ el.classList.add('hide'); return; }
   el.classList.remove('hide');
-  el.innerHTML = '<h3>' + plural(GONE.length,'withdrawn report') + ' — excluded from this pack</h3>'
-    + '<p class="fine">These reporters withdrew after lodging. They stay visible here so you can see that '
-    + 'they exist, and they are left out of every page above, the index, the charts and the CSV. '
-    + 'They must not be passed on. This block does not print.</p>'
-    + '<table class="idx" style="margin-top:7px"><thead><tr><th>Record</th><th>Bag left</th>'
-    + '<th>Withdrawn</th><th>Where</th></tr></thead><tbody>'
-    + GONE.map(r => '<tr><td class="n">#' + esc(r.id) + '</td><td>' + esc(stamp(new Date(r.left_at))) + '</td>'
-      + '<td>' + (r.withdrawn_at ? esc(stamp(new Date(r.withdrawn_at))) : '—') + '</td>'
-      + '<td>' + esc(r.loc_note || '—') + '</td></tr>').join('')
-    + '</tbody></table>';
+  let h = '';
+  if (GONE.length){
+    h += '<h3>' + plural(GONE.length,'withdrawn report') + ' — excluded from this pack</h3>'
+      + '<p class="fine">These reporters withdrew after lodging. They stay visible here so you can see '
+      + 'that they exist, and they are left out of every page above, the index, the charts and the CSV. '
+      + 'They must not be passed on.</p>'
+      + rows(GONE, true);
+  }
+  if (OLD.length){
+    h += '<h3' + (GONE.length ? ' style="margin-top:13px"' : '') + '>'
+      + plural(OLD.length,'report') + ' before ' + esc(dateS(cutoff())) + ' — outside the period</h3>'
+      + '<p class="fine">Held back by the cutoff in the toolbar, not withdrawn and not doubted. '
+      + 'Clear the date to bring ' + (OLD.length === 1 ? 'it' : 'them') + ' back in.</p>'
+      + rows(OLD, false);
+  }
+  el.innerHTML = h + '<p class="fine" style="margin-top:9px">This block never prints.</p>';
+
+  function rows(list, wd){
+    return '<table class="idx" style="margin-top:7px"><thead><tr><th>Record</th><th>Bag left</th>'
+      + (wd ? '<th>Withdrawn</th>' : '<th>Value</th>') + '<th>Where</th></tr></thead><tbody>'
+      + list.map(r => '<tr><td class="n">#' + esc(r.id) + '</td><td>' + esc(stamp(new Date(r.left_at))) + '</td>'
+        + '<td>' + (wd ? (r.withdrawn_at ? esc(stamp(new Date(r.withdrawn_at))) : '—')
+                       : (r.value_aud == null ? '—' : esc(money(r.value_aud)))) + '</td>'
+        + '<td>' + esc(r.loc_note || '—') + '</td></tr>').join('')
+      + '</tbody></table>';
+  }
 }
 
 function runfoot(){
   const s = span();
-  document.getElementById('runfoot').innerHTML =
-    '<span>Swimmer-reported bag thefts — Cabbage Tree Bay &amp; South Steyne, Manly NSW'
+  const html = '<span>South Steyne thefts — swimmers’ citizen reporting'
     + (s ? ' · ' + esc(dateS(s.a)) + ' to ' + esc(dateS(s.b)) : '') + '</span>'
-    + '<span>Marco Bordieri · sticasale@gmail.com · 0405 461 023 · prepared ' + esc(dateS(new Date())) + '</span>';
+    + '<span>Marco Bordieri · sticasale@gmail.com · 0405 461 023 · prepared '
+    + esc(dateS(new Date())) + '</span>';
+  document.querySelectorAll('.sheet').forEach(sec => {
+    let f = sec.querySelector(':scope > .sheetfoot');
+    if (!f){ f = document.createElement('div'); f.className = 'sheetfoot'; sec.appendChild(f); }
+    f.innerHTML = html;
+  });
 }
 
 // ── CSV ──────────────────────────────────────────────────────────────────────
@@ -1388,6 +1468,12 @@ function csv(){
 // ── wiring ───────────────────────────────────────────────────────────────────
 document.getElementById('reload').onclick = load;
 document.getElementById('range').onchange = load;
+const fromEl = document.getElementById('from');
+try{ fromEl.value = localStorage.getItem('swim_pack_from') || ''; }catch(e){}
+fromEl.onchange = () => {
+  try{ localStorage.setItem('swim_pack_from', fromEl.value); }catch(e){}
+  if (ROWS.length) render();
+};
 document.getElementById('csv').onclick = csv;
 document.getElementById('print').onclick = () => window.print();
 document.getElementById('spread').onchange = timeCharts;
