@@ -407,8 +407,8 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
       <div class="conedit noprint">
         <input type="text" id="mEmail" placeholder="email for the pack" autocomplete="off" spellcheck="false">
         <input type="text" id="mPhone" placeholder="phone" autocomplete="off" spellcheck="false">
-        <span>Held on this device only. Never written into the published file &mdash;
-          this page is served from a public repository.</span>
+        <span>Overrides for this device. Leave them as they are and the pack
+          prints the details above; change one and only this machine follows it.</span>
       </div>
       <div class="fine" style="margin-top:5px">
         Reports are lodged by swimmers through the Manly Swim app
@@ -553,23 +553,33 @@ function token(){
 }
 
 // ── formatting, all in Sydney ────────────────────────────────────────────────
-// The name is the accountable party on the document and stays in the file.
-// Email and phone do not: this page is served from a PUBLIC repository, so
-// anything baked in here is fetchable and code-searchable by anyone. They are
-// typed once and held in localStorage on whichever machine compiles the pack.
+// Who the pack is from. These are baked in at the operator's direction, having
+// been told what it means: this page is served from a PUBLIC repository, so the
+// file is fetchable anonymously from raw.githubusercontent.com and indexed by
+// GitHub code search. They also remain in the repository history from an
+// earlier commit either way, which is why removing them from HEAD alone was
+// only ever a partial measure.
 //
-// Deliberately NOT mirrored to a cookie the way index.html's persistSet does.
-// A cookie on this origin rides along in a request header to GitHub's servers
-// on every load, which is precisely the exposure being removed. The price is
-// that Safari's ITP can evict localStorage after seven idle days and this page
-// is opened rarely — so an unset state is made loud rather than silent, and
-// prints as a ruled blank you can fill in by hand.
-const CONTACT_NAME = 'Marco Bordieri';
+// The values below are DEFAULTS. A device that sets its own overrides them, so
+// the details can be changed on the machine compiling a pack without a push,
+// and a deliberately emptied field stays empty — a stored empty string is a
+// decision, a missing key is someone who has never touched the control.
+const CONTACT_NAME  = 'Marco Bordieri';
+const CONTACT_EMAIL = 'sticasale@gmail.com';
+const CONTACT_PHONE = '0405 461 023';
+
 function lsGet(k){ try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function lsOr(k, dflt){
+  try{
+    const v = localStorage.getItem(k);
+    return (v === null ? dflt : v).trim();
+  }catch(e){ return dflt; }
+}
 
 function contactBits(){
-  return [lsGet('swim_pack_email').trim(), lsGet('swim_pack_phone').trim()].filter(Boolean);
+  return [lsOr('swim_pack_email', CONTACT_EMAIL),
+          lsOr('swim_pack_phone', CONTACT_PHONE)].filter(Boolean);
 }
 
 function renderContact(){
@@ -1513,9 +1523,10 @@ function csv(){
 // ── wiring ───────────────────────────────────────────────────────────────────
 document.getElementById('reload').onclick = load;
 document.getElementById('range').onchange = load;
-[['mEmail','swim_pack_email'], ['mPhone','swim_pack_phone']].forEach(([id, key]) => {
+[['mEmail','swim_pack_email',CONTACT_EMAIL], ['mPhone','swim_pack_phone',CONTACT_PHONE]]
+.forEach(([id, key, dflt]) => {
   const el = document.getElementById(id);
-  el.value = lsGet(key);
+  el.value = lsOr(key, dflt);
   el.oninput = () => { lsSet(key, el.value.trim()); renderContact(); runfoot(); };
 });
 renderContact();
