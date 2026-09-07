@@ -145,6 +145,18 @@ h3.sec:first-child{margin-top:0}
 .custody .who{font-size:15px;font-weight:600;letter-spacing:.1px}
 .custody .con{font-size:12.6px;color:var(--ink2);margin-top:2px}
 .custody .con a{color:var(--ink2)}
+.custody .con .unset{color:var(--red);font-weight:600;font-size:12px}
+.custody .con .blank{
+  display:inline-block;min-width:56mm;border-bottom:1px solid var(--ink);
+  height:1.05em;vertical-align:-3px;margin-left:6px;
+}
+.conedit{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:7px}
+.conedit input{
+  font:inherit;font-size:12.4px;padding:4px 9px;border:1.5px solid var(--rule);
+  border-radius:7px;background:#fff;color:var(--ink);min-width:186px;
+}
+.conedit input:focus{outline:none;border-color:var(--accent);background:rgba(21,104,127,.04)}
+.conedit span{font-size:11px;color:var(--dim);max-width:34em;line-height:1.4}
 
 .figs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 0}
 .fig{border:1px solid var(--rule);border-top:3px solid var(--accent);padding:8px 9px 7px}
@@ -391,9 +403,12 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
     <div class="custody">
       <b>Data collected and provided by</b>
       <div class="who">Marco Bordieri</div>
-      <div class="con">
-        <a href="mailto:sticasale@gmail.com">sticasale@gmail.com</a>
-        &nbsp;·&nbsp; 0405 461 023
+      <div class="con" id="mCon"></div>
+      <div class="conedit noprint">
+        <input type="text" id="mEmail" placeholder="email for the pack" autocomplete="off" spellcheck="false">
+        <input type="text" id="mPhone" placeholder="phone" autocomplete="off" spellcheck="false">
+        <span>Held on this device only. Never written into the published file &mdash;
+          this page is served from a public repository.</span>
       </div>
       <div class="fine" style="margin-top:5px">
         Reports are lodged by swimmers through the Manly Swim app
@@ -538,6 +553,35 @@ function token(){
 }
 
 // ── formatting, all in Sydney ────────────────────────────────────────────────
+// The name is the accountable party on the document and stays in the file.
+// Email and phone do not: this page is served from a PUBLIC repository, so
+// anything baked in here is fetchable and code-searchable by anyone. They are
+// typed once and held in localStorage on whichever machine compiles the pack.
+//
+// Deliberately NOT mirrored to a cookie the way index.html's persistSet does.
+// A cookie on this origin rides along in a request header to GitHub's servers
+// on every load, which is precisely the exposure being removed. The price is
+// that Safari's ITP can evict localStorage after seven idle days and this page
+// is opened rarely — so an unset state is made loud rather than silent, and
+// prints as a ruled blank you can fill in by hand.
+const CONTACT_NAME = 'Marco Bordieri';
+function lsGet(k){ try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+function contactBits(){
+  return [lsGet('swim_pack_email').trim(), lsGet('swim_pack_phone').trim()].filter(Boolean);
+}
+
+function renderContact(){
+  const el = document.getElementById('mCon');
+  if (!el) return;
+  const b = contactBits();
+  el.innerHTML = b.length
+    ? b.map(v => /@/.test(v) ? '<a href="mailto:' + esc(v) + '">' + esc(v) + '</a>' : esc(v))
+        .join(' &nbsp;·&nbsp; ')
+    : '<span class="unset">Contact details not set on this device</span><span class="blank"></span>';
+}
+
 // Cutoff on the incident date, parsed as local midnight so a report lodged on
 // the cutoff day itself is kept.
 function cutoff(){
@@ -642,6 +686,7 @@ function render(){
     + (GONE.length ? ' · ' + GONE.length + ' withdrawn' : '')
     + ' · Sydney time';
 
+  renderContact();
   docmeta();
   figures();
   findings();
@@ -1435,8 +1480,8 @@ function runfoot(){
   const s = span();
   const html = '<span>South Steyne thefts — swimmers’ citizen reporting'
     + (s ? ' · ' + esc(dateS(s.a)) + ' to ' + esc(dateS(s.b)) : '') + '</span>'
-    + '<span>Marco Bordieri · sticasale@gmail.com · 0405 461 023 · prepared '
-    + esc(dateS(new Date())) + '</span>';
+    + '<span>' + esc([CONTACT_NAME].concat(contactBits()).join(' · '))
+    + ' · prepared ' + esc(dateS(new Date())) + '</span>';
   document.querySelectorAll('.sheet').forEach(sec => {
     let f = sec.querySelector(':scope > .sheetfoot');
     if (!f){ f = document.createElement('div'); f.className = 'sheetfoot'; sec.appendChild(f); }
@@ -1468,6 +1513,13 @@ function csv(){
 // ── wiring ───────────────────────────────────────────────────────────────────
 document.getElementById('reload').onclick = load;
 document.getElementById('range').onchange = load;
+[['mEmail','swim_pack_email'], ['mPhone','swim_pack_phone']].forEach(([id, key]) => {
+  const el = document.getElementById(id);
+  el.value = lsGet(key);
+  el.oninput = () => { lsSet(key, el.value.trim()); renderContact(); runfoot(); };
+});
+renderContact();
+
 const fromEl = document.getElementById('from');
 try{ fromEl.value = localStorage.getItem('swim_pack_from') || ''; }catch(e){}
 fromEl.onchange = () => {
