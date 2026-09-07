@@ -4069,7 +4069,7 @@
           <div class="radar-mm-lead is-none" id="radarMmLead">Reading the bay&hellip;</div>
           <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 118"
                preserveAspectRatio="xMidYMid meet"
-               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, today and the next three days: amount bands and chance of any rain"></svg>
+               aria-label="Forecast rain at Cabbage Tree Bay in 3-hour blocks, today and the next three days: chance of any rain, with amount bands beneath"></svg>
           <div class="radar-mm-foot" id="radarMmFoot"></div>
         </div>
         <div class="radar-legend">
@@ -24405,41 +24405,48 @@ else theftLoad();
     }
 
     // Gridlines on the class boundaries; labels in the MIDDLE of a class, so the
-    // axis reads as ten bands and not as a continuous scale.
-    for (var g = 1; g < 10; g++) {
-      var gy = yB - (g / 10) * plot;
+    // axis reads as six bands and not as a continuous scale.
+    var NCH = CH_BANDS.length;
+    for (var g = 1; g < NCH; g++) {
+      var gy = yB - (g / NCH) * plot;
       p.push('<line x1="' + x0 + '" y1="' + gy.toFixed(1) + '" x2="' + x1 + '" y2="' + gy.toFixed(1) +
              '" stroke="rgba(17,53,65,0.07)" stroke-width="0.6"/>');
     }
-    [[0, '&lt;0.5'], [2, '1-2'], [4, '3-5'], [6, '10-20'], [8, '50+']].forEach(function (t) {
-      var y = yB - ((t[0] + 0.5) / 10) * plot;
+    [[0, '0-10'], [2, '25-50'], [4, '75-90']].forEach(function (t) {
+      var y = yB - ((t[0] + 0.5) / NCH) * plot;
       p.push('<text x="' + (PAD_L - 4) + '" y="' + (y + 3).toFixed(1) +
              '" font-size="8" fill="#4a5f6e" text-anchor="end">' + t[1] + '</text>');
     });
     p.push('<line x1="' + x0 + '" y1="' + yB + '" x2="' + x1 + '" y2="' + yB +
            '" stroke="rgba(17,53,65,0.25)" stroke-width="1"/>');
     p.push('<text x="' + (PAD_L - 4) + '" y="' + (stripY + stripH - 1) +
-           '" font-size="7.5" fill="#4a5f6e" text-anchor="end">rain?</text>');
+           '" font-size="7.5" fill="#4a5f6e" text-anchor="end">mm</text>');
 
     var prevDay = null;
     rows.forEach(function (row, i) {
       var bx = xs[i], w = Math.max(1.5, ws[i] - (i < near ? 2.5 : 1.2));
 
-      // mm bar
-      if (row.band === false || row.band === null) {
-        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 3) + '" width="' + w.toFixed(1) +
-               '" height="3" fill="#c4c4c4"/>');
-      } else {
-        var h = Math.max(MM_MIN_H, ((row.band + 1) / 10) * plot);
+      // Chance-of-rain bar. This is the headline field, and it is the one that
+      // moves: the amount layer is exceeding_50percentchance, i.e. the MEDIAN
+      // three-hourly total, which sits in its lowest class ("0 - 0.5 mm") for
+      // weeks on end because half the time in a three-hour block it does not
+      // rain at all. Bars driven by that read as a flat line and taught nobody
+      // anything. Chance separates a dry week from a showery one, so chance
+      // gets the height and the amount drops to the strip.
+      if (typeof row.chance === 'number') {
+        var h = Math.max(MM_MIN_H, ((row.chance + 1) / NCH) * plot);
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - h).toFixed(1) + '" width="' + w.toFixed(1) +
                '" height="' + h.toFixed(1) + '" rx="' + (i < near ? 1.5 : 0) + '" fill="' +
-               KEY_FCST.colours[row.band] + '" stroke="rgba(17,53,65,0.38)" stroke-width="0.5"/>');
+               CH_COLOURS[row.chance] + '" stroke="rgba(17,53,65,0.38)" stroke-width="0.5"/>');
+      } else {
+        p.push('<rect x="' + bx.toFixed(1) + '" y="' + (yB - 3) + '" width="' + w.toFixed(1) +
+               '" height="3" fill="#c4c4c4"/>');
       }
 
-      // chance-of-rain cell
-      if (typeof row.chance === 'number') {
+      // amount cell
+      if (typeof row.band === 'number') {
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + stripY + '" width="' + w.toFixed(1) +
-               '" height="' + stripH + '" fill="' + CH_COLOURS[row.chance] +
+               '" height="' + stripH + '" fill="' + KEY_FCST.colours[row.band] +
                '" stroke="rgba(17,53,65,0.22)" stroke-width="0.4"/>');
       } else {
         p.push('<rect x="' + bx.toFixed(1) + '" y="' + (stripY + 3) + '" width="' + w.toFixed(1) +
@@ -24468,40 +24475,46 @@ else theftLoad();
     }
     mmSvg.innerHTML = p.join('');
 
-    var got = rows.filter(function (r) { return typeof r.band === 'number'; });
-    if (!got.length) {
+    var got     = rows.filter(function (r) { return typeof r.band === 'number'; });
+    var chances = rows.filter(function (r) { return typeof r.chance === 'number'; });
+    if (!got.length && !chances.length) {
       mmLead.className = 'radar-mm-lead is-none';
       mmLead.textContent = 'No reading from the Bureau for the bay.';
       mmFoot.textContent = '';
       return;
     }
-    var last = rows[rows.length - 1];
-    var worst = got.reduce(function (a, b) { return b.band > a.band ? b : a; });
-    var chances = rows.filter(function (r) { return typeof r.chance === 'number'; });
-    var peak = chances.length
-      ? chances.reduce(function (a, b) { return b.chance > a.chance ? b : a; }).chance
-      : null;
+    var last    = rows[rows.length - 1];
+    var worst   = got.length
+      ? got.reduce(function (a, b) { return b.band > a.band ? b : a; }) : null;
+    var peakRow = chances.length
+      ? chances.reduce(function (a, b) { return b.chance > a.chance ? b : a; }) : null;
+    var peak    = peakRow ? peakRow.chance : null;
+    // The amount still earns a clause, because "40% chance" alone does not say
+    // whether that is a shower or a soaking.
+    var amount  = !worst ? ''
+      : worst.band > 0 ? ' Heaviest ' + MM_BANDS[worst.band] + ' mm.'
+                       : ' Nothing over 0.5 mm if it comes.';
 
-    if (worst.band > 0) {
-      mmLead.className = 'radar-mm-lead';
-      // BOM does not state whether a 3-hourly step is period-beginning or
-      // period-ending, so the wording does not claim either.
-      mmLead.textContent = 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' +
-                           mmWhen.format(worst.t) + '.';
-    } else if (peak !== null && peak <= 1) {
-      // Lowest mm band AND a low chance: this really is a dry stretch, and saying
-      // so is the whole point of sampling the second field.
+    if (peak === null) {
+      // Chance layer unavailable — fall back to the amount, which is all there is.
+      mmLead.className = worst && worst.band > 0 ? 'radar-mm-lead' : 'radar-mm-lead is-none';
+      mmLead.textContent = worst && worst.band > 0
+        ? 'Heaviest ' + MM_BANDS[worst.band] + ' mm, in the block around ' + mmWhen.format(worst.t) + '.'
+        : 'Nothing over 0.5 mm to ' + mmDate.format(last.t) + '.';
+    } else if (peak <= 1) {
       mmLead.className = 'radar-mm-lead is-none';
       mmLead.textContent = 'Dry through to ' + mmDate.format(last.t) +
                            ' — under ' + CH_BANDS[peak].split('–')[1] + '% chance of any rain.';
     } else {
       mmLead.className = 'radar-mm-lead';
-      mmLead.textContent = 'Nothing over 0.5 mm to ' + mmDate.format(last.t) +
-                           (peak !== null ? ', but up to a ' + CH_BANDS[peak] + '% chance of a shower.' : '.');
+      // BOM does not state whether a 3-hourly step is period-beginning or
+      // period-ending, so the wording does not claim either.
+      mmLead.textContent = 'Up to a ' + CH_BANDS[peak] + '% chance of rain, in the block around ' +
+                           mmWhen.format(peakRow.t) + '.' + amount;
     }
 
-    var missing = rows.length - got.length;
-    mmFoot.textContent = 'Bars: how much (mm bands) · strip: chance of any rain.'
+    var missing = rows.length - chances.length;
+    mmFoot.textContent = 'Bars: chance of any rain · strip: how much (mm bands).'
       + (missing ? ' ' + missing + ' block(s) had no reading.' : '');
   }
 
