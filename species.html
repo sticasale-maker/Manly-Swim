@@ -254,7 +254,6 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
   font-family:'Bebas Neue',Impact,sans-serif;font-size:15px;color:var(--dim);
   width:18px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums;
 }
-.seen{margin-left:auto;font-size:13px;color:var(--ocean);flex-shrink:0}
 /* Same 17px as the "N matches" line above it, because they are the same kind
    of thing: both head a list and say what is in it. At 10.5px this one read as
    a footnote to the list above rather than the title of the list below, which
@@ -459,14 +458,8 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .mo .lb{font-size:8px;color:var(--dim)}
 .mo.now .lb{color:var(--ocean);font-weight:700}
 .cap{font-size:10.5px;color:var(--dim);margin-top:7px;line-height:1.45}
-.lifebtn{
-  display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:14px;
-  padding:11px;border-radius:10px;border:1.5px solid var(--ocean);color:var(--ocean);
-  font-family:'Bebas Neue',Impact,sans-serif;font-size:17px;letter-spacing:1px;
-}
-.lifebtn.on{background:var(--ocean);color:#fff}
 .close{
-  width:100%;margin-top:8px;padding:10px;border-radius:10px;color:var(--dim);
+  width:100%;margin-top:14px;padding:10px;border-radius:10px;color:var(--dim);
   font-family:'Bebas Neue',Impact,sans-serif;font-size:15px;letter-spacing:1px;
 }
 .empty{padding:36px 8px;text-align:center;color:var(--dim);font-size:13px;line-height:1.6}
@@ -517,26 +510,14 @@ var FULL=['January','February','March','April','May','June','July','August',
           'September','October','November','December'];
 var NOW=new Date().getMonth();
 
-/* Preferences, not identity (§4): on-device only, mirrored to a 400-day cookie
-   because Safari ITP evicts localStorage after 7 idle days. */
-function persistGet(k){
-  try{ var v=localStorage.getItem(k); if(v!==null) return v; }catch(e){}
-  var m=document.cookie.match('(^|;)\\s*'+k+'\\s*=\\s*([^;]+)');
-  return m?decodeURIComponent(m[2]):null;
-}
-function persistSet(k,v){
-  try{ localStorage.setItem(k,v); }catch(e){}
-  try{
-    document.cookie=k+'='+encodeURIComponent(v)+';max-age='+(400*86400)+';path=/;SameSite=Lax';
-  }catch(e){}
-}
-var SEEN=(function(){ try{ return JSON.parse(persistGet('wlh_seen')||'[]'); }catch(e){ return []; } })();
-function seen(id){ return SEEN.indexOf(id)>=0; }
-function toggleSeen(id){
-  var i=SEEN.indexOf(id);
-  if(i>=0) SEEN.splice(i,1); else SEEN.push(id);
-  persistSet('wlh_seen',JSON.stringify(SEEN));
-}
+/* "Mark as seen" removed 8 Sep 2026, along with its on-device store and the two
+   persist helpers that existed only to serve it. It was a life list: a tick per
+   species, kept on the device. Nothing else read it -- it changed no ranking,
+   filtered nothing, and could not be reviewed as a list -- so it asked people to
+   keep score and then did nothing with the score.
+
+   Devices that used it still carry the old key in localStorage and a 400-day
+   cookie. Both are inert now: nothing reads them, and the cookie expires. */
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
   return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -669,7 +650,7 @@ function rowHTML(s,rank,showMonth){
     +(function(){ var w=morphWhy(s); return w
         ?'<span class="w" style="color:var(--dim)">'+esc(w)+'</span>':''; })()
     +'</span>'
-    +(seen(s.id)?'<span class="seen">&#10003;</span>':'')+'</button>';
+    +'</button>';
 }
 
 /* Which species are in season, and which are not.
@@ -819,7 +800,7 @@ function monthListHTML(mi){
           + FULL[mi]+'</span>'
           +'<span class="w" style="color:var(--dim)">seen '+s.months[mi]+' time'
           +(s.months[mi]===1?'':'s')+' here in '+FULL[mi]+'</span></span>'
-          +(seen(s.id)?'<span class="seen">&#10003;</span>':'')+'</button>'; }).join('')
+          +'</button>'; }).join('')
     +'</div>';
 }
 
@@ -1522,12 +1503,9 @@ function openDetail(id){
       :'<div class="block"><p class="lbl">When it’s about</p>'
         +'<p class="cap">Too few records anywhere to say anything about the time of '
         +'year.</p></div>')
-    +'<button class="lifebtn'+(seen(s.id)?' on':'')+'" id="lifeBtn">'
-    +(seen(s.id)?'✓ Seen it':'Mark as seen')+'</button>'
     +'<button class="close" id="closeBtn">Close</button>';
   el('scrim').classList.add('open');
   el('xBtn').onclick=closeDetail;
-  el('lifeBtn').onclick=function(){ toggleSeen(s.id); openDetail(id); render(); };
   el('closeBtn').onclick=closeDetail;
 }
 function closeDetail(){ el('scrim').classList.remove('open'); }
