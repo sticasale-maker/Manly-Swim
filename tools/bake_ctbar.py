@@ -1577,7 +1577,7 @@ def _stale_against_schema(tag: dict) -> Optional[str]:
     return None
 
 
-def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks: dict = None) -> dict:
+def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks: dict = None, retag: bool = False) -> dict:
     tags = {} if force else (cache_read("tags.json") or {})
 
     # A shape asked by NAME outranks anything read off a photograph, so it must
@@ -1628,6 +1628,28 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks:
         if why:
             stale[why] += 1
             doomed.append(tid)
+    if doomed and not retag:
+        # RE-TAGGING IS OPT-IN. A plain run never spends on it.
+        #
+        # This rule has twice decided, on its own, to throw away good
+        # descriptions and buy them again: once in a loop that re-tagged the
+        # same eight species on every single bake, and once when a rejected
+        # key deleted eight and replaced none. Both were bugs and both are
+        # fixed, but the shape of the thing is the problem -- a routine
+        # `python tools/bake_ctbar.py` should never be able to spend money,
+        # and it could, because this ran whenever it thought it should.
+        #
+        # So it now reports and stops. If the reason is good, `--retag` says so
+        # out loud and does it. Marco, 8 Sep 2026: "no more retagging without a
+        # reason, just incremental."
+        log(f"    {len(doomed)} tags describe a photograph that is no longer "
+            f"shown. NOT re-tagged: pass --retag to spend on it.")
+        for tid in doomed[:6]:
+            nm = next((x["name"] for x in species
+                       if str(x["taxon_id"]) == tid), tid)
+            log(f"      {nm}")
+        doomed = []
+        stale.clear()
     if doomed:
         # ASK BEFORE DELETING, not after.
         #
@@ -1672,6 +1694,18 @@ def stage_tags(species: list, photos: dict, force: bool, sample: int = 0, picks:
         step = max(1, len(todo) // sample)
         todo = todo[::step][:sample]
         log(f"    --sample {sample}: stratified across the abundance range")
+
+    # No key is not a failure here, it is a build without the new species in
+    # it. Nothing is deleted -- that needs --retag -- and nothing is invented,
+    # so the honest thing is to name what is waiting and emit the rest. A
+    # routine `python tools/bake_ctbar.py` has to work on a machine with no key.
+    if todo and not (os.environ.get("ANTHROPIC_API_KEY")
+                     or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        log(f"5/6 tags         {len(todo)} species have no tags and there is no "
+            f"API key. Skipped: nothing charged, nothing lost.")
+        for _s in sorted(todo, key=lambda x: -x["annual"])[:6]:
+            log(f"      {_s['annual']:>4}  {_s['name']}")
+        return tags
 
     if not todo:
         log(f"5/6 tags         {len(tags):>4} (all cached)")
@@ -4253,8 +4287,15 @@ def main() -> int:
     global MODEL, PRICE_IN, PRICE_OUT
 
     ap = argparse.ArgumentParser(description="Bake the Cabbage Tree Bay fish dataset.")
+    ap.add_argument("--refresh", action="store_true",
+                    help="re-pull the bay counts, months, seasons and "
+                         "provenance from iNaturalist and leave everything "
+                         "else cached. Free. This is the routine update")
     ap.add_argument("--force", action="store_true",
                     help="ignore all caches and rebuild from scratch (re-pays for tagging)")
+    ap.add_argument("--retag", action="store_true",
+                    help="act on stale tag records instead of only reporting "
+                         "them. A plain run never spends on tagging")
     ap.add_argument("--force-tags", action="store_true",
                     help="keep the iNat caches but re-run the vision pass")
     ap.add_argument("--limit", type=int,
@@ -4341,18 +4382,34 @@ def main() -> int:
         PRICE_IN, PRICE_OUT = args.price
 
     try:
-        species = stage_species(args.force)
+        species = stage_species(args.force or args.refresh)
         species = merge_extra_species(species)
         if args.limit:
             species = species[:args.limit]
             log(f"    --limit {args.limit}: {len(species)} species this run")
 
         slugs = assign_slugs(species)
-        months = stage_months(species, args.force)
+        months = stage_months(species, args.force or args.refresh)
         prov = bay_provenance(species)
+        if args.refresh:
+            # A refresh is deliberately free. New species arrive at about 30 a
+            # year, and each one needs a vision tag, a fact and a morph check
+            # that only a keyed run can buy -- roughly 9c a species. Rather
+            # than spend it silently, say how many are waiting and let the
+            # next run with a key pick them up.
+            _known = set((cache_read("tags.json") or {}).keys())
+            _new = [s for s in species if str(s["taxon_id"]) not in _known]
+            log(f"    refresh: counts, months and seasons re-pulled from iNaturalist")
+            if _new:
+                log(f"    {len(_new)} species are new and have no tags yet "
+                    f"(~${len(_new)*0.09:.2f} on the next run with a key):")
+                for s_ in sorted(_new, key=lambda x: -x["annual"])[:8]:
+                    log(f"      {s_['annual']:>4}  {s_['name']}")
+            else:
+                log("    no new species; nothing is waiting on a key")
         # needs months, so it runs after stage_months
         _vis = None
-        season = stage_season(species, args.force)
+        season = stage_season(species, args.force or args.refresh)
         agree = season_bay_agreement(species, months, season["species"])
         for _s in species:
             _s["months"] = (months.get("by_taxon") or {}).get(str(_s["taxon_id"])) or [0]*12
@@ -4402,7 +4459,7 @@ def main() -> int:
             tags = cache_read("tags.json") or {}
         else:
             tags = stage_tags(species, photos, args.force or args.force_tags,
-                              sample=args.sample, picks=picks)
+                              sample=args.sample, picks=picks, retag=args.retag)
 
         if args.check_photos and not args.skip_tags:
             tags = stage_plausible(species, tags)
