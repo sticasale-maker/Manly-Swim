@@ -28,9 +28,27 @@
 -- them. The strip now fetches the whole row on every page load, and all of it
 -- is in the browser regardless of the two fields actually displayed.
 --
+-- AMENDED 8 Sept 2026 - BOTH summaries now exclude withdrawn reports.
+--
+-- A reporter can withdraw after lodging (bag_theft_consent_and_claim.sql), and
+-- withdrawal hides rather than deletes: the row stays in the record and drops
+-- out of every summary. Neither summary here honoured that.
+--
+--   * The public one never did, so the strip's "N reports - $X" counted a report
+--     somebody had pulled out.
+--   * The admin one DID - the consent migration added the filter on 14 Aug - but
+--     this file rebuilt its body from bag_theft_admin_only.sql "verbatim" on
+--     30 Aug, and that file predates withdrawal. The later migration silently
+--     reverted the earlier fix. Watch for this whenever a body is copied
+--     forward from an older file.
+--
+-- The police pack (bag-reports.html) was always right: it filters withdrawn in
+-- the client and never prints those rows.
+--
 -- HOW TO RUN: paste this ENTIRE file into the Supabase SQL editor and press Run.
--- Nothing else needs changing - the app already reads only the two fields the
--- narrow function keeps, so the strip carries on working untouched.
+-- Safe to re-run; it is the same idempotent drop/create it always was. Nothing
+-- else needs changing - the app already reads only the two fields the narrow
+-- function keeps, so the strip carries on working untouched.
 -- ============================================================================
 
 begin;
@@ -53,12 +71,14 @@ as $function$
 declare v_since timestamptz := now() - (greatest(coalesce(p_days, 90), 1) || ' days')::interval;
 begin
   -- Same visibility filter as the detailed version: nothing hidden, nothing
-  -- flagged suspect. A public total that counted junk reports would be worse
-  -- than no total at all.
+  -- flagged suspect, nothing withdrawn. A public total that counted junk
+  -- reports would be worse than no total at all, and one that counted a report
+  -- the reporter has withdrawn is publishing something they took back.
   return query
   with vis as (
     select * from bag_theft_reports r
-     where r.hidden = false and r.status <> 'suspect' and r.created_at >= v_since
+     where r.hidden = false and r.status <> 'suspect' and r.withdrawn = false
+       and r.created_at >= v_since
   )
   select
     (select count(*)::int from vis),
@@ -96,10 +116,12 @@ begin
     raise exception 'not authorised';
   end if;
 
+  -- withdrawn = false restored here; see the note at the top of this file.
   return query
   with vis as (
     select * from bag_theft_reports r
-     where r.hidden = false and r.status <> 'suspect' and r.created_at >= v_since
+     where r.hidden = false and r.status <> 'suspect' and r.withdrawn = false
+       and r.created_at >= v_since
   )
   select
     (select count(*)::int from vis),
@@ -138,3 +160,11 @@ commit;
 --
 -- And in the SQL editor, where you are not anon, the detailed one still works:
 --   select * from public.bag_theft_summary('YOUR_ADMIN_TOKEN', 365);
+--
+-- To confirm the withdrawn fix specifically, compare the public count against a
+-- direct count. They must agree:
+--   select (select reports from public.bag_theft_summary(3650)) as summary_says,
+--          (select count(*) from bag_theft_reports
+--            where hidden = false and status <> 'suspect' and withdrawn = false
+--              and created_at >= now() - interval '3650 days') as should_be,
+--          (select count(*) from bag_theft_reports where withdrawn) as withdrawn_rows;
