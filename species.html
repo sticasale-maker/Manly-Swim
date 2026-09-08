@@ -98,6 +98,81 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .rangemap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
   object-position:center top;display:block}
 .rangemap .pts{mix-blend-mode:multiply}
+/* ONE SCREEN, NO SCROLLING, on every phone.
+
+   Trimming padding until it happened to fit a 375x812 was the wrong fix: it
+   fits that phone and overflows an SE. This is a fixed-height flex column
+   instead -- the text blocks take what they need, and the photo grid absorbs
+   whatever is left over, down to nothing on a very short screen. Nothing can
+   push the Start button off, because Start is laid out before the grid is
+   given its share.
+
+   100dvh, not 100vh: on mobile Safari 100vh is the height WITHOUT the browser
+   chrome, so a 100vh panel is taller than the visible area and scrolls by
+   exactly the size of the toolbar. dvh is the honest number. */
+#intro{
+  position:fixed;inset:0;z-index:60;background:var(--deep);
+  height:100dvh;overflow:hidden;
+  padding:calc(env(safe-area-inset-top) + 14px) 18px
+          calc(env(safe-area-inset-bottom) + 14px);
+}
+.in-card{
+  max-width:520px;margin:0 auto;height:100%;
+  display:flex;flex-direction:column;gap:clamp(5px,1.1vh,12px);
+}
+.in-card > *{flex:0 0 auto}
+.in-eyebrow{
+  font-family:'Bebas Neue',Impact,sans-serif;font-size:13px;letter-spacing:2.2px;
+  color:var(--ocean);margin:0;
+}
+.in-h{
+  font-family:'Bebas Neue',Impact,sans-serif;font-weight:400;
+  font-size:clamp(30px,5.2vh,44px);letter-spacing:1px;line-height:.95;
+  color:#fff;margin:0;
+}
+.in-lede{font-size:clamp(14px,1.95vh,16.5px);line-height:1.4;color:#dfe8ec;margin:0}
+/* The one thing that gives way. min-height:0 is what lets a grid child of a
+   flex column actually shrink rather than insisting on its content size. */
+.in-grid{
+  flex:1 1 auto;min-height:0;
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr;gap:6px;
+}
+.in-grid figure{margin:0;min-height:0;display:flex;flex-direction:column}
+.in-grid img{
+  flex:1 1 auto;min-height:0;width:100%;object-fit:cover;border-radius:9px;
+  display:block;background:rgba(255,255,255,.06);
+}
+.in-grid figcaption{
+  flex:0 0 auto;font-size:10px;line-height:1.2;color:#9fb4bf;margin-top:3px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.in-nums{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;
+  padding:clamp(6px,1.1vh,12px) 0;margin:0;
+  border-top:1px solid rgba(180,210,230,.16);border-bottom:1px solid rgba(180,210,230,.16);
+}
+.in-nums b{
+  display:block;font-family:'Bebas Neue',Impact,sans-serif;font-weight:400;
+  font-size:clamp(19px,2.9vh,26px);color:var(--ocean);line-height:1;
+  font-variant-numeric:tabular-nums;
+}
+.in-nums span{font-size:clamp(9.5px,1.3vh,11px);color:#9fb4bf}
+.in-how{font-size:clamp(13px,1.8vh,15px);line-height:1.4;color:#dfe8ec;margin:0}
+.in-how b{color:#fff}
+.in-small{font-size:clamp(11px,1.5vh,13px);line-height:1.4;color:#9fb4bf;margin:0}
+.in-go{
+  width:100%;padding:clamp(11px,1.7vh,16px);border-radius:12px;border:0;
+  background:var(--card);color:var(--deep);
+  font-family:'Bebas Neue',Impact,sans-serif;font-size:clamp(18px,2.4vh,22px);
+  letter-spacing:1.4px;cursor:pointer;
+}
+/* Shortest phones: the honest line about provenance is the first thing to go,
+   because it is the one sentence the Identify page repeats anyway. */
+@media (max-height:640px){ .in-small{display:none} }
+.aboutlink{
+  font:inherit;color:var(--ocean);text-decoration:underline;
+  text-underline-offset:2px;padding:0;
+}
 .stamp{font-size:9.5px;color:var(--dim);letter-spacing:.2px;text-align:right;margin-top:8px}
 
 /* ── live band: real reports outrank anything modelled (§8) ──────────── */
@@ -1215,9 +1290,17 @@ function renderId(){
          + other.map(function(s){ return rowHTML(s,null); }).join(''):'')
     +'</div>'
     + (soft.length+off.length?'':'<p class="empty">Nothing matches all of that.<br>Try dropping a filter &mdash; the shape is the one most worth keeping.</p>')
-    +'<p class="stamp">Attributes from photographs across NSW &middot; sightings from this bay &middot; '
+    +'<p class="stamp"><button class="aboutlink" id="aboutBtn">What this is</button> &middot; '
+    +'Attributes from photographs across NSW &middot; sightings from this bay &middot; '
     +'counts as at '+DATA.generated_at.slice(0,10)+'</p>'
     +'</div>';
+
+  /* Bound HERE, not in the Now wiring. The stamp that carries this button is
+     drawn by renderId, so a handler attached while rendering the other tab
+     found nothing and the link did nothing -- it existed, which is worse than
+     being absent, because it looks like it should work. */
+  var ab=el('aboutBtn');
+  if(ab) ab.onclick=function(){ showIntro(); };
 
   var q=el('q');
   if(q){
@@ -1424,6 +1507,62 @@ function syncHead(){
 }
 addEventListener('resize', syncHead);
 
+/* The first screen, shown once.
+
+   Someone arriving from a QR code on a sign has no idea what this is, and a
+   shape picker is a poor way to find out. A static panel rather than a video:
+   it works with no connection, costs nothing to load, and nobody has to sit
+   through it before using the thing they came for.
+
+   Six real photographs, most-seen first, because the strongest claim this
+   makes is "we have a picture of every animal in here" and showing six is
+   more convincing than saying 640. They are already in the browser cache by
+   this point -- the list behind the panel loaded them -- so the panel costs
+   no extra bytes.
+
+   Shown once and kept: the flag is in localStorage, and the About link in the
+   footer brings it back for anyone who wants it again or who cleared it. */
+var INTRO_KEY='wlh_intro_v1';
+function introSeen(){ try{ return !!localStorage.getItem(INTRO_KEY); }catch(e){ return false; } }
+function closeIntro(remember){
+  try{ if(remember) localStorage.setItem(INTRO_KEY,'1'); }catch(e){}
+  var n=el('intro'); if(n) n.remove();
+}
+function showIntro(){
+  var p=DATA.provenance||{};
+  var pics=DATA.species.filter(function(s){ return s.img; })
+    .sort(function(a,b){ return b.annual-a.annual; }).slice(0,6);
+  var d=document.createElement('div');
+  d.id='intro';
+  d.innerHTML=
+     '<div class="in-card">'
+    +  '<p class="in-eyebrow">Cabbage Tree Bay &middot; Manly</p>'
+    +  '<h1 class="in-h">Who Lives Here</h1>'
+    +  '<p class="in-lede">Every animal anyone has photographed in this bay, '
+    +  'in one place — so you can name the thing you just swam past.</p>'
+    +  '<div class="in-grid">'
+    +  pics.map(function(s){
+         return '<figure><img loading="eager" src="species/'+esc(s.img)+'" alt="'
+           +esc(s.name)+'"><figcaption>'+esc(s.name)+'</figcaption></figure>'; }).join('')
+    +  '</div>'
+    +  '<div class="in-nums">'
+    +    '<div><b>'+DATA.species.length+'</b><span>species</span></div>'
+    +    '<div><b>'+(p.observations||0).toLocaleString()+'</b><span>sightings</span></div>'
+    +    '<div><b>'+(p.contributors||0)+'</b><span>people</span></div>'
+    +    '<div><b>'+(p.since||'')+'</b><span>since</span></div>'
+    +  '</div>'
+    +  '<p class="in-how"><b>Four taps to name it.</b> Shape, size, colour, '
+    +  'markings — answer what you remember and stop whenever you '
+    +  'recognise it. Nothing is hidden if you get one wrong.</p>'
+    +  '<p class="in-small">Built from the observation record, not from a '
+    +  'field guide: it is what has actually turned up here, photographed by '
+    +  'the people who were in the water.</p>'
+    +  '<button class="in-go" id="introGo">Start</button>'
+    +'</div>';
+  document.body.appendChild(d);
+  el('introGo').onclick=function(){ closeIntro(true); };
+}
+
 function render(){ syncHead(); if(MODE==='now') renderNow(); else renderId(); }
 
 document.addEventListener('click',function(e){
@@ -1463,6 +1602,9 @@ Promise.all([
 ]).then(function(res){
   DATA=res[0]; SHAPES=res[1];
   render();
+  // After render, so the panel sits over a page that is already built: closing
+  // it reveals the list rather than a spinner.
+  if(!introSeen()) showIntro();
 }).catch(function(err){
   el('view').innerHTML='<div class="strip"><p class="empty">Couldn’t load the species list.'
     +'<br>It needs a connection the first time; after that it works offline.'
