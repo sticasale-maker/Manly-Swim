@@ -306,12 +306,11 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
 .authcard button{background:linear-gradient(100deg,#1d86a4,#2ea578);border-color:transparent;font-weight:600}
 .hide{display:none!important}
 
-/* Identification strip at the foot of each printed section. This was a
-   position:fixed running footer, which Chrome's paginator placed at the TOP of
-   a page and printed straight through the heading. A static strip cannot
-   overlap anything; per-page identity is carried by each case sheet's own
-   footer, and page numbers by the browser's own print header/footer option. */
-.sheetfoot{display:none}
+/* There was a running identification strip at the foot of every printed sheet.
+   It repeated what the cover already says and, with a real date range, wrapped
+   onto two lines. Removed 8 Sept 2026. Per-page identity is still carried by
+   each case sheet's own footer, and page numbers by the browser's own print
+   header/footer option. */
 
 /* ── print ────────────────────────────────────────────────────────────────── */
 @media print{
@@ -346,11 +345,6 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
   .caveat li{margin-bottom:2px}
   tr,img,canvas{break-inside:avoid;page-break-inside:avoid}
   a{color:inherit;text-decoration:none}
-  .sheetfoot{
-    display:flex;justify-content:space-between;gap:14px;
-    margin-top:11px;padding-top:3px;border-top:.5pt solid #c3d4da;
-    font-size:7.4pt;color:#6b858f;
-  }
   .docmeta .ed{border-bottom:0}
 }
 </style>
@@ -401,7 +395,7 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
 
     <div class="custody">
       <b>Data collected and provided by</b>
-      <div class="who">Marco Bordieri</div>
+      <div class="who" id="mWho"></div>
       <div class="con" id="mCon"></div>
       <div class="fine" style="margin-top:5px">
         Reports are lodged by swimmers through the Manly Swim app
@@ -561,21 +555,23 @@ const CONTACT_NAME  = 'Marco Bordieri';
 const CONTACT_EMAIL = 'sticasale@gmail.com';
 const CONTACT_PHONE = '0405 461 023';
 
-// Kept as a function because runfoot() and renderContact() both need the same
-// list, and because blanking a constant above should still fall through to the
-// "not set on this device" rule rather than printing an empty separator.
+// A function rather than a constant so that blanking one of the values above
+// falls through to the "not recorded" rule instead of printing a stray
+// separator between an empty string and a real one.
 function contactBits(){
   return [CONTACT_EMAIL, CONTACT_PHONE].map(v => String(v || '').trim()).filter(Boolean);
 }
 
 function renderContact(){
+  const who = document.getElementById('mWho');
+  if (who) who.textContent = CONTACT_NAME;
   const el = document.getElementById('mCon');
   if (!el) return;
   const b = contactBits();
   el.innerHTML = b.length
     ? b.map(v => /@/.test(v) ? '<a href="mailto:' + esc(v) + '">' + esc(v) + '</a>' : esc(v))
         .join(' &nbsp;·&nbsp; ')
-    : '<span class="unset">Contact details not set on this device</span><span class="blank"></span>';
+    : '<span class="unset">Contact details not recorded</span><span class="blank"></span>';
 }
 
 // Cutoff on the incident date, parsed as local midnight so a report lodged on
@@ -697,7 +693,6 @@ function render(){
   cases();
   indexTable();
   withdrawnBlock();
-  runfoot();
   heatmap();        // last: needs the image, and paints case thumbnails too
 }
 
@@ -1487,19 +1482,6 @@ function withdrawnBlock(){
         + '<td>' + esc(blank(r.loc_note) ? '—' : r.loc_note) + '</td></tr>').join('')
       + '</tbody></table>';
   }
-}
-
-function runfoot(){
-  const s = span();
-  const html = '<span>South Steyne thefts — swimmers’ citizen reporting'
-    + (s ? ' · ' + esc(dateS(s.a)) + ' to ' + esc(dateS(s.b)) : '') + '</span>'
-    + '<span>' + esc([CONTACT_NAME].concat(contactBits()).join(' · '))
-    + ' · prepared ' + esc(dateS(new Date())) + '</span>';
-  document.querySelectorAll('.sheet').forEach(sec => {
-    let f = sec.querySelector(':scope > .sheetfoot');
-    if (!f){ f = document.createElement('div'); f.className = 'sheetfoot'; sec.appendChild(f); }
-    f.innerHTML = html;
-  });
 }
 
 // ── CSV ──────────────────────────────────────────────────────────────────────
