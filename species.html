@@ -286,6 +286,13 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .pip{width:26px;height:5px;border-radius:3px;background:rgba(17,53,65,.18)}
 .pip.on{background:var(--ocean)}
 .pip.now{background:transparent;box-shadow:inset 0 0 0 1.5px var(--text)}
+.reset{
+  font-family:'Bebas Neue',Impact,sans-serif;font-size:13px;letter-spacing:1.1px;
+  color:var(--ocean);border:1.5px solid rgba(74,143,173,.45);border-radius:20px;
+  padding:4px 11px;margin-left:auto;background:transparent;cursor:pointer;
+  flex-shrink:0;
+}
+.reset:active{background:rgba(74,143,173,.14)}
 .pipn{font-size:11.5px;color:var(--dim);margin-left:5px;letter-spacing:.3px}
 
 .facets{margin:12px 0 6px;border-top:1px solid var(--border)}
@@ -873,17 +880,11 @@ function renderNow(){
       : NOWMODE==='less'
       ? 'Seen less often in '+FULL[NOW]+'. Not absent \u2014 the bay keeps its '
         +'own counsel and these do turn up \u2014 just a thinner month for them.'
-      : (function(){
-          /* Was "ten years of observations by 206 contributors", both halves
-             typed in and both gone stale — 302 people have contributed now and
-             the record reaches back to 1998. A number in a sentence cannot age
-             with the data behind it, so these come from the file. */
-          var p=DATA.provenance||{};
-          return p.observations
-            ? p.observations.toLocaleString()+' observations of '+p.species
-              +' species by '+p.contributors+' people, '+p.since+' to now'
-            : 'From a decade of observations by the people who swim here';
-        })();
+      /* The count of observations, species, contributors and years used to sit
+         here. It moved to the first screen, which is where somebody meets this
+         collection for the first time and is the only place the scale of it is
+         worth stating. Saying it twice made it furniture. */
+      : 'Ranked by how often each one is recorded here in '+FULL[NOW]+'.';
   var head = NOWMODE==='more' ? 'More often seen in '+FULL[NOW]
            : NOWMODE==='less' ? 'Less often seen in '+FULL[NOW]
            : 'Most often seen around now';
@@ -1191,7 +1192,14 @@ function wizardHTML(){
     +'<span class="pips">'
     + FACETS.map(function(f,i){
         return '<span class="pip'+(SEL[f[0]]?' on':(f[0]===open?' now':''))+'"></span>'; }).join('')
-    +'<span class="pipn">'+done+' of 4</span></span>';
+    +'<span class="pipn">'+done+' of 4</span>'
+    /* Only once there is something to clear. A reset that is always there is
+       a button you have to read past on every screen; one that appears when
+       you have answered something is a button you only see when it is the
+       thing you want. It clears the search box too -- "start again" that
+       leaves a search term in place has not started again. */
+    +((done||Q)?'<button class="reset" id="resetBtn">Start again</button>':'')
+    +'</span>';
 }
 
 function facetHTML(k,label,body,step){
@@ -1301,6 +1309,14 @@ function renderId(){
      being absent, because it looks like it should work. */
   var ab=el('aboutBtn');
   if(ab) ab.onclick=function(){ showIntro(); };
+
+  var rb=el('resetBtn');
+  if(rb) rb.onclick=function(){
+    SEL={shape:null,colour:null,mark:null,size:null};
+    Q=''; OPEN='shape';
+    renderId();
+    window.scrollTo({top:0,behavior:'smooth'});
+  };
 
   var q=el('q');
   if(q){
@@ -1522,12 +1538,7 @@ addEventListener('resize', syncHead);
 
    Shown once and kept: the flag is in localStorage, and the About link in the
    footer brings it back for anyone who wants it again or who cleared it. */
-var INTRO_KEY='wlh_intro_v1';
-function introSeen(){ try{ return !!localStorage.getItem(INTRO_KEY); }catch(e){ return false; } }
-function closeIntro(remember){
-  try{ if(remember) localStorage.setItem(INTRO_KEY,'1'); }catch(e){}
-  var n=el('intro'); if(n) n.remove();
-}
+function closeIntro(){ var n=el('intro'); if(n) n.remove(); }
 function showIntro(){
   var p=DATA.provenance||{};
   var pics=DATA.species.filter(function(s){ return s.img; })
@@ -1560,7 +1571,7 @@ function showIntro(){
     +  '<button class="in-go" id="introGo">Start</button>'
     +'</div>';
   document.body.appendChild(d);
-  el('introGo').onclick=function(){ closeIntro(true); };
+  el('introGo').onclick=function(){ closeIntro(); };
 }
 
 function render(){ syncHead(); if(MODE==='now') renderNow(); else renderId(); }
@@ -1602,9 +1613,17 @@ Promise.all([
 ]).then(function(res){
   DATA=res[0]; SHAPES=res[1];
   render();
-  // After render, so the panel sits over a page that is already built: closing
-  // it reveals the list rather than a spinner.
-  if(!introSeen()) showIntro();
+  // EVERY TIME, not once. Marco's call, 8 Sep 2026.
+  //
+  // It was shown once and remembered, on the usual reasoning that a returning
+  // user should not have to dismiss the same panel daily. He wants it every
+  // open, and the panel earns that: it is one tap to pass, it loads no extra
+  // bytes, and most people arriving here are arriving for the first time -- a
+  // QR code on a sign has no returning users to speak of.
+  //
+  // After render, so the panel sits over a page that is already built and
+  // closing it reveals the list rather than a spinner.
+  showIntro();
 }).catch(function(err){
   el('view').innerHTML='<div class="strip"><p class="empty">Couldn’t load the species list.'
     +'<br>It needs a connection the first time; after that it works offline.'
