@@ -625,6 +625,15 @@ const VIS_L   = { visible:'In plain sight', covered:'Covered or tucked away', un
 const TRACK_L = { none:'None', airtag:'AirTag', tile:'Tile', other:'Other tracker', unsure:'Not sure' };
 const POL_L   = { yes:'Reported', will:'Not yet — intends to', not_yet:'Not yet', no:'No, and does not intend to' };
 
+// Did something carrying the reporter's address go with the keys? Read from the
+// ticked items ONLY, never from the free text: a ticked box is an unambiguous
+// statement, where "my licence was NOT in the bag" reads as a match to any
+// regex simple enough to trust. The free text is printed verbatim on the case
+// sheet regardless, so a reader who needs to weigh it can.
+function idTaken(r){
+  return (r.items || []).some(i => /wallet|licen[cs]e|passport|\bid\b/i.test(String(i)));
+}
+
 // ── load ─────────────────────────────────────────────────────────────────────
 async function load(){
   const t = token(), statusEl = document.getElementById('status');
@@ -898,12 +907,22 @@ function findings(){
         'All ' + n + ' say a police report was made' + (evt ? '; ' + evt + ' carry an event number.' : '.'), false);
   }
 
-  // 9. keys
+  // 9. keys. Two different facts, so two different sentences: keys with a
+  //    wallet or licence are an address exposure; keys on their own are keys to
+  //    a door the thief cannot place.
   const keys = R.filter(r => r.keys_taken);
   if (keys.length){
+    const wid = keys.filter(idTaken), nid = keys.filter(r => !idTaken(r));
+    const nums = list => list.map(r => '#' + r._k).join(', ');
+    const bits = [];
+    if (wid.length) bits.push(plural(wid.length,'report') + ' (' + nums(wid)
+      + ') lost keys together with a wallet or licence — the address and the means to use it '
+      + 'in the same bag.');
+    if (nid.length) bits.push(plural(nid.length,'report') + ' (' + nums(nid)
+      + ') lost keys with no wallet or ID among the items ticked.');
     add('House or car keys went with the bag',
-        plural(keys.length,'report') + ' (' + keys.map(r => '#' + r._k).join(', ')
-        + ') included keys — an address exposure, not only a property loss.', keys.length >= 2);
+        bits.join(' ') + ' Either way the replacement cost understates the loss.',
+        wid.length >= 1);
   }
 
   // 10. was it visible
@@ -1361,7 +1380,9 @@ function caseSheet(r){
       + f('Itemised', items ? '<div class="chips">' + items + '</div>' : NONE, 'full')
       + f('Also taken, in the reporter’s words', fv(r.items_other), 'full')
       + f('Approximate value', r.value_aud == null ? NONE : '<b>' + esc(money(r.value_aud)) + '</b>')
-      + f('Keys taken', r.keys_taken ? '<span class="pill bad">yes — address exposed</span>' : 'No')
+      + f('Keys taken', !r.keys_taken ? 'No'
+          : idTaken(r) ? '<span class="pill bad">yes — with ID, address exposed</span>'
+                       : '<span class="pill warnp">yes — no wallet or ID ticked</span>')
       + f('The bag', fv(r.bag_desc))
       + f('In plain sight?', fv(VIS_L[r.bag_visible] || r.bag_visible))
       + f('Tracker', fv(r.tracker === 'none' ? null : (TRACK_L[r.tracker] || r.tracker)))
