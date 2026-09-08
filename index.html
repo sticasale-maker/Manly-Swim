@@ -1710,6 +1710,57 @@
   /* Community section wrapper ("Swimmers' Corner") — light titled header band */
   .community-group { border: 3px solid rgba(74,143,173,0.8); border-radius: 16px; background: rgba(74,143,173,0.10); padding: 12px 12px 3px; margin: 4px 0 14px; box-shadow: 0 3px 16px rgba(9,26,33,0.26); }
   .cg-head { display: flex; align-items: center; gap: 8px; background: #dbe7ec; margin: -12px -12px 12px; padding: 9px 14px; border-radius: 13px 13px 0 0; }
+  /* ── Who Lives Here doorway (species.html) ────────────────────────────────
+     Deliberately NOT a .sight-strip. Every strip above collapses in place, so
+     wearing that look would promise an accordion and deliver a page change --
+     the one thing the pattern must not do. The photo band and the Open pill are
+     what say "this leaves the page"; species.html carries the matching
+     "<- Swim" back link, so the loop closes.
+
+     It sits OUTSIDE .community-group on purpose: inside it, the card would
+     vanish for anyone who switched Swimmers' Corner off, and a doorway that
+     disappears with an unrelated preference is worse than no doorway. */
+  .wlh-card {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    margin: 4px 0 14px; box-shadow: 0 3px 16px rgba(9,26,33,0.26);
+  }
+  .wlh-strip {
+    display: block; width: 100%; height: 92px; object-fit: cover;
+    background: rgba(17,53,65,0.25);
+  }
+  .wlh-body { display: flex; align-items: center; gap: 12px; padding: 10px 14px 12px; }
+  .wlh-text { flex: 1; min-width: 0; }
+  .wlh-title {
+    font-family: 'Bebas Neue', sans-serif; font-size: 21px; letter-spacing: 1.4px;
+    color: var(--deep); line-height: 1.1;
+  }
+  .wlh-sub { font-size: 12.5px; line-height: 1.35; color: var(--deep); opacity: .82; margin-top: 3px; }
+  .wlh-meta { font-size: 11px; color: var(--deep); opacity: .62; margin-top: 4px; letter-spacing: .3px; }
+  /* Deep on sand, not ocean on sand: white on var(--ocean) is about 3:1, which is
+     under the bar for 15px type. This pair is the same one the page itself uses. */
+  .wlh-go {
+    flex: 0 0 auto; font-family: 'Bebas Neue', sans-serif; font-size: 15px;
+    letter-spacing: 1.2px; color: #fff; background: var(--deep);
+    border-radius: 999px; padding: 7px 14px; white-space: nowrap;
+  }
+  .wlh-card:active { box-shadow: 0 1px 8px rgba(9,26,33,0.30); }
+  /* Offline: species.html is not in the service worker (it needs ~14MB of photos),
+     so the honest thing is to say so rather than hand someone a dead tap in a
+     car park. Absent, not broken -- and never dressed up as available. */
+  .wlh-off { opacity: .58; }
+  .wlh-off .wlh-go { display: none; }
+  .wlh-offmsg { display: none; flex: 0 0 auto; font-size: 11px; color: var(--deep); opacity: .8; }
+  .wlh-off .wlh-offmsg { display: block; }
+  /* Header pill. Deep rather than ocean so it reads as a different destination
+     from About, and no aboutPulse -- two pulsing pills is a fairground. */
+  .header-links { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  /* .about-link.wlh-link, not .wlh-link: this block sits above .about-link in the
+     sheet, so a single class ties on specificity and loses on source order --
+     the pill came out ocean, identical to About. */
+  .about-link.wlh-link { background: var(--deep); animation: none; box-shadow: 0 2px 10px rgba(9,26,33,0.30); }
+  .about-link.wlh-link:hover, .about-link.wlh-link:active { background: var(--ocean); }
   .cg-ic { font-size: 16px; line-height: 1; }
   .cg-title { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 1.8px; color: var(--deep); }
   .cg-rule { flex: 1; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(74,143,173,0.55), transparent); }
@@ -3391,11 +3442,20 @@
       </div>
     </div>
     <div class="header-right">
-      <a class="about-link" href="guide.html" aria-label="About"
-         onclick="if(typeof markNewhereSeen==='function')markNewhereSeen();">
-        <span class="about-info-icon" aria-hidden="true">i</span>
-        <span class="about-link-text">About</span>
-      </a>
+      <div class="header-links">
+        <!-- Always visible, in every view mode: the doorway card below only
+             appears in the complete preset, so this is the route for anyone on
+             simple. Placed left of About so About keeps its position. -->
+        <a class="about-link wlh-link" href="species.html"
+           aria-label="Who Lives Here - the bay species browser">
+          <span class="about-link-text">Species</span>
+        </a>
+        <a class="about-link" href="guide.html" aria-label="About"
+           onclick="if(typeof markNewhereSeen==='function')markNewhereSeen();">
+          <span class="about-info-icon" aria-hidden="true">i</span>
+          <span class="about-link-text">About</span>
+        </a>
+      </div>
       <div class="mode-toggle-row">
         <div class="mode-toggle" id="modeToggle" role="group" aria-label="App detail level">
           <button type="button" data-mode="complete" aria-pressed="true">The lot</button>
@@ -4024,6 +4084,38 @@
     </div>
 
     </div><!-- /community-group -->
+
+    <!-- Who Lives Here - doorway to species.html. Sits here rather than deeper
+         next to the species calendar (#bayCalCard) because this is as far down
+         as most people scroll, and directly after the marine-life sightings
+         strip: whoever just reported seeing something is exactly who wants to
+         name it. Registered in SECTIONS below - an unlisted card is one nobody
+         can switch off, which is how the chlorophyll card shipped. -->
+    <a class="wlh-card" id="wlhCard" href="species.html">
+      <img class="wlh-strip" src="images/wlh-strip.webp" alt="" width="1080" height="264"
+           loading="lazy" decoding="async">
+      <div class="wlh-body">
+        <div class="wlh-text">
+          <div class="wlh-title">Who Lives Here</div>
+          <div class="wlh-sub">Every animal anyone has photographed in this bay &mdash;
+            name the thing you just swam past in four taps.</div>
+          <!-- From the bake; it drifts by roughly 30 species a year, so treat it
+               as a round number rather than a live count. -->
+          <div class="wlh-meta">640 species &middot; recorded here since 1998</div>
+        </div>
+        <span class="wlh-go" aria-hidden="true">Open &rarr;</span>
+        <span class="wlh-offmsg">Needs a connection</span>
+      </div>
+    </a>
+    <script>
+      (function () {
+        var c = document.getElementById('wlhCard');
+        if (!c) return;
+        function sync(){ c.classList.toggle('wlh-off', !navigator.onLine); }
+        addEventListener('online', sync); addEventListener('offline', sync); sync();
+        c.addEventListener('click', function (e) { if (!navigator.onLine) e.preventDefault(); });
+      })();
+    </script>
 
     <!-- Rain radar — BOM tiles, past echo then forecast rain. Collapsed by
          default; nothing is fetched until it is opened. See the radar IIFE. -->
@@ -19320,6 +19412,9 @@ if ('serviceWorker' in navigator) {
     // in 'swimmers' below). Listed here so the panel order matches the page order.
     { key:'bluebottleforecast', label:"Bluebottles forecast (risk strip)", sel:'.bbf-row', complete:1, custom:1 },
     { key:'swimmers', label:"Swimmers' Corner (visibility, sightings, bluebottle reports, hellos)", sel:'.community-group', complete:1, custom:1 },
+    // Sits immediately after Swimmers' Corner on the page, so it sits immediately
+    // after it here too - this list is ordered to match the page.
+    { key:'wholiveshere', label:"Who Lives Here (species browser link)", sel:'#wlhCard', complete:1, custom:1 },
     // Both map cards moved directly under Swimmers' Corner on the page 30 Aug 2026,
     // so they move here too - this list is ordered to match the page, and the two
     // drifting apart is how the Customise panel starts lying about what it controls.
