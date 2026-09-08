@@ -342,6 +342,10 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
 .authcard button{background:linear-gradient(100deg,#1d86a4,#2ea578);border-color:transparent;font-weight:600}
 .hide{display:none!important}
 
+/* Sheet marker - print only; on screen the pack is one scroll and the number
+   would be noise. See the note on sheetNumbers() for why it is static. */
+.sheetno{display:none}
+
 /* There was a running identification strip at the foot of every printed sheet.
    It repeated what the cover already says and, with a real date range, wrapped
    onto two lines. Removed 8 Sept 2026. Per-page identity is still carried by
@@ -381,6 +385,10 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
   .caveat li{margin-bottom:2px}
   tr,img,canvas{break-inside:avoid;page-break-inside:avoid}
   a{color:inherit;text-decoration:none}
+  .sheetno{
+    display:block;text-align:right;margin-top:8px;padding-top:3px;
+    border-top:.5pt solid #c3d4da;font-size:7.4pt;color:#6b858f;letter-spacing:.3px;
+  }
   .docmeta .ed{border-bottom:0}
 }
 </style>
@@ -745,6 +753,7 @@ function render(){
   cases();
   indexTable();
   withdrawnBlock();
+  sheetNumbers();
   heatmap();        // last: needs the image, and paints case thumbnails too
 }
 
@@ -1562,6 +1571,24 @@ function withdrawnBlock(){
         + '<td>' + esc(blank(r.loc_note) ? '—' : r.loc_note) + '</td></tr>').join('')
       + '</tbody></table>';
   }
+}
+
+// ── sheet markers ────────────────────────────────────────────────────────────
+// Numbered over the sections that actually print. Static rather than a running
+// footer, so one marker lands at the foot of each section: for the six
+// single-page sections that is the foot of the page, and for Individual
+// reports, which flows, it is the foot of its last page. Chrome's paginator
+// puts a position:fixed footer at the TOP of a page, which is how the original
+// strip printed through a heading.
+function sheetNumbers(){
+  const sheets = Array.prototype.slice.call(document.querySelectorAll('.stack > .sheet'));
+  sheets.forEach((sec, i) => {
+    const h = sec.querySelector('.pagehead h2');
+    const name = h ? h.textContent.trim() : 'Cover';
+    let el = sec.querySelector(':scope > .sheetno');
+    if (!el){ el = document.createElement('div'); el.className = 'sheetno'; sec.appendChild(el); }
+    el.textContent = 'Sheet ' + (i + 1) + ' of ' + sheets.length + ' \u00b7 ' + name;
+  });
 }
 
 // ── CSV ──────────────────────────────────────────────────────────────────────
