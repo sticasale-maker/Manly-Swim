@@ -570,7 +570,15 @@ let MAPIMG = null;
 // ── token ────────────────────────────────────────────────────────────────────
 function token(){
   const q = new URLSearchParams(location.search).get('token');
-  if (q){ try{ localStorage.setItem('swim_admin_token', q); }catch(e){} return q; }
+  if (q){
+    try{ localStorage.setItem('swim_admin_token', q); }catch(e){}
+    // Take it straight back out of the address bar. The browser's own print
+    // header/footer option prints the full URL at the foot of every sheet, so a
+    // token left in the query string is a token printed on every page of a pack
+    // handed across a counter - and it sits in browser history either way.
+    try{ history.replaceState(null, '', location.pathname + location.hash); }catch(e){}
+    return q;
+  }
   try{ return localStorage.getItem('swim_admin_token') || ''; }catch(e){ return ''; }
 }
 
