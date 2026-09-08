@@ -45,13 +45,31 @@
 -- The police pack (bag-reports.html) was always right: it filters withdrawn in
 -- the client and never prints those rows.
 --
+-- DEPENDENCY, learned the hard way on 8 Sept 2026: bag_theft_consent_and_claim.sql
+-- was never applied to the live database, so withdrawn/withdrawn_at did not
+-- exist. Adding the filter alone therefore CREATED CLEANLY AND THEN FAILED AT
+-- RUNTIME - plpgsql bodies are only syntax-checked at CREATE, not resolved
+-- against the catalog - and took the public strip down until the columns were
+-- added. Step 0 below now creates them, so this file stands on its own.
+--
+-- The general lesson: a migration that references a column must either create
+-- it or verify it. Do not assume an earlier file in the folder was ever run.
+--
 -- HOW TO RUN: paste this ENTIRE file into the Supabase SQL editor and press Run.
--- Safe to re-run; it is the same idempotent drop/create it always was. Nothing
--- else needs changing - the app already reads only the two fields the narrow
--- function keeps, so the strip carries on working untouched.
+-- Safe to re-run; every step is idempotent. Nothing else needs changing - the
+-- app already reads only the two fields the narrow function keeps, so the strip
+-- carries on working untouched.
 -- ============================================================================
 
 begin;
+
+-- ── 0. the columns the filters below depend on ──────────────────────────────
+-- Additive and idempotent. Withdrawal HIDES rather than deletes, so the default
+-- is false and every existing row keeps counting exactly as it did.
+alter table public.bag_theft_reports
+  add column if not exists withdrawn    boolean not null default false,
+  add column if not exists withdrawn_at timestamptz;
+
 
 -- ── 1. the public entry point, narrowed ─────────────────────────────────────
 -- Dropped rather than replaced because the return type changes, which
