@@ -150,14 +150,6 @@ h3.sec:first-child{margin-top:0}
   display:inline-block;min-width:56mm;border-bottom:1px solid var(--ink);
   height:1.05em;vertical-align:-3px;margin-left:6px;
 }
-.conedit{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:7px}
-.conedit input{
-  font:inherit;font-size:12.4px;padding:4px 9px;border:1.5px solid var(--rule);
-  border-radius:7px;background:#fff;color:var(--ink);min-width:186px;
-}
-.conedit input:focus{outline:none;border-color:var(--accent);background:rgba(21,104,127,.04)}
-.conedit span{font-size:11px;color:var(--dim);max-width:34em;line-height:1.4}
-
 .figs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 0}
 .fig{border:1px solid var(--rule);border-top:3px solid var(--accent);padding:8px 9px 7px}
 .fig .n{font-family:'Bebas Neue',sans-serif;font-size:33px;line-height:1;letter-spacing:.5px}
@@ -411,12 +403,6 @@ table.idx tfoot td{font-weight:700;background:var(--wash)}
       <b>Data collected and provided by</b>
       <div class="who">Marco Bordieri</div>
       <div class="con" id="mCon"></div>
-      <div class="conedit noprint">
-        <input type="text" id="mEmail" placeholder="email for the pack" autocomplete="off" spellcheck="false">
-        <input type="text" id="mPhone" placeholder="phone" autocomplete="off" spellcheck="false">
-        <span>Overrides for this device. Leave these empty and the pack prints
-          the details above; fill one in and only this machine follows it.</span>
-      </div>
       <div class="fine" style="margin-top:5px">
         Reports are lodged by swimmers through the Manly Swim app
         (app.viz.net.au/Manly-Swim). Records are insert-only and server-timestamped;
@@ -567,27 +553,19 @@ function token(){
 // earlier commit either way, which is why removing them from HEAD alone was
 // only ever a partial measure.
 //
-// The values below are DEFAULTS. A device that sets its own overrides them, so
-// the details can be changed on the machine compiling a pack without a push,
-// and a deliberately emptied field stays empty — a stored empty string is a
-// decision, a missing key is someone who has never touched the control.
+// One set of details for every machine that compiles a pack. There was a
+// per-device override here; it put the same address and number on the screen
+// twice and earned nothing, since the pack is compiled on one machine. Changing
+// these is a push.
 const CONTACT_NAME  = 'Marco Bordieri';
 const CONTACT_EMAIL = 'sticasale@gmail.com';
 const CONTACT_PHONE = '0405 461 023';
 
-// null means the key was never written; '' means it was deliberately cleared.
-function lsRaw(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
-function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
-function lsOr(k, dflt){
-  try{
-    const v = localStorage.getItem(k);
-    return (v === null ? dflt : v).trim();
-  }catch(e){ return dflt; }
-}
-
+// Kept as a function because runfoot() and renderContact() both need the same
+// list, and because blanking a constant above should still fall through to the
+// "not set on this device" rule rather than printing an empty separator.
 function contactBits(){
-  return [lsOr('swim_pack_email', CONTACT_EMAIL),
-          lsOr('swim_pack_phone', CONTACT_PHONE)].filter(Boolean);
+  return [CONTACT_EMAIL, CONTACT_PHONE].map(v => String(v || '').trim()).filter(Boolean);
 }
 
 function renderContact(){
@@ -1548,15 +1526,6 @@ function csv(){
 // ── wiring ───────────────────────────────────────────────────────────────────
 document.getElementById('reload').onclick = load;
 document.getElementById('range').onchange = load;
-[['mEmail','swim_pack_email'], ['mPhone','swim_pack_phone']]
-.forEach(([id, key]) => {
-  const el = document.getElementById(id);
-  // Only ever the override. Seeding this with `dflt` printed the same address
-  // and number twice, once on the line above and once in the box below it.
-  const stored = lsRaw(key);
-  el.value = stored === null ? '' : stored;
-  el.oninput = () => { lsSet(key, el.value.trim()); renderContact(); runfoot(); };
-});
 renderContact();
 
 // Default cutoff. The database opens with a lone report from October 2025,
