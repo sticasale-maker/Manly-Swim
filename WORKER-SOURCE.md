@@ -1,4 +1,15 @@
-# Getting the Worker source back from the dashboard
+# The Worker source, and how it gets deployed
+
+**Since 12 Sep 2026 the direction has flipped.** `worker.js` is now the canonical
+source and it is deployed with `npx wrangler deploy` — verified working that day, with
+both crons and the `RATE` binding re-declared from `wrangler.toml` (the deploy output
+lists them, so you see it happen). Edit the source, deploy, done.
+
+The dashboard editor still works, but prefer not to use it: an edit made there does not
+reach `worker.js`, and the next `wrangler deploy` would revert it. If someone does edit
+in the dashboard, the rescue path below pulls it back into the source.
+
+## Rescue: getting the source back from the dashboard
 
 `bold-rain-6ded` is edited in the Cloudflare dashboard (CLAUDE.md §6). What that
 actually means, and why it bites:
