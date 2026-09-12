@@ -62,9 +62,14 @@ real `wrangler deploy` will leave a less readable bundle in the dashboard than t
 one sitting there now. The comments live in the source either way; it only makes a
 future de-bundle terser.
 
-## Stale copies
+## Superseded copies
 
-`Manly swim/worker-current.js` in Drive is an older snapshot (2,099 lines, no `/chl`,
-no `lineCheck`) kept from before this was understood. It is not a working copy — do
-not deploy from it. The pre-reconcile originals of both working copies are in
-`Manly swim/worker-pastes/pre-reconcile-2026-09-12/`.
+There are now exactly TWO Worker source files and they are kept identical: `worker.js` in the
+clone (gitignored) and `Manly swim/worker-NEW.js` in Drive. If they ever disagree, neither
+is trustworthy — re-derive from production using the steps above.
+
+`worker-current.js` was deleted from the Drive app folder on 12 Sep 2026. Its name implied
+it was current; it was a 2,099-line snapshot with no `/chl`, no `lineCheck` and a
+superseded two-paragraph `SWIMSUM_SYS`, and it held nothing that is not in the source
+today. It and the pre-reconcile originals of both working copies are kept in
+`Manly swim/worker-pastes/pre-reconcile-2026-09-12/` — history, never a deploy source.
