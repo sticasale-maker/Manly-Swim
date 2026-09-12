@@ -772,44 +772,6 @@
     border: 3px solid var(--ocean);
     box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   }
-  /* Freeze capture button + status, sits above the metrics in tune mode */
-  #calib-bar { display: none; }
-  body.tune-mode #calib-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin: 0 0 10px;
-    padding: 10px 12px;
-    background: var(--foam);
-    border: 2px solid var(--ocean);
-    border-radius: var(--radius);
-  }
-  #calib-freeze {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 18px; letter-spacing: 2px;
-    padding: 8px 18px;
-    border: none; border-radius: 10px;
-    background: var(--ocean); color: #fff;
-    cursor: pointer;
-  }
-  #calib-freeze:active { transform: scale(0.98); }
-  #calib-freeze:disabled { opacity: 0.5; cursor: default; }
-  #calib-status { font-family: 'Inter', sans-serif; font-size: 11px; color: var(--deep); }
-  #cam-read-btn {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 18px; letter-spacing: 2px;
-    padding: 8px 16px;
-    border: none; border-radius: 10px;
-    background: var(--deep); color: #fff;
-    cursor: pointer;
-  }
-  #cam-read-btn:active { transform: scale(0.98); }
-  #cam-footage {
-    font-family: 'Inter', sans-serif; font-size: 11px;
-    padding: 6px 8px; border: 1px solid var(--border);
-    border-radius: 8px; background: #fff; color: var(--text);
-  }
 
 
   /* ── Calibration tab ── */
@@ -17925,266 +17887,26 @@ document.addEventListener('keydown', function (e) {
 });
 
 // ============================================================
-// CALIBRATION CAPTURE (TUNE mode) — freeze your assessment vs the
-// model for later analysis. One row per freeze → Supabase
-// `calibration_captures`. Stores BOTH dot coordinates in the same
-// 0–100% units, the full forecast input vector, and the sensitivity
-// params in force at capture time (so a row stays interpretable even
-// after you move a tuning slider).
+// "My call" sliders (TUNE mode only). They drop a second dot on
+// each rail so you can eyeball the model against your own read.
+// The FREEZE that persisted them to Supabase, and the camera-read
+// flow that pre-positioned them, were removed on 12 Sep 2026 when
+// the capture table was retired.
 // ============================================================
-const CALIB_INSERT_URL = BB_SUPABASE_URL + '/rest/v1/calibration_captures';
 
 // User drags a "My call" slider → store its % position for this metric.
 function onAssess(metric, val) {
   _assessPct[metric] = parseFloat(val);
   const allSet = _assessPct.entry != null && _assessPct.swim != null && _assessPct.surge != null;
-  const s = document.getElementById('calib-status');
-  if (s && !allSet) s.textContent = 'Set all three “My call” sliders, then freeze.';
-  else if (s) s.textContent = 'Ready to freeze.';
 }
 
-// ── Camera-session read → pre-position the three "My call" sliders ───────────
-// Frames are downscaled to a ~1024px JPEG before upload (token cost ∝ pixels,
-// not file size). The Worker /cam-read route returns the ordinal read + the
-// footage time it could see on the cam scrubber. We jump the app to that hour
-// (so the model values FREEZE captures are for the right slot) THEN drop the
-// "My call" dots on the band the eye saw — order matters because navigating
-// re-runs syncAssessSliders().
-const CAM_READ_URL  = 'https://bold-rain-6ded.sticasale.workers.dev/cam-read';
-const CAM_MAX_EDGE  = 1024;
-const CAM_BAND_MID  = { 0: 12.5, 1: 37.5, 2: 62.5, 3: 87.5 };
-const CAM_LABEL_BAND = {
-  entry: { easy: 0, doable: 1, caution: 2, dangerous: 3, danger: 3 },
-  swim:  { smooth: 0, glassy: 0, ripply: 1, choppy: 2, messy: 3 },
-  surge: { smooth: 0, ripply: 1, choppy: 2, messy: 3, glide: 0, steady: 0, jostle: 1, drifty: 1, wrestle: 2, surgy: 2, washed: 3, washy: 3 },
-};
-
+// Admin token for the board / intro admin calls: ?token=... once, then localStorage.
 function camToken() {
   const q = new URLSearchParams(location.search).get('token');
   if (q) { try { localStorage.setItem('swim_admin_token', q); } catch (e) {} return q; }
   try { return localStorage.getItem('swim_admin_token') || ''; } catch (e) { return ''; }
 }
 
-// File → downscaled JPEG base64 (no data: prefix).
-function camDownscale(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const scale = Math.min(1, CAM_MAX_EDGE / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
-      const cv = document.createElement('canvas');
-      cv.width = w; cv.height = h;
-      cv.getContext('2d').drawImage(img, 0, 0, w, h);
-      URL.revokeObjectURL(url);
-      resolve(cv.toDataURL('image/jpeg', 0.82).split(',')[1]);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
-    img.src = url;
-  });
-}
-
-async function onCamFiles(input) {
-  const files = Array.from(input.files || []).slice(0, 6);
-  input.value = '';   // let the same files be re-picked later
-  if (!files.length) return;
-  const status = document.getElementById('calib-status');
-  const token = camToken();
-  if (!token) { if (status) status.textContent = '⚠ No admin token — add ?token=… to the URL.'; return; }
-  if (status) status.textContent = `Reading ${files.length} frame(s)…`;
-  try {
-    const frames = await Promise.all(files.map(camDownscale));
-    const res = await fetch(CAM_READ_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-      body: JSON.stringify({ frames }),
-    });
-    const j = await res.json();
-    if (!res.ok || !j.ok) throw new Error(j.error || ('HTTP ' + res.status));
-    applyCamRead(j.read);
-  } catch (e) {
-    if (status) status.textContent = '⚠ Cam read failed: ' + e.message;
-  }
-}
-
-// "7:03am" / "07:03" / "7:03:05am" → { h, m }
-function camParseClock(s) {
-  if (!s) return null;
-  const m = String(s).match(/(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i);
-  if (!m) return null;
-  let h = parseInt(m[1], 10); const min = parseInt(m[2], 10);
-  const ap = (m[3] || '').toLowerCase();
-  if (ap === 'pm' && h < 12) h += 12;
-  if (ap === 'am' && h === 12) h = 0;
-  return { h, m: min };
-}
-
-// Local Sydney date as YYYY-MM-DD (NOT toISOString — avoids the UTC date bug).
-function camTodayLocal() {
-  const d = new Date();
-  return d.getFullYear() + '-' +
-         String(d.getMonth() + 1).padStart(2, '0') + '-' +
-         String(d.getDate()).padStart(2, '0');
-}
-
-// Jump the app to the hour in the footage-time field (nearest matrix row).
-function camGotoFootage() {
-  const fld = document.getElementById('cam-footage');
-  if (!fld || !fld.value || !_matrix.length) return;
-  const targetMs = new Date(fld.value).getTime();
-  let best = -1, bestDiff = Infinity;
-  _matrix.forEach((r, i) => {
-    const rt = new Date(r.dateTime.replace(' ', 'T')).getTime();
-    const d = Math.abs(rt - targetMs);
-    if (d < bestDiff) { bestDiff = d; best = i; }
-  });
-  if (best >= 0) jumpToSlider(best);
-}
-
-function applyCamRead(read) {
-  const status = document.getElementById('calib-status');
-
-  // 1) footage time → field, then navigate to that hour
-  const fld = document.getElementById('cam-footage');
-  const clk = camParseClock(read.footage_clock);
-  if (clk && fld) {
-    fld.value = camTodayLocal() + 'T' + String(clk.h).padStart(2, '0') + ':00';
-  }
-  camGotoFootage();   // renderSnapshot runs here → resets the sliders to auto
-
-  // 2) AFTER navigating, drop the "My call" dots on the band the eye saw
-  [['entry', read.entry], ['swim', read.swim_surface], ['surge', read.surge]].forEach(([key, label]) => {
-    const band = CAM_LABEL_BAND[key][String(label || '').toLowerCase().trim()];
-    if (band == null) return;
-    const pct = CAM_BAND_MID[band];
-    const el = document.getElementById('assess' + key.charAt(0).toUpperCase() + key.slice(1));
-    if (el) { el.value = pct; onAssess(key, pct); }
-  });
-
-  const conf = (read.confidence != null) ? ' · conf ' + read.confidence : '';
-  const ft   = read.footage_clock ? ' · ' + read.footage_clock : ' · time not read — set it ▸';
-  if (status) {
-    status.textContent = `Cam: ${read.entry} / ${read.swim_surface} / ${read.surge}${conf}${ft} — nudge & FREEZE`;
-  }
-}
-
-async function calibDeviceId() {
-  try {
-    let id = localStorage.getItem('swim_calib_device');
-    if (!id) {
-      id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-      localStorage.setItem('swim_calib_device', id);
-    }
-    return id;
-  } catch (e) { return 'unknown'; }
-}
-
-
-async function freezeCalibration() {
-  const btn = document.getElementById('calib-freeze');
-  const status = document.getElementById('calib-status');
-  const snap = _lastSnapshot;
-  if (!snap || !snap.h) { if (status) status.textContent = '⚠ No forecast slot loaded yet.'; return; }
-
-  if (_assessPct.entry == null || _assessPct.swim == null || _assessPct.surge == null) {
-    if (status) status.textContent = '⚠ Set all three “My call” sliders first.';
-    return;
-  }
-
-  const h = snap.h, r = snap.result;
-  const dt = h.dateTime.replace(' ', 'T').substring(0, 16);
-  const wx = wxLookup(dt);
-  const seaTemp = (wx && wx.seaTemp != null) ? wx.seaTemp : (h.seaTemp ?? null);
-
-  // Effective wind-wave sensitivity actually used by calcScore.
-  const wwSensEff = (SITE.wwSens != null) ? SITE.wwSens : SITE.swellSens;
-
-  const payload = {
-    captured_at:  new Date().toISOString(),
-    forecast_dt:  h.dateTime,
-    device_id:    await calibDeviceId(),
-    model:        (typeof GEM_MODEL !== 'undefined' && GEM_MODEL) ? 'gem' : 'orig',
-
-    // Your assessment (where YOU put the dot), 0–100% along the rail
-    assess_entry_pct: _assessPct.entry,
-    assess_swim_pct:  _assessPct.swim,
-    assess_surge_pct: _assessPct.surge,
-
-    // Model's auto dot positions, same 0–100% coordinate
-    auto_entry_pct: _autoDotPct.entry,
-    auto_swim_pct:  _autoDotPct.swim,
-    auto_surge_pct: _autoDotPct.surge,
-
-    // Model raw values + labels
-    entry_raw:   r.entry.raw ?? null,
-    entry_score: r.entry.score ?? null,
-    entry_label: r.entry.label ?? null,
-    swim_raw:    r.swim.raw ?? null,
-    swim_score:  r.swim.score ?? null,
-    swim_label:  r.swim.label ?? null,
-    surge_v6:    r.water.score ?? null,
-    surge_label: r.water.label ?? null,
-
-    // Component demerits (for sensitivity regression)
-    d_wind:    r.demerits?.wind    ?? null,
-    d_windwave:r.demerits?.windWave?? null,
-    d_swell1:  r.demerits?.swell1  ?? null,
-    d_swell2:  r.demerits?.swell2  ?? null,
-    d_refrac:  r.demerits?.refrac  ?? null,
-    d_tide:    r.demerits?.tide    ?? null,
-    // d_offshore intentionally NOT logged — the calibration table has no such column
-    // and Supabase rejects the whole insert on an unknown key. Add the column first.
-
-    // Forecast input vector
-    wind_kmh:    h.windKmh    ?? null,
-    wind_dir:    h.windDir    ?? null,
-    swell1_h:    h.swell1H    ?? null,
-    swell1_dir:  h.swell1Dir  ?? null,
-    swell1_p:    h.swell1P    ?? null,
-    swell2_h:    h.swell2H    ?? null,
-    swell2_dir:  h.swell2Dir  ?? null,
-    swell2_p:    h.swell2P    ?? null,
-    windwave_h:  h.windWaveH  ?? null,
-    windwave_dir:h.windWaveDir?? null,
-    windwave_p:  h.windWaveP  ?? null,
-    tide_m:      h.tideM      ?? null,
-    sea_temp:    seaTemp,
-
-    // Sensitivities in force at capture time
-    wind_sens:        SITE.windSens ?? null,
-    swell_sens:       SITE.swellSens ?? null,
-    ww_sens:          wwSensEff,
-    period_power:     SITE.periodPower ?? null,
-    swell_period_mult:SITE.swellPeriodMult ?? null,
-  };
-
-  if (btn) btn.disabled = true;
-  if (status) status.textContent = 'Saving…';
-  try {
-    const res = await fetch(CALIB_INSERT_URL, {
-      method: 'POST',
-      headers: {
-        'apikey': BB_SUPABASE_KEY,
-        'Authorization': 'Bearer ' + BB_SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const detail = (await res.text()).slice(0, 160);
-      throw new Error('HTTP ' + res.status + ' ' + detail);
-    }
-    const n = (parseInt(localStorage.getItem('swim_calib_count') || '0', 10) || 0) + 1;
-    localStorage.setItem('swim_calib_count', String(n));
-    if (status) status.textContent = `✓ Frozen (${n} total) · ${bearingName(h.swell1Dir)} ${(h.swell1H||0).toFixed(1)}m @${Math.round(h.swell1P||0)}s, wind ${Math.round(h.windKmh||0)}km/h`;
-  } catch (e) {
-    if (status) status.textContent = '⚠ Save failed: ' + e.message;
-    console.warn('calibration insert failed', e);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
-}
 
 // When the shown slot changes, sync the "My call" handles to the model's
 // current auto position as a neutral starting point (you then nudge them).
