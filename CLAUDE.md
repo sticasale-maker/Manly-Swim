@@ -140,6 +140,23 @@ video is the one exception and serves ranges by hand (`serveSplashVideo`).
 The working folder is a **Google-Drive-synced copy, not a git repo**. Never
 `git init` here — Drive corrupts `.git`.
 
+**There are two copies of THIS file, and the Drive one is the one that gets
+loaded as a session's instructions.** So a stale Drive copy does not sit there
+harmlessly — it briefs the next session with rules the code no longer follows.
+On 12 Sep 2026 it was 26 days behind and briefed a session with the pre-20-Aug
+`siteCheck` rule while that session was fixing exactly that drift in `index.html`.
+
+```bash
+node tools/drive-claudemd.js          # check  — exit 1 on drift
+node tools/drive-claudemd.js --fix    # write the committed copy across
+```
+
+Run the check **at the start of a session** and after any pull that moved this
+file. A `post-commit` hook syncs Drive automatically whenever a commit touches
+CLAUDE.md, but it cannot cover everything: `reset --hard` fires no hook, so a
+change pushed from another machine arrives silently. Enable the hook once per
+clone with `git config core.hooksPath tools/hooks`.
+
 Work from a clone outside Drive. **The repo is the source of truth, not Drive.**
 Start every change from `HEAD`, then apply your edits onto it.
 
