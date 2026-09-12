@@ -6849,6 +6849,26 @@ const SITE_DEFAULTS = {
                          // safety caution. That is one event, not a base rate — watch it.
   pointPeriodLo:  11,    // LOCAL — below this period the term is exactly 0 (the no-op property above).
   pointPeriodHi:  14,    // LOCAL — full weight at/above. Smoothstep between, same shape as every other gate.
+  pointWashyMult: 0,     // LOCAL — DRAFT, OFF. Lets the point go past the Surgy ceiling on a BUILDING
+                         // long-period swell (13 Sep 2026). Without it Surge pins at Surgy from ~0.52 m at
+                         // 15 s and a 1.4 m 15 s SE swell reads the same as a 0.6 m one: at 125° the bay
+                         // table barely transmits at any period, so the bay stack never takes over.
+                         //
+                         // Value = multiple of the Surgy edge the RAW point energy must reach before the
+                         // cap lets go. Below it the point plateaus at the Surgy edge exactly as today;
+                         // above it the term is cap × raw/release, so it is continuous at the release and
+                         // anything past it is Washy. Only at FULL period weight (P ≥ pointPeriodHi) — a
+                         // 12 s swell never releases. 0 = off (bit-identical); 1 = no cap at all.
+                         //
+                         // Release height at 15 s, full direction window, live edges: 2 → ~0.74 m,
+                         // 3 → ~0.91 m, 4 → ~1.05 m (H ∝ √mult). NO BAY GATE, deliberately: the case it
+                         // exists for is the SE, where the bay stack is ~0, so a gate on the bay being
+                         // elevated would never fire there.
+                         //
+                         // Washy is a VERDICT change, not just a rail colour: under a Caution entry it
+                         // makes the day 'dangerous' (swimVerdict). The Worker's SWIMSUM_SYS still does
+                         // not know about the point locus, so its prose may place a point Washy "in the
+                         // bay". Untuned — one observed event. Bake the value here before it goes live.
   // Direction window at the point, [bearing°, weight], ascending, flat outside — and
   // 0 at both ends, so every bearing outside 55–170° is closed. Bearings are swell-FROM,
   // TRUE, not folded (see pointDirGate). The app's own traced coastline puts open ocean
@@ -8304,7 +8324,16 @@ function pointSurge(d) {
   // would quietly stop agreeing with it: the surgeThresholds fallbacks in this file are
   // already 5 points adrift of what the sheet actually loads.
   const cap = (SITE.surgeThresholds && SITE.surgeThresholds.surgy) || 45;
-  return Math.min(cap, swellPower(H, P) * t * g * sens);
+  const raw = swellPower(H, P) * t * g * sens;
+  // RELEASE (pointWashyMult, off by default): past `mult × cap` of raw energy, and only
+  // at full period weight, the ceiling lets go and the point can call Washy on its own.
+  // Continuous at the release point — cap × raw/release is exactly cap there.
+  const mult = SITE.pointWashyMult || 0;
+  if (mult > 0 && t >= 1) {
+    const release = cap * Math.max(1, mult);
+    if (raw > release) return cap * raw / release;
+  }
+  return Math.min(cap, raw);
 }
 
 function blSwimWater(d, chop) {
@@ -14804,6 +14833,7 @@ const TUNE_PARAMS = [
   // pointSurge(), which reads SITE on every call.
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE BOWER POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
   { key:'pointPeriodLo', label:'SURGE · Point period floor (s)', min:5, max:18, step:0.5, hint:'LOCAL — no sheet cell. Below this swell period the point term is EXACTLY zero, which is what leaves ordinary days scoring bit-identically to before the point existed. Smoothsteps to full weight at the period ceiling. Raise it to make the point a rarer call.' },
+  { key:'pointWashyMult', label:'SURGE · Point Washy release (× Surgy edge)', min:0, max:6, step:0.25, hint:'LOCAL — DRAFT, default 0 = OFF (point capped at Surgy, as before). Otherwise the multiple of the Surgy edge the raw point energy must reach before the cap lets go and the point alone can call Washy. Only at full period weight (P ≥ point period ceiling, 14 s). At 15 s in the direction window: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. 1 = no cap. Washy under a Caution entry makes the day DANGEROUS.' },
   // REMOVED 11 Jul 2026 — both were advertised as scoring knobs and reached no band:
   //   bl_chop_impact (V3)   scales chopQ7 and wind_d, which are BREAKDOWN READOUTS only.
   //                         The live CHOP metric is chopCm (steep-face height, cm), which
@@ -14842,7 +14872,7 @@ const TUNE_PARAMS = [
 const TUNE_LIVE_KEYS = [
   'offshorePts', 'offshoreArc', 'offshoreMaxPts', 'offshoreMaxFrac', 'offshoreFloorKmh',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
-  'pointSens', 'pointPeriodLo',
+  'pointSens', 'pointPeriodLo', 'pointWashyMult',
 ];
 const TUNE_LIVE_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/tune';
 const TUNE_LIVE_CACHE = 'swim_tune_live_v1';   // last-known live values, so a cold/offline boot still scores right
@@ -14988,7 +15018,8 @@ const TW_GROUPS = [
       // prov:'local' — no sheet cell at all; SITE is the only home, so the panel is
       // authoritative rather than a copy-to-cell staging area.
       { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the Bower point</b>, and this scales the point. The point is the one spot on the line where swell is stood up rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
-      { key:'pointPeriodLo', name:'Point period floor', tag:'LIVE', desc:'Below this period the point term is <b>exactly zero</b> — long swell feels the shelf, short swell does not. This is what keeps ordinary days scoring as they always did. The point term is capped at the <b>Surgy edge</b> below, so the point alone can reach Surgy but never Washy.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'pointPeriodLo', name:'Point period floor', tag:'LIVE', desc:'Below this period the point term is <b>exactly zero</b> — long swell feels the shelf, short swell does not. This is what keeps ordinary days scoring as they always did. The point term is capped at the <b>Surgy edge</b> below, so the point alone can reach Surgy but never Washy — unless the release below is on.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'pointWashyMult', name:'Point Washy release', tag:'DRAFT', desc:'<b>0 = off.</b> On a long-period swell (≥14 s) that keeps building, lets the point go past the Surgy cap once its energy reaches this many × the Surgy edge — so a 1.4 m 15 s SE swell no longer reads the same as a 0.6 m one. At 15 s: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. Washy under a Caution entry makes the day <b>dangerous</b>.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
     bands:{ label:'Bands', edges:'AQ10:AQ13', items:[
       { key:'surgeThresholds.steady', lab:'Steady ≤' },
