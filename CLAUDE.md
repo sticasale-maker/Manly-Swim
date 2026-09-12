@@ -161,6 +161,15 @@ that `git status` line was the only thing between the second and the loss of the
 first's work. When you are the one holding uncommitted edits, commit them before
 you hand the clone over or go idle — do not leave them in the working tree.
 
+**A clean tree is a snapshot, not a lease.** That check guards the instant you
+reset and nothing after it. On 12 Sep 2026 a session checked clean, edited one
+file, and minutes later found a *third* session's uncommitted work sitting beside
+its own. So stage by path — `git add index.html`, never `git add -A` or
+`git commit -a` — and read `git diff --cached --stat` before every commit. A file
+you did not touch appearing there is a peer in the clone, not a slip in your edit:
+unstage it, leave it alone, and say so. `ListAgents` names who is live and
+`SendMessage` reaches them.
+
 **Never copy a whole file from Drive into the clone** —
 the two copies drift both ways and a wholesale copy destroys work:
 
