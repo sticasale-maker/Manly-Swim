@@ -147,9 +147,17 @@ On 12 Sep 2026 it was 26 days behind and briefed a session with the pre-20-Aug
 `siteCheck` rule while that session was fixing exactly that drift in `index.html`.
 
 ```bash
-node tools/drive-claudemd.js          # check  — exit 1 on drift
-node tools/drive-claudemd.js --fix    # write the committed copy across
+node tools/drive-check.js          # check — exit 1 on CLAUDE.md drift
+node tools/drive-check.js --fix    # write the committed CLAUDE.md across
 ```
+
+It also reports on the Drive `index.html`, but as a **warning only** — never
+fixed, and it never changes the exit code. That file's `APP_BUILD` is stamped by
+CI and never syncs back, so the copies always differ and a gate there would cry
+wolf every run. Lines it reports as present only in Drive are usually code
+deliberately RETIRED from the repo, not unpushed work — on 12 Sep 2026 all of
+them were the calibration logger, the freeze rig and the camera helpers, whose
+tables have since been dropped. Read them before assuming either.
 
 Run the check **at the start of a session** and after any pull that moved this
 file. A `post-commit` hook syncs Drive automatically whenever a commit touches

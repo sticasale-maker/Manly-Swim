@@ -5,7 +5,7 @@
 # Fires only when the commit just made touched CLAUDE.md, which is where new drift
 # comes from: a session edits and commits the rule, and nothing copies it across.
 # Before this hook the Drive copy went 26 days stale and briefed a session with a
-# superseded safety rule (see tools/drive-claudemd.js).
+# superseded safety rule (see tools/drive-check.js).
 #
 # This CANNOT be the only guard. Sessions open with `git fetch && git reset --hard`,
 # and reset fires no hook at all, so a CLAUDE.md change pushed from another machine
@@ -22,12 +22,12 @@ cd "$ROOT" || exit 0
 git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null | grep -qx 'CLAUDE.md' || exit 0
 
 command -v node >/dev/null 2>&1 || {
-  echo "post-commit: node not found — Drive CLAUDE.md NOT synced; run tools/drive-claudemd.js --fix by hand" >&2
+  echo "post-commit: node not found — Drive CLAUDE.md NOT synced; run tools/drive-check.js --fix by hand" >&2
   exit 0
 }
 
 echo "post-commit: CLAUDE.md changed — syncing the Drive copy"
-node tools/drive-claudemd.js --fix || {
+node tools/drive-check.js --fix || {
   echo "post-commit: Drive CLAUDE.md was NOT synced (see above). The repo is still correct;" >&2
   echo "             fix Drive before a session is briefed from the stale copy." >&2
 }
