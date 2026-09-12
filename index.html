@@ -4524,6 +4524,14 @@
   // stop rather than a real contributor. The sensor is NAMED in the caption, because a
   // card that silently swaps instrument cannot be compared against what you saw
   // yesterday.
+  // SENTINEL-3 OLCI at 300 m, through our own Worker because Copernicus needs an OAuth
+  // client and a public index.html cannot hold one. Live since 12 Sep 2026. It is both
+  // sharper AND often fresher than GIBS — measured over the 7 days to 12 Sep, it carried
+  // today's water when GIBS had none, and the two covered different days: 12 and 9 Sep
+  // from Sentinel-3, 11 Sep from GIBS, the rest from both. Neither alone covered the week.
+  var CHL = 'https://bold-rain-6ded.sticasale.workers.dev/chl?d=';
+  // How far back to spend Copernicus quota. See candidates().
+  var S3_DAYS = 7;
   var LAYERS = [
     { id: 'VIIRS_NOAA21_Chlorophyll_a', name: 'VIIRS NOAA-21' },
     { id: 'OCI_PACE_Chlorophyll_a',     name: 'PACE OCI' },
@@ -4571,23 +4579,35 @@
   // ~13:30 local, which is ~03:30 UTC the SAME day, so the UTC date and the date a
   // swimmer would call it are the same one. The 03:30 stamp is what the age is measured
   // from, rather than midnight, so "2 days old" means two days of water.
+  // SYDNEY dates, not UTC ones. Both sources want the local day: /chl takes a Sydney
+  // date outright and cuts its window from it, and a GIBS daily composite holds the
+  // ~13:30-local overpass under the same calendar date in both AEST and AEDT. Deriving
+  // them with Intl rather than arithmetic also means the age is just the loop counter,
+  // so "3 days old" cannot drift from the date printed beside it.
+  function sydISO(daysAgo) {
+    return new Date(Date.now() - daysAgo * 86400000)
+      .toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' });   // YYYY-MM-DD
+  }
+
   function candidates() {
-    var out = [], now = new Date();
+    var out = [];
     for (var d = 0; d < LOOKBACK_DAYS; d++) {
-      var t = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - d));
-      var y = t.getUTCFullYear(), m = t.getUTCMonth(), day = t.getUTCDate();
-      var iso = y + '-' + two(m + 1) + '-' + two(day);
-      out.push({
-        at: Date.UTC(y, m, day, 3, 30),
-        tries: LAYERS.map(function (L) {
-          return {
-            sensor: L.name,
-            url: GIBS + '?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=' + L.id +
-                 '&CRS=EPSG:4326&BBOX=' + BBOX + '&WIDTH=' + PX_W + '&HEIGHT=' + PX_H +
-                 '&FORMAT=image/png&TRANSPARENT=TRUE&TIME=' + iso
-          };
-        })
+      var iso = sydISO(d), tries = [];
+      // SENTINEL-3 FIRST, at 300 m against GIBS's 1 km — 139 data pixels across this box
+      // instead of 42. Only for the recent window: every render costs Copernicus quota,
+      // and if Sentinel-3 has found nothing in a week then the sharper picture is not on
+      // offer and GIBS's better hit rate is what matters. A day with no scene answers 404
+      // from the catalog without rendering, so the walk is cheap.
+      if (d < S3_DAYS) tries.push({ sensor: 'Sentinel-3 OLCI', url: CHL + iso });
+      LAYERS.forEach(function (L) {
+        tries.push({
+          sensor: L.name,
+          url: GIBS + '?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=' + L.id +
+               '&CRS=EPSG:4326&BBOX=' + BBOX + '&WIDTH=' + PX_W + '&HEIGHT=' + PX_H +
+               '&FORMAT=image/png&TRANSPARENT=TRUE&TIME=' + iso
+        });
       });
+      out.push({ iso: iso, age: d, tries: tries });
     }
     return out;
   }
@@ -4632,7 +4652,7 @@
     })).then(function (rs) {
       var hit = null;
       for (var k = 0; k < rs.length && !hit; k++) if (rs[k]) hit = rs[k];
-      if (hit) show({ at: day.at, sensor: hit.sensor }, hit.blob);
+      if (hit) show({ iso: day.iso, age: day.age, sensor: hit.sensor }, hit.blob);
       else tryFrom(days, i + 1, deadline);
     });
   }
@@ -4680,7 +4700,8 @@
   }
 
   function show(hit, blob) {
-    var days = Math.floor((Date.now() - hit.at) / 86400000);
+    // The age is the walk's own counter, so it can never disagree with the date beside it.
+    var days = hit.age;
     // The blob is already in hand from the coverage scan, so this paints what was
     // measured rather than fetching the tile a second time and hoping it matches.
     img.src = URL.createObjectURL(blob);
@@ -4696,8 +4717,10 @@
     here.hidden = false;
     hereL.hidden = false;
 
-    var dt = new Date(hit.at);
-    var when_ = dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Sydney' });
+    // Parsed at midday so no timezone can nudge it onto the day either side; this is
+    // only ever used to print "11 Sept".
+    var dt = new Date(hit.iso + 'T12:00:00');
+    var when_ = dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
     // The instrument is named: the chain falls through sensors as cloud allows, and two
     // scenes from different ones are not quite the same measurement.
     scen.textContent = 'Satellite pass ' + when_ + ' · ' + hit.sensor;
