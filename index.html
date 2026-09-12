@@ -4406,7 +4406,17 @@
   if (!head || !body || !img) return;
 
   var BASE = 'https://oceancurrent.aodn.org.au/SNSW_chl/';
-  var LOOKBACK_DAYS = 10;
+  // HOW FAR BACK TO HUNT FOR A SCENE. 10 was too tight: this feed goes dark for days
+  // at a time under cloud, and on 12 Sep 2026 its newest scene was 2 Sep — TEN days
+  // back, so the window reached 3 Sep and missed it by one, and the card showed
+  // "no recent pass" while a perfectly good picture sat one probe further on. Widening
+  // to 11 would have fixed that morning and broken again on the next gap.
+  //
+  // Nothing found here is presented as current: anything STALE_DAYS or older is
+  // greyscaled and labelled with its age, which is the CLAUDE.md §8 treatment — show
+  // it, fade it, date it. An old scene handled that way beats an empty card, so the
+  // window can afford to be generous.
+  var LOOKBACK_DAYS = 21;
   var STALE_DAYS = 4;            // beyond this the picture is faded, not just labelled
   var started = false;
 
@@ -4435,7 +4445,13 @@
 
   function fail() {
     msg.hidden = false;
-    msg.textContent = 'No recent satellite pass reached us — the sky may be clouded over, or the connection is down.';
+    // The window is interpolated rather than written out, so the sentence cannot drift
+    // from LOOKBACK_DAYS the next time that is tuned. "Or the connection is down" is
+    // gone: the images are fetched straight from the browser, and having exhausted a
+    // three-week hunt the honest reading is that the feed has nothing, not that the
+    // phone is offline — a wrong cause sends people looking in the wrong place.
+    msg.textContent = 'No clear satellite pass in the last ' + LOOKBACK_DAYS +
+                      ' days — cloud over this stretch of coast is the usual reason.';
   }
 
   function show(hit) {
