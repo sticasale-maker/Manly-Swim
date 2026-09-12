@@ -16602,9 +16602,20 @@ async function generateBannerSummaryLocal() {
     // the ENTRY is the red part, the useful local knowledge is that the bay has
     // other ways in, and which one depends on the surge (19 Jul 2026).
     if (domEntry === 'Dangerous') {
-      parts.push(domSurge === 'Washy'
-        ? ` Check on site for entry at Shelly Beach.`
-        : ` Check on site for entry at Bower Lane or Shelly Beach.`);
+      // The SENTENCE comes from _sv, never written again here. This branch used to
+      // carry its own copy of the ternary, keyed on Washy alone — and when
+      // siteCheck was widened to Surgy OR Washy (20 Aug 2026, because Bower Lane is
+      // the narrower, rockier way in and a surge already pushing you about takes it
+      // off the table) the copy down here was missed. The offline baseline went on
+      // naming Bower Lane on a Surgy morning that the shared derivation had already
+      // ruled out: the fifth copy CLAUDE.md §1 warns about, drifting in safety copy.
+      // Sentence-cased and stopped to sit in the paragraph, exactly as the lineCheck
+      // push above does. Guarded INSIDE the branch rather than in the else-if head,
+      // so a null siteCheck could only ever cost this sentence — never fall the day
+      // through to the 'getting in is the easy part' branch below it.
+      if (_sv.siteCheck) {
+        parts.push(' ' + _sv.siteCheck.charAt(0).toUpperCase() + _sv.siteCheck.slice(1) + '.');
+      }
     } else if (domSwim === 'Messy' || domSurge === 'Washy') {
       // Entry itself is fine here — the hazard is out in the water, so an
       // alternative entry point would not help. Keep it non-absolute but plain.
@@ -16629,8 +16640,6 @@ async function generateBannerSummaryLocal() {
     waterText = waterText.replace(/\btoday\b/g, 'this afternoon');
   }
 
-  // The one derivation of the verdict, shared by the icon below, _bannerFacts
-  // further down, and the answer line above the rails.
   // Freshness ceiling for the community water reading. Two days: the scraper posts
   // most days, so one missed day is normal and two is the point where 'the water is
   // 17.8' stops being a statement about this morning.
