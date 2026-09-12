@@ -141,8 +141,27 @@ The working folder is a **Google-Drive-synced copy, not a git repo**. Never
 `git init` here — Drive corrupts `.git`.
 
 Work from a clone outside Drive. **The repo is the source of truth, not Drive.**
-Start every change from `git fetch && git reset --hard origin/main`, then apply
-your edits onto `HEAD`. **Never copy a whole file from Drive into the clone** —
+Start every change from `HEAD`, then apply your edits onto it.
+
+**The clone is shared, so `reset --hard` is not a safe opener.** Sessions run
+concurrently in `C:/Users/stica/repos/Manly-Swim`, and `reset --hard` is aimed at
+whatever the other one has uncommitted. Check before you reset, every time:
+
+```bash
+git fetch origin
+git status --porcelain --untracked-files=no   # MUST print nothing
+git reset --hard origin/main                  # only if it did
+```
+
+If it is dirty and the changes are not yours, do **not** reset — ask via
+`SendMessage` who owns them, then wait. `git worktree list` does **not** cover
+this: it shows spawned task sessions, not a peer editing the main clone directly.
+On 12 Sep 2026 two sessions were rewriting the same safety copy minutes apart, and
+that `git status` line was the only thing between the second and the loss of the
+first's work. When you are the one holding uncommitted edits, commit them before
+you hand the clone over or go idle — do not leave them in the working tree.
+
+**Never copy a whole file from Drive into the clone** —
 the two copies drift both ways and a wholesale copy destroys work:
 
 - Drive can be **behind** the repo. `sw.js` habitually is: a wholesale copy has
