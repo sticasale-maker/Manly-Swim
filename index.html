@@ -2444,7 +2444,7 @@
   .bayc-src { font-family:'Inter',sans-serif; font-size:10px; line-height:1.55; color:var(--dim); margin-top:10px; }
   .bayc-src a { color:var(--ocean); text-decoration:none; font-weight:600; }
 
-  /* ── Offshore chlorophyll (IMOS OceanCurrent) ──────────────────────────────
+  /* ── Offshore chlorophyll (NASA GIBS) ────────────────────────────────────
      A CONTEXT card, not a reading. It is deliberately built so it cannot be
      mistaken for a bay measurement - see the long note on the card's IIFE for
      why the nearshore pixels are worthless and why there is no pin on the bay. */
@@ -2500,26 +2500,38 @@
      two different divisors. */
   .chl-figure { display:block; position:relative; width:100%; aspect-ratio:390/300;
     overflow:hidden; border-radius:10px; background:rgba(74,143,173,0.10); }
-  .chl-map { position:absolute; display:block;
-    width:400%;                       /* 195 source px across a 390px window */
-    left:-80.513%;                    /* -157 / 195 of the box width  */
-    top:-168.667%;                    /* -253 / 150 of the box height */
+  /* FULL BLEED since the GIBS switch (12 Sep 2026). The old rule magnified the
+     source 4x and shoved it up and left, because IMOS served one fixed continental
+     GIF and the only way to see Sydney was to crop a window out of it. GIBS renders
+     to whatever bbox is asked for, so the image IS the window: CHL_BBOX and the
+     figure's 390/300 aspect are chosen to agree (0.45 deg of longitude by 0.29 of
+     latitude is ~59 m per pixel either way at this latitude, so the pixels come out
+     square). Nothing to offset. */
+  .chl-map { position:absolute; inset:0; display:block; width:100%; height:100%;
+    object-fit:cover;
     image-rendering:auto;             /* smooth, not nearest - it is a measurement grid, not art */
   }
-  /* The colour bar lives in the top-left of the source image, well outside the
-     window above, so it is re-shown here as a second view onto the SAME file -
-     one download, and the key cannot drift from the map it explains. */
-  /* Bottom-right: at this magnification the top-left is the coast and the
-     source's own "Sydney" label, and the key was sitting on top of both. The
-     bottom-right corner of this window is open ocean. */
-  .chl-key { position:absolute; right:7px; bottom:7px; width:17%; min-width:52px;
-    aspect-ratio:72/278; overflow:hidden; border-radius:5px;
-    box-shadow:0 0 0 2px rgba(255,255,255,0.75); }
-  .chl-key img { position:absolute; display:block;
-    width:1083.33%;                   /* 780 / 72  — source x 38-110, y 22-300 */
-    left:-52.778%;                    /* -38 / 72  */
-    top:-7.914%;                      /* -22 / 278 */
-  }
+  /* The key used to be a second view onto the same GIF, because IMOS baked its
+     colour bar into the image. A GIBS tile is pure data with no key in it, so the
+     scale is drawn here instead, from the stops GIBS publishes for this palette
+     (colormaps/v1.3/MODIS_Chlorophyll.xml). Built as a gradient rather than their
+     legend SVG: that file is 624 KB, which is absurd next to a 7 KB scene. */
+  .chl-key { position:absolute; right:7px; bottom:7px;
+    display:flex; align-items:stretch; gap:4px;
+    padding:5px 6px; border-radius:6px;
+    background:rgba(6,28,38,0.62); backdrop-filter:blur(2px);
+    box-shadow:0 0 0 1px rgba(255,255,255,0.30); }
+  .chl-key-bar { width:11px; border-radius:2px; align-self:stretch; min-height:74px;
+    /* Read off the GIBS colormap at decade stops, low at the BOTTOM. */
+    background:linear-gradient(to top,
+      rgb(147,0,108) 0%, rgb(36,0,219) 14%, rgb(0,149,255) 29%,
+      rgb(0,255,127) 43%, rgb(200,255,0) 57%, rgb(255,135,0) 71%,
+      rgb(225,0,0) 86%, rgb(110,0,0) 100%); }
+  .chl-key-ticks { display:flex; flex-direction:column; justify-content:space-between;
+    font-family:'Inter',sans-serif; font-size:8px; line-height:1;
+    color:rgba(255,255,255,0.92); letter-spacing:0.2px; }
+  .chl-key-ticks b { font-weight:600; }
+  .chl-key-unit { font-size:7px; color:rgba(255,255,255,0.70); }
   /* Age fade. A scene is a satellite pass, not a forecast - it can be days old
      when it is cloudy, and it must LOOK its age rather than sit there bright.
      Absent is grey, never green: .is-none is the same treatment as .bbf-day-none. */
@@ -4137,21 +4149,35 @@
     </div>
 
 
-    <!-- Offshore chlorophyll-a — IMOS OceanCurrent, VIIRS. Collapsed by default;
-         nothing is fetched until it is opened. See the chlorophyll IIFE. -->
+    <!-- Offshore chlorophyll-a — NASA GIBS. Collapsed by default; nothing is fetched
+         until it is opened. See the chlorophyll IIFE.
+         Moved off IMOS OceanCurrent on 12 Sep 2026. IMOS served a pre-rendered GIF
+         per day and had produced nothing for ten days; measured over a fortnight it
+         carried data on 4 days of 14 against GIBS's 12. GIBS also needs no
+         credentials, which is why this is a browser fetch and not the Worker's /chl
+         route — that one wanted a Copernicus client, and its Sentinel-3 sensor was
+         itself dark on 8 of those 14 days. The cost is resolution: 1 km delivered
+         against IMOS's ~775 m. Worth it for a card whose failure mode was emptiness,
+         and the bay is a single pixel at either scale — which is why the card says
+         open-ocean and not the bay. -->
     <div class="chl-wrap" id="chlCard">
       <button type="button" class="chl-head" id="chlToggle" aria-expanded="false" aria-controls="chlBody">
         <span class="chl-titlewrap">
-          <span class="chl-title">Offshore chlorophyll &middot; IMOS</span>
+          <span class="chl-title">Offshore chlorophyll &middot; NASA</span>
           <span class="chl-when" id="chlWhen">Open-ocean water colour, not the bay &middot; tap to open</span>
         </span>
         <span class="chl-chevron" aria-hidden="true">&#9662;</span>
       </button>
       <div class="chl-body" id="chlBody">
-        <a class="chl-figure" id="chlFigure" href="https://oceancurrent.aodn.org.au/product.php?product=oceancolour.CHL&amp;region=SNSW"
-           target="_blank" rel="noopener" title="Open the interactive map at IMOS OceanCurrent">
+        <a class="chl-figure" id="chlFigure" href="https://worldview.earthdata.nasa.gov/?v=151.0,-34.1,151.7,-33.5&amp;l=OCI_PACE_Chlorophyll_a,Coastlines_15m"
+           target="_blank" rel="noopener" title="Open this scene in NASA Worldview">
           <img class="chl-map" id="chlImg" alt="Satellite chlorophyll-a off Sydney" hidden>
-          <span class="chl-key" id="chlKey" aria-hidden="true" hidden><img id="chlKeyImg" alt=""></span>
+          <span class="chl-key" id="chlKey" aria-hidden="true" hidden>
+            <span class="chl-key-ticks">
+              <b>10</b><span>1</span><span>0.1</span><b>0.01</b><span class="chl-key-unit">mg/m&sup3;</span>
+            </span>
+            <span class="chl-key-bar"></span>
+          </span>
         </a>
         <div class="chl-msg" id="chlMsg">Looking for the latest satellite pass&hellip;</div>
         <div class="chl-meta">
@@ -4204,7 +4230,7 @@
               few days to a couple of weeks, depending on how quickly ocean currents flush
               the bay and how fast local nutrients are depleted.</li>
           </ul>
-          <p class="chl-note-src">VIIRS via IMOS OceanCurrent.</p>
+          <p class="chl-note-src">VIIRS NOAA-21, PACE OCI and Sentinel-3 OLCI via NASA GIBS. The instrument used for the scene on screen is named above it.</p>
         </div>
       </div>
     </div>
@@ -4374,22 +4400,25 @@
      right level of precision for what this can honestly support. CLAUDE.md
      section 2 is the rule this is obeying.
 
-     FINDING THE NEWEST SCENE without a proxy. oceancurrent.aodn.org.au sends no
-     CORS headers, so nothing here can fetch(), read the directory listing, or
-     put the image on a canvas. But <img> loading is not CORS-gated, so the
-     newest scene is found by TRYING dated URLs newest-first and letting onload
-     decide - the first that loads is the answer, and its filename is the date.
-     That also guarantees the picture and the date label can never disagree,
-     which they could if the image came from latest.gif and the date came from
-     somewhere else.
+     FINDING THE NEWEST SCENE. GIBS sends Access-Control-Allow-Origin: *, so unlike
+     the old IMOS feed this CAN be fetched and put on a canvas - which is the whole
+     reason the source changed shape. It matters because GIBS answers 200 with a
+     fully transparent PNG when it has nothing, so an <img> onload proves only that
+     a file arrived, not that a scene did. Dated requests are walked newest-first and
+     each is decoded and measured; the first with real coverage is the answer, and
+     the date and sensor come from the request that produced it. The picture and its
+     label therefore cannot disagree.
 
-     Filenames are SNSW_chl/YYYYMMDDHH.gif in UTC, at 04Z and 05Z, one or two a
-     day. Cloud means gaps: three or four days in a month typically have none,
-     so the walk-back goes ten days before giving up.
+     Requests are GetMap per layer per UTC date. Cloud means gaps, and they are
+     bigger than they look: over the fortnight to 12 Sep 2026 this bbox had usable
+     data on 12 days of 14 across VIIRS and PACE together, but on only 6 from
+     Sentinel-3 and 4 from the IMOS feed this replaced. Hence both a sensor chain
+     and a three-week walk-back.
 
-     NOTHING IS FETCHED UNTIL THE CARD IS OPENED. The image is ~240KB, which is
-     not worth spending on a card nobody has asked to see - same contract as the
-     rain radar above it.
+     NOTHING IS FETCHED UNTIL THE CARD IS OPENED - same contract as the rain radar
+     above it. A GIBS tile is ~7KB rather than the ~240KB IMOS GIF, so the cost of
+     the walk is now the round trips rather than the bytes, which is what the
+     SEARCH_MS budget bounds.
 ========================================================================== -->
 <script>
 (function () {
@@ -4398,14 +4427,56 @@
   var fig  = document.getElementById('chlFigure');
   var img  = document.getElementById('chlImg');
   var key  = document.getElementById('chlKey');
-  var keyI = document.getElementById('chlKeyImg');
+  // (chlKeyImg is gone: the key was a second crop of the IMOS GIF, and a GIBS tile has
+  //  no colour bar in it. The scale is drawn in CSS from the published palette now.)
   var msg  = document.getElementById('chlMsg');
   var when = document.getElementById('chlWhen');
   var scen = document.getElementById('chlScene');
   var aged = document.getElementById('chlAge');
   if (!head || !body || !img) return;
 
-  var BASE = 'https://oceancurrent.aodn.org.au/SNSW_chl/';
+  // NASA GIBS WMS. One GetMap per (layer, date), rendered straight to our own bbox —
+  // no credentials, CORS open, and nothing to crop.
+  var GIBS = 'https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi';
+  // WMS 1.3.0 with EPSG:4326 takes BBOX in LAT,LON order. Same box as CHL_BBOX in the
+  // Worker's /chl route, and 700x540 over it lands ~59 m per pixel each way at this
+  // latitude, so the pixels are square and the figure's 390/300 aspect fits.
+  var BBOX = '-33.95,151.1,-33.66,151.55';
+  var PX_W = 700, PX_H = 540;
+
+  // SENSOR CHAIN, in preference order. Measured over the 14 days to 12 Sep 2026 on this
+  // bbox: VIIRS NOAA-21 and PACE OCI each carried data on 12 days, Sentinel-3A on 6,
+  // IMOS on 4. Within a day VIIRS fills the most of the frame (53-58% against PACE's
+  // 36-46%), so it leads and PACE takes over when VIIRS is dark; Sentinel-3 is a long
+  // stop rather than a real contributor. The sensor is NAMED in the caption, because a
+  // card that silently swaps instrument cannot be compared against what you saw
+  // yesterday.
+  var LAYERS = [
+    { id: 'VIIRS_NOAA21_Chlorophyll_a', name: 'VIIRS NOAA-21' },
+    { id: 'OCI_PACE_Chlorophyll_a',     name: 'PACE OCI' },
+    { id: 'S3A_OLCI_Chlorophyll_a',     name: 'Sentinel-3A' },
+    { id: 'S3B_OLCI_Chlorophyll_a',     name: 'Sentinel-3B' }
+  ];
+
+  // A GIBS tile always returns 200 even with nothing in it — an empty frame is a fully
+  // transparent PNG, 1546 bytes. So "did we get a scene" has to be answered from the
+  // PIXELS, not the status. Measured on real tiles: empty frames come back at exactly
+  // 0.00% opaque, populated ones at 14.7-57.8%. 5% sits in the gap with room either
+  // side. Fetched as a blob and decoded rather than assigned to an <img>, because
+  // reading pixels off a cross-origin image taints the canvas; the blob is same-origin
+  // by the time it is drawn.
+  var MIN_COVER = 5;
+  // An empty frame is always this size, so the decode can be skipped outright. Purely a
+  // shortcut - the pixel test below is still what decides, since a tile can be larger
+  // than this and still be a scattering of noise.
+  var EMPTY_BYTES = 2500;
+  // Wall-clock backstop, deliberately generous. It must NOT be what ends the search in
+  // normal use: a date's layers are requested together (see tryFrom), so a round is one
+  // round trip and the full three-week walk fits inside this. An earlier 12s budget with
+  // sequential probing quietly capped the walk at about two days, which made
+  // LOOKBACK_DAYS a fiction - the card would claim a three-week hunt and give up after
+  // Tuesday.
+  var SEARCH_MS = 30000;
   // HOW FAR BACK TO HUNT FOR A SCENE. 10 was too tight: this feed goes dark for days
   // at a time under cloud, and on 12 Sep 2026 its newest scene was 2 Sep — TEN days
   // back, so the window reached 3 Sep and missed it by one, and the card showed
@@ -4422,25 +4493,75 @@
 
   function two(n) { return (n < 10 ? '0' : '') + n; }
 
-  // Newest first: today 05Z, today 04Z, yesterday 05Z, ... Filenames are UTC.
+  // Newest first, and within a day the best-filled sensor first. Dates are UTC because
+  // that is how GIBS indexes them; for these afternoon orbits the Sydney overpass is
+  // ~13:30 local, which is ~03:30 UTC the SAME day, so the UTC date and the date a
+  // swimmer would call it are the same one. The 03:30 stamp is what the age is measured
+  // from, rather than midnight, so "2 days old" means two days of water.
   function candidates() {
     var out = [], now = new Date();
     for (var d = 0; d < LOOKBACK_DAYS; d++) {
       var t = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - d));
       var y = t.getUTCFullYear(), m = t.getUTCMonth(), day = t.getUTCDate();
-      var stem = y + two(m + 1) + two(day);
-      out.push({ url: BASE + stem + '05.gif', at: Date.UTC(y, m, day, 5) });
-      out.push({ url: BASE + stem + '04.gif', at: Date.UTC(y, m, day, 4) });
+      var iso = y + '-' + two(m + 1) + '-' + two(day);
+      out.push({
+        at: Date.UTC(y, m, day, 3, 30),
+        tries: LAYERS.map(function (L) {
+          return {
+            sensor: L.name,
+            url: GIBS + '?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=' + L.id +
+                 '&CRS=EPSG:4326&BBOX=' + BBOX + '&WIDTH=' + PX_W + '&HEIGHT=' + PX_H +
+                 '&FORMAT=image/png&TRANSPARENT=TRUE&TIME=' + iso
+          };
+        })
+      });
     }
     return out;
   }
 
-  function tryFrom(list, i) {
-    if (i >= list.length) return fail();
-    var probe = new Image();
-    probe.onload  = function () { show(list[i]); };
-    probe.onerror = function () { tryFrom(list, i + 1); };
-    probe.src = list[i].url;
+  // How much of the frame actually carries data. Resolves to the blob when the scene is
+  // worth showing, null when it is an empty or nearly-empty frame, and null on any
+  // failure — a dead network is just another miss, and the walk continues.
+  function scan(url) {
+    return fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.blob() : null; })
+      .then(function (b) {
+        if (!b || b.size <= EMPTY_BYTES || !window.createImageBitmap) return null;
+        return createImageBitmap(b).then(function (bmp) {
+          var c = document.createElement('canvas');
+          c.width = bmp.width; c.height = bmp.height;
+          var cx = c.getContext('2d');
+          cx.drawImage(bmp, 0, 0);
+          var px = cx.getImageData(0, 0, bmp.width, bmp.height).data;
+          var op = 0, n = 0;
+          for (var i = 3; i < px.length; i += 16) { n++; if (px[i] > 16) op++; }   // every 4th pixel
+          if (bmp.close) bmp.close();
+          return (100 * op / n) >= MIN_COVER ? b : null;
+        });
+      })
+      .catch(function () { return null; });
+  }
+
+  // One DATE per round, with that date's sensors requested together. Sequential probing
+  // spent a round trip per sensor, and since the current day is almost always still
+  // unprocessed that meant four wasted trips before the walk even reached yesterday —
+  // 6.6s to render a scene that was one day old. Asking together costs the same bytes
+  // and collapses each date to a single round trip.
+  //
+  // Preference is resolved AFTER the round, by taking the first hit in LAYERS order
+  // rather than whichever answered quickest — otherwise the sensor on screen would be
+  // decided by network luck, and two mornings would not be comparable.
+  function tryFrom(days, i, deadline) {
+    if (i >= days.length || Date.now() > deadline) return fail();
+    var day = days[i];
+    Promise.all(day.tries.map(function (t) {
+      return scan(t.url).then(function (b) { return b ? { blob: b, sensor: t.sensor } : null; });
+    })).then(function (rs) {
+      var hit = null;
+      for (var k = 0; k < rs.length && !hit; k++) if (rs[k]) hit = rs[k];
+      if (hit) show({ at: day.at, sensor: hit.sensor }, hit.blob);
+      else tryFrom(days, i + 1, deadline);
+    });
   }
 
   function fail() {
@@ -4454,19 +4575,20 @@
                       ' days — cloud over this stretch of coast is the usual reason.';
   }
 
-  function show(hit) {
+  function show(hit, blob) {
     var days = Math.floor((Date.now() - hit.at) / 86400000);
-    // Same URL for both views, so the browser fetches once and the key can
-    // never end up explaining a different scene from the map beside it.
-    img.src = hit.url;
-    keyI.src = hit.url;
+    // The blob is already in hand from the coverage scan, so this paints what was
+    // measured rather than fetching the tile a second time and hoping it matches.
+    img.src = URL.createObjectURL(blob);
     img.hidden = false;
     key.hidden = false;
     msg.hidden = true;
 
     var dt = new Date(hit.at);
     var when_ = dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', timeZone: 'Australia/Sydney' });
-    scen.textContent = 'Satellite pass ' + when_;
+    // The instrument is named: the chain falls through sensors as cloud allows, and two
+    // scenes from different ones are not quite the same measurement.
+    scen.textContent = 'Satellite pass ' + when_ + ' · ' + hit.sensor;
 
     var label = days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days old';
     aged.textContent = label;
@@ -4481,7 +4603,7 @@
   head.addEventListener('click', function () {
     var open = body.classList.toggle('chl-open');
     head.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open && !started) { started = true; tryFrom(candidates(), 0); }
+    if (open && !started) { started = true; tryFrom(candidates(), 0, Date.now() + SEARCH_MS); }
   });
 })();
 </script>
@@ -19298,7 +19420,7 @@ if ('serviceWorker' in navigator) {
     // card on the page that could not be switched off: apply() only ever hides what
     // it finds in this list, so an unlisted section is permanently on. Not a crash,
     // but every other card offers the choice. complete:1 to match its neighbours.
-    { key:'chlorophyll', label:"Offshore chlorophyll (IMOS)", sel:'#chlCard', complete:1, custom:1 },
+    { key:'chlorophyll', label:"Offshore chlorophyll (NASA)", sel:'#chlCard', complete:1, custom:1 },
     // Listed from the start, for the reason directly above.
     { key:'baycalendar', label:"In the bay (species calendar)", sel:'#bayCalCard', complete:1, custom:1 },
     // 'daywindow' (Best swim window day chart) removed 2026-08-14 along with its
