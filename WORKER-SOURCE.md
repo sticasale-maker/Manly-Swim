@@ -33,6 +33,12 @@ lines), the bluebottle prompt rules and their two validator guards, the Washy
 mitigation guard, the `/tune` bounds for `offshoreFloorKmh`/`offshoreMaxFrac`, and
 the point-break `lineCheck` work. A deploy that day would have taken all of it out.
 
+`/chl` is LIVE as of 12 Sep 2026 — the swim app's chlorophyll card calls it for its
+300 m Sentinel-3 scenes, falling back to NASA GIBS at 1 km when Sentinel-3 is dark.
+It needs the `CDSE_CLIENT_ID` and `CDSE_CLIENT_SECRET` secrets; without them it
+answers 502 and the card silently drops to GIBS. Earlier notes calling it unused are
+out of date.
+
 ## Refreshing the source after a dashboard edit
 
 ```bash
