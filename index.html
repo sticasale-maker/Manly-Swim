@@ -14874,6 +14874,15 @@ const TUNE_LIVE_KEYS = [
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
   'pointSens', 'pointPeriodLo', 'pointWashyMult',
 ];
+// The New NS cell a sheet-backed knob must be typed into, read off its own hint
+// ("New NS AQ2 — COPY here") so there is no second list to fall out of step.
+// null for a LOCAL knob — it has no cell.
+function tuneSheetCell(key) {
+  if (TUNE_LIVE_KEYS.indexOf(key) >= 0) return null;
+  const p = TUNE_PARAMS.find(q => q.key === key);
+  const m = p && /New NS\s+([A-Z]{1,3}\d+)/.exec(p.hint || '');
+  return m ? 'New NS ' + m[1] : 'its sheet cell';
+}
 const TUNE_LIVE_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/tune';
 const TUNE_LIVE_CACHE = 'swim_tune_live_v1';   // last-known live values, so a cold/offline boot still scores right
 
@@ -15046,7 +15055,7 @@ function buildTunePanel() {
       <div class="tw-knob">
         <div class="tw-knob-top">
           <span class="tw-knob-name">${k.name}${k.tag ? `<span class="tw-knob-tag">${k.tag}</span>` : ''}</span>
-          <span class="tw-knob-val"><b data-tune-val="${k.key}">${fmt(cur)}</b><span class="tw-flag" data-tune-flag="${k.key}" style="color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? 'SET' : (k.prov === 'local' ? 'live' : 'sheet')}</span></span>
+          <span class="tw-knob-val"><b data-tune-val="${k.key}">${fmt(cur)}</b><span class="tw-flag" data-tune-flag="${k.key}" style="color:${overridden ? 'var(--ocean)' : 'var(--dim)'};">${overridden ? (TUNE_LIVE_KEYS.indexOf(k.key) >= 0 ? 'SET' : 'PREVIEW') : (k.prov === 'local' ? 'live' : 'sheet')}</span></span>
         </div>
         <div class="tw-knob-desc">${k.desc} <span class="tw-cell">${k.cell}</span> <span class="tw-prov ${k.prov}">${k.provTxt}</span></div>
         <input type="range" data-tune-input="${k.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${sliderVal}">
@@ -15131,7 +15140,7 @@ function buildTunePanel() {
                 <button id="tune-reset">Reset</button>
               </div>
               <button id="tune-push" style="background:#a95e1e;color:#fff3e8;border-color:#a95e1e;width:100%;margin-top:6px;">Push LOCAL knobs to live</button>
-              <div class="tw-hint" id="tune-push-hint">Sends the six <span class="tw-prov local">LOCAL</span> knobs to every swimmer (asks for the admin passphrase). Sheet-backed knobs are <b>not</b> included — those still go through their cell.</div>
+              <div class="tw-hint" id="tune-push-hint">Sends the ${TUNE_LIVE_KEYS.length} <span class="tw-prov local">LOCAL</span> knobs to every swimmer (asks for the admin passphrase). Sheet-backed knobs are <b>not</b> included — those still go through their cell.</div>
               <button id="tune-reload">Reload from sheet</button>
               <div class="tw-hint">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches.</div>
               <div id="tune-msg"></div>
@@ -15164,7 +15173,17 @@ function buildTunePanel() {
   // Seed the inputs card + rails from the current slot right away.
   try { if (_matrix && _matrix.length) updateTuneInputs(_matrix[_sliderIdx]); } catch (e) {}
 
-  const msg = (t) => { const m = panel.querySelector('#tune-msg'); if (m) { m.textContent = t; setTimeout(()=>{ if(m.textContent===t) m.textContent=''; }, 4000); } };
+  // ms = 0 keeps the message up until the next one replaces it — used for anything
+  // telling you a value did NOT go where you might think it went.
+  const msg = (t, ms) => { const m = panel.querySelector('#tune-msg'); if (m) { m.textContent = t; const d = (ms == null) ? 4000 : ms; if (d > 0) setTimeout(()=>{ if(m.textContent===t) m.textContent=''; }, d); } };
+  // Sheet-backed knobs moved on this device. The slider only previews them here —
+  // Push does not send them and nothing else saves them — so every message that
+  // could read as "saved" names these and the cell each one has to be typed into.
+  const sheetPending = () => {
+    const ov = loadTuneOverrides();
+    return TUNE_PARAMS.filter(p => TUNE_LIVE_KEYS.indexOf(p.key) < 0 && ov[p.key] != null)
+      .map(p => p.label.replace(/\s*\(.*\)\s*$/, '') + ' = ' + fmt(ov[p.key]) + ' → type into ' + tuneSheetCell(p.key));
+  };
 
   panel.querySelector('#tune-min').addEventListener('click', () => {
     const b = panel.querySelector('#tune-body');
@@ -15181,7 +15200,7 @@ function buildTunePanel() {
     // cell to fall back to, so calling it "sheet" would point you at a cell that
     // does not exist. TUNE_LIVE_KEYS is the same whitelist the push button sends.
     const rest = TUNE_LIVE_KEYS.indexOf(key) >= 0 ? 'live' : 'sheet';
-    if (flagEl) { flagEl.textContent = overridden ? 'SET' : rest; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
+    if (flagEl) { flagEl.textContent = overridden ? (rest === 'live' ? 'SET' : 'PREVIEW') : rest; flagEl.style.color = overridden ? 'var(--ocean)' : 'var(--dim)'; }
   };
   const refreshAll = () => TUNE_PARAMS.forEach(p => {
     refreshRow(p.key);
@@ -15211,6 +15230,10 @@ function buildTunePanel() {
       const v = parseFloat(input.value);
       const ov = loadTuneOverrides(); ov[p.key] = v; saveTuneOverrides(ov);
       tuneSet(p.key, v); applyAndRender(); refreshRow(p.key);
+      if (TUNE_LIVE_KEYS.indexOf(p.key) < 0) {
+        msg(p.label.replace(/\s*\(.*\)\s*$/, '') + ' = ' + fmt(v) + ' is a PREVIEW on this device only — not saved for anyone. '
+          + 'To apply it, type ' + fmt(v) + ' into ' + tuneSheetCell(p.key) + '. Push to live does not send it.', 0);
+      }
     });
     if (p.nullable) {
       const clr = panel.querySelector(`[data-tune-clear="${p.key}"]`);
@@ -15256,7 +15279,11 @@ function buildTunePanel() {
     const values = {};
     TUNE_LIVE_KEYS.forEach(k => { const v = tuneGet(k); if (v != null && isFinite(v)) values[k] = v; });
     const summary = TUNE_LIVE_KEYS.map(k => k + ' = ' + values[k]).join('\n');
-    if (!confirm('Push these to EVERY swimmer?\n\n' + summary + '\n\nThey take effect on each person’s next app open.')) return;
+    const pending = sheetPending();
+    const notSent = pending.length
+      ? '\n\nNOT SENT — these are set by the sheet, not by Push. Nothing is saved until you type them into the cell:\n' + pending.join('\n')
+      : '';
+    if (!confirm('Push these to EVERY swimmer?\n\n' + summary + '\n\nThey take effect on each person’s next app open.' + notSent)) return;
     let pass = '';
     try { pass = sessionStorage.getItem('swim_tune_pass') || ''; } catch(e) {}
     if (!pass) { pass = (prompt('Admin passphrase:') || '').trim(); if (!pass) return; }
@@ -15274,7 +15301,12 @@ function buildTunePanel() {
       // Mirror into our own cache so this device agrees with what everyone else
       // will get, and so a Reset here doesn't silently fall back to coded values.
       try { localStorage.setItem(TUNE_LIVE_CACHE, JSON.stringify({ values, savedAt: new Date().toISOString() })); } catch(e) {}
-      msg('Pushed to live ✓ — everyone gets these on their next open.');
+      if (pending.length) {
+        msg('Pushed the ' + TUNE_LIVE_KEYS.length + ' LOCAL knobs ✓ — but ' + pending.length + ' sheet change' + (pending.length > 1 ? 's were' : ' was')
+          + ' NOT saved: ' + pending.join('; ') + '.', 0);
+      } else {
+        msg('Pushed to live ✓ — everyone gets these on their next open.');
+      }
     } catch (e) { msg('Push failed (network) — values NOT live.'); }
   });
 
