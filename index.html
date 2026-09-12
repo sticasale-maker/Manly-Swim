@@ -2511,14 +2511,15 @@
     object-fit:cover;
     image-rendering:auto;             /* smooth, not nearest - it is a measurement grid, not art */
   }
-  /* COASTLINE, over the identical bbox so it lands where the data does — checked
-     rather than assumed: its pixels fall between 30% and 60% across the frame, which
-     brackets Cabbage Tree Bay's computed 42.7%. GIBS draws it near-black (0,17,17),
-     invisible against the greens and cyans that dominate a chlorophyll scene, so it is
-     forced to white and given a dark halo to survive the yellows and oranges too. */
-  .chl-coast { position:absolute; inset:0; width:100%; height:100%; pointer-events:none;
-    filter:brightness(0) invert(1) drop-shadow(0 0 1.2px rgba(0,20,30,0.95));
-    opacity:0.92; }
+  /* LAND, over the identical bbox so it registers with the data exactly. Same sand as
+     the swell map's coastline, so the two cards read as the same place.
+     The first attempt used GIBS Coastlines_15m, a 1:15-million-scale line: at a 42 km
+     box it cannot resolve Sydney Harbour or the heads, so it cut straight across open
+     water and made correct harbour readings look like chlorophyll several km inland.
+     OSM_Land_Water_Map resolves the harbour, and is recoloured in canvas rather than by
+     filter because it arrives as a flat two-tone raster (land 75,75,75 on water
+     128,128,128) and CSS cannot pick one tone out of it. */
+  .chl-land { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   /* WHERE THE SWIMMER IS, from the bbox rather than by eye: the bay sits at
      (151.2922 - 151.1) / 0.45 across and (-33.66 + 33.7988) / 0.29 down. Hard-coded as
      percentages because CHL_BBOX is fixed; if that box ever moves, these move with it. */
@@ -4192,13 +4193,16 @@
       <div class="chl-body" id="chlBody">
         <a class="chl-figure" id="chlFigure" href="https://worldview.earthdata.nasa.gov/?v=151.0,-34.1,151.7,-33.5&amp;l=OCI_PACE_Chlorophyll_a,Coastlines_15m"
            target="_blank" rel="noopener" title="Open this scene in NASA Worldview">
+          <!-- LAND FIRST, so it paints under the data — both are absolutely positioned,
+               so this is DOM order doing the layering.
+               A GIBS data tile has no land in it — land is masked out, not drawn — which
+               left the card as a field of colour with nothing to orient by (Marco, 12 Sep
+               2026: "the coast has no features"). This is the land as a SILHOUETTE rather
+               than a line: a filled shape reads as a map at a glance where a stroke does
+               not, and it also explains the empty areas, because where the sand shows is
+               exactly where no ocean reading can exist. -->
+          <img class="chl-land" id="chlLand" alt="" aria-hidden="true" hidden>
           <img class="chl-map" id="chlImg" alt="Satellite chlorophyll-a off Sydney" hidden>
-          <!-- A GIBS data tile has no land in it — land is simply masked out, which left
-               the card as a field of colour with nothing to orient by (Marco, 12 Sep
-               2026: "the coast has no features"). The coastline is its own GIBS layer,
-               requested over the identical bbox so registration is exact rather than
-               eyeballed, and the marker is Cabbage Tree Bay computed from the bbox. -->
-          <img class="chl-coast" id="chlCoast" alt="" aria-hidden="true" hidden>
           <span class="chl-here" id="chlHere" aria-hidden="true" hidden></span>
           <span class="chl-here-lbl" id="chlHereLbl" aria-hidden="true" hidden>Manly</span>
           <span class="chl-key" id="chlKey" aria-hidden="true" hidden>
@@ -4456,7 +4460,7 @@
   var fig  = document.getElementById('chlFigure');
   var img  = document.getElementById('chlImg');
   var key  = document.getElementById('chlKey');
-  var coast = document.getElementById('chlCoast');
+  var land  = document.getElementById('chlLand');
   var here  = document.getElementById('chlHere');
   var hereL = document.getElementById('chlHereLbl');
   // (chlKeyImg is gone: the key was a second crop of the IMOS GIF, and a GIBS tile has
@@ -4607,6 +4611,37 @@
                       ' days — cloud over this stretch of coast is the usual reason.';
   }
 
+  // Turn GIBS's two-tone land/water raster into a land silhouette: land becomes the sand
+  // the swell map uses, water becomes nothing at all so the data and the card's own
+  // background show through. Done in canvas because the source is flat colour — land is
+  // 75,75,75 and water 128,128,128, and no CSS filter can select one and drop the other.
+  // The midpoint threshold also sends antialiased coast pixels one way or the other,
+  // which is what keeps the shoreline crisp at this scale.
+  // Silent on failure: the land is orientation, not data, and a card that renders the
+  // scene without it is still honest.
+  function buildLand() {
+    fetch(GIBS + '?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=OSM_Land_Water_Map' +
+          '&CRS=EPSG:4326&BBOX=' + BBOX + '&WIDTH=' + PX_W + '&HEIGHT=' + PX_H +
+          '&FORMAT=image/png', { cache: 'default' })
+      .then(function (r) { return r.ok ? r.blob() : null; })
+      .then(function (b) { return b ? createImageBitmap(b) : null; })
+      .then(function (bmp) {
+        if (!bmp) return;
+        var c = document.createElement('canvas');
+        c.width = bmp.width; c.height = bmp.height;
+        var cx = c.getContext('2d');
+        cx.drawImage(bmp, 0, 0);
+        var im = cx.getImageData(0, 0, c.width, c.height), d = im.data;
+        for (var i = 0; i < d.length; i += 4) {
+          if (d[i] < 100) { d[i] = 221; d[i + 1] = 207; d[i + 2] = 174; d[i + 3] = 255; }
+          else { d[i + 3] = 0; }
+        }
+        cx.putImageData(im, 0, 0);
+        c.toBlob(function (out) { if (out) land.src = URL.createObjectURL(out); });
+      })
+      .catch(function () {});
+  }
+
   function show(hit, blob) {
     var days = Math.floor((Date.now() - hit.at) / 86400000);
     // The blob is already in hand from the coverage scan, so this paints what was
@@ -4615,16 +4650,12 @@
     img.hidden = false;
     key.hidden = false;
     msg.hidden = true;
-    // Coastline and marker go up WITH the scene, never before it: a coastline floating
-    // over an empty card would look like a map that had failed to draw rather than a
-    // card with nothing to show. No TIME on this request, so it is the same URL every
-    // day and the browser can keep it; assigned once per session.
-    if (!coast.getAttribute('src')) {
-      coast.src = GIBS + '?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=Coastlines_15m' +
-                  '&CRS=EPSG:4326&BBOX=' + BBOX + '&WIDTH=' + PX_W + '&HEIGHT=' + PX_H +
-                  '&FORMAT=image/png&TRANSPARENT=TRUE';
-    }
-    coast.hidden = false;
+    // Land and marker go up WITH the scene, never before it: a coastline floating over
+    // an empty card would look like a map that had failed to draw rather than a card
+    // with nothing to show. Built once per session — the request carries no TIME, so it
+    // is the same every day.
+    if (!land.getAttribute('src')) buildLand();
+    land.hidden = false;
     here.hidden = false;
     hereL.hidden = false;
 
