@@ -16511,6 +16511,15 @@ function summaryConflict(text, facts) {
   if (String(v.surge || '') === 'Washy' &&
       /\b(with a mate|with a buddy|with someone|bring a mate|stay close|only get in|only swim|if you'?re confident|if you are confident|experienced swimmers?|strong swimmers?)\b/.test(t))
     return 'offers a way to swim a washed-out bay';
+  // THE POINT LINE MUST BE THERE when this device computed one (13 Sep 2026). The
+  // Worker enforces it at generation, but a summary is cached per hour in Supabase for
+  // EVERY device, and one written for a stale build — whose lineCheck the Worker's
+  // whitelist nulled — reaches everyone else without it. Dash-insensitive, like the
+  // Worker. Rejecting falls back to the local baseline, which always carries the line.
+  if (facts.lineCheck) {
+    const dd = s => String(s).toLowerCase().replace(/[‐-―]/g, '-').replace(/\s+/g, ' ');
+    if (dd(t).indexOf(dd(facts.lineCheck)) < 0) return 'missing the point line: "' + facts.lineCheck + '"';
+  }
   // NO JUDGING WHETHER A SWIMMER CAN COPE (13 Sep 2026), on ANY day. "Drift is in play
   // but manageable" reached the Oracle on a good-tier Drifty morning because
   // "manageable" was only refused on dangerous days. Describing the water is the job;
