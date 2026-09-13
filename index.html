@@ -3413,8 +3413,126 @@
   }
   .verdict-bar:active .verdict-news { filter:brightness(1.25); }
 </style>
+<style>
+  /* ── BOTTOM TABS (Today · Bay · Community · More) — 13 Sep 2026 ─────────────
+     Every card carries data-tab in the markup; body.tabs-on + body[data-tab]
+     decide which set shows. The class is added by the inline script straight
+     after <body>, so the hiding is in force before the first card paints, and a
+     page whose script never runs degrades to the old single long scroll.
+     Off in ?tune=1 / ?backtest=1 / ?debug=1: the workbench wants the whole page. */
+  :root { --tabbar-h: 60px; }
+  body.tabs-on:not([data-tab="today"])     [data-tab="today"],
+  body.tabs-on:not([data-tab="bay"])       [data-tab="bay"],
+  body.tabs-on:not([data-tab="community"]) [data-tab="community"] { display: none !important; }
+  body.tabs-on .header-links,
+  body.tabs-on .mode-toggle-row,
+  body.tabs-on #shareAppBar { display: none !important; }
+  body.tabs-on .wrap { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 28px); }
+
+  /* Everything else pinned to the bottom edge moves up above the bar. */
+  body.tabs-on .thf-toast       { bottom: calc(26px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body.tabs-on #sw-update-toast { bottom: calc(22px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body.tabs-on #annWhatsNew     { bottom: calc(12px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body.tabs-on .a2hs-banner     { bottom: calc(12px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  body.more-open #annWhatsNew   { display: none !important; }
+
+  .tabbar { display: none; }
+  body.tabs-on .tabbar {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 590;
+    max-width: 600px; margin: 0 auto;
+    padding: 4px 6px env(safe-area-inset-bottom, 0px);
+    background: #0d2c37; border-top: 1px solid rgba(200,189,160,0.16);
+    box-shadow: 0 -8px 24px -12px rgba(0,0,0,0.5);
+  }
+  .tabbar-btn {
+    appearance: none; -webkit-appearance: none; border: 0; background: transparent;
+    height: calc(var(--tabbar-h) - 8px); position: relative; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; letter-spacing: .2px;
+    color: rgba(200,189,160,0.66); -webkit-tap-highlight-color: transparent; border-radius: 10px;
+  }
+  .tabbar-btn svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar-btn[aria-selected="true"] { color: var(--foam); }
+  .tabbar-btn[aria-selected="true"]::before { content: ""; position: absolute; top: -4px; width: 24px; height: 3px;
+    border-radius: 0 0 3px 3px; background: var(--ocean); }
+  .tabbar-btn:focus-visible { outline: 2px solid var(--ocean); outline-offset: -2px; }
+  .tabbar-dot { position: absolute; top: 5px; left: calc(50% + 8px); width: 9px; height: 9px; border-radius: 50%;
+    background: var(--red); box-shadow: 0 0 0 2px #0d2c37; }
+  .tabbar-dot.reply { background: #e8a33d; }
+
+  /* The call, carried onto Bay and Community. Reads _bannerFacts; never derives. */
+  #tabRibbon { display: none; }
+  body.tabs-on[data-tab="bay"] #tabRibbon,
+  body.tabs-on[data-tab="community"] #tabRibbon {
+    display: flex; flex-direction: column; gap: 2px; width: 100%; margin: 0 0 10px; padding: 8px 12px;
+    border: 1px solid rgba(200,189,160,0.16); border-radius: 12px; background: var(--sky);
+    color: var(--foam); font-family: 'Inter', sans-serif; text-align: left; cursor: pointer;
+  }
+  #tabRibbon .tr-top { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; }
+  #tabRibbon .tr-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #7d8f97; }
+  #tabRibbon.good .tr-dot      { background: var(--rail-green); }
+  #tabRibbon.caution .tr-dot   { background: var(--rail-yellow); }
+  #tabRibbon.dangerous         { background: #3a1d1c; border-color: rgba(176,57,47,0.6); }
+  #tabRibbon.dangerous .tr-dot { background: var(--rail-red); }
+  #tabRibbon .tr-when { margin-left: auto; font-size: 11px; font-weight: 500; color: rgba(200,189,160,0.75); white-space: nowrap; }
+  #tabRibbon .tr-check { font-size: 12px; line-height: 1.4; color: #ecd9c9; padding-left: 17px; }
+  #tabRibbon .tr-check:empty { display: none; }
+
+  /* Today's short window onto Community — the latest reports, one line each. */
+  .tab-water { display: none; }
+  body.tabs-on .tab-water { display: block; margin: 0 0 10px; }
+  .tab-water-head { display: flex; justify-content: space-between; align-items: baseline; margin: 0 4px 5px;
+    font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; font-size: 14px; color: rgba(200,189,160,0.8); }
+  .tab-water-head button { border: 0; background: none; color: var(--ocean); font-family: 'Inter', sans-serif;
+    font-size: 12px; font-weight: 600; letter-spacing: 0; cursor: pointer; padding: 2px 0; }
+  .tab-water-rows { border-radius: 12px; overflow: hidden; background: var(--sky); }
+  .tab-water-row { display: flex; align-items: baseline; gap: 10px; width: 100%; border: 0; background: none;
+    padding: 9px 12px; text-align: left; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 12.5px; color: var(--foam); }
+  .tab-water-row + .tab-water-row { border-top: 1px solid rgba(200,189,160,0.14); }
+  .tab-water-row b { flex: none; width: 76px; font-weight: 600; }
+  .tab-water-row span { flex: 1; min-width: 0; color: var(--foam); opacity: .85; }
+  .tab-empty { display: none; }
+  body.tabs-on[data-tab="community"] .tab-empty.show { display: block; margin: 6px 4px 12px; font-size: 12.5px;
+    color: rgba(200,189,160,0.8); font-family: 'Inter', sans-serif; }
+
+  /* More — a sheet from the bottom, above the bar. */
+  .more-scrim { position: fixed; inset: 0; z-index: 588; background: rgba(6,26,34,0.55); opacity: 0;
+    pointer-events: none; transition: opacity .2s; }
+  .more-sheet { position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+    z-index: 589; max-width: 600px; max-height: calc(100% - var(--tabbar-h) - 60px); margin: 0 auto;
+    overflow-y: auto; overscroll-behavior: contain; background: var(--card); color: var(--text);
+    border-radius: 20px 20px 0 0; padding: 6px 10px 14px; font-family: 'Inter', sans-serif;
+    transform: translateY(110%); visibility: hidden; transition: transform .26s cubic-bezier(.2,.8,.2,1), visibility 0s .26s; }
+  body.more-open .more-scrim { opacity: 1; pointer-events: auto; }
+  body.more-open .more-sheet { transform: none; visibility: visible; transition: transform .26s cubic-bezier(.2,.8,.2,1); }
+  @media (prefers-reduced-motion: reduce) { .more-scrim, .more-sheet, body.more-open .more-sheet { transition: none; } }
+  .more-grab { width: 38px; height: 4px; border-radius: 2px; background: rgba(17,53,65,0.25); margin: 4px auto 6px; }
+  .more-grp { font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; font-size: 14px; color: var(--dim); margin: 12px 8px 4px; }
+  .more-item { display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; align-items: center; width: 100%;
+    padding: 10px 8px; border: 0; border-radius: 10px; background: none; color: var(--text); text-align: left;
+    text-decoration: none; font-family: inherit; font-size: 14.5px; font-weight: 600; cursor: pointer; }
+  .more-item:active, .more-item:hover { background: rgba(17,53,65,0.07); }
+  .more-item small { display: block; margin-top: 1px; font-size: 12px; font-weight: 400; color: var(--dim); line-height: 1.3; }
+  .more-item svg { width: 21px; height: 21px; fill: none; stroke: var(--deep); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .more-item .chev { color: var(--dim); font-weight: 400; }
+  .more-mode { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px; font-size: 14.5px; font-weight: 600; }
+  .more-sheet .mode-toggle { flex: none; }
+  .more-sheet #feedbackCard { margin: 8px 0 0 !important; }
+</style>
 </head>
 <body>
+<script>
+  /* Tabs on before anything paints — see the BOTTOM TABS block in <head>. */
+  (function () {
+    try {
+      if (/[?&](tune|backtest|debug)=1/.test(location.search)) return;
+      document.body.classList.add('tabs-on');
+      document.body.setAttribute('data-tab', /[?&]board=1/.test(location.search) ? 'community' : 'today');
+    } catch (e) {}
+  })();
+</script>
 <!-- Video splash -->
 <div id="video-splash">
   <!-- src is deliberately NOT set here, and preload is none. With preload="auto"
@@ -3775,7 +3893,7 @@
          under the day/time header, inside the snapshot board — see below.) -->
 
     <!-- Metrics + time slider share one light-blue board -->
-    <div class="snapshot-board">
+    <div class="snapshot-board" data-tab="today">
 
     <!-- Metrics panel -->
     <div class="metrics-panel">
@@ -3907,7 +4025,7 @@
     </div><!-- /snapshot-board -->
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
-    <div class="quality-row-slim">
+    <div class="quality-row-slim" data-tab="today">
       <div class="quality-card sea-temp-card2">
         <div class="st-left">
           <div class="quality-card-label">Sea</div>
@@ -3934,7 +4052,7 @@
          community strips -- a doorway nobody reaches is not a doorway.
          Registered in SECTIONS below - an unlisted card is one nobody can
          switch off, which is how the chlorophyll card shipped. -->
-    <a class="wlh-card" id="wlhCard" href="species.html">
+    <a class="wlh-card" id="wlhCard" href="species.html" data-tab="bay">
       <img class="wlh-strip" src="images/wlh-strip.webp" alt="" width="1080" height="264"
            loading="lazy" decoding="async">
       <div class="wlh-body">
@@ -3961,7 +4079,7 @@
     </script>
 
     <!-- Merged Swell + Wind map — moved here (directly under Sea + Pollution). -->
-    <div class="chop-graph-wrap" id="swellGraphWrap">
+    <div class="chop-graph-wrap" id="swellGraphWrap" data-tab="bay">
       <div class="chop-graph-head">
         <div class="chop-graph-titlewrap">
           <span class="chop-graph-title">Swell + Wind</span>
@@ -3981,7 +4099,7 @@
     </div>
 
     <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
-    <div class="livecam-row" id="liveCamRow">
+    <div class="livecam-row" id="liveCamRow" data-tab="bay">
       <a class="livecam" href="https://manlylsc.com/surfline-camera/" target="_blank" rel="noopener">
         <img id="camSouthSteyne" data-cam="https://camstills.cdn-surfline.com/ap-southeast-2/au-manlysouthsteyne/latest_small.jpg" alt="Live cam — Manly South Steyne" loading="lazy">
         <span class="livecam-cap">South Steyne <span class="livecam-live">● LIVE</span></span>
@@ -4009,7 +4127,7 @@
 
 
     <!-- ── Community section ("Swimmers' Corner") — reports & hellos from swimmers ── -->
-    <div class="community-group">
+    <div class="community-group" data-tab="community">
       <div class="cg-head"><span class="cg-ic">👥</span><span class="cg-title">SWIMMERS&rsquo; CORNER</span><span class="cg-rule"></span></div>
 
     <!-- Underwater visibility strip — swimmer reports (Supabase), last 28h -->
@@ -4136,7 +4254,7 @@
 
     <!-- Rain radar — BOM tiles, past echo then forecast rain. Collapsed by
          default; nothing is fetched until it is opened. See the radar IIFE. -->
-    <div class="radar-wrap" id="radarCard">
+    <div class="radar-wrap" id="radarCard" data-tab="bay">
       <button type="button" class="radar-head" id="radarToggle" aria-expanded="false" aria-controls="radarBody">
         <span class="radar-titlewrap">
           <span class="radar-title">Rain radar + forecast &middot; BOM</span>
@@ -4201,7 +4319,7 @@
          rather than being replaced.
          The bay is a single pixel at any of these scales, which is why the card says
          open-ocean and not the bay, and why the viz note repeats it. -->
-    <div class="chl-wrap" id="chlCard">
+    <div class="chl-wrap" id="chlCard" data-tab="bay">
       <button type="button" class="chl-head" id="chlToggle" aria-expanded="false" aria-controls="chlBody">
         <span class="chl-titlewrap">
           <span class="chl-title">Offshore chlorophyll</span>
@@ -4307,7 +4425,7 @@
 
     <!-- In the bay — the month-by-month species calendar. Static; nothing is
          fetched. See the renderer below for where the numbers come from. -->
-    <div class="bayc-wrap" id="bayCalCard">
+    <div class="bayc-wrap" id="bayCalCard" data-tab="bay">
       <button type="button" class="bayc-head" id="baycToggle" aria-expanded="false" aria-controls="baycBody">
         <span class="bayc-titlewrap">
           <span class="bayc-title">In the bay &middot; <span id="baycMonth">&mdash;</span></span>
@@ -4759,7 +4877,7 @@
          Swiping either calls selectDay(), the app's existing single entry point, so
          the slider, the snapshot and BOTH cards move together — no second
          "current day", and the two headers can never disagree. -->
-    <div class="dw-card" id="dayWindowCard">
+    <div class="dw-card" id="dayWindowCard" data-tab="today">
       <div class="dw-head">
         <button type="button" class="dw-nav dw-prev" id="dwPrev" onclick="dayWindowStep(-1)"
                 aria-label="Previous day (back towards today)">&#8249;</button>
@@ -4777,7 +4895,7 @@
       <div class="dw-best" id="dayWindowBest" hidden></div>
     </div>
 
-    <div class="dw-card" id="dayLinesCard">
+    <div class="dw-card" id="dayLinesCard" data-tab="today">
       <div class="dw-head">
         <button type="button" class="dw-nav dw-prev" onclick="dayWindowStep(-1)"
                 aria-label="Previous day (back towards today)">&#8249;</button>
@@ -4802,7 +4920,7 @@
          longer collapsible (was a collapse/expand toggle) — always open, so there
          is no chevron, no subtitle, no collapsed-state teaser, just the title
          with the day/time readout beside it at the same size. -->
-    <div class="wa2-card">
+    <div class="wa2-card" data-tab="today">
       <div class="wa2-head">
         <span class="wa2-head-top">
           <span class="wa2-title-row">
@@ -4820,7 +4938,7 @@
     <!-- Bluebottle FORECAST risk strip — moved here (after Swimmers' Corner) so this
          wind-only forecast sits below the community reports. Same BBF_ system; render
          is DOM-order-agnostic (id-selected). Must never outrank a live photo sighting. -->
-    <div class="bbf-row" id="bbfRow">
+    <div class="bbf-row" id="bbfRow" data-tab="bay">
       <div class="bbf-strip-head">
         <span class="bbf-strip-title">Bluebottles Risk</span>
         <span class="metric-info" role="button" tabindex="0" aria-label="About the bluebottle forecast"
@@ -4831,7 +4949,7 @@
     </div>
 
     <!-- Tide graph for the selected day (moved before the Best-swim-window) -->
-    <div class="tide-graph-wrap" id="tideGraphWrap">
+    <div class="tide-graph-wrap" id="tideGraphWrap" data-tab="bay">
       <div class="tide-graph-head">
         <span class="tide-graph-title">Tide · Sydney</span>
         <div class="tide-graph-now">
@@ -4844,7 +4962,7 @@
 
 
 <!-- FORECASTED VALUES — everything here updates with the slider -->
-    <div class="forecast-values">
+    <div class="forecast-values" data-tab="bay">
       <button id="fv-toggle" onclick="toggleForecastValues()" aria-expanded="false" aria-controls="fv-body">
         <span class="fv-head-txt">
           <span class="fv-toggle-label">Forecast</span>
@@ -5306,6 +5424,255 @@
   <p style="text-align:center; margin:14px 0 4px; font-size:11px; color:var(--dim); letter-spacing:0.4px;">&#128065; App views: <strong id="visitCount" style="color:var(--ocean);">&mdash;</strong></p>
 
 </div><!-- /wrap -->
+
+<!-- ═══ BOTTOM TABS — Today · Bay · Community · More (13 Sep 2026) ═══════════════
+     Markup for the bar and the More sheet. Hidden unless body.tabs-on. The cards
+     themselves never move: each carries data-tab and CSS hides the other tabs'
+     cards, so every id, observer and renderer keeps working unchanged. -->
+<nav class="tabbar" id="tabbar" role="tablist" aria-label="Sections">
+  <button type="button" class="tabbar-btn" role="tab" data-tabbtn="today" aria-selected="true">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>Today</button>
+  <button type="button" class="tabbar-btn" role="tab" data-tabbtn="bay" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 15.5c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/></svg>Bay</button>
+  <button type="button" class="tabbar-btn" role="tab" data-tabbtn="community" aria-selected="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5M14.6 14.4c.7-.3 1.5-.5 2.4-.5 2 0 3.6 1.4 4.2 4"/></svg>Community<span class="tabbar-dot" id="tabbarDot" hidden></span></button>
+  <button type="button" class="tabbar-btn" data-tabbtn="more" aria-expanded="false" aria-controls="moreSheet">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>More</button>
+</nav>
+<div class="more-scrim" id="moreScrim"></div>
+<div class="more-sheet" id="moreSheet" role="dialog" aria-label="More" aria-modal="true">
+  <div class="more-grab" aria-hidden="true"></div>
+  <div class="more-grp">Your settings</div>
+  <div class="more-mode" id="moreModeRow"><span>Show</span></div>
+  <button type="button" class="more-item" data-more="custom">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/></svg>
+    <span>Choose sections &amp; settings<small>What shows, indicator style, swim times, time picker</small></span><span class="chev">&rsaquo;</span></button>
+  <div class="more-grp">Around the bay</div>
+  <a class="more-item" href="species.html">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-4 6-5 9-5s6 1.5 8 5c-2 3.5-5 5-8 5s-6-1-9-5z"/><path d="M3 12l-1-3M3 12l-1 3"/><circle cx="15.5" cy="11.2" r=".6"/></svg>
+    <span>Who Lives Here<small>The bay species browser</small></span><span class="chev">&rsaquo;</span></a>
+  <button type="button" class="more-item" data-more="theft">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8h12l-1 12H7z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+    <span>Report a stolen bag</span><span class="chev">&rsaquo;</span></button>
+  <button type="button" class="more-item" data-more="share">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M5 12v8h14v-8"/></svg>
+    <span>Send this app to a friend</span><span class="chev">&rsaquo;</span></button>
+  <button type="button" class="more-item" data-more="qr">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 14h2v2M20 14v6h-6"/></svg>
+    <span>Share via QR code</span><span class="chev">&rsaquo;</span></button>
+  <div class="more-grp">About</div>
+  <a class="more-item" href="guide.html" onclick="if(typeof markNewhereSeen==='function')markNewhereSeen();">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.01"/></svg>
+    <span>How it works</span><span class="chev">&rsaquo;</span></a>
+  <div id="moreFeedbackSlot"></div>
+</div>
+
+<script>
+(function () {
+  var body = document.body;
+  if (!body.classList.contains('tabs-on')) return;       // tune/backtest: whole page, no bar
+  var TABS = ['today', 'bay', 'community'];
+  var bar = document.getElementById('tabbar');
+  var sheet = document.getElementById('moreSheet');
+  var scrim = document.getElementById('moreScrim');
+  var moreBtn = bar.querySelector('[data-tabbtn="more"]');
+  var scrollBy = {};                                      // per-tab scroll, this session only
+
+  function current() { return body.getAttribute('data-tab') || 'today'; }
+  function kick() {                                       // canvases sized while hidden need a re-fit
+    try { requestAnimationFrame(function () { window.dispatchEvent(new Event('resize')); }); } catch (e) {}
+  }
+  function mark() {
+    var open = body.classList.contains('more-open'), tab = current();
+    bar.querySelectorAll('[role="tab"]').forEach(function (b) {
+      b.setAttribute('aria-selected', (!open && b.getAttribute('data-tabbtn') === tab) ? 'true' : 'false');
+    });
+    moreBtn.setAttribute('aria-selected', open ? 'true' : 'false');
+    moreBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function setTab(tab, opts) {
+    opts = opts || {};
+    if (TABS.indexOf(tab) === -1) return;
+    setMore(false);
+    // The hour-by-hour view is its own panel; any tab tap is a way back out of it.
+    var snap = document.getElementById('panel-snapshot');
+    if (snap && !snap.classList.contains('active') && typeof switchTab === 'function') switchTab('snapshot');
+    var was = current();
+    if (was === tab && !opts.keepScroll) {                // tapping the tab you are on: back to its top
+      try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) { window.scrollTo(0, 0); }
+      return;
+    }
+    scrollBy[was] = window.scrollY || 0;
+    body.setAttribute('data-tab', tab);
+    mark(); paintRibbon(); paintEmpty();
+    if (!opts.keepScroll) window.scrollTo(0, scrollBy[tab] || 0);
+    kick();
+    try { if (window.track) window.track('tab_view', { tab: tab }); } catch (e) {}
+  }
+  window.setBottomTab = setTab;
+  // Called before anything scrolls to a card: switch to whichever tab holds it.
+  window.showTabFor = function (el) {
+    var host = el && el.closest && el.closest('[data-tab]');
+    var tab = host && host.getAttribute('data-tab');
+    if (tab && tab !== current()) setTab(tab, { keepScroll: true });
+  };
+
+  function setMore(open) {
+    if (open === body.classList.contains('more-open')) return;
+    body.classList.toggle('more-open', open);
+    try { sheet.inert = !open; } catch (e) {}
+    mark();
+    if (open) { try { track && track('open_more', {}); } catch (e) {} }
+  }
+  try { sheet.inert = true; } catch (e) {}
+
+  bar.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-tabbtn]'); if (!b) return;
+    var t = b.getAttribute('data-tabbtn');
+    if (t === 'more') setMore(!body.classList.contains('more-open'));
+    else setTab(t);
+  });
+  scrim.addEventListener('click', function () { setMore(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMore(false); });
+
+  function goTo(el) {
+    if (!el) return;
+    window.showTabFor(el);
+    setTimeout(function () { try { el.scrollIntoView({ block: 'start' }); } catch (e) { el.scrollIntoView(); } }, 30);
+  }
+  sheet.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-more]'); if (!b) return;
+    var what = b.getAttribute('data-more');
+    setMore(false);
+    if (what === 'custom') {
+      window.scrollTo(0, 0);
+      if (window.openCustomPanel) window.openCustomPanel();
+    } else if (what === 'theft') {
+      goTo(document.getElementById('theftSection'));
+    } else if (what === 'share') {
+      if (typeof shareApp === 'function') shareApp();
+    } else if (what === 'qr') {
+      if (typeof showQr === 'function') showQr();
+    }
+  });
+
+  // Move the view switch and the feedback card into the sheet. Moving, not copying,
+  // keeps every listener already attached to them.
+  var mt = document.getElementById('modeToggle');
+  if (mt) {
+    document.getElementById('moreModeRow').appendChild(mt);
+    mt.addEventListener('click', function (e) {
+      var b = e.target.closest('button[data-mode]');
+      if (b && b.getAttribute('data-mode') === 'custom') { setMore(false); window.scrollTo(0, 0); }
+    });
+  }
+  var fb = document.getElementById('feedbackCard');
+  if (fb) document.getElementById('moreFeedbackSlot').appendChild(fb);
+
+  // ── Ribbon: the call, on Bay and Community ──────────────────────────────────
+  // Everything in it comes from _bannerFacts — safetyLevel, the three labels and
+  // siteCheck verbatim (CLAUDE.md §1: a new verdict surface consumes, never derives).
+  var snapPanel = document.getElementById('panel-snapshot');
+  var ribbon = document.createElement('button');
+  ribbon.type = 'button'; ribbon.id = 'tabRibbon';
+  ribbon.innerHTML = '<span class="tr-top"><span class="tr-dot" aria-hidden="true"></span>' +
+                     '<span class="tr-text"></span><span class="tr-when"></span></span><span class="tr-check"></span>';
+  ribbon.addEventListener('click', function () { setTab('today'); });
+  if (snapPanel) snapPanel.insertBefore(ribbon, snapPanel.firstChild);
+
+  function facts() { try { return (typeof _bannerFacts !== 'undefined') ? _bannerFacts : null; } catch (e) { return null; } }
+  function paintRibbon() {
+    var f = facts();
+    var text = ribbon.querySelector('.tr-text'), when = ribbon.querySelector('.tr-when'), chk = ribbon.querySelector('.tr-check');
+    ribbon.classList.remove('good', 'caution', 'dangerous');
+    if (!f || !f.verdict) {                               // absent is grey, never green (§8)
+      text.textContent = 'Forecast loading'; when.textContent = ''; chk.textContent = '';
+      ribbon.setAttribute('aria-label', 'Forecast loading. Go to Today');
+    } else {
+      if (f.safetyLevel === 'good' || f.safetyLevel === 'caution' || f.safetyLevel === 'dangerous') ribbon.classList.add(f.safetyLevel);
+      text.textContent = 'Entry ' + f.verdict.entry + ' · Chop ' + f.verdict.swim + ' · Surge ' + f.verdict.surge;
+      // The Oracle's reference hour, not the hour picked on Today — so it is named.
+      when.textContent = (f.dayPhrase ? String(f.dayPhrase).toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) : '') +
+                         (f.arrival && f.arrival.hhmm ? ' ' + f.arrival.hhmm : '');
+      chk.textContent = f.siteCheck ? f.siteCheck.charAt(0).toUpperCase() + f.siteCheck.slice(1) : '';
+      ribbon.setAttribute('aria-label', (when.textContent ? when.textContent + ': ' : '') + text.textContent +
+                          (chk.textContent ? '. ' + chk.textContent : '') + '. Go to Today');
+    }
+    paintDot();
+  }
+  window.addEventListener('bannerfacts', paintRibbon);
+
+  // ── Community dot: mirrors Bay Talk's own new-post / reply-to-you dot ────────
+  var boardDot = document.getElementById('boardNewDot'), tabDot = document.getElementById('tabbarDot');
+  function paintDot() {
+    if (!boardDot || !tabDot) return;
+    var f = facts();
+    var on = boardDot.style.display === 'block' && !(f && f.safetyLevel === 'dangerous');
+    tabDot.hidden = !on;
+    tabDot.classList.toggle('reply', boardDot.classList.contains('board-newdot--reply'));
+  }
+  if (boardDot && window.MutationObserver) {
+    new MutationObserver(paintDot).observe(boardDot, { attributes: true, attributeFilter: ['style', 'class'] });
+  }
+
+  // ── From the water: Today's one-line-each window onto Community ──────────────
+  var quality = document.querySelector('.quality-row-slim');
+  var water = document.createElement('div');
+  water.className = 'tab-water'; water.setAttribute('data-tab', 'today');
+  water.innerHTML = '<div class="tab-water-head"><span>From the water</span><button type="button" data-go="">All reports &rsaquo;</button></div>' +
+    '<div class="tab-water-rows">' +
+    '<button type="button" class="tab-water-row" data-go="visSection"><b>Visibility</b><span data-src="vis"></span></button>' +
+    '<button type="button" class="tab-water-row" data-go="sightSection"><b>Sightings</b><span data-src="sight"></span></button>' +
+    '<button type="button" class="tab-water-row" data-go="bbSection"><b>Bluebottles</b><span data-src="bb"></span></button>' +
+    '</div>';
+  if (quality && quality.parentNode) quality.parentNode.insertBefore(water, quality);
+  water.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-go]'); if (!b) return;
+    var id = b.getAttribute('data-go');
+    if (!id) { setTab('community'); return; }
+    goTo(document.getElementById(id));
+  });
+  // Each line is lifted, as text, from the strip's own rendering on Community, so
+  // the two can never disagree and the age travels with the reading (§8).
+  function txt(sel) { var n = document.querySelector(sel); return n ? n.textContent.replace(/\s+/g, ' ').trim() : ''; }
+  var SRC = {
+    vis:   function () { var v = txt('#visTitle .vis-big') || txt('#visTitle'), a = txt('#visSub'); return a ? v + ' · ' + a : v; },
+    sight: function () { return txt('#sightSub') || txt('#sightTitle'); },
+    bb:    function () { return txt('#bbStatus'); }
+  };
+  function paintWater() {
+    var on = (typeof window.sectionOn !== 'function') || window.sectionOn('swimmers');
+    water.style.display = on ? '' : 'none';
+    water.querySelectorAll('[data-src]').forEach(function (s) {
+      var f = SRC[s.getAttribute('data-src')];
+      s.textContent = f ? f() : '';
+    });
+  }
+  ['visTitle', 'visSub', 'sightTitle', 'sightSub', 'bbStatus'].forEach(function (id) {
+    var n = document.getElementById(id);
+    if (n && window.MutationObserver) new MutationObserver(paintWater).observe(n, { childList: true, characterData: true, subtree: true });
+  });
+
+  // ── Community with Swimmers' Corner switched off in Choose sections ──────────
+  var empty = document.createElement('p');
+  empty.className = 'tab-empty';
+  empty.textContent = 'Swimmers’ Corner is switched off. Turn it back on under More › Choose sections.';
+  var cg = document.querySelector('.community-group');
+  if (cg && cg.parentNode) cg.parentNode.insertBefore(empty, cg);
+  function paintEmpty() {
+    var off = cg && cg.classList.contains('sec-hidden');
+    empty.classList.toggle('show', !!off);
+    paintWater();
+  }
+
+  mark(); paintRibbon(); paintEmpty();
+  // Section switches are applied on DOMContentLoaded by a listener registered after
+  // this one, and every re-apply dispatches 'resize' - so repaint on both, a tick late.
+  document.addEventListener('DOMContentLoaded', function () { setTimeout(paintEmpty, 0); });
+  window.addEventListener('resize', function () { setTimeout(paintEmpty, 0); });
+})();
+</script>
 
 <script>
 // =============================================================================
@@ -17228,6 +17595,9 @@ async function generateBannerSummaryLocal() {
       shelteredContrast: shelteredContrast
     }
   };
+  // The tab ribbon repaints from this, so it can never show a call the Oracle's
+  // facts do not hold.
+  try { window.dispatchEvent(new Event('bannerfacts')); } catch (e) {}
   // The tile is repainted HERE and not only from fetchCommunitySeaTemp, because on
   // a cold load that fetch resolves before the forecast does: _satSeaTempNow() has
   // no matrix to read, so a stale reading would paint as though it were current and
@@ -19871,6 +20241,7 @@ if ('serviceWorker' in navigator) {
     // beacon there is no denominator for "of the people who saw the choice, ...".
     try { if (window.track) window.track('open_custom', {}); } catch (e) {}
   }
+  window.openCustomPanel = openCustom;   // the More sheet's "Choose sections" row
   // Section a swimmer has just switched ON, so closing the panel can take them to
   // it. Without this the checklist is a control with no feedback: the sections sit
   // as far as three viewports down the page (the day view lands around y=1900 of a
@@ -19887,6 +20258,9 @@ if ('serviceWorker' in navigator) {
     SECTIONS.forEach(function (s){ if (s.key === key) sct = s; });
     var el = sct && document.querySelector(sct.sel);
     if (!el || el.classList.contains('sec-hidden')) return;
+    // With bottom tabs the section may live on another tab: go there first, or the
+    // scroll below aims at a display:none element and lands nowhere.
+    try { if (window.showTabFor) window.showTabFor(el); } catch (e) {}
     // After the overlay's transition, or the scroll starts under a panel still
     // occupying the screen and lands in the wrong place on iOS.
     setTimeout(function(){
