@@ -24,6 +24,14 @@ Oracle draft that omits it, and also rejects an absolute no-swim call. So:
 - Never write copy that flattens the verdict to open/closed or "do not swim".
 - Never offer **mitigation** — no "go with a mate", "fine if you're experienced",
   "wait two hours and it'll be better". That is the actual banned category.
+  Reassurance is the same thing: no "manageable", "nothing you can't handle",
+  "not a problem" about surge, drift, the point, swell or entry — on any day, not
+  only dangerous ones. Both validators reject it.
+- The point line (`facts.lineCheck`, search `lineCheck:`) is "the point is
+  drifty|surgy|washy — keep your line off it", worded by the owner on 13 Sep 2026.
+  An action with no promised result is allowed; never add a promise or a
+  condition to it, and never say the point is **breaking** — that has not been
+  observed, only the surge its shape creates.
 - Any new surface showing a verdict must consume `_bannerFacts`, never re-derive
   it. The rule already lives in four places (local baseline, client
   `summaryConflict`, Worker `SWIMSUM_SYS`, Worker validator) that must stay in
