@@ -5549,8 +5549,11 @@
   function kick() {                                       // canvases sized while hidden need a re-fit
     try { requestAnimationFrame(function () { window.dispatchEvent(new Event('resize')); }); } catch (e) {}
   }
+  // More stays highlighted after its sheet is dismissed by tapping the page, until another
+  // tab is chosen (13 Sep 2026, per user).
+  var moreHold = false;
   function mark() {
-    var open = body.classList.contains('more-open'), tab = current();
+    var open = body.classList.contains('more-open') || moreHold, tab = current();
     bar.querySelectorAll('[role="tab"]').forEach(function (b) {
       b.setAttribute('aria-selected', (!open && b.getAttribute('data-tabbtn') === tab) ? 'true' : 'false');
     });
@@ -5561,7 +5564,9 @@
   function setTab(tab, opts) {
     opts = opts || {};
     if (TABS.indexOf(tab) === -1) return;
+    moreHold = false;
     setMore(false);
+    mark();
     // The hour-by-hour view is its own panel; any tab tap is a way back out of it.
     var snap = document.getElementById('panel-snapshot');
     if (snap && !snap.classList.contains('active') && typeof switchTab === 'function') switchTab('snapshot');
@@ -5600,10 +5605,10 @@
     if (t === 'more') setMore(!body.classList.contains('more-open'));
     else setTab(t);
   });
-  // Tapping the dimmed page does NOT close More (13 Sep 2026, per user): it used to, and the
-  // highlight jumped back to the tab underneath, which read as the app switching tabs on its
-  // own. More stays open and selected until another tab (or More itself) is tapped.
-  scrim.addEventListener('click', function (e) { e.preventDefault(); });
+  // Tapping the dimmed page closes the sheet but keeps More highlighted (13 Sep 2026, per
+  // user): falling back to the tab underneath read as the app switching tabs on its own.
+  // Tapping More reopens the sheet; tapping any other tab moves the highlight.
+  scrim.addEventListener('click', function () { moreHold = true; setMore(false); mark(); });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMore(false); });
 
   function goTo(el) {
