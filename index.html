@@ -7313,6 +7313,21 @@ const SITE_DEFAULTS = {
   // moves. Before this, 5 km/h of W already bought 2.5 points and, against a light
   // stack, saturated offshoreMaxFrac — so Entry read the same at 5 and at 30 km/h.
   // A START POINT, not a measurement: tune it against real westerly mornings.
+  // ── Chop at the entry (13 Sep 2026, per user) ──────────────────────────────────
+  // Entry was built from swell + the SS-corner wind-sea + tide only, so a NE
+  // afternoon could read Chop MESSY (18.6 cm) beside Entry EASY (6.5 pts) while the
+  // South Steyne Surfline cam showed a messy shorebreak. The SS fetch for a NE wind
+  // grows almost nothing (windEntry 2.9 at 19 km/h NE), so the slap a swimmer wades
+  // into was invisible to Entry. This adds a SHARE of the Chop face into Entry:
+  //   entryChop = min(entryChopMaxPts, entryChopPts × max(0, chopCm − entryChopFloorCm))
+  // Floor = the Smooth edge, so glassy days add nothing. Capped, so chop alone moves
+  // an otherwise-Easy entry to Doable at most (0 + 20 < caution 45); it only reaches
+  // Caution/Dangerous stacked on real swell. A START POINT, not a fit: 13 Sep 12:00
+  // (9.4 cm) goes Easy 5.6 → Doable 13.7; over the 255 daylight hours in the matrix
+  // 22 change band, all upward. entryChopPts = 0 turns it off.
+  entryChopPts:     1.5,  // Entry demerit points per cm of Chop face above the floor
+  entryChopFloorCm: 4,    // cm of Chop face that adds nothing (the Smooth/Ripply edge)
+  entryChopMaxPts:  20,   // ceiling on what chop can add to Entry
   offshoreFloorKmh: 3,    // 12 → 10 → 8 → 0 → 3; BAKED from live KV (saved 2026-08-27T21:23Z).
                           // A 3 km/h floor, i.e. barely any: everything above a dead calm
                           // earns some credit, but a reading that is really just sensor
@@ -8849,6 +8864,16 @@ function bowerSurgeWater(d) {
 // subtotal before subtracting it from the ENTRY total. All five inputs are live SITE
 // knobs, so a tune-panel slider move re-scores immediately with no other wiring.
 // Returns Entry points (>= 0). Reads nothing but its two arguments and SITE.
+// Entry demerits from the Chop face (cm) — see SITE.entryChopPts. One helper, so
+// calcScore and the tune=1 mirror cannot state the rule twice.
+function entryChopDemerit(chopCm) {
+  const pts   = (SITE.entryChopPts     != null) ? SITE.entryChopPts     : 0;
+  const floor = (SITE.entryChopFloorCm != null) ? SITE.entryChopFloorCm : 4;
+  const cap   = (SITE.entryChopMaxPts  != null) ? SITE.entryChopMaxPts  : 20;
+  if (!(pts > 0) || !isFinite(chopCm)) return 0;
+  return Math.max(0, Math.min(cap, pts * Math.max(0, chopCm - floor)));
+}
+
 function offshoreFlatten(windKmh, windDir) {
   const dir0 = (SITE.offshoreDir    != null) ? SITE.offshoreDir    : 270;
   const arc  = (SITE.offshoreArc    != null) ? SITE.offshoreArc    : 30;
@@ -9060,7 +9085,7 @@ function calcScore(d, modelOverride) {
   // See SITE_DEFAULTS.offshoreMaxFrac for why 100% was wrong.
   const offshoreFrac   = (SITE.offshoreMaxFrac != null) ? SITE.offshoreMaxFrac : 1;
   const offshoreCredit = Math.min(offshore_c, Math.max(0, o) * offshoreFrac);
-  const total  = Math.max(0, o + tide_d - offshoreCredit);
+  const totalBase = Math.max(0, o + tide_d - offshoreCredit);   // + entryChop_d once chopCm exists, below
 
   // CHOP crossfade (single source of truth): BL wind-sea ↔ BL wind-wave handover
   // at the BL arc weight. Both terms are now BL-point (Option A). Used by the CHOP
@@ -9110,6 +9135,11 @@ function calcScore(d, modelOverride) {
   const _hWwFace  = _hWwH * chopSlapWeight(_hWwH, _wwP_bl) * wwTxBL;                       // wind-wave steep face (m)
   const chopCm    = 100 * Math.sqrt(_hWsFace * _hWsFace + _hWwFace * _hWwFace);            // quadrature, cm
 
+  // Chop at the entry — a capped share of the Chop face, added AFTER the offshore
+  // credit (a westerly flattens swell, and chopCm already carries its own lee shelter).
+  const entryChop_d = entryChopDemerit(chopCm);
+  const total = totalBase + entryChop_d;
+
   return {
     score: Math.max(0, Math.round(60 - total)),
     // The two faces chopCm is actually built from, in cm. The Chop breakdown used
@@ -9138,6 +9168,8 @@ function calcScore(d, modelOverride) {
       refrac:   Math.round(rif_d  * 10) / 10,
       // NEGATIVE by convention — a credit, not a demerit (offshore W wind flattening).
       offshore: -Math.round(offshoreCredit * 10) / 10,
+      // Chop face added into Entry (SITE.entryChopPts).
+      entryChop: Math.round(entryChop_d * 10) / 10,
     },
     // ── Three swimmer metrics ──────────────────────────────────────────────
     // Metric 1: Entry — classified on `total` demerits (LOWER = better), edges from sheet col AK rows 5–8.
@@ -12613,7 +12645,11 @@ function renderGemComparison(h) {
   // than restating the rule, so this mirror cannot drift from it again. Clamped to
   // o_g exactly as calcScore clamps to o (a credit can only flatten energy present).
   const offshore_g = Math.min(offshoreFlatten(windKmh, windDir), Math.max(0, o_g));
-  const total_g  = Math.max(0, o_g + tide_d_g - offshore_g);
+  // Chop at the entry needs chopCm, which only calcScore builds — read it back and
+  // run it through the SAME helper.
+  let entryChop_g = 0;
+  try { const _r = calcScore(h); entryChop_g = entryChopDemerit(_r && _r.swim ? _r.swim.raw : NaN); } catch (e) {}
+  const total_g  = Math.max(0, o_g + tide_d_g - offshore_g) + entryChop_g;
   const score_g  = Math.max(0, Math.round(60 - total_g));
 
   const f = x => (typeof x === 'number' ? x : 0).toFixed(3);
@@ -12682,6 +12718,9 @@ function renderGemComparison(h) {
     // the panel look broken on the first westerly.
     (offshore_g > 0.0005
       ? `<span style="color:#9fd;">offshore credit (W ${Math.round(windDir)}°)</span><span style="color:#8f8;">−${f(offshore_g)}</span>`
+      : '') +
+    (entryChop_g > 0.0005
+      ? `<span style="color:#9fd;">chop at entry</span><span style="color:#fc8;">+${f(entryChop_g)}</span>`
       : '') +
     `<span style="color:#9fd;">total</span><span>${f(total_g)}</span>` +
     `<b style="color:#7ec8e3;">SCORE 60−total</b><b style="color:#7ec8e3;">${score_g}</b>` +
@@ -15248,6 +15287,9 @@ const TUNE_PARAMS = [
   { key:'offshoreMaxPts', label:'ENTRY · Offshore credit ceiling (pts)',  min:0, max:40, step:1,   hint:'LOCAL — no sheet cell. Hard cap on the credit however hard it blows (default 20, reached ~60 km/h due W). The credit is ALSO capped at the swell+wind subtotal, so it can never invent calm on a flat day.' },
   { key:'offshoreFloorKmh', label:'ENTRY · Offshore credit — wind floor (km/h)', min:0, max:25, step:1, hint:'LOCAL — no sheet cell. Below this westerly speed the credit is ZERO; from here it ramps linearly to the full points at 30 km/h. A land breeze grooms nothing. 0 = old behaviour (credit from the first km/h).' },
   { key:'offshoreMaxFrac', label:'ENTRY · Offshore credit — max share of stack', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Hardest ceiling on the credit: the largest FRACTION of the swell+wind subtotal a westerly may cancel. 1 = old behaviour (can zero Entry outright and make the sea invisible); 0.6 = it can never take more than 60%.' },
+  { key:'entryChopPts', label:'ENTRY · Chop at entry (pts per cm)', min:0, max:5, step:0.1, hint:'LOCAL — no sheet cell. Entry demerit points added per cm of Chop face above the floor. 0 turns it off. 1.5 = a 9.4 cm Choppy hour adds 8 pts.' },
+  { key:'entryChopFloorCm', label:'ENTRY · Chop at entry — floor (cm)', min:0, max:12, step:0.5, hint:'LOCAL — no sheet cell. Chop face below this adds nothing to Entry. 4 = the Smooth/Ripply edge.' },
+  { key:'entryChopMaxPts', label:'ENTRY · Chop at entry — ceiling (pts)', min:0, max:45, step:1, hint:'LOCAL — no sheet cell. The most chop can ever add to Entry. 20 keeps chop alone to Doable on a flat-swell day.' },
   { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
@@ -15259,6 +15301,7 @@ const TUNE_PARAMS = [
 // be a second one that silently disagrees on the next sheet load.
 const TUNE_LIVE_KEYS = [
   'offshorePts', 'offshoreArc', 'offshoreMaxPts', 'offshoreMaxFrac', 'offshoreFloorKmh',
+  'entryChopPts', 'entryChopFloorCm', 'entryChopMaxPts',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
   'pointSens', 'pointPeriodLo', 'pointWashyMult',
 ];
@@ -15386,6 +15429,9 @@ const TW_GROUPS = [
       { key:'offshoreMaxPts', name:'Offshore ceiling',              desc:'Cap on the credit in a gale. Also capped at a share of the swell+wind subtotal — it can only flatten what is there.',                                                                    cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'offshoreFloorKmh', name:'Offshore wind floor', tag:'LIVE', desc:'Westerly speed below which the credit is <b>zero</b> — a land breeze grooms nothing. Ramps from here to the full points at 30 km/h.',                                          cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'offshoreMaxFrac', name:'Offshore max share', tag:'LIVE', desc:'The largest <b>share of the swell+wind stack</b> a westerly may cancel. At 1 it can zero Entry outright and the sea stops moving the number at all.',                                  cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'entryChopPts',     name:'Chop at entry', tag:'LIVE', desc:'Adds a share of the <b>Chop face</b> into Entry: points per cm above the floor. The slap you wade into at South Steyne. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'entryChopFloorCm', name:'Chop at entry — floor', desc:'Chop face (cm) that adds nothing. 4 = Smooth edge.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'entryChopMaxPts',  name:'Chop at entry — ceiling', desc:'The most chop can add to Entry, however messy.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
     bands:{ label:'Bands', edges:'AQ2:AQ5', items:[
       { key:'entryThresholds.easy',    lab:'Easy ≤' },
