@@ -3430,6 +3430,12 @@
   body.tabs-on .mode-toggle-row,
   body.tabs-on #shareAppBar { display: none !important; }
   body.tabs-on .wrap { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 28px); }
+  /* The header holds nothing visible any more (logo moved to the foot, links to More), so
+     it keeps only the safe-area inset: no dead band above the date. The model badge still
+     shows when it is on. */
+  body.tabs-on .wrap > header { padding: env(safe-area-inset-top, 0px) 0 0; }
+  body.tabs-on .header-sub { margin-top: 0; font-size: 0; }
+  body.tabs-on #gem-badge { line-height: 1.6; }
 
   /* Everything else pinned to the bottom edge moves up above the bar. */
   body.tabs-on .thf-toast       { bottom: calc(26px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
@@ -19775,6 +19781,13 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
 
   function fit() {
     var cssW = Math.round(cv.getBoundingClientRect().width) || cv.clientWidth || Math.round(wrap.getBoundingClientRect().width) || 0;
+    // Hidden on another bottom tab: size from the page column instead, so the canvas still
+    // draws - the announcements popup mirrors it pixel for pixel, and a never-fitted canvas
+    // is 0x0 and mirrors as blank. The ResizeObserver refits exactly once the card shows.
+    if (!cssW && document.body.classList.contains('tabs-on')) {
+      var col = wrap.closest('.wrap');
+      cssW = col ? Math.max(0, Math.round(col.clientWidth) - 44) : 0;
+    }
     if (!cssW) return false;
     dpr = window.devicePixelRatio || 1; W = cssW; H = Math.round(cssW * 0.4888);
     cv.style.height = H + 'px';
