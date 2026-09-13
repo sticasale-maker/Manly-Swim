@@ -27,10 +27,11 @@ Oracle draft that omits it, and also rejects an absolute no-swim call. So:
   Reassurance is the same thing: no "manageable", "nothing you can't handle",
   "not a problem" about surge, drift, the point, swell or entry — on any day, not
   only dangerous ones. Both validators reject it.
-- The point line (`facts.lineCheck`, search `lineCheck:`) is "the point is
-  drifty|surgy|washy — keep your line off it", worded by the owner on 13 Sep 2026.
-  An action with no promised result is allowed; never add a promise or a
-  condition to it, and never say the point is **breaking** — that has not been
+- **Avoidance advice is not mitigation** (owner's ruling, 13 Sep 2026): "give it a
+  wide berth", "stay away from the cliff edges" are allowed — an action with no
+  promised result. The point line (`facts.lineCheck`, search `lineCheck:`) is
+  "the point is drifty|surgy|washy — give it a wide berth". Never add a promise or
+  a condition to it, and never say the point is **breaking** — that has not been
   observed, only the surge its shape creates.
 - Any new surface showing a verdict must consume `_bannerFacts`, never re-derive
   it. The rule already lives in four places (local baseline, client
