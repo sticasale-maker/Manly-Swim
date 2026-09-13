@@ -3530,6 +3530,16 @@
     border-radius: 20px 20px 0 0; padding: 6px 10px 14px; font-family: 'Inter', sans-serif;
     transform: translateY(110%); visibility: hidden; transition: transform .26s cubic-bezier(.2,.8,.2,1), visibility 0s .26s; }
   body.more-open .more-scrim { opacity: 1; pointer-events: auto; }
+  /* Choose sections / Display & swim times, opened from More: the Customise panel becomes a
+     bottom sheet over the dimmed page with More still highlighted, instead of opening at the
+     top of whichever tab sat underneath (13 Sep 2026, per user). */
+  body.panel-sheet .more-scrim { opacity: 1; pointer-events: auto; }
+  body.tabs-on #customPanel.cp-sheet.show {
+    position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px));
+    z-index: 589; max-width: 600px; margin: 0 auto; max-height: calc(100% - var(--tabbar-h) - 40px);
+    overflow-y: auto; overscroll-behavior: contain; border-radius: 20px 20px 0 0; padding: 14px 16px 16px;
+    box-shadow: 0 -16px 30px -18px rgba(0,0,0,0.6);
+  }
   body.more-open .more-sheet { transform: none; visibility: visible; transition: transform .26s cubic-bezier(.2,.8,.2,1); }
   @media (prefers-reduced-motion: reduce) { .more-scrim, .more-sheet, body.more-open .more-sheet { transition: none; } }
   .more-grab { width: 38px; height: 4px; border-radius: 2px; background: rgba(17,53,65,0.25); margin: 4px auto 6px; }
@@ -5564,6 +5574,7 @@
   function setTab(tab, opts) {
     opts = opts || {};
     if (TABS.indexOf(tab) === -1) return;
+    if (body.classList.contains('panel-sheet')) { panelBack = false; closePanelSheet(); }
     moreHold = false;
     setMore(false);
     mark();
@@ -5602,13 +5613,54 @@
   bar.addEventListener('click', function (e) {
     var b = e.target.closest('[data-tabbtn]'); if (!b) return;
     var t = b.getAttribute('data-tabbtn');
-    if (t === 'more') setMore(!body.classList.contains('more-open'));
+    if (t === 'more') {
+      if (body.classList.contains('panel-sheet')) { panelBack = true; closePanelSheet(); }   // back to More
+      else setMore(!body.classList.contains('more-open'));
+    }
     else setTab(t);
   });
   // Tapping the dimmed page closes the sheet but keeps More highlighted (13 Sep 2026, per
   // user): falling back to the tab underneath read as the app switching tabs on its own.
   // Tapping More reopens the sheet; tapping any other tab moves the highlight.
-  scrim.addEventListener('click', function () { moreHold = true; setMore(false); mark(); });
+  scrim.addEventListener('click', function () {
+    if (body.classList.contains('panel-sheet')) { panelBack = false; closePanelSheet(); return; }
+    moreHold = true; setMore(false); mark();
+  });
+
+  // ── Customise panel as a sheet (opened from More) ────────────────────────────
+  var cpanel = document.getElementById('customPanel');
+  // .wrap is its own stacking context (position:relative; z-index:1), so a fixed panel left
+  // inside it sits UNDER the scrim. With tabs on it only ever opens as this sheet, so it
+  // lives at the top level of <body>. Moving keeps every listener attached to it.
+  if (cpanel) body.appendChild(cpanel);
+  var panelBack = true;          // ✕ / Save return to the More sheet; a page tap does not
+  function openPanelSheet(view) {
+    if (!cpanel || !window.openCustomPanel) return;
+    moreHold = true; setMore(false);
+    panelBack = true; window._customNavigated = false;
+    cpanel.classList.add('cp-sheet');
+    body.classList.add('panel-sheet');
+    window.openCustomPanel(view);
+    cpanel.scrollTop = 0;
+    mark();
+  }
+  function closePanelSheet() {
+    // Route through the panel's own close button so its logic (scroll to a just-enabled
+    // section) runs exactly as before.
+    var x = document.getElementById('customClose');
+    if (x) x.click(); else cpanel.classList.remove('show');
+  }
+  if (cpanel && window.MutationObserver) {
+    new MutationObserver(function () {
+      if (!body.classList.contains('panel-sheet') || cpanel.classList.contains('show')) return;
+      cpanel.classList.remove('cp-sheet');
+      body.classList.remove('panel-sheet');
+      if (window._customNavigated) {           // it is taking the swimmer to a section
+        window._customNavigated = false; moreHold = false; mark(); return;
+      }
+      if (panelBack) setMore(true); else mark();
+    }).observe(cpanel, { attributes: true, attributeFilter: ['class'] });
+  }
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') setMore(false); });
 
   function goTo(el) {
@@ -5632,8 +5684,7 @@
     var what = b.getAttribute('data-more');
     setMore(false);
     if (what === 'sections' || what === 'settings') {
-      window.scrollTo(0, 0);
-      if (window.openCustomPanel) window.openCustomPanel(what);
+      openPanelSheet(what);
     } else if (what === 'share') {
       if (typeof shareApp === 'function') shareApp();
     } else if (what === 'qr') {
@@ -20418,6 +20469,7 @@ if ('serviceWorker' in navigator) {
     // With bottom tabs the section may live on another tab: go there first, or the
     // scroll below aims at a display:none element and lands nowhere.
     try { if (window.showTabFor) window.showTabFor(el); } catch (e) {}
+    window._customNavigated = true;
     // After the overlay's transition, or the scroll starts under a panel still
     // occupying the screen and lands in the wrong place on iOS.
     setTimeout(function(){
