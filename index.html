@@ -6805,7 +6805,7 @@ const SITE_DEFAULTS = {
   //   drifty ≤ AQ11, surgy ≤ AQ12, else washy. AQ13 = scaleMax (far end of the Washy band).
   //   Rail is drawn best-on-left. Display score = max(0, round(60 − rawBL)).
   surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 },
-  // ── SURGE AT THE BOWER POINT (12 Sep 2026) ─────────────────────────────────
+  // ── SURGE AT THE POINT (12 Sep 2026) ───────────────────────────────────────
   // The point (-33.798801, 151.292228) sits ~10% along the S Steyne → Shelly line,
   // and it is the ONE place on the swim where energy CONCENTRATES rather than
   // being sheltered. Every other term in the model is a transmit fraction into a
@@ -7110,7 +7110,7 @@ let SITE = {
     }
     return P[P.length - 1][1];
   },
-  // BOWER-POINT exposure gate. Same knotted-smoothstep shape as bowerTideGate, but
+  // THE-POINT exposure gate. Same knotted-smoothstep shape as bowerTideGate, but
   // its knots live in SITE.pointDirKnots so the window can be tuned without touching
   // code — the curve is the tunable part here, unlike the tide gates where the shape
   // was settled. Returns 0–1.
@@ -8291,7 +8291,7 @@ async function loadChopShelterConfig(force) {
 // metric (kept as-is) so it is NOT summed here. Rail is inverted like Surge:
 // v6 = 60 − rawBL, HIGHER = better (Steady→Washy).
 // ── SURGE AT THE POINT — demerits, same units as rawBL ──────────────────────
-// The Bower point is the one spot on the swim line where swell CONCENTRATES: it is
+// The point is the one spot on the swim line where swell CONCENTRATES: it is
 // the first thing you pass leaving South Steyne and it has a shallow shelf off it.
 // Long-period swell both shoals harder there and refracts further around the arm,
 // which is why a 15 s swell breaks on it while an 8 s swell of the same height does
@@ -8381,7 +8381,7 @@ function blSwimWater(d, chop) {
   const chop_d = 0;
   const rawBay = s1_d + sea_d + tide_d;  // swell + forecast sea-heave (tide-amplified) + tide
   // SURGE IS NOW THE WORST POINT ON THE LINE, NOT ONE NODE (12 Sep 2026). The bay
-  // term above is scored at Bower Lane; pointSurge is the Bower point you pass on the
+  // term above is scored at Bower Lane; pointSurge is the point you pass on the
   // way there. Take the WORSE of the two and remember which — a swimmer wants the
   // roughest water they will actually meet, and the locus is what turns that from a
   // number into somewhere to look. max() and not a sum: these are the same surge at
@@ -14828,10 +14828,10 @@ const TUNE_PARAMS = [
   { key:'swimThresholds.ripply', label:'CHOP · Ripply edge (cm)', min:0, max:45, step:0.5, hint:'New NS AQ7 — COPY here. Face height (cm) ≤ this = Ripply.' },
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge (cm)', min:0, max:60, step:0.5, hint:'New NS AQ8 — COPY here. Face height (cm) ≤ this = Choppy, else Messy.' },
   { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:20, step:0.05, hint:'New NS V2 — COPY tuned value here. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
-  // Surge at the Bower point (12 Sep 2026). LOCAL — no sheet cell; SITE is the only
+  // Surge at the point (12 Sep 2026). LOCAL — no sheet cell; SITE is the only
   // home, so the panel is the only place to turn them. Moves re-score live through
   // pointSurge(), which reads SITE on every call.
-  { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE BOWER POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
+  { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
   { key:'pointPeriodLo', label:'SURGE · Point period floor (s)', min:5, max:18, step:0.5, hint:'LOCAL — no sheet cell. Below this swell period the point term is EXACTLY zero, which is what leaves ordinary days scoring bit-identically to before the point existed. Smoothsteps to full weight at the period ceiling. Raise it to make the point a rarer call.' },
   { key:'pointWashyMult', label:'SURGE · Point Washy release (× Surgy edge)', min:0, max:6, step:0.25, hint:'LOCAL — DRAFT, default 0 = OFF (point capped at Surgy, as before). Otherwise the multiple of the Surgy edge the raw point energy must reach before the cap lets go and the point alone can call Washy. Only at full period weight (P ≥ point period ceiling, 14 s). At 15 s in the direction window: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. 1 = no cap. Washy under a Caution entry makes the day DANGEROUS.' },
   // REMOVED 11 Jul 2026 — both were advertised as scoring knobs and reached no band:
@@ -15026,7 +15026,7 @@ const TW_GROUPS = [
       { key:'blWaveSens', name:'BL wave sensitivity', desc:'Weight of BL swell + sea-heave.', cell:'bl_wave_sens · V2', prov:'sheet', provTxt:'SHEET · copy to V2' },
       // prov:'local' — no sheet cell at all; SITE is the only home, so the panel is
       // authoritative rather than a copy-to-cell staging area.
-      { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the Bower point</b>, and this scales the point. The point is the one spot on the line where swell is stood up rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the point</b>, and this scales the point. The point is the one spot on the line where swell is stood up rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointPeriodLo', name:'Point period floor', tag:'LIVE', desc:'Below this period the point term is <b>exactly zero</b> — long swell feels the shelf, short swell does not. This is what keeps ordinary days scoring as they always did. The point term is capped at the <b>Surgy edge</b> below, so the point alone can reach Surgy but never Washy — unless the release below is on.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointWashyMult', name:'Point Washy release', tag:'DRAFT', desc:'<b>0 = off.</b> On a long-period swell (≥14 s) that keeps building, lets the point go past the Surgy cap once its energy reaches this many × the Surgy edge — so a 1.4 m 15 s SE swell no longer reads the same as a 0.6 m one. At 15 s: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. Washy under a Caution entry makes the day <b>dangerous</b>.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
@@ -16915,15 +16915,15 @@ async function generateBannerSummaryLocal() {
 
     // Surge. The LOCUS picks which story gets told. The two branches below describe
     // swell reflecting off the Shelly headland wall — the FAR end of the swim — and on
-    // a day the BOWER POINT is what set the band that is simply the wrong headland, so
+    // a day THE POINT is what set the band that is simply the wrong headland, so
     // the point takes its own branch ahead of them. Same rule as the rest of this
     // function: describe the water, name the place, promise nothing. The instruction
     // itself is _sv.lineCheck rather than a sentence written again here, so the offline
     // baseline and the Oracle cannot drift into saying different things about it.
     if (domLocus === 'point' && domSurge !== 'Steady') {
       parts.push(pick([
-        ` The lively part of the bay today is the point — the swell has the period to feel the shelf off the Bower headland, the first point you pass leaving South Steyne, and it is standing up over it.`,
-        ` Surge is concentrated on the point today rather than through the bay — long-period swell shoaling over the shelf off the Bower headland, right at the start of the swim.`,
+        ` The lively part of the bay today is the point — the swell has the period to feel the shelf off the point, the first headland you pass leaving South Steyne, and it is standing up over it.`,
+        ` Surge is concentrated on the point today rather than through the bay — long-period swell shoaling over the shelf off the point, right at the start of the swim.`,
       ]));
       if (_sv.lineCheck) {
         parts.push(' ' + _sv.lineCheck.charAt(0).toUpperCase() + _sv.lineCheck.slice(1) + '.');
@@ -18896,7 +18896,7 @@ function metricBreakdownHTML(key) {
       // point day — the exact defect the heave row was added to fix, and the reason the
       // point could not simply be folded into the swell row.
       row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0))) +
-      row('At the Bower point', f(w.point || 0), '(long-period swell standing up on the shelf — scored at the point, not in the bay)') +
+      row('At the point', f(w.point || 0), '(long-period swell standing up on the shelf — scored at the point, not in the bay)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw), `(the worse of the two — ${r.water.locus === 'point' ? 'the point' : 'the bay'})`) +
       // Not "v6" since 3 Jul 2026: the rail classifies on rawBL demerits ascending,
