@@ -7321,13 +7321,13 @@ const SITE_DEFAULTS = {
   // into was invisible to Entry. This adds a SHARE of the Chop face into Entry:
   //   entryChop = min(entryChopMaxPts, entryChopPts × max(0, chopCm − entryChopFloorCm))
   // Floor = the Smooth edge, so glassy days add nothing. Capped, so chop alone moves
-  // an otherwise-Easy entry to Doable at most (0 + 20 < caution 45); it only reaches
+  // an otherwise-Easy entry to Doable at most (0 + 15 < caution 45); it only reaches
   // Caution/Dangerous stacked on real swell. A START POINT, not a fit: 13 Sep 12:00
   // (9.4 cm) goes Easy 5.6 → Doable 13.7; over the 255 daylight hours in the matrix
   // 22 change band, all upward. entryChopPts = 0 turns it off.
   entryChopPts:     1.5,  // Entry demerit points per cm of Chop face above the floor
   entryChopFloorCm: 4,    // cm of Chop face that adds nothing (the Smooth/Ripply edge)
-  entryChopMaxPts:  20,   // ceiling on what chop can add to Entry
+  entryChopMaxPts:  15,   // ceiling on what chop can add to Entry. 20 → 15 (13 Sep 2026, per user)
   offshoreFloorKmh: 3,    // 12 → 10 → 8 → 0 → 3; BAKED from live KV (saved 2026-08-27T21:23Z).
                           // A 3 km/h floor, i.e. barely any: everything above a dead calm
                           // earns some credit, but a reading that is really just sensor
@@ -8869,7 +8869,7 @@ function bowerSurgeWater(d) {
 function entryChopDemerit(chopCm) {
   const pts   = (SITE.entryChopPts     != null) ? SITE.entryChopPts     : 0;
   const floor = (SITE.entryChopFloorCm != null) ? SITE.entryChopFloorCm : 4;
-  const cap   = (SITE.entryChopMaxPts  != null) ? SITE.entryChopMaxPts  : 20;
+  const cap   = (SITE.entryChopMaxPts  != null) ? SITE.entryChopMaxPts  : 15;
   if (!(pts > 0) || !isFinite(chopCm)) return 0;
   return Math.max(0, Math.min(cap, pts * Math.max(0, chopCm - floor)));
 }
@@ -15289,7 +15289,7 @@ const TUNE_PARAMS = [
   { key:'offshoreMaxFrac', label:'ENTRY · Offshore credit — max share of stack', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Hardest ceiling on the credit: the largest FRACTION of the swell+wind subtotal a westerly may cancel. 1 = old behaviour (can zero Entry outright and make the sea invisible); 0.6 = it can never take more than 60%.' },
   { key:'entryChopPts', label:'ENTRY · Chop at entry (pts per cm)', min:0, max:5, step:0.1, hint:'LOCAL — no sheet cell. Entry demerit points added per cm of Chop face above the floor. 0 turns it off. 1.5 = a 9.4 cm Choppy hour adds 8 pts.' },
   { key:'entryChopFloorCm', label:'ENTRY · Chop at entry — floor (cm)', min:0, max:12, step:0.5, hint:'LOCAL — no sheet cell. Chop face below this adds nothing to Entry. 4 = the Smooth/Ripply edge.' },
-  { key:'entryChopMaxPts', label:'ENTRY · Chop at entry — ceiling (pts)', min:0, max:45, step:1, hint:'LOCAL — no sheet cell. The most chop can ever add to Entry. 20 keeps chop alone to Doable on a flat-swell day.' },
+  { key:'entryChopMaxPts', label:'ENTRY · Chop at entry — ceiling (pts)', min:0, max:45, step:1, hint:'LOCAL — no sheet cell. The most chop can ever add to Entry. 15 keeps chop alone to Doable on a flat-swell day.' },
   { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
