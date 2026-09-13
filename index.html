@@ -3434,9 +3434,19 @@
   /* Everything else pinned to the bottom edge moves up above the bar. */
   body.tabs-on .thf-toast       { bottom: calc(26px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
   body.tabs-on #sw-update-toast { bottom: calc(22px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
-  /* Announcements pill sits in the header, top-right, while tabs are on (13 Sep 2026):
-     floating bottom-right it covered the time picker. ensurePill() mounts it there. */
-  body.tabs-on header #annWhatsNew { position: static; margin-left: auto; align-self: center; box-shadow: none; z-index: auto; }
+  /* Announcements, while tabs are on (13 Sep 2026): no longer a floating pill (it covered
+     the time picker) nor a header pill (it took page height). ensurePill() mounts the same
+     button as the first row of the More sheet; its unseen dot is mirrored onto the More tab.
+     New posts still open as a popup on their own - this row is for reading them again. */
+  #moreSheet #annWhatsNew { position: static; display: none; width: 100%; box-shadow: none; z-index: auto;
+    border: 0; border-radius: 10px; background: none; color: var(--text); padding: 10px 8px; margin-top: 4px;
+    font-family: inherit; font-size: 14.5px; font-weight: 600; text-align: left; gap: 12px; align-items: center; }
+  #moreSheet #annWhatsNew.show { display: flex; }
+  #moreSheet #annWhatsNew::before { content: ""; flex: none; width: 21px; height: 21px; background: var(--deep);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.7%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M4 10v4h3l6 4V6L7 10z%27/%3E%3Cpath d=%27M16.5 9a4 4 0 0 1 0 6%27/%3E%3C/svg%3E") center/contain no-repeat;
+            mask: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.7%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M4 10v4h3l6 4V6L7 10z%27/%3E%3Cpath d=%27M16.5 9a4 4 0 0 1 0 6%27/%3E%3C/svg%3E") center/contain no-repeat; }
+  #moreSheet #annWhatsNew .ann-dot { order: 2; margin-left: auto; }
+  #moreSheet #annWhatsNew:active, #moreSheet #annWhatsNew:hover { background: rgba(17,53,65,0.07); }
   body.tabs-on .a2hs-banner     { bottom: calc(12px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
 
   .tabbar { display: none; }
@@ -5455,11 +5465,12 @@
   <button type="button" class="tabbar-btn" role="tab" data-tabbtn="community" aria-selected="false">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3.5 19c.8-3.2 3-5 5.5-5s4.7 1.8 5.5 5M14.6 14.4c.7-.3 1.5-.5 2.4-.5 2 0 3.6 1.4 4.2 4"/></svg>Community<span class="tabbar-dot" id="tabbarDot" hidden></span></button>
   <button type="button" class="tabbar-btn" data-tabbtn="more" aria-expanded="false" aria-controls="moreSheet">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>More</button>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>More<span class="tabbar-dot" id="moreDot" hidden></span></button>
 </nav>
 <div class="more-scrim" id="moreScrim"></div>
 <div class="more-sheet" id="moreSheet" role="dialog" aria-label="More" aria-modal="true">
   <div class="more-grab" aria-hidden="true"></div>
+  <div id="moreAnnSlot"></div>
   <div class="more-grp">Your settings</div>
   <div class="more-mode" id="moreModeRow"><span>Show</span></div>
   <button type="button" class="more-item" data-more="custom">
@@ -5559,7 +5570,18 @@
     window.showTabFor(el);
     setTimeout(function () { try { el.scrollIntoView({ block: 'start' }); } catch (e) { el.scrollIntoView(); } }, 30);
   }
+  // Announcements row (mounted later by the announcements module): close the sheet so the
+  // popup opens over the page, and mirror its unseen dot onto the More tab.
+  var annSlot = document.getElementById('moreAnnSlot'), moreDot = document.getElementById('moreDot');
+  function paintMoreDot() {
+    var p = document.getElementById('annWhatsNew');
+    if (moreDot) moreDot.hidden = !(p && p.classList.contains('show') && p.classList.contains('unseen'));
+  }
+  if (annSlot && window.MutationObserver) {
+    new MutationObserver(paintMoreDot).observe(annSlot, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+  }
   sheet.addEventListener('click', function (e) {
+    if (e.target.closest('#annWhatsNew')) { setMore(false); return; }
     var b = e.target.closest('[data-more]'); if (!b) return;
     var what = b.getAttribute('data-more');
     setMore(false);
@@ -21920,9 +21942,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     b.setAttribute('aria-label', 'See the announcements');
     b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>Announcements</span>';
     b.addEventListener('click', function () { if (_active.length) { _shownKind = 'all'; showPopup(_active); } });
-    // With bottom tabs on it lives in the header, top-right; otherwise it floats as before.
-    var hdr = document.body.classList.contains('tabs-on') && document.querySelector('.wrap > header');
-    (hdr || document.body).appendChild(b);
+    // With bottom tabs on it is a row in the More sheet; otherwise it floats as before.
+    var slot = document.body.classList.contains('tabs-on') && document.getElementById('moreAnnSlot');
+    (slot || document.body).appendChild(b);
     return b;
   }
   function refreshPill(){
