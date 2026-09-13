@@ -36,7 +36,9 @@ Oracle draft that omits it, and also rejects an absolute no-swim call. So:
 - Any new surface showing a verdict must consume `_bannerFacts`, never re-derive
   it. The rule already lives in four places (local baseline, client
   `summaryConflict`, Worker `SWIMSUM_SYS`, Worker validator) that must stay in
-  step; a fifth that re-derives will drift silently.
+  step; a fifth that re-derives will drift silently. The tab ribbon (`#tabRibbon`,
+  on Bay and Community) is the model to copy: it only reads `_bannerFacts` and
+  repaints on the `bannerfacts` event dispatched right after the facts are built.
 - Features that could read as encouragement (streaks, "better than yesterday",
   group roll-calls) must be hard-suppressed when `safetyLevel === 'dangerous'`.
 
@@ -122,6 +124,19 @@ video is the one exception and serves ranges by hand (`serveSplashVideo`).
 ---
 
 ## Current state worth knowing
+
+- **The page is split into bottom tabs** (Today · Bay · Community · More, since
+  13 Sep 2026). Cards never move in the DOM: each top-level card in
+  `#panel-snapshot` carries `data-tab="today|bay|community"` and CSS on
+  `body.tabs-on[data-tab]` hides the other tabs' cards. So:
+  - **Every new top-level card needs a `data-tab`**, or it shows on every tab.
+  - Anything that scrolls to a card must call `window.showTabFor(el)` first, or
+    it scrolls to an element that is `display:none`.
+  - A card that measures itself (canvas, map) is sized while hidden; tab switches
+    dispatch `resize`, so re-fit on that.
+  - More holds settings and reference pages only — never a forecast or community
+    section. Hiding a section stays the job of Choose sections.
+  - Tabs are off with `?tune=1`, `?backtest=1` and `?debug=1`.
 
 - **Live scoring path is NS.** `const DEFAULT_SRC = 'ns'`. (An older note claiming
   the default flipped to WW is stale — verify in code, not from notes.)
