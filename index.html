@@ -6810,10 +6810,10 @@ const SITE_DEFAULTS = {
   // and it is the ONE place on the swim where energy CONCENTRATES rather than
   // being sheltered. Every other term in the model is a transmit fraction into a
   // protected spot — SS at the ramp, BL in the bay — so nothing could rise when
-  // the point went off, and on 12 Sep 2026 a 0.38 m / 15.1 s / 124.5° swell broke
+  // the point went off, and on 12 Sep 2026 a 0.38 m / 15.1 s / 124.5° swell surged
   // there while both sheltered scores read flat. Period is the whole discriminator:
   // 15 s is ~350 m of wavelength and feels the shelf from ~17 m of water, where 8 s
-  // is ~100 m and feels it at ~5 m. Same height, one breaks and one doesn't.
+  // is ~100 m and feels it at ~5 m. Same height, one surges there and one doesn't.
   //
   // This is NOT a fourth metric. pointSurge() returns DEMERITS in the same units as
   // rawBL and blSwimWater takes the WORSE of the two, so Surge means "the worst
@@ -8294,8 +8294,8 @@ async function loadChopShelterConfig(force) {
 // The point is the one spot on the swim line where swell CONCENTRATES: it is
 // the first thing you pass leaving South Steyne and it has a shallow shelf off it.
 // Long-period swell both shoals harder there and refracts further around the arm,
-// which is why a 15 s swell breaks on it while an 8 s swell of the same height does
-// not — see the SITE.pointSens block for the observed anchor.
+// which is why a 15 s swell surges there while an 8 s swell of the same height does
+// not (surge, not breaking — the point has never been observed to break) — see the SITE.pointSens block for the observed anchor.
 //
 // Deliberately NOT a breaking-height calculation. The Komar & Gaughan curve was torn
 // out of this file once already (see shelteredRampH) because it shoaled the wave up to
@@ -15026,7 +15026,7 @@ const TW_GROUPS = [
       { key:'blWaveSens', name:'BL wave sensitivity', desc:'Weight of BL swell + sea-heave.', cell:'bl_wave_sens · V2', prov:'sheet', provTxt:'SHEET · copy to V2' },
       // prov:'local' — no sheet cell at all; SITE is the only home, so the panel is
       // authoritative rather than a copy-to-cell staging area.
-      { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the point</b>, and this scales the point. The point is the one spot on the line where swell is stood up rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the point</b>, and this scales the point. The point is the one spot on the line where long-period swell is concentrated rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointPeriodLo', name:'Point period floor', tag:'LIVE', desc:'Below this period the point term is <b>exactly zero</b> — long swell feels the shelf, short swell does not. This is what keeps ordinary days scoring as they always did. The point term is capped at the <b>Surgy edge</b> below, so the point alone can reach Surgy but never Washy — unless the release below is on.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointWashyMult', name:'Point Washy release', tag:'DRAFT', desc:'<b>0 = off.</b> On a long-period swell (≥14 s) that keeps building, lets the point go past the Surgy cap once its energy reaches this many × the Surgy edge — so a 1.4 m 15 s SE swell no longer reads the same as a 0.6 m one. At 15 s: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. Washy under a Caution entry makes the day <b>dangerous</b>.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
@@ -16016,8 +16016,11 @@ function swimVerdict(entryLabel, swimLabel, surgeLabel, surgeLocus) {
     // is the banned sentence — outcome promised, hazard mitigated. "Check the line past
     // it on site" is the permitted one, exactly as "check on site for entry at Shelly
     // Beach" never claims Shelly is easy. Change the string, keep the shape.
+    // NEVER "breaking" (13 Sep 2026): nobody has seen the point break. What is known is
+    // that long-period swell surges there because of its shape. The Worker whitelists
+    // this exact string (and rejects "point ... breaking"), so change both together.
     lineCheck: (surgeLocus === 'point' && surgeLabel !== 'Steady')
-      ? 'the point is breaking — check the line past it on site'
+      ? 'long-period swell is surging at the point — check the line past it on site'
       : null
   };
 }
@@ -16922,7 +16925,7 @@ async function generateBannerSummaryLocal() {
     // baseline and the Oracle cannot drift into saying different things about it.
     if (domLocus === 'point' && domSurge !== 'Steady') {
       parts.push(pick([
-        ` The lively part of the bay today is the point — the swell has the period to feel the shelf off the point, the first headland you pass leaving South Steyne, and it is standing up over it.`,
+        ` The lively part of the bay today is the point — the swell has the period to feel the shelf off the point, the first headland you pass leaving South Steyne, and its shape concentrates the surge there.`,
         ` Surge is concentrated on the point today rather than through the bay — long-period swell shoaling over the shelf off the point, right at the start of the swim.`,
       ]));
       if (_sv.lineCheck) {
@@ -17139,8 +17142,8 @@ async function generateBannerSummaryLocal() {
     safetyLevel: _sv.safetyLevel,
     siteCheck:   _sv.siteCheck,
     // Which way ROUND, alongside which way IN. Same reasoning as siteCheck: computed
-    // here and not left to the summariser, because an LLM asked to infer where a swell
-    // breaks in this bay will eventually put it on the wrong headland. Null on every
+    // here and not left to the summariser, because an LLM asked to infer where swell
+    // surges in this bay will eventually put it on the wrong headland. Null on every
     // day the point is not the thing setting Surge, which is nearly all of them.
     lineCheck:   _sv.lineCheck,
     weather: {
@@ -18896,7 +18899,7 @@ function metricBreakdownHTML(key) {
       // point day — the exact defect the heave row was added to fix, and the reason the
       // point could not simply be folded into the swell row.
       row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0))) +
-      row('At the point', f(w.point || 0), '(long-period swell standing up on the shelf — scored at the point, not in the bay)') +
+      row('At the point', f(w.point || 0), '(long-period swell surging over the shelf — scored at the point, not in the bay)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw), `(the worse of the two — ${r.water.locus === 'point' ? 'the point' : 'the bay'})`) +
       // Not "v6" since 3 Jul 2026: the rail classifies on rawBL demerits ascending,
