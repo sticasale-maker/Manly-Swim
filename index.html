@@ -16017,10 +16017,12 @@ function swimVerdict(entryLabel, swimLabel, surgeLabel, surgeLocus) {
     // it on site" is the permitted one, exactly as "check on site for entry at Shelly
     // Beach" never claims Shelly is easy. Change the string, keep the shape.
     // NEVER "breaking" (13 Sep 2026): nobody has seen the point break. What is known is
-    // that long-period swell surges there because of its shape. The Worker whitelists
-    // this exact string (and rejects "point ... breaking"), so change both together.
-    lineCheck: (surgeLocus === 'point' && surgeLabel !== 'Steady')
-      ? 'long-period swell is surging at the point — check the line past it on site'
+    // that long-period swell surges there because of its shape, so the sentence names
+    // the Surge band itself — the same word the rail shows (Drifty / Surgy / Washy).
+    // The Worker whitelists exactly these three strings (and rejects "point ...
+    // breaking"), so change both together.
+    lineCheck: (surgeLocus === 'point' && ['Drifty', 'Surgy', 'Washy'].indexOf(surgeLabel) >= 0)
+      ? 'the point is ' + surgeLabel.toLowerCase() + ' — check the line past it on site'
       : null
   };
 }
@@ -16509,6 +16511,19 @@ function summaryConflict(text, facts) {
   if (String(v.surge || '') === 'Washy' &&
       /\b(with a mate|with a buddy|with someone|bring a mate|stay close|only get in|only swim|if you'?re confident|if you are confident|experienced swimmers?|strong swimmers?)\b/.test(t))
     return 'offers a way to swim a washed-out bay';
+  // NO JUDGING WHETHER A SWIMMER CAN COPE (13 Sep 2026), on ANY day. "Drift is in play
+  // but manageable" reached the Oracle on a good-tier Drifty morning because
+  // "manageable" was only refused on dangerous days. Describing the water is the job;
+  // whether someone can handle it is theirs to decide (CLAUDE.md §1, mitigation).
+  // Sentence-scoped to the safety subjects — surge, drift, the point, entry, swell —
+  // so chop, which is comfort not safety, and "a fine morning" are left alone.
+  // Mirrors the Worker validator; change both together.
+  {
+    const HAZ  = /\b(surge|surging|surgy|drift|drifty|washy|push and pull|the point|entry|get(?:ting)? in|get(?:ting)? out|swell|waves?|shore ?break|wash)\b/;
+    const COPE = /\b(manageable|unmanageable|handleable|nothing you can'?t handle|(?:easily|perfectly) handled|no (?:real )?problem|not a problem|nothing (?:serious|major|to worry about)|under control|won'?t (?:trouble|bother) (?:you|anyone|most)|you'?ll cope|easy to cope with|(?:is|are|stays?|should be) (?:fine|ok|okay))\b/;
+    const s = t.trim().split(/(?<=[.!?])\s+/).find(x => HAZ.test(x) && COPE.test(x));
+    if (s) return 'judges whether a swimmer can cope: "' + s.slice(0, 120) + '"';
+  }
   if (v.entry && v.entry !== 'Easy' && /\beasy\b/.test(t))
     return 'says "easy" but Entry=' + v.entry;
   if (v.entry === 'Easy' && /\b(dangerous|treacherous|do not swim)\b/.test(t))
@@ -16879,14 +16894,14 @@ async function generateBannerSummaryLocal() {
       ]));
     } else if (domEntry === 'Caution') {
       parts.push(pick([
-        `Entry needs a bit of care today — ${swellIntroStr} means the beach at South Steyne is a little lively. Nothing unmanageable, but be careful: watch a few waves before you commit, and if you're unsure use the steps instead.`,
+        `Entry needs a bit of care today — ${swellIntroStr} means the beach at South Steyne is a little lively. Be careful: watch a few waves before you commit, and if you're unsure use the steps instead.`,
         `Worth being a bit patient getting in today. ${swellIntroStr.charAt(0).toUpperCase() + swellIntroStr.slice(1)} and the beach entry at South Steyne is a bit bouncy. Be careful and have a look before you leap — if you're unsure, the steps are the safer option.`,
       ]));
     } else {
       // Entry is fine, open with swell context
       if (shelteredContrast) {
         parts.push(pick([
-          `Large ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir} offshore, but the bay is sheltered from that direction so the entry stays manageable.`,
+          `Large ${avgS1H.toFixed(1)}m swell from the ${dominantS1Dir} offshore, but the bay is sheltered from that direction so far less of it reaches the entry.`,
           `Big ${avgS1H.toFixed(1)}m ${dominantS1Dir} swell out wide, though the headland knocks most of it down before it reaches the bay.`,
         ]));
       } else if (avgS1H >= 1.2) {
