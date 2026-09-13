@@ -5661,11 +5661,13 @@
       if (f.safetyLevel === 'good' || f.safetyLevel === 'caution' || f.safetyLevel === 'dangerous') ribbon.classList.add(f.safetyLevel);
       text.textContent = 'Entry ' + f.verdict.entry + ' · Chop ' + f.verdict.swim + ' · Surge ' + f.verdict.surge;
       // The Oracle's reference hour, not the hour picked on Today — so it is named.
-      // Short so the line fits: just the hour while it is today, the day only when it is not.
+      // Just the hour, never the day (13 Sep 2026, per user): "Tomorrow 07:00" was cut off
+      // beside long labels. Screen readers still hear the day, via the aria-label below.
       var hh = (f.arrival && f.arrival.hhmm) ? f.arrival.hhmm : '';
-      when.textContent = f.timeCtx === 'tomorrow' ? ('Tomorrow ' + hh).trim() : (hh || 'Today');
+      var day = f.timeCtx === 'tomorrow' ? 'Tomorrow' : 'Today';
+      when.textContent = hh;
       chk.textContent = f.siteCheck ? f.siteCheck.charAt(0).toUpperCase() + f.siteCheck.slice(1) : '';
-      ribbon.setAttribute('aria-label', (when.textContent ? when.textContent + ': ' : '') + text.textContent +
+      ribbon.setAttribute('aria-label', day + (hh ? ' ' + hh : '') + ': ' + text.textContent +
                           (chk.textContent ? '. ' + chk.textContent : '') + '. Go to Today');
     }
     paintDot();
