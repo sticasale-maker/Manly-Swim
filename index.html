@@ -3437,9 +3437,10 @@
   /* Everything else pinned to the bottom edge moves up above the bar. */
   body.tabs-on .thf-toast       { bottom: calc(26px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
   body.tabs-on #sw-update-toast { bottom: calc(22px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
-  body.tabs-on #annWhatsNew     { bottom: calc(12px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+  /* Announcements pill sits in the header, top-right, while tabs are on (13 Sep 2026):
+     floating bottom-right it covered the time picker. ensurePill() mounts it there. */
+  body.tabs-on header #annWhatsNew { position: static; margin-left: auto; align-self: center; box-shadow: none; z-index: auto; }
   body.tabs-on .a2hs-banner     { bottom: calc(12px + var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
-  body.more-open #annWhatsNew   { display: none !important; }
 
   .tabbar { display: none; }
   body.tabs-on .tabbar {
@@ -21922,7 +21923,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     b.setAttribute('aria-label', 'See the announcements');
     b.innerHTML = '<span class="ann-dot" aria-hidden="true"></span><span>Announcements</span>';
     b.addEventListener('click', function () { if (_active.length) { _shownKind = 'all'; showPopup(_active); } });
-    document.body.appendChild(b);
+    // With bottom tabs on it lives in the header, top-right; otherwise it floats as before.
+    var hdr = document.body.classList.contains('tabs-on') && document.querySelector('.wrap > header');
+    (hdr || document.body).appendChild(b);
     return b;
   }
   function refreshPill(){
