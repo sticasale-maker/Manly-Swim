@@ -3123,7 +3123,7 @@
   .src-dot.idle  { background:var(--dim); opacity:0.45; }
   .page-footer {
     border-top:1px solid var(--border);
-    margin-top:40px; padding-top:16px;
+    margin-top:14px; padding-top:16px;
     display:flex; align-items:center; flex-wrap:wrap;
     gap:16px; justify-content:space-between;
   }
@@ -3473,14 +3473,17 @@
     border: 1px solid rgba(200,189,160,0.16); border-radius: 12px; background: var(--sky);
     color: var(--foam); font-family: 'Inter', sans-serif; text-align: left; cursor: pointer;
   }
-  #tabRibbon .tr-top { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; }
-  #tabRibbon .tr-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #7d8f97; }
+  /* One line on every phone: the type scales with the viewport and never wraps; at
+     the extreme the WHEN label gives way - the three safety labels never truncate. */
+  #tabRibbon .tr-top { display: flex; align-items: center; gap: 6px; font-size: clamp(9.5px, 2.95vw, 12.5px); font-weight: 600; white-space: nowrap; min-width: 0; }
+  #tabRibbon .tr-text { flex: none; }
+  #tabRibbon .tr-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #7d8f97; }
   #tabRibbon.good .tr-dot      { background: var(--rail-green); }
   #tabRibbon.caution .tr-dot   { background: var(--rail-yellow); }
   #tabRibbon.dangerous         { background: #3a1d1c; border-color: rgba(176,57,47,0.6); }
   #tabRibbon.dangerous .tr-dot { background: var(--rail-red); }
-  #tabRibbon .tr-when { margin-left: auto; font-size: 11px; font-weight: 500; color: rgba(200,189,160,0.75); white-space: nowrap; }
-  #tabRibbon .tr-check { font-size: 12px; line-height: 1.4; color: #ecd9c9; padding-left: 17px; }
+  #tabRibbon .tr-when { margin-left: auto; padding-left: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: clamp(9px, 2.6vw, 11px); font-weight: 500; color: rgba(200,189,160,0.75); white-space: nowrap; }
+  #tabRibbon .tr-check { font-size: clamp(10.5px, 3vw, 12px); line-height: 1.4; color: #ecd9c9; padding-left: 15px; }
   #tabRibbon .tr-check:empty { display: none; }
 
   /* Today's short window onto Community — the latest reports, one line each. */
@@ -5416,6 +5419,8 @@
     </div>
   </div>
 
+  <!-- App views sits above the footer divider and the Updated line (13 Sep 2026). -->
+  <p style="text-align:center; margin:34px 0 0; font-size:22px; color:var(--dim); letter-spacing:0.4px;">&#128065; App views: <strong id="visitCount" style="color:var(--ocean);">&mdash;</strong></p>
   <!-- Footer -->
   <div class="page-footer">
     <!-- Version sits directly under "Updated" (moved out of the header 13 Sep 2026).
@@ -5429,7 +5434,6 @@
   </div>
   <div class="status-bar" id="statusBar">Loading…</div>
 
-  <p style="text-align:center; margin:14px 0 4px; font-size:22px; color:var(--dim); letter-spacing:0.4px;">&#128065; App views: <strong id="visitCount" style="color:var(--ocean);">&mdash;</strong></p>
 
 </div><!-- /wrap -->
 
@@ -5601,8 +5605,9 @@
       if (f.safetyLevel === 'good' || f.safetyLevel === 'caution' || f.safetyLevel === 'dangerous') ribbon.classList.add(f.safetyLevel);
       text.textContent = 'Entry ' + f.verdict.entry + ' · Chop ' + f.verdict.swim + ' · Surge ' + f.verdict.surge;
       // The Oracle's reference hour, not the hour picked on Today — so it is named.
-      when.textContent = (f.dayPhrase ? String(f.dayPhrase).toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }) : '') +
-                         (f.arrival && f.arrival.hhmm ? ' ' + f.arrival.hhmm : '');
+      // Short so the line fits: just the hour while it is today, the day only when it is not.
+      var hh = (f.arrival && f.arrival.hhmm) ? f.arrival.hhmm : '';
+      when.textContent = f.timeCtx === 'tomorrow' ? ('Tomorrow ' + hh).trim() : (hh || 'Today');
       chk.textContent = f.siteCheck ? f.siteCheck.charAt(0).toUpperCase() + f.siteCheck.slice(1) : '';
       ribbon.setAttribute('aria-label', (when.textContent ? when.textContent + ': ' : '') + text.textContent +
                           (chk.textContent ? '. ' + chk.textContent : '') + '. Go to Today');
