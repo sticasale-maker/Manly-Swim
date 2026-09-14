@@ -7332,6 +7332,16 @@ const SITE_DEFAULTS = {
   // below pointPeriodLo or outside the direction window, and max(rawBL, 0) === rawBL,
   // so every ordinary day scores bit-identically to before and surgeThresholds needs
   // no re-fit. Only point days move.
+  // ── Wall reflection at high tide — SURGE, bay only (14 Sep 2026, per user) ──────────
+  // Once the tide is up the swell skips the beach and hits the wall, and the reflected
+  // waves come back through the bay. Below surgeWallTideLo nothing; between Lo and Hi a
+  // reflected share ramps in (smoothstep); above Hi the full share surgeWallReflect of the
+  // bay's arriving swell + sea heave is added. Multiplicative like the tide term: no
+  // arriving energy, no reflection. Anchored on 14 Sep 10:00 (1.65 m, 0.83 m ENE sea) ->
+  // Surgy, the swimmer's call; wall reached at ~1.3 m per the user.
+  surgeWallTideLo:  1.3,   // m — water starts reaching the wall
+  surgeWallTideHi:  1.6,   // m — full reflection
+  surgeWallReflect: 1.0,   // reflected share of the bay's swell + sea at full reflection; 0 = off
   pointSens:      7.0,   // LOCAL — no sheet cell. Demerit scale on swellPower(H,P) at the point.
                          // ANCHORED on the one observed event: 0.38 m / 15.09 s / 124.6° on
                          // 12 Sep 2026 → ~26 demerits, i.e. mid-Drifty. The rail comes off green
@@ -8866,6 +8876,17 @@ function pointSurge(d) {
   return Math.min(cap, raw);
 }
 
+// Reflected share (0..surgeWallReflect) of the bay's arriving energy at this tide — see
+// SITE.surgeWallTideLo. One helper so the score and any readout cannot disagree.
+function surgeWallFactor(tideM) {
+  const R  = (SITE.surgeWallReflect != null) ? SITE.surgeWallReflect : 0;
+  const lo = (SITE.surgeWallTideLo  != null) ? SITE.surgeWallTideLo  : 1.3;
+  const hi = (SITE.surgeWallTideHi  != null) ? SITE.surgeWallTideHi  : 1.6;
+  if (!(R > 0) || tideM == null || !isFinite(tideM)) return 0;
+  const t = Math.max(0, Math.min(1, (tideM - lo) / Math.max(0.05, hi - lo)));
+  return R * t * t * (3 - 2 * t);
+}
+
 function blSwimWater(d, chop) {
   const { swell1H, swell1Dir, swell1P,
           windWaveH, windWaveDir, windWaveP, windDir, windKmh, tideM } = d;
@@ -8909,7 +8930,11 @@ function blSwimWater(d, chop) {
   // the CHOP metric (chopQ7), the swell terms, chop_swim_weight and bl_chop_impact are
   // all untouched.
   const chop_d = 0;
-  const rawBay = s1_d + sea_d + tide_d;  // swell + forecast sea-heave (tide-amplified) + tide
+  // Wall reflection: at high tide a share of the swell + sea heave reaching the bay comes
+  // back off the wall (SITE.surgeWallReflect). Zero below surgeWallTideLo and zero on a
+  // flat day, so it can only make a big-tide day with real energy rougher.
+  const wall_d = surgeWallFactor(tideM) * (s1_d + sea_d);
+  const rawBay = s1_d + sea_d + tide_d + wall_d;  // swell + sea heave + tide + wall reflection
   // SURGE IS NOW THE WORST POINT ON THE LINE, NOT ONE NODE (12 Sep 2026). The bay
   // term above is scored at Bower Lane; pointSurge is the point you pass on the
   // way there. Take the WORSE of the two and remember which — a swimmer wants the
@@ -8934,7 +8959,7 @@ function blSwimWater(d, chop) {
   // summing. The point term is its own key alongside them, and `locus` says which of
   // the two the band above was actually classified on.
   return { label: z[0], cls: z[1], score: score, raw: rawBL, greenEdge: t.steady, locus: locus,
-           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, chop: chop_d, point: pt_d, raw: rawBL } };
+           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, wall: wall_d, chop: chop_d, point: pt_d, raw: rawBL } };
 }
 
 // ── WW-NATIVE SURGE — reinstated 2026-08-02 (the retired pre-NS Bower Lane path) ──
@@ -15385,6 +15410,9 @@ const TUNE_PARAMS = [
   // Surge at the point (12 Sep 2026). LOCAL — no sheet cell; SITE is the only
   // home, so the panel is the only place to turn them. Moves re-score live through
   // pointSurge(), which reads SITE on every call.
+  { key:'surgeWallReflect', label:'SURGE · Wall reflection (share)', min:0, max:2, step:0.05, hint:'LOCAL — no sheet cell. At full reflection this share of the bay swell + sea heave is added again (waves off the wall at high tide). 0 turns it off. 1.0 = 14 Sep 10:00 reads Surgy.' },
+  { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
+  { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
   { key:'pointPeriodLo', label:'SURGE · Point period floor (s)', min:5, max:18, step:0.5, hint:'LOCAL — no sheet cell. Below this swell period the point term is EXACTLY zero, which is what leaves ordinary days scoring bit-identically to before the point existed. Smoothsteps to full weight at the period ceiling. Raise it to make the point a rarer call.' },
   { key:'pointWashyMult', label:'SURGE · Point Washy release (× Surgy edge)', min:0, max:6, step:0.25, hint:'LOCAL — DRAFT, default 0 = OFF (point capped at Surgy, as before). Otherwise the multiple of the Surgy edge the raw point energy must reach before the cap lets go and the point alone can call Washy. Only at full period weight (P ≥ point period ceiling, 14 s). At 15 s in the direction window: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. 1 = no cap. Washy under a Caution entry makes the day DANGEROUS.' },
@@ -15431,6 +15459,7 @@ const TUNE_LIVE_KEYS = [
   'entryChopPts', 'entryChopFloorCm', 'entryChopMaxPts',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
   'pointSens', 'pointPeriodLo', 'pointWashyMult',
+  'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi',
 ];
 // The New NS cell a sheet-backed knob must be typed into, read off its own hint
 // ("New NS AQ2 — COPY here") so there is no second list to fall out of step.
@@ -19488,13 +19517,14 @@ function metricBreakdownHTML(key) {
       // "exempt below 20°", and it is full at 80°, not 90°. Both figures in the
       // old note were wrong.
       row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; 10% at 10°, 20% at 40°, full at 80°)`) +
+      ((w.wall || 0) > 0.0005 ? row('Wall reflection', f(w.wall), '(high tide: waves reach the wall and bounce back into the bay)') : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       // TWO COLUMNS SINCE 12 Sep 2026. Everything above is the BAY, scored at Bower
       // Lane; the point is scored separately and Surge is the WORSE of the two. Without
       // these two rows the printed stack stops reconciling with the demerit total on a
       // point day — the exact defect the heave row was added to fix, and the reason the
       // point could not simply be folded into the swell row.
-      row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0))) +
+      row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0) + (w.wall || 0))) +
       row('At the point', f(w.point || 0), '(long-period swell surging over the shelf — scored at the point, not in the bay)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw), `(the worse of the two — ${r.water.locus === 'point' ? 'the point' : 'the bay'})`) +
