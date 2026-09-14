@@ -7271,7 +7271,7 @@ const SITE_DEFAULTS = {
   periodExp:      1.2,    // pinned to MASTER R24 (was 1.15); tab-1 severed. sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.39,   // pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideAmp(tideM) × (s1_d + ww_d), signed (adds above ref, credits below); see tideHighMult for the high-side tilt
+  tideGain:       0.585,  // x1.5 on 14 Sep 2026 (was 0.39, per user) - New NS C7 MUST carry the same value or the sheet overrides this. Pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideAmp(tideM) × (s1_d + ww_d), signed (adds above ref, credits below); see tideHighMult for the high-side tilt
   // Dispersion-table shape. TRUE = legacy 19-row mirror (fold 181–359° onto 1–179°).
   // blDispFold follows the sheet: the parser flips it to false once rows 190°–350° carry
   // values. nsDispFold is PINNED true by SS_DISP_LOCK_FOLD — Entry does not move.
@@ -7609,8 +7609,12 @@ let SITE = {
   tideGate: function(dirDeg) {
     const a = ((dirDeg % 360) + 360) % 360;
     const dir = a > 180 ? 360 - a : a;
-    const start = 70;  // Entry tide-gate bounds now app-owned (were tab-1 col R r25/r26).
-    const full  = 90;  // Curve lives in code, like bowerTideGate — no sheet dependency.
+    // 70/90 -> 40/70 (14 Sep 2026, per user). At 70 the gate shut out the ENE wind-sea: on
+    // 14 Sep the 0.83 m sea from 60 deg was 21 of Entry's 21.6 pts at 08:00 on a 1.32 m tide
+    // and got ZERO tide amplification, so a high-tide morning that was visibly worse read
+    // Doable. Still multiplicative - no arriving energy, no tide effect.
+    const start = 40;  // Entry tide-gate bounds are app-owned (were tab-1 col R r25/r26).
+    const full  = 70;  // Curve lives in code, like bowerTideGate — no sheet dependency.
     const span  = Math.max(1, full - start);
     const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
