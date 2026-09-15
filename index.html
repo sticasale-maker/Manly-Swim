@@ -7369,6 +7369,8 @@ const SITE_DEFAULTS = {
                          // 8–9 s days after it, peaking at Drifty and never promoting a day to a
                          // safety caution. That is one event, not a base rate — watch it.
   pointPeriodLo:  11,    // LOCAL — below this period the term is exactly 0 (the no-op property above).
+  pointMinH:      0.3,   // LOCAL — below this swell HEIGHT (m) the point term is exactly 0 (15 Sep 2026,
+                         // per user): surge at the point must be grounded in swell size, not period alone.
   pointPeriodHi:  14,    // LOCAL — full weight at/above. Smoothstep between, same shape as every other gate.
   pointWashyMult: 0,     // LOCAL — DRAFT, OFF. Lets the point go past the Surgy ceiling on a BUILDING
                          // long-period swell (13 Sep 2026). Without it Surge pins at Surgy from ~0.52 m at
@@ -8849,6 +8851,7 @@ async function loadChopShelterConfig(force) {
 function pointSurge(d) {
   const H = d.swell1H || 0, P = d.swell1P || 0;
   if (!H || !P) return 0;
+  if (H < ((SITE.pointMinH != null) ? SITE.pointMinH : 0.3)) return 0;   // too small to surge, whatever the period
   const lo = (SITE.pointPeriodLo != null) ? SITE.pointPeriodLo : 11;
   const hi = (SITE.pointPeriodHi != null) ? SITE.pointPeriodHi : 14;
   if (P <= lo) return 0;
@@ -8943,7 +8946,11 @@ function blSwimWater(d, chop) {
   // two places, not two surges, and adding them would double-count one swell.
   const pt_d  = pointSurge(d);
   const rawBL = Math.max(rawBay, pt_d);
-  const locus = (pt_d > rawBay) ? 'point' : 'bay';
+  // The point is only NAMED when it is the reason Surge is off Steady (15 Sep 2026, per user):
+  // a 0.3-demerit point beating a 0.2-demerit bay on a flat morning read "surge at the point"
+  // on a Steady rail. The band still uses max(bay, point) - only the naming changes.
+  const steadyEdge = (SITE.surgeThresholds && SITE.surgeThresholds.steady) || 20;
+  const locus = (pt_d > rawBay && pt_d > steadyEdge) ? 'point' : 'bay';
   // Classify on rawBL DEMERITS (higher = worse), same direction as Entry — edges
   // ASCEND toward bad (steady ≤ drifty ≤ surgy, beyond = washy), matching Entry's
   // easy/doable/caution. Band names kept. Score for display = 60 − demerits (higher
@@ -9006,7 +9013,7 @@ function bowerSurgeWater(d) {
   // Envelope mapped to the live water shape so the Surge popup + calibration loggers
   // keep reading .raw / .parts. No wind-wave heave on the Bower path (chop excluded).
   return { label: z[0], cls: z[1], score: v6, raw: raw, greenEdge: 9.5,
-           locus: (pt > p.raw) ? 'point' : 'bay',
+           locus: (pt > p.raw && pt > ((SITE.surgeThresholds && SITE.surgeThresholds.steady) || 20)) ? 'point' : 'bay',
            parts: { swell1: p.s1_d + p.s2_d, windWave: 0, tide: p.tide_d, chop: 0, point: pt, raw: raw } };
 }
 
@@ -15414,6 +15421,7 @@ const TUNE_PARAMS = [
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
+  { key:'pointMinH', label:'SURGE · Point minimum swell height (m)', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Below this swell height the point term is EXACTLY zero, whatever the period. 0.3 m since 15 Sep 2026.' },
   { key:'pointPeriodLo', label:'SURGE · Point period floor (s)', min:5, max:18, step:0.5, hint:'LOCAL — no sheet cell. Below this swell period the point term is EXACTLY zero, which is what leaves ordinary days scoring bit-identically to before the point existed. Smoothsteps to full weight at the period ceiling. Raise it to make the point a rarer call.' },
   { key:'pointWashyMult', label:'SURGE · Point Washy release (× Surgy edge)', min:0, max:6, step:0.25, hint:'LOCAL — DRAFT, default 0 = OFF (point capped at Surgy, as before). Otherwise the multiple of the Surgy edge the raw point energy must reach before the cap lets go and the point alone can call Washy. Only at full period weight (P ≥ point period ceiling, 14 s). At 15 s in the direction window: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. 1 = no cap. Washy under a Caution entry makes the day DANGEROUS.' },
   // REMOVED 11 Jul 2026 — both were advertised as scoring knobs and reached no band:
@@ -15458,7 +15466,7 @@ const TUNE_LIVE_KEYS = [
   'offshorePts', 'offshoreArc', 'offshoreMaxPts', 'offshoreMaxFrac', 'offshoreFloorKmh',
   'entryChopPts', 'entryChopFloorCm', 'entryChopMaxPts',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
-  'pointSens', 'pointPeriodLo', 'pointWashyMult',
+  'pointSens', 'pointPeriodLo', 'pointWashyMult', 'pointMinH',
   'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi',
 ];
 // The New NS cell a sheet-backed knob must be typed into, read off its own hint
