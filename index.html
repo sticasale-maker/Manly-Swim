@@ -21981,7 +21981,13 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
          transparent so the image's see-through pixels reveal the overlay behind it,
          not a white frosted backing. Text posts keep the readable frosted panel. */
       "#annPopup.ann-pic-only{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none;}" +
-      ".ann-card .ann-c-img{width:100%;height:auto;display:block;border-radius:10px;margin-bottom:11px;}" +
+      /* A baseline JPEG paints top-down as it arrives, so a slow load showed the top strip
+         of the picture over blank card (16 Sep 2026, reported on the Manly Jazz map). The
+         picture is held invisible until it has fully decoded, then fades in; .ann-img-on is
+         set by the img's own onload, or by the safety timer in showPopup. */
+      ".ann-card .ann-c-img{width:100%;height:auto;display:block;border-radius:10px;margin-bottom:11px;opacity:0;transition:opacity .25s ease;background:rgba(74,143,173,.10);min-height:120px;}" +
+      ".ann-card .ann-c-img.ann-img-on{opacity:1;min-height:0;background:transparent;}" +
+      "@media (prefers-reduced-motion: reduce){.ann-card .ann-c-img{transition:none;}}" +
       ".ann-card .ann-c-time{font-size:11px;color:var(--dim,#4a5f6e);margin:-2px 0 9px;letter-spacing:.3px;}" +
       ".ann-card .ann-c-kicker{display:inline-flex;align-items:center;gap:5px;font-family:'Inter',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ocean,#4a8fad);background:rgba(74,143,173,.12);border-radius:999px;padding:3px 10px;margin-bottom:9px;}" +
       ".ann-card .ann-c-foot{font-size:11.5px;line-height:1.5;color:var(--dim,#4a5f6e);margin-top:10px;padding-top:8px;border-top:1px solid rgba(74,143,173,.18);font-style:italic;}" +
@@ -22067,7 +22073,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     sc.innerHTML = list.map(function (a) {
       var ttl = (a.title || '').trim();
       var bodyHtml = clean(a.body_html || '');
-      var img = a.image_url ? '<img class="ann-c-img" src="' + escText(a.image_url) + '" alt="">' : '';
+      var img = a.image_url ? '<img class="ann-c-img" src="' + escText(a.image_url) + '" alt="" decoding="async"' +
+                              ' onload="this.classList.add(\'ann-img-on\')" onerror="this.classList.add(\'ann-img-on\')">' : '';
       var title = ttl ? '<div class="ann-c-title">' + escText(ttl) + '</div>' : '';
       var text = bodyHtml ? '<div class="ann-c-text">' + bodyHtml + '</div>' : '';
       // Quiet posts are the daily line, not an announcement. A kicker + footnote
@@ -22086,6 +22093,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annPopup')) $('annPopup').classList.toggle('ann-pic-only', !anyText);
     // [[STORM_STATS]] token → live-computed Storm Watch dashboard (module above).
     if (window.stormStatsInject) window.stormStatsInject(sc);
+    sc.querySelectorAll('.ann-c-img').forEach(function (im) {
+      if (im.complete && im.naturalWidth) im.classList.add('ann-img-on');
+    });
+    setTimeout(function () {
+      sc.querySelectorAll('.ann-c-img').forEach(function (im) { im.classList.add('ann-img-on'); });
+    }, 4000);
     sc.scrollTop = 0;
     $('annOverlay').classList.add('show');
   }
@@ -22210,7 +22223,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
           try { removeBorderBackground(ctx, cw, chh, bgTol); } catch (e) {}
           cv.toBlob(function (b) { b ? resolve({ blob: b, ext: 'png', type: 'image/png' }) : reject(new Error('encode failed')); }, 'image/png');
         } else {
-          cv.toBlob(function (b) { b ? resolve({ blob: b, ext: 'jpg', type: 'image/jpeg' }) : reject(new Error('encode failed')); }, 'image/jpeg', 0.85);
+          // WebP first (16 Sep 2026): a browser paints WebP only when it is fully decoded,
+          // so a picture can never appear half-drawn on a slow connection the way a baseline
+          // JPEG does. toBlob falls back to JPEG on its own where WebP is not supported —
+          // the blob's own type is what we trust, never the type we asked for.
+          cv.toBlob(function (b) {
+            if (!b) return reject(new Error('encode failed'));
+            var webp = (b.type === 'image/webp');
+            resolve({ blob: b, ext: webp ? 'webp' : 'jpg', type: webp ? 'image/webp' : 'image/jpeg' });
+          }, 'image/webp', 0.85);
         }
       };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('image load failed')); };
