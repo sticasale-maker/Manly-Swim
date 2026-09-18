@@ -9865,7 +9865,36 @@ function sydneyOffsetHrs(utcMs) { return isSydneyDST(utcMs) ? 11 : 10; }
 // Accepts either the static-json shape ({hours:{...}}) OR the raw NSW API shape
 // ({payload:{data:{wave_summary:{dims,series}}}}), so the same parser works when
 // the Worker starts returning the upstream payload verbatim.
+// NS sea period, smoothed 1-2-1 over the neighbouring hours (19 Sep 2026). The feed
+// re-partitions the sea from one hour to the next — 24 Sep 2026 stepped 5.8→6.9 s
+// between 16:00 and 17:00 and held — and the slap/heave split is period-squared, so a
+// raw step became a one-hour cliff in Surge and Chop. Height and direction untouched.
+// Returns NEW row objects: never mutate a cached payload.
+function smoothNsSeaPeriod(map) {
+  if (!map) return map;
+  const near = (k, dh) => {
+    const t = Date.parse(k.replace(' ', 'T') + 'Z');
+    if (!Number.isFinite(t)) return null;
+    const n = map[new Date(t + dh * 3600000).toISOString().replace('T', ' ').substring(0, 13) + ':00:00'];
+    return (n && n.windWaveP > 0) ? n.windWaveP : null;
+  };
+  const out = {};
+  for (const k in map) {
+    const r = map[k];
+    if (!r || !(r.windWaveP > 0)) { out[k] = r; continue; }
+    let sum = 2 * r.windWaveP, w = 2;
+    const a = near(k, -1), b = near(k, 1);
+    if (a != null) { sum += a; w += 1; }
+    if (b != null) { sum += b; w += 1; }
+    out[k] = Object.assign({}, r, { windWaveP: Math.round(sum / w * 1000) / 1000, _rawSeaP: r.windWaveP });
+  }
+  return out;
+}
+
 function parseNearshore(j) {
+  return smoothNsSeaPeriod(parseNearshoreRaw(j));
+}
+function parseNearshoreRaw(j) {
   if (!j) return null;
 
   // Shape A: pre-baked static json (already AEST, already mapped)
