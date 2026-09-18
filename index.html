@@ -876,6 +876,26 @@
   .poll-peng-wrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
   .poll-penguin { display: block; height: 40px; width: auto; flex: 0 0 auto; }
 
+  /* ── Air quality tile + warning (18 Sep 2026) ── */
+  .aq-tile { background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius);
+    padding: 8px 14px 7px 20px; margin: 0 0 8px; }
+  .aq-tile[hidden], .aq-warn[hidden] { display: none; }
+  .aq-main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .aq-lbl { font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 1.5px; color: var(--dim); }
+  .aq-val { display: flex; align-items: center; gap: 7px; font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(20px, 5.5vw, 26px); letter-spacing: 1px; color: var(--deep); line-height: 1; }
+  .aq-dot { width: 12px; height: 12px; border-radius: 50%; background: #9aa7ad; flex: none;
+    box-shadow: 0 0 0 1.5px rgba(17,53,65,0.25); }
+  .aq-sub { font-size: 11.5px; color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
+  .aq-attr { font-size: 9.5px; color: var(--dim); opacity: .8; margin-top: 3px; letter-spacing: .2px; }
+  .aq-tile.aq-old { opacity: .55; }
+  .aq-tile.aq-none .aq-level { color: var(--dim); }
+  .aq-tile.aq-none .aq-attr { display: none; }
+  .aq-warn { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: #3a2419;
+    border-left: 5px solid var(--aq-col, #e08a3c); color: #f1e3d3; font-size: 13.5px; line-height: 1.45; }
+  .aq-warn b { color: #fff; }
+  .aq-warn .aq-attr { color: #d9c6b3; }
+
   /* ── Live cam row (Surfline stills, 2 cols) ── */
   .livecam-row {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 8px;
@@ -4082,6 +4102,11 @@
 
     </div><!-- /snapshot-board -->
 
+    <!-- AIR QUALITY WARNING (18 Sep 2026) — only when Google's NSW category is Poor or
+         worse now, or forecast to be within 12 h. Reports the air; never advises about
+         the water. Filled by paintAir(). -->
+    <div class="aq-warn" id="aqWarn" data-tab="today" hidden></div>
+
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim" data-tab="today">
       <div class="quality-card sea-temp-card2">
@@ -4101,6 +4126,19 @@
           <span class="poll-peng-wrap"><img id="pollutionPenguin" class="poll-penguin" alt="Pollution forecast" style="display:none"></span>
         </a>
       </div>
+    </div>
+
+    <!-- AIR QUALITY TILE (18 Sep 2026) — Google Air Quality, NSW categories, via the Worker's
+         /aq route (one shared hourly refresh). Hidden until the Worker is configured; grey
+         when there is no reading (absent is grey, never green); faded when the reading is
+         old (nothing undated). Google's attribution line is required wherever it shows. -->
+    <div class="aq-tile" id="aqTile" data-tab="today" hidden>
+      <div class="aq-main">
+        <div class="aq-lbl">Air</div>
+        <div class="aq-val"><span class="aq-dot" aria-hidden="true"></span><span class="aq-level">—</span></div>
+        <div class="aq-sub"></div>
+      </div>
+      <div class="aq-attr">Includes air quality data from Google</div>
     </div>
 
     <!-- Who Lives Here - doorway to species.html. Sits here rather than deeper
@@ -5823,6 +5861,7 @@
 // CONSTANTS
 // =============================================================================
 const WW_WORKER_URL   = 'https://bold-rain-6ded.sticasale.workers.dev/forecast';
+const AQ_URL          = 'https://bold-rain-6ded.sticasale.workers.dev/aq';
 // Open-Meteo WEATHER is proxied through the Worker: direct browser calls to
 // api.open-meteo.com fail on some networks ('Failed to fetch' / aborted signal)
 // while the Worker reaches the host fine. The Worker forwards the query string
@@ -16720,6 +16759,106 @@ function waterQualityLine() {
 // its 2h fresh window, which means the live refresh has been failing. Keeps the Oracle
 // honest: the prose must not narrate hours-old conditions as if they were live. Pull-to-
 // refresh (the #ptr-indicator) refetches. Silent whenever the forecast is fresh.
+// ── AIR QUALITY (18 Sep 2026) ─────────────────────────────────────────────────
+// Google Air Quality via the Worker's /aq route (NSW Air Quality Categories). One
+// shared hourly refresh server-side; the app re-asks every 30 min while visible.
+(function () {
+  var ORDER = ['good', 'fair', 'poor', 'very poor', 'extremely poor'];
+  var rank = function (l) { return ORDER.indexOf(l); };
+  var POOR = rank('poor');
+  var OLD_MS = 3 * 3600 * 1000;           // a reading older than this is faded (CLAUDE.md §8)
+  var _aq = null;
+  function hhmm(iso) {
+    try { return new Date(iso).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Australia/Sydney' }); }
+    catch (e) { return ''; }
+  }
+  function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function pollutant(n) { return n && n.dominant ? (n.dominant.name || n.dominant.code || '') : ''; }
+  // Worst forecast hour within the next 12 h, and the first hour after the current
+  // Poor-or-worse spell when it drops back below Poor (for "easing by").
+  function outlook() {
+    var f = (_aq && _aq.forecast) || [], now = Date.now(), horizon = now + 12 * 3600 * 1000;
+    var worst = null, firstPoor = null, ease = null;
+    f.forEach(function (h) {
+      var t = Date.parse(h.time); if (!(t > now) || t > horizon + 12 * 3600 * 1000) return;
+      if (t <= horizon && (!worst || rank(h.level) > rank(worst.level))) worst = h;
+      if (t <= horizon && !firstPoor && rank(h.level) >= POOR) firstPoor = h;
+    });
+    for (var i = 0; i < f.length; i++) {
+      var t2 = Date.parse(f[i].time); if (!(t2 > now)) continue;
+      if (rank(f[i].level) < POOR) { ease = f[i]; break; }
+    }
+    return { worst: worst, firstPoor: firstPoor, ease: ease };
+  }
+  function nowUsable() {
+    var n = _aq && _aq.now; if (!n || !n.level) return null;
+    var t = Date.parse(n.time || _aq.fetchedAt);
+    return { n: n, old: !(t > 0) || (Date.now() - t > OLD_MS) };
+  }
+  function paintTile() {
+    var el = document.getElementById('aqTile'); if (!el) return;
+    // Hidden until the Worker is configured AND has produced at least one real reading
+    // (fetchedAt), so a mis-set key never shows a grey tile to everyone. After that, a
+    // missing reading shows grey "No reading" as usual (CLAUDE.md §8).
+    if (!_aq || _aq.configured === false || !_aq.fetchedAt) { el.hidden = true; return; }
+    el.hidden = false;
+    var lvl = el.querySelector('.aq-level'), dot = el.querySelector('.aq-dot'), sub = el.querySelector('.aq-sub');
+    var u = nowUsable();
+    el.classList.toggle('aq-none', !u);
+    el.classList.toggle('aq-old', !!(u && u.old));
+    if (!u) { lvl.textContent = 'No reading'; dot.style.background = ''; sub.textContent = ''; return; }
+    lvl.textContent = cap(u.n.level);
+    dot.style.background = u.n.color || '';
+    var bits = [];
+    var p = pollutant(u.n); if (p) bits.push(p);
+    var t = hhmm(u.n.time || _aq.fetchedAt); if (t) bits.push(u.old ? t + ' (old)' : t);
+    sub.textContent = bits.join(' · ');
+  }
+  function warnText() {
+    var u = nowUsable(), o = outlook();
+    if (u && !u.old && rank(u.n.level) >= POOR) {
+      var p = pollutant(u.n);
+      var s = '<b>Air quality ' + u.n.level + '</b> now' + (p ? ' (' + p + ')' : '') + '.';
+      if (o.ease) s += ' Forecast to ease to ' + o.ease.level + ' by ' + hhmm(o.ease.time) + '.';
+      return { html: s, color: u.n.color };
+    }
+    if (o.firstPoor && (!u || rank(u.n.level) < POOR)) {
+      return { html: '<b>Air quality forecast to reach ' + o.worst.level + '</b> from ' + hhmm(o.firstPoor.time) + '.', color: o.worst.color };
+    }
+    return null;
+  }
+  function paintWarn() {
+    var el = document.getElementById('aqWarn'); if (!el) return;
+    var w = (_aq && _aq.configured !== false) ? warnText() : null;
+    if (!w) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.style.setProperty('--aq-col', w.color || '#e08a3c');
+    el.innerHTML = w.html + '<div class="aq-attr">Includes air quality data from Google</div>';
+  }
+  function oracleLine() {
+    var w = (_aq && _aq.configured !== false) ? warnText() : null;
+    if (!w) return '';
+    var plain = w.html.replace(/<[^>]+>/g, '').replace(/^Air quality /, 'Air quality is ');
+    return ' ' + plain + ' (Air quality data from Google.)';
+  }
+  function load() {
+    if (document.hidden) return;
+    fetch(AQ_URL, { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        _aq = d; paintTile(); paintWarn();
+        // The Oracle text is rendered elsewhere; nudge a repaint of the water paragraph
+        // only if a line now needs to appear or go.
+        try { if (typeof refreshCommunitySummary === 'function') refreshCommunitySummary(); } catch (e) {}
+      })
+      .catch(function () { if (_aq) { paintTile(); paintWarn(); } });
+  }
+  window.swimAir = { oracleLine: oracleLine, reload: load };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
+  setInterval(load, 30 * 60 * 1000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && (!_aq || Date.now() - Date.parse(_aq.fetchedAt || 0) > 35 * 60 * 1000)) load(); });
+})();
+
 function forecastStaleLine() {
   try {
     const c = loadCache(WW_CACHE_KEY);
@@ -16777,7 +16916,12 @@ function bluebottleLine() {
   const tail = f.count === 1 ? ' at ' + f.lastTime : ', the last at ' + f.lastTime;
   return ' ' + who + ' ' + when + tail + '.';
 }
-function appendCommunity(text) { return (text || '') + waterQualityLine() + bluebottleLine() + forecastStaleLine(); }
+// AIR QUALITY — same contract as bluebottleLine: reports, never advises, dated, and
+// only at Poor or worse (the user's threshold). Reads the one cache paintAir() uses.
+function airQualityLine() {
+  try { return (window.swimAir && window.swimAir.oracleLine) ? window.swimAir.oracleLine() : ''; } catch (e) { return ''; }
+}
+function appendCommunity(text) { return (text || '') + waterQualityLine() + bluebottleLine() + airQualityLine() + forecastStaleLine(); }
 
 // The closing beat, shown or hidden as ONE unit — the heading and the text
 // together. Two writers reach it (the summariser and the local baseline) and both
@@ -20250,6 +20394,7 @@ if ('serviceWorker' in navigator) {
     { key:'wxbar', label:"Weather bar (sky + feels)", sel:'.cond-wx', complete:1, custom:1 },
     { key:'slider', label:"Time slider", sel:'.slider-wrap', complete:1, custom:1, core:1 },
     { key:'quality', label:"Sea temp + Pollution", sel:'.quality-row-slim', complete:1, custom:1 },
+    { key:'airquality', label:"Air quality (Google)", sel:'#aqTile', complete:1, custom:1 },
     // Directly above the swell map on the page, so directly above it here.
     { key:'wholiveshere', label:"Who Lives Here (species browser link)", sel:'#wlhCard', complete:1, custom:1 },
     { key:'swellmap', label:"Swell + Wind map", sel:'#swellGraphWrap', complete:1, custom:1 },
