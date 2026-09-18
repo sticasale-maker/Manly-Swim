@@ -913,7 +913,11 @@
   .aqm-row small { color: var(--dim); }
   .aqm-h { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1.5px; font-size: 15px; color: var(--dim); margin: 14px 0 5px; }
   .aqm-strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
-  .aqm-strip i { height: 18px; border-radius: 3px; background: #c9d2d6; }
+  .aqm-strip i { height: 18px; border-radius: 3px; background: #c9d2d6; cursor: pointer; }
+  .aqm-strip i.sel { outline: 2px solid var(--deep); outline-offset: 1px; }
+  .aqm-why { font-size: 12.5px; line-height: 1.45; color: var(--text); margin-top: 8px; }
+  .aqm-why b { color: var(--deep); }
+  .aqm-read { font-size: 12px; color: var(--dim); margin-top: 4px; min-height: 17px; font-variant-numeric: tabular-nums; }
   .aqm-ticks { display: grid; grid-template-columns: repeat(4, 1fr); font-size: 10.5px; color: var(--dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
   .aqm-foot { font-size: 11px; color: var(--dim); margin-top: 14px; line-height: 1.5; }
   .aqm-foot a { color: var(--ann-link, #1e6c8c); }
@@ -16909,6 +16913,36 @@ function waterQualityLine() {
       host.appendChild(img);
     }
   }
+  // What drives an hour, in words. Google names the pollutant; the "usually" part is
+  // general knowledge about that pollutant, not a claim about today's cause.
+  var POLL = {
+    pm25: { name: 'PM2.5', what: 'fine particles — usually smoke, wood heaters or traffic' },
+    pm10: { name: 'PM10',  what: 'coarse particles — usually dust, sea salt or smoke' },
+    o3:   { name: 'ozone', what: 'forms in sunshine from traffic and industry fumes' },
+    no2:  { name: 'NO₂',   what: 'mostly traffic' },
+    so2:  { name: 'SO₂',   what: 'industry and shipping' },
+    co:   { name: 'CO',    what: 'traffic and fires' }
+  };
+  function pollWord(code) { var p = POLL[String(code || '').toLowerCase()]; return p ? p.name : (code || ''); }
+  // Spells of Fair-or-worse in the next 24 h, each with its most common driver.
+  function forecastWhy(f) {
+    var spells = [], cur = null;
+    f.forEach(function (h) {
+      var bad = rank(h.level) >= 1;
+      if (bad && cur && cur.level === h.level) { cur.end = h; cur.doms.push(h.dominant); }
+      else if (bad) { cur = { level: h.level, start: h, end: h, doms: [h.dominant] }; spells.push(cur); }
+      else cur = null;
+    });
+    if (!spells.length) return f.length ? 'Good for the next 24 hours.' : '';
+    return spells.slice(0, 3).map(function (sp) {
+      var count = {}, top = null;
+      sp.doms.forEach(function (d) { if (!d) return; count[d] = (count[d] || 0) + 1; if (!top || count[d] > count[top]) top = d; });
+      var end = new Date(Date.parse(sp.end.time) + 3600000).toISOString();
+      var p = top && POLL[String(top).toLowerCase()];
+      return '<b>' + cap(sp.level) + ' ' + hhmm(sp.start.time) + '–' + hhmm(end) + '</b>' +
+             (p ? ' · mainly ' + p.name + ' (' + p.what + ')' : (top ? ' · mainly ' + top : ''));
+    }).join('<br>');
+  }
   function units(u) {
     return u === 'MICROGRAMS_PER_CUBIC_METER' ? 'µg/m³' : u === 'PARTS_PER_BILLION' ? 'ppb' : (u || '');
   }
@@ -16935,7 +16969,7 @@ function waterQualityLine() {
     var strip = '';
     for (var i = 0; i < 24; i++) {
       var h = f[i];
-      strip += '<i title="' + (h ? hhmm(h.time) + ' ' + h.level : '') + '" style="background:' + (h && h.color ? h.color : '') + '"></i>';
+      strip += '<i data-i="' + i + '" title="' + (h ? hhmm(h.time) + ' ' + h.level : '') + '" style="background:' + (h && h.color ? h.color : '') + '"></i>';
     }
     var ticks = [0, 6, 12, 18].map(function (k) { return '<span>' + (f[k] ? hhmm(f[k].time) : '') + '</span>'; }).join('');
     body.innerHTML =
@@ -16947,10 +16981,21 @@ function waterQualityLine() {
       (d.name ? '<p class="aqm-row">Main pollutant: <b>' + d.name + '</b>' +
         (d.value != null ? ' · ' + (Math.round(d.value * 10) / 10) + ' ' + units(d.units) : '') + '</p>' : '') +
       (d.sources ? '<p class="aqm-row"><small>' + String(d.sources).replace(/</g, '&lt;') + '</small></p>' : '') +
-      (f.length ? '<div class="aqm-h">Next 24 hours</div><div class="aqm-strip">' + strip + '</div><div class="aqm-ticks">' + ticks + '</div>' : '') +
+      (f.length ? '<div class="aqm-h">Next 24 hours</div><div class="aqm-strip" id="aqmStrip">' + strip + '</div><div class="aqm-ticks">' + ticks + '</div>' +
+        '<div class="aqm-read" id="aqmRead">Tap a bar for that hour.</div>' +
+        '<div class="aqm-why">' + forecastWhy(f) + '</div>' : '') +
       '<div class="aqm-foot">Includes air quality data from Google. Categories: NSW Air Quality Categories; ' +
       'map colours: Google\'s Universal AQI. Basemap: Bureau of Meteorology.<br>' +
       '<a href="https://www.airquality.nsw.gov.au/" target="_blank" rel="noopener">NSW Government monitoring stations &rsaquo;</a></div>';
+    var stripEl = document.getElementById('aqmStrip');
+    if (stripEl) stripEl.addEventListener('click', function (e) {
+      var b = e.target.closest('i[data-i]'); if (!b) return;
+      var h = f[+b.getAttribute('data-i')]; if (!h) return;
+      Array.prototype.forEach.call(stripEl.children, function (x) { x.classList.toggle('sel', x === b); });
+      var p = h.dominant && POLL[String(h.dominant).toLowerCase()];
+      document.getElementById('aqmRead').textContent = hhmm(h.time) + ' · ' + cap(h.level) +
+        (h.dominant ? ' · ' + pollWord(h.dominant) + (p ? ' (' + p.what + ')' : '') : '');
+    });
     ov.classList.add('open');
     // Lay tiles after the sheet is visible, so the box has a size.
     requestAnimationFrame(function () {
