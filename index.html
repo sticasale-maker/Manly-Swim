@@ -889,6 +889,32 @@
   .aq-sub { font-size: 11.5px; color: var(--dim); margin-left: auto; font-variant-numeric: tabular-nums; }
   .aq-attr { font-size: 9.5px; color: var(--dim); opacity: .8; margin-top: 3px; letter-spacing: .2px; }
   .aq-tile.aq-old { opacity: .55; }
+  .aq-tile { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .aq-tile:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
+  .aq-go { font-size: 22px; line-height: 1; color: var(--dim); margin-left: 4px; }
+  .aq-tile.aq-none .aq-go { display: none; }
+  #aqModal .db-modal { max-width: 460px; width: 100%; }
+  .aqm-map { position: relative; width: 100%; aspect-ratio: 1 / 1; border-radius: 12px; overflow: hidden;
+    background: #cfdde4; margin: 4px 0 8px; }
+  .aqm-layer { position: absolute; inset: 0; }
+  .aqm-layer img { position: absolute; display: block; }
+  .aqm-heat { opacity: .62; }
+  .aqm-pin { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+    border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--deep), 0 1px 4px rgba(0,0,0,.5); }
+  .aqm-key { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); margin: 0 0 12px; }
+  .aqm-key i { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(90deg, #009e3a, #84cf33, #ffff00, #ff8c00, #ff0000, #800000); }
+  .aqm-now { display: flex; align-items: center; gap: 10px; }
+  .aqm-now .aq-dot { width: 16px; height: 16px; }
+  .aqm-now b { font-family: 'Bebas Neue', sans-serif; font-weight: 400; font-size: 30px; letter-spacing: 1px; color: var(--deep); line-height: 1; }
+  .aqm-now span { font-size: 12px; color: var(--dim); margin-left: auto; }
+  .aqm-row { font-size: 13px; line-height: 1.5; color: var(--text); margin: 8px 0 0; }
+  .aqm-row small { color: var(--dim); }
+  .aqm-h { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1.5px; font-size: 15px; color: var(--dim); margin: 14px 0 5px; }
+  .aqm-strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
+  .aqm-strip i { height: 18px; border-radius: 3px; background: #c9d2d6; }
+  .aqm-ticks { display: grid; grid-template-columns: repeat(4, 1fr); font-size: 10.5px; color: var(--dim); margin-top: 3px; font-variant-numeric: tabular-nums; }
+  .aqm-foot { font-size: 11px; color: var(--dim); margin-top: 14px; line-height: 1.5; }
+  .aqm-foot a { color: var(--ann-link, #1e6c8c); }
   .aq-tile.aq-none .aq-level { color: var(--dim); }
   .aq-tile.aq-none .aq-attr { display: none; }
   .aq-warn { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: #3a2419;
@@ -4132,11 +4158,13 @@
          /aq route (one shared hourly refresh). Hidden until the Worker is configured; grey
          when there is no reading (absent is grey, never green); faded when the reading is
          old (nothing undated). Google's attribution line is required wherever it shows. -->
-    <div class="aq-tile" id="aqTile" data-tab="today" hidden>
+    <div class="aq-tile" id="aqTile" data-tab="today" hidden role="button" tabindex="0"
+         aria-label="Air quality — open the map and details">
       <div class="aq-main">
         <div class="aq-lbl">Air</div>
         <div class="aq-val"><span class="aq-dot" aria-hidden="true"></span><span class="aq-level">—</span></div>
         <div class="aq-sub"></div>
+        <span class="aq-go" aria-hidden="true">&rsaquo;</span>
       </div>
       <div class="aq-attr">Includes air quality data from Google</div>
     </div>
@@ -16853,7 +16881,91 @@ function waterQualityLine() {
       })
       .catch(function () { if (_aq) { paintTile(); paintWarn(); } });
   }
-  window.swimAir = { oracleLine: oracleLine, reload: load };
+  // ── The sheet ──────────────────────────────────────────────────────────────
+  // Map: the Bureau basemap the rain card uses (zoom 10, ~55 km across, Manly centred)
+  // under Google's heatmap tiles, proxied and cached by the Worker (/aqtile). The map
+  // colours are Google's Universal AQI; the words above it are the NSW categories.
+  var AQT_BASE = AQ_URL.replace(/\/aq$/, '/aqtile/10/');
+  var BOM_BASE = 'https://api.bom.gov.au/apikey/v1/mapping/basemaps/basemap_default/MapServer/tile/10/';
+  var Z = 10, RES = 152.87405657041106, O = 20037508.342787, COVER_M = 55000;
+  function merc(lat, lon) {
+    return { x: lon * O / 180, y: Math.log(Math.tan((90 + lat) * Math.PI / 360)) / (Math.PI / 180) * O / 180 };
+  }
+  function layTiles(host, box, urlFor) {
+    host.textContent = '';
+    var w = box.clientWidth, h = box.clientHeight; if (!w || !h) return;
+    var C = merc(-33.7967, 151.2878), mpp = COVER_M / w, halfW = COVER_M / 2, halfH = (h / 2) * mpp;
+    var span = 256 * RES, size = span / mpp;
+    var c0 = Math.floor((C.x - halfW + O) / span), c1 = Math.floor((C.x + halfW + O) / span);
+    var r0 = Math.floor((O - (C.y + halfH)) / span), r1 = Math.floor((O - (C.y - halfH)) / span);
+    for (var col = c0; col <= c1; col++) for (var row = r0; row <= r1; row++) {
+      var img = new Image(); img.alt = ''; img.decoding = 'async';
+      img.style.left = ((-O + col * span) - (C.x - halfW)) / mpp + 'px';
+      img.style.top = ((C.y + halfH) - (O - row * span)) / mpp + 'px';
+      img.style.width = size + 'px'; img.style.height = size + 'px';
+      img.addEventListener('error', function () { this.style.display = 'none'; });
+      img.src = urlFor(col, row);
+      host.appendChild(img);
+    }
+  }
+  function units(u) {
+    return u === 'MICROGRAMS_PER_CUBIC_METER' ? 'µg/m³' : u === 'PARTS_PER_BILLION' ? 'ppb' : (u || '');
+  }
+  function buildSheet() {
+    var ov = document.getElementById('aqModal');
+    if (ov) return ov;
+    ov = document.createElement('div');
+    ov.id = 'aqModal'; ov.className = 'db-modal-overlay';
+    ov.innerHTML = '<div class="db-modal" role="dialog" aria-modal="true" aria-labelledby="aqm-title">' +
+      '<div class="db-modal-head"><div class="db-modal-title" id="aqm-title">Air quality · Manly</div>' +
+      '<button class="db-modal-close" type="button" aria-label="Close">&#10005;</button></div>' +
+      '<div class="db-modal-summary" id="aqmBody"></div></div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function (e) { if (e.target === ov || e.target.closest('.db-modal-close')) closeSheet(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && ov.classList.contains('open')) closeSheet(); });
+    return ov;
+  }
+  function closeSheet() { var ov = document.getElementById('aqModal'); if (ov) ov.classList.remove('open'); }
+  function openSheet() {
+    var u = nowUsable(); if (!u) return;
+    var ov = buildSheet(), body = ov.querySelector('#aqmBody');
+    var n = u.n, d = n.dominant || {};
+    var f = ((_aq && _aq.forecast) || []).slice(0, 24);
+    var strip = '';
+    for (var i = 0; i < 24; i++) {
+      var h = f[i];
+      strip += '<i title="' + (h ? hhmm(h.time) + ' ' + h.level : '') + '" style="background:' + (h && h.color ? h.color : '') + '"></i>';
+    }
+    var ticks = [0, 6, 12, 18].map(function (k) { return '<span>' + (f[k] ? hhmm(f[k].time) : '') + '</span>'; }).join('');
+    body.innerHTML =
+      '<div class="aqm-map" id="aqmMap"><div class="aqm-layer" id="aqmBase"></div>' +
+      '<div class="aqm-layer aqm-heat" id="aqmHeat"></div><div class="aqm-pin" title="South Steyne"></div></div>' +
+      '<div class="aqm-key"><span>Cleaner</span><i></i><span>Dirtier</span></div>' +
+      '<div class="aqm-now"><span class="aq-dot" style="background:' + (n.color || '') + '"></span>' +
+      '<b>' + cap(n.level) + '</b><span>' + hhmm(n.time || _aq.fetchedAt) + (u.old ? ' (old)' : '') + '</span></div>' +
+      (d.name ? '<p class="aqm-row">Main pollutant: <b>' + d.name + '</b>' +
+        (d.value != null ? ' · ' + (Math.round(d.value * 10) / 10) + ' ' + units(d.units) : '') + '</p>' : '') +
+      (d.sources ? '<p class="aqm-row"><small>' + String(d.sources).replace(/</g, '&lt;') + '</small></p>' : '') +
+      (f.length ? '<div class="aqm-h">Next 24 hours</div><div class="aqm-strip">' + strip + '</div><div class="aqm-ticks">' + ticks + '</div>' : '') +
+      '<div class="aqm-foot">Includes air quality data from Google. Categories: NSW Air Quality Categories; ' +
+      'map colours: Google\'s Universal AQI. Basemap: Bureau of Meteorology.<br>' +
+      '<a href="https://www.airquality.nsw.gov.au/" target="_blank" rel="noopener">NSW Government monitoring stations &rsaquo;</a></div>';
+    ov.classList.add('open');
+    // Lay tiles after the sheet is visible, so the box has a size.
+    requestAnimationFrame(function () {
+      var box = document.getElementById('aqmMap');
+      layTiles(document.getElementById('aqmBase'), box, function (c, r) { return BOM_BASE + r + '/' + c; });
+      layTiles(document.getElementById('aqmHeat'), box, function (c, r) { return AQT_BASE + c + '/' + r; });
+    });
+    try { if (window.track) window.track('open_air', {}); } catch (e) {}
+  }
+  (function wireTile() {
+    var el = document.getElementById('aqTile'); if (!el) return;
+    el.addEventListener('click', openSheet);
+    el.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet(); } });
+  })();
+
+  window.swimAir = { oracleLine: oracleLine, reload: load, open: openSheet };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', load); else load();
   setInterval(load, 30 * 60 * 1000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden && (!_aq || Date.now() - Date.parse(_aq.fetchedAt || 0) > 35 * 60 * 1000)) load(); });
