@@ -83,16 +83,25 @@ Before committing, this must be empty:
 git diff HEAD | grep -E '^[+-].*(APP_BUILD|CACHE_VERSION)'
 ```
 
-## 6. The Cloudflare Worker is shared and dashboard-managed
+## 6. The Cloudflare Worker is shared, and lives in its own repo
 
-`bold-rain-6ded` also serves the Forecast App. It is edited in the dashboard, not
-deployed from this repo.
+`bold-rain-6ded` also serves the Forecast App. Since 19 Sep 2026 its source is
+`C:/Users/stica/repos/swim-worker`: local git, private, one file per feature. It is
+deployed with `npx wrangler deploy` from there, and **never edited in the dashboard**
+again, because the next deploy overwrites a dashboard edit. Its README maps the files
+and its CLAUDE.md holds the rules. The Drive `worker-*.js` copies are retired.
 
+- Never copy any of it into this repo: the source holds API keys, and this repo is
+  public and served by GitHub Pages.
+- `npm test` there must pass before a deploy. It proves a refactor changed nothing, and
+  it shows exactly what a deliberate change altered.
 - New routes must be **additive**; never change `/forecast` defaults.
-- Any redeploy must re-declare **both** crons — a 30 Jul 2026 deploy silently
-  stripped the daily-sentence cron and it went unnoticed for two days.
-- Keep the KV binding, or `/tune` silently falls back to cache.
+- **Both** crons and the RATE KV binding are declared in its `wrangler.toml`, so a
+  deploy cannot drop them. A 30 Jul 2026 dashboard deploy stripped the daily cron
+  and nobody noticed for two days; never remove them from the toml.
 - Free-tier KV write cap is real: cache at the edge, not in KV, for hot paths.
+- A deploy from this app session is blocked by the permission classifier unless the
+  owner allows `npx wrangler deploy`; otherwise the owner runs it after saying go.
 
 ## 7. Bake tuned knobs into `SITE` defaults
 
