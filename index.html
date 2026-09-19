@@ -1433,6 +1433,15 @@
     line-height: 1;
   }
   .bb-btn:hover { background: var(--ocean); color: #fff; }
+  /* Where the bluebottles are — required before a report sends. */
+  .bb-where { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-basis: 100%; }
+  .bb-where[hidden] { display: none; }
+  .bb-where-q { font-size: 12px; color: var(--dim); margin-right: 2px; }
+  .bb-where button {
+    font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--ocean); background: transparent; color: var(--ocean); line-height: 1.1;
+  }
+  .bb-where button.on { background: var(--ocean); color: #fff; }
   .bb-btn:disabled {
     border-color: var(--dim); color: var(--dim);
     cursor: default; opacity: 0.6;
@@ -4365,6 +4374,11 @@
             <img id="bbPhotoThumb" alt="Attached bluebottle photo">
             <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
           </span>
+          <div class="bb-where" id="bbWhere" hidden role="group" aria-label="Where are the bluebottles?">
+            <span class="bb-where-q">Where?</span>
+            <button type="button" data-w="sand" onclick="bbPickWhere('sand')">On the sand</button>
+            <button type="button" data-w="water" onclick="bbPickWhere('water')">In the water</button>
+          </div>
           <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
           <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
             <span id="bbNotifyLabel">🔔 Get notifications</span>
@@ -14374,10 +14388,14 @@ async function bbDeviceId() {
 // Fetch reports from last 48h
 async function bbFetch() {
   const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-  const res = await fetch(
-    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports?select=reported_at,photo_url&reported_at=gte.${since}&order=reported_at.asc`,
+  const get = cols => fetch(
+    `${BB_SUPABASE_URL}/rest/v1/bluebottle_reports?select=${cols}&reported_at=gte.${since}&order=reported_at.asc`,
     { headers: { 'apikey': BB_SUPABASE_KEY, 'Authorization': `Bearer ${BB_SUPABASE_KEY}` } }
   );
+  // `location` column added 19 Sep 2026 — a 400 (no column) or 401 (no column grant)
+  // means it isn't readable yet, so fall back to the old columns.
+  let res = await get('reported_at,photo_url,location');
+  if (!res.ok) res = await get('reported_at,photo_url');
   if (!res.ok) throw new Error(`Supabase fetch ${res.status}`);
   return await res.json(); // [{reported_at: '...'}, ...]
 }
@@ -14402,12 +14420,27 @@ function bbRelDay(d){
 // "report failed" and re-enables the button.
 // `keepalive` lets a queued report still reach Supabase when the undo window is
 // cut short by the user backgrounding or closing the page (see bbFlushPending).
-async function bbInsert(_deviceId, keepalive, photoUrl) {
-  // Only send p_photo_url when there's actually a photo — a bare report still
-  // posts an empty body, so the existing (no-photo) path keeps working before
-  // the report_bluebottle RPC is updated to accept the new arg.
-  const body = photoUrl ? JSON.stringify({ p_photo_url: photoUrl }) : '{}';
-  const res = await fetch(
+async function bbInsert(_deviceId, keepalive, photoUrl, where) {
+  // Only send the args that are set. p_location arrived 19 Sep 2026; until the
+  // RPC takes it the server answers PGRST202 (no such signature), and the report is
+  // re-sent without it rather than lost.
+  const args = {};
+  if (photoUrl) args.p_photo_url = photoUrl;
+  if (where) args.p_location = where;
+  let res = await bbRpc(args, keepalive);
+  if (!res.ok && where) {
+    const t = await res.clone().text().catch(() => '');
+    if (/PGRST202/.test(t)) { delete args.p_location; res = await bbRpc(args, keepalive); }
+  }
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    const code = /cooldown_active/.test(t) ? 'cooldown_active' : /photo_required/.test(t) ? 'photo_required' : ('http_' + res.status);
+    throw new Error(code);
+  }
+}
+function bbRpc(args, keepalive) {
+  const body = JSON.stringify(args);
+  return fetch(
     `${BB_SUPABASE_URL}/rest/v1/rpc/report_bluebottle`,
     {
       method: 'POST',
@@ -14420,7 +14453,22 @@ async function bbInsert(_deviceId, keepalive, photoUrl) {
       keepalive: !!keepalive
     }
   );
-  if (!res.ok) throw new Error(`Supabase rpc ${res.status}`);
+}
+
+// Where the bluebottles are. Required: every report says sand or water.
+let _bbWhere = null;
+const BB_WHERE_TEXT = { sand: 'on the sand', water: 'in the water' };
+function bbShowWhere(show) {
+  const w = document.getElementById('bbWhere'); if (!w) return;
+  w.hidden = !show;
+  Array.prototype.forEach.call(w.querySelectorAll('button[data-w]'), b =>
+    b.classList.toggle('on', b.getAttribute('data-w') === _bbWhere));
+}
+function bbPickWhere(w) {
+  _bbWhere = (w === 'sand' || w === 'water') ? w : null;
+  bbShowWhere(true);
+  const sub = document.getElementById('bbSub');
+  if (sub && !_bbPending) sub.textContent = _bbPhoto ? bbPhotoHint() : 'Tap Report to confirm the warning';
 }
 
 // ── Optional photo ───────────────────────────────────────────────────────────
@@ -14627,8 +14675,17 @@ async function bbPhotoPicked(ev) {
     const blob = await bbCompressImage(file);
     bbPhotoReset();
     const url = URL.createObjectURL(blob);
-    _bbPhoto = { blob, url, shotAt };
+    const rec = { blob, url, shotAt, remoteUrl: null };
+    // Upload NOW, not at send time. The send can happen from the pagehide /
+    // visibility flush, which cannot wait for an upload — it used to go out
+    // photo-less, the server refused it (a photo is required to START a warning)
+    // and the button silently fell back to "Report" (19 Sep 2026).
+    rec.uploadP = bbUploadPhoto(blob).then(u => (rec.remoteUrl = u), e => { console.warn('Bluebottle photo upload failed:', e.message); return null; });
+    _bbPhoto = rec;
     _bbPhotoUndated = !shotAt;
+    bbShowWhere(true);
+    const sbtn = document.getElementById('bbBtn');
+    if (sbtn && !_bbConfirming && !_bbPending && !sbtn.disabled) sbtn.textContent = 'Send';
     const thumb = document.getElementById('bbPhotoThumb'); if (thumb) thumb.src = url;
     const wrap  = document.getElementById('bbPhotoWrap');  if (wrap)  wrap.hidden = false;
     const pbtn  = document.getElementById('bbPhotoBtn');   if (pbtn)  pbtn.hidden = true;
@@ -14659,7 +14716,7 @@ function bbSafePhoto(u) {
 // Tap-to-expand the strip into a gallery of photo-backed reports. Only active
 // when there's at least one photo to show; taps on the buttons are ignored.
 function bbToggle(ev) {
-  if (ev && ev.target.closest('.bb-btn, .bb-notify, .bb-photo-btn, .bb-photo-wrap, #bbPhotoInput')) return;
+  if (ev && ev.target.closest('.bb-btn, .bb-notify, .bb-photo-btn, .bb-photo-wrap, .bb-where, #bbPhotoInput')) return;
   const strip = document.getElementById('bbStrip');
   const gallery = document.getElementById('bbGallery');
   const chev = document.getElementById('bbChev');
@@ -14783,12 +14840,14 @@ function bbRenderFromData(reports) {
     // reports are ordered asc, so the last element is the most recent.
     const lastTs = new Date(reports[reports.length - 1].reported_at);
     const lastTime = lastTs.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-    sub.textContent = `Last reported ${bbRelDay(lastTs)} at ${lastTime}`;
+    const lastWhere = BB_WHERE_TEXT[reports[reports.length - 1].location];
+    sub.textContent = `Last reported ${bbRelDay(lastTs)} at ${lastTime}${lastWhere ? ' · ' + lastWhere : ''}`;
   }
   // A staged photo's hint must survive refresh ticks (and mid-confirm/undo states).
   if (_bbPhoto && !_bbPending) {
     sub.textContent = bbPhotoHint();
   }
+  bbShowWhere(!!(_bbPhoto || _bbWhere));
 
   // Gallery: photo-backed reports (newest first). The strip is only tap-to-expand
   // when there's at least one photo to show.
@@ -14813,7 +14872,7 @@ function bbRenderFromData(reports) {
         // Now the window is 48 h, a bare time is ambiguous across two days, so each
         // shot carries its day word too (today/yesterday/weekday) — same idiom as
         // the "last reported" line. Kept to one short caption line.
-        const when = bbRelDay(ts) + ' ' + t;
+        const when = bbRelDay(ts) + ' ' + t + (BB_WHERE_TEXT[r.location] ? ' · ' + BB_WHERE_TEXT[r.location] : '');
         const url = bbSafePhoto(r.photo_url);
         return `<a class="bb-shot" href="${url}" target="_blank" rel="noopener">
             <img src="${url}" loading="lazy" alt="Bluebottle reported ${when}">
@@ -14905,6 +14964,15 @@ function bbReport() {
     return;
   }
 
+  // Where are they? Required on every report.
+  if (!_bbWhere) {
+    bbCancelConfirm();
+    bbShowWhere(true);
+    const sub = document.getElementById('bbSub');
+    if (sub) sub.textContent = 'Where are they? Pick one, then tap ' + (_bbPhoto ? 'Send' : 'Report');
+    return;
+  }
+
   if (!_bbConfirming) {
     _bbConfirming = true;
     const btn = document.getElementById('bbBtn');
@@ -14981,26 +15049,43 @@ async function bbSendNow(keepalive) {
   try {
     const deviceId = await bbDeviceId();
     let photoUrl = null;
-    // Upload a staged photo on the normal path. On teardown (keepalive flush) we
-    // skip the upload — a bare report still counts; it just won't be push-worthy.
-    if (_bbPhoto && _bbPhoto.blob && !keepalive) {
-      try { photoUrl = await bbUploadPhoto(_bbPhoto.blob); }
-      catch (e) { console.warn('Bluebottle photo upload failed:', e.message); }
+    // The photo went up when it was attached. On the normal path wait for it (and
+    // retry once if it failed); on teardown use it only if it already landed.
+    if (_bbPhoto && _bbPhoto.blob) {
+      photoUrl = _bbPhoto.remoteUrl || (keepalive ? null : await _bbPhoto.uploadP);
+      if (!photoUrl && !keepalive) {
+        try { photoUrl = _bbPhoto.remoteUrl = await bbUploadPhoto(_bbPhoto.blob); }
+        catch (e) { console.warn('Bluebottle photo upload failed again:', e.message); }
+      }
     }
-    await bbInsert(deviceId, keepalive, photoUrl);
+    await bbInsert(deviceId, keepalive, photoUrl, _bbWhere);
     bbSetLastMine();
     bbPhotoReset();
+    _bbWhere = null;
+    bbShowWhere(false);
     _bbCache   = null; // bust cache so we re-fetch fresh count
     _bbCacheAt = 0;
     await bbLoad();
   } catch(e) {
     console.warn('Bluebottle report failed:', e.message);
-    if (btn) { btn.disabled = false; btn.textContent = 'Report'; }
+    if (btn) { btn.disabled = false; btn.textContent = _bbPhoto ? 'Send' : 'Report'; }
+    // Say why — a silent reset to "Report" reads as a broken button.
+    const sub = document.getElementById('bbSub');
+    if (sub) sub.textContent =
+      e.message === 'cooldown_active' ? 'You’ve already reported in the last 4 hours.'
+      : e.message === 'photo_required' ? 'The photo didn’t upload — tap Send to try again.'
+      : 'Couldn’t send — check your connection and tap ' + (_bbPhoto ? 'Send' : 'Report') + ' again.';
   }
 }
 
 // Never lose a genuine report to a backgrounded/closed page mid-undo-window.
-function bbFlushPending() { if (_bbPending) bbSendNow(true); }
+function bbFlushPending() {
+  if (!_bbPending) return;
+  // Starting a warning needs the photo. If it hasn't finished uploading, a flush
+  // would be refused — keep it queued instead; the timer resumes when the page does.
+  if (!_bbWarningActive && _bbPhoto && !_bbPhoto.remoteUrl) return;
+  bbSendNow(true);
+}
 window.addEventListener('pagehide', bbFlushPending);
 document.addEventListener('visibilitychange', function () {
   if (document.visibilityState === 'hidden') bbFlushPending();
@@ -17085,6 +17170,7 @@ function _bluebottleFact() {
       count: recent.length,
       photoBacked: recent.some(r => bbSafePhoto(r.photo_url)),
       lastDay: bbRelDay(last),
+      lastWhere: BB_WHERE_TEXT[recent[recent.length - 1].location] || null,
       lastTime: last.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
     };
   } catch (e) { return null; }
@@ -17098,9 +17184,9 @@ function _bluebottleFact() {
 function bluebottleLine() {
   const f = _bluebottleFact();
   if (!f) return '';
-  const who  = f.count === 1 ? 'A bluebottle was reported' : f.count + ' bluebottle reports came in';
+  const who  = f.count === 1 ? 'A bluebottle was reported' + (f.lastWhere ? ' ' + f.lastWhere : '') : f.count + ' bluebottle reports came in';
   const when = f.lastDay === 'today' ? 'today' : f.lastDay;
-  const tail = f.count === 1 ? ' at ' + f.lastTime : ', the last at ' + f.lastTime;
+  const tail = f.count === 1 ? ' at ' + f.lastTime : ', the last at ' + f.lastTime + (f.lastWhere ? ' (' + f.lastWhere + ')' : '');
   return ' ' + who + ' ' + when + tail + '.';
 }
 // AIR QUALITY — same contract as bluebottleLine: reports, never advises, dated, and
