@@ -1436,6 +1436,10 @@
   /* Where the bluebottles are — required before a report sends. */
   .bb-where { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-basis: 100%; }
   .bb-where[hidden] { display: none; }
+  .bb-pick { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; flex-basis: 100%; }
+  .bb-pick[hidden] { display: none; }
+  .bb-lib { font: inherit; font-size: 13px; background: none; border: 0; padding: 6px 2px; cursor: pointer;
+    color: var(--ocean); text-decoration: underline; text-underline-offset: 3px; }
   .bb-where-q { font-size: 12px; color: var(--dim); margin-right: 2px; }
   .bb-where button {
     font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 999px; cursor: pointer;
@@ -4374,7 +4378,10 @@
                the EXIF date even from a shot taken via the picker's Take Photo. A photo
                from this input was taken just now, so it may start a warning. -->
           <input type="file" id="bbCamInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
-          <button class="bb-btn" id="bbCamBtn" type="button" hidden onclick="bbCamPick()">📷 Take photo</button>
+          <div class="bb-pick" id="bbPick" hidden>
+            <button class="bb-btn" id="bbCamBtn" type="button" onclick="bbCamPick()">📷 Take photo now</button>
+            <button class="bb-lib" id="bbLibBtn" type="button" onclick="bbPhotoPick()">Choose from library</button>
+          </div>
           <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
             <img id="bbPhotoThumb" alt="Attached bluebottle photo">
             <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
@@ -14497,7 +14504,7 @@ function bbCamPick() {
   if (inp) inp.click();
 }
 function bbShowCam(show) {
-  const b = document.getElementById('bbCamBtn'); if (b) b.hidden = !show;
+  const b = document.getElementById('bbPick'); if (b) b.hidden = !show;
 }
 
 function bbPhotoPick() {
@@ -14687,7 +14694,7 @@ async function bbPhotoPicked(ev) {
   // says this is happening now, and starting a warning pushes a notification.
   if (!shotAt && !_bbWarningActive) {
     ev.target.value = '';
-    if (sub) sub.textContent = 'Can’t tell when that photo was taken — tap Take photo to use the camera.';
+    if (sub) sub.textContent = 'Can’t tell when that photo was taken — use Take photo now.';
     bbShowCam(true);
     return;
   }
@@ -14738,7 +14745,7 @@ function bbSafePhoto(u) {
 // Tap-to-expand the strip into a gallery of photo-backed reports. Only active
 // when there's at least one photo to show; taps on the buttons are ignored.
 function bbToggle(ev) {
-  if (ev && ev.target.closest('.bb-btn, .bb-notify, .bb-photo-btn, .bb-photo-wrap, .bb-where, #bbPhotoInput, #bbCamInput')) return;
+  if (ev && ev.target.closest('.bb-btn, .bb-notify, .bb-photo-btn, .bb-photo-wrap, .bb-where, .bb-pick, #bbPhotoInput, #bbCamInput')) return;
   const strip = document.getElementById('bbStrip');
   const gallery = document.getElementById('bbGallery');
   const chev = document.getElementById('bbChev');
@@ -14975,14 +14982,14 @@ function bbReport() {
   if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
 
   // Starting a NEW warning requires a photo; confirming an active one does not.
-  // No photo staged + no active warning → open the camera instead of reporting.
+  // No photo staged + no active warning → offer the camera (trusted: taken now)
+  // or the library (needs an EXIF date). Opening the picker straight away made the
+  // picker's own Take Photo fail on iPhone, which strips the date (19 Sep 2026).
   if ((!_bbPhoto || _bbPhotoUndated) && !_bbWarningActive) {
     bbCancelConfirm();
     const sub = document.getElementById('bbSub');
-    if (sub) sub.textContent = _bbPhotoUndated
-      ? '📷 That photo is undated — take one now to start a warning'
-      : '📷 Add a photo to start a bluebottle warning';
-    bbPhotoPick();
+    if (sub) sub.textContent = 'Add a photo to start a bluebottle warning';
+    bbShowCam(true);
     return;
   }
 
