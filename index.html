@@ -2631,6 +2631,9 @@
   }
   .chl-age { font-weight:600; }
   .chl-age.is-old { color:var(--amber); }
+  .chl-edge { font-family:'Inter',sans-serif; font-size:10.5px; color:var(--dim);
+    margin-top:3px; line-height:1.35; }
+  .chl-edge[hidden] { display:none; }
   /* WHAT THE COLOURS MEAN FOR VIZ. Local knowledge shared in a Sydney dive group by
      someone who has watched this layer against real water for months. The app cannot
      derive it and has no business implying it can, so it is labelled a rule of thumb
@@ -4505,6 +4508,7 @@
           <span id="chlScene">&nbsp;</span>
           <span class="chl-age" id="chlAge">&nbsp;</span>
         </div>
+        <div class="chl-edge" id="chlEdge" hidden></div>
         <!-- Placed ABOVE the explainer because it is the only part of this card anyone
              reads before deciding where to swim; the biology below is context. -->
         <div class="chl-viz">
@@ -4775,6 +4779,7 @@
   var when = document.getElementById('chlWhen');
   var scen = document.getElementById('chlScene');
   var aged = document.getElementById('chlAge');
+  var edge = document.getElementById('chlEdge');
   if (!head || !body || !img) return;
 
   // NASA GIBS WMS. One GetMap per (layer, date), rendered straight to our own bbox —
@@ -4884,11 +4889,19 @@
   // How much of the frame actually carries data. Resolves to the blob when the scene is
   // worth showing, null when it is an empty or nearly-empty frame, and null on any
   // failure — a dead network is just another miss, and the walk continues.
+  // X-Chl-Stretch rides along from /chl: how much wider east-west this pass's pixels
+  // are than the 300 m at nadir. GIBS sends no such header, so it stays NaN there.
   function scan(url) {
+    var stretch = NaN;
     return fetch(url, { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.blob() : null; })
+      .then(function (r) {
+        if (!r.ok) return null;
+        stretch = parseFloat(r.headers.get('X-Chl-Stretch'));
+        return r.blob();
+      })
       .then(function (b) {
         if (!b || b.size <= EMPTY_BYTES || !window.createImageBitmap) return null;
+        b.chlStretch = stretch;
         return createImageBitmap(b).then(function (bmp) {
           var c = document.createElement('canvas');
           c.width = bmp.width; c.height = bmp.height;
@@ -4993,6 +5006,24 @@
     // The instrument is named: the chain falls through sensors as cloud allows, and two
     // scenes from different ones are not quite the same measurement.
     scen.textContent = 'Satellite pass ' + when_ + ' · ' + hit.sensor;
+
+    // EDGE-OF-SWATH PASSES. OLCI looks out to ~55° on its western side, and there a
+    // pixel is up to ~2.7x wider east-west. About twice a week the only pass has
+    // Sydney out there (15 and 19 Sep 2026), and the picture smears sideways. The
+    // Worker already puts the sharpest pass of the day on top; this just says so when
+    // even that one is soft, so a blurry morning does not read as a broken card.
+    // 1.8 matches CHL_EDGE_STRETCH in the Worker.
+    var s = blob.chlStretch;
+    if (edge) {
+      if (s >= 1.8) {
+        edge.textContent = 'Sydney was near the edge of this pass, so pixels are about ' +
+          Math.round(300 * s / 50) * 50 + ' m wide east–west rather than 300 m — ' +
+          'the picture is blurrier sideways.';
+        edge.hidden = false;
+      } else {
+        edge.hidden = true;
+      }
+    }
 
     var label = days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days old';
     aged.textContent = label;
