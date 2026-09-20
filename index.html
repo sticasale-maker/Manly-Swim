@@ -19951,6 +19951,14 @@ function metricBreakdownHTML(key) {
   if (key === 'entry') {
     const we = (dm.windEntry != null) ? dm.windEntry : ((dm.windSea || 0) + dm.windWave);
     const o = (we + dm.swell1 + dm.refrac);
+    // The Chop face in cm is what the entry-chop demerit is built from; the Chop
+    // metric already carries it as swim.raw, so there is one source, not a re-derive.
+    const chopD     = dm.entryChop || 0;
+    const chopFace  = (r.swim && r.swim.raw != null) ? r.swim.raw : 0;
+    const chopPts   = (SITE.entryChopPts     != null) ? SITE.entryChopPts     : 0;
+    const chopFloor = (SITE.entryChopFloorCm != null) ? SITE.entryChopFloorCm : 4;
+    const chopCap   = (SITE.entryChopMaxPts  != null) ? SITE.entryChopMaxPts  : 15;
+    const chopCapped = chopD >= chopCap - 0.05;
     return wrap(
       row('Primary swell', f(dm.swell1)) +
       row('Wind (sea ↔ wave)', f(we), '(SS fetch + wind-wave, crossfaded at arc)') +
@@ -19965,6 +19973,17 @@ function metricBreakdownHTML(key) {
       // at the entry. Only shown when it actually bites.
       (Math.abs(dm.offshore || 0) > 0.05
         ? row('Offshore wind credit', f(dm.offshore), '(W ±30°, flattening — 10 pts @ 30 km/h due W)') : '') +
+      // Chop at the entry, added AFTER the credit exactly as calcScore does it. It was
+      // computed but never printed, so on a breezy afternoon the rows did not add up to
+      // the total beneath them — 3.9 + 2.0 against 10.4 on 20 Sep 2026 at 16:00, with
+      // 4.5 of chop missing. That is the one thing this panel exists to prevent.
+      // Knob values come from SITE so a LOCAL tune shows the maths it is actually using,
+      // and the note says "capped" when the ceiling is what decided the number.
+      (chopD > 0.05
+        ? row('Chop at the entry', f(chopD),
+              chopCapped
+                ? `(${f(chopFace)} cm face — capped at ${f(chopCap)} pts)`
+                : `(${f(chopFace)} cm face — ${chopPts} pts/cm over ${f(chopFloor)} cm)`) : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Total demerits', f(r.entry.raw)) +
       row('Entry score (60 = best)', r.entry.score + ' · ' + r.entry.label)
