@@ -428,22 +428,6 @@
     border-color:rgba(255,255,255,0.34);
     box-shadow:0 2px 14px rgba(192,57,43,0.40);
   }
-  /* The site-check sentence is prose, not a label — it must stay readable as a
-     sentence rather than being shouted in Bebas caps like the rest of the line.
-     It used to be --red ink, which is now invisible on the red fill it sits on;
-     it is near-white on a darkened inset instead, which also stops it reading as
-     part of the shouted headline. */
-  .answer-line .al-site {
-    display:block; margin-top:7px;
-    padding:6px 9px; border-radius:7px;
-    background:rgba(0,0,0,0.20);
-    font-family:'Inter',sans-serif; font-weight:600;
-    font-size:13px; letter-spacing:0.2px; line-height:1.4;
-    text-transform:none; color:#fff6f4; text-shadow:none;
-  }
-  /* [hidden] must beat the display:block above (higher-specificity attr selector).
-     Set by alSyncSiteCheck when the Oracle prose already carries the sentence. */
-  .answer-line .al-site[hidden] { display:none; }
   /* Marks the rail that set the day. Sits inside .metric-name, which is why it
      has to reset the Bebas letter-spacing it inherits — and why it sets its own
      colour rather than taking currentColor: .metric-name is band-tinted, and on a
@@ -3568,8 +3552,6 @@
   #tabRibbon.dangerous         { background: #3a1d1c; border-color: rgba(176,57,47,0.6); }
   #tabRibbon.dangerous .tr-dot { background: var(--rail-red); }
   #tabRibbon .tr-when { margin-left: auto; padding-left: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: clamp(9px, 2.6vw, 11px); font-weight: 500; color: rgba(200,189,160,0.75); white-space: nowrap; }
-  #tabRibbon .tr-check { font-size: clamp(10.5px, 3vw, 12px); line-height: 1.4; color: #ecd9c9; padding-left: 15px; }
-  #tabRibbon .tr-check:empty { display: none; }
 
   /* Today's short window onto Community — the latest reports, one line each. */
   .tab-water { display: none; }
@@ -5845,17 +5827,17 @@
   var ribbon = document.createElement('button');
   ribbon.type = 'button'; ribbon.id = 'tabRibbon';
   ribbon.innerHTML = '<span class="tr-top"><span class="tr-dot" aria-hidden="true"></span>' +
-                     '<span class="tr-text"></span><span class="tr-when"></span></span><span class="tr-check"></span>';
+                     '<span class="tr-text"></span><span class="tr-when"></span></span>';
   ribbon.addEventListener('click', function () { setTab('today'); });
   if (snapPanel) snapPanel.insertBefore(ribbon, snapPanel.firstChild);
 
   function facts() { try { return (typeof _bannerFacts !== 'undefined') ? _bannerFacts : null; } catch (e) { return null; } }
   function paintRibbon() {
     var f = facts();
-    var text = ribbon.querySelector('.tr-text'), when = ribbon.querySelector('.tr-when'), chk = ribbon.querySelector('.tr-check');
+    var text = ribbon.querySelector('.tr-text'), when = ribbon.querySelector('.tr-when');
     ribbon.classList.remove('good', 'caution', 'dangerous');
     if (!f || !f.verdict) {                               // absent is grey, never green (§8)
-      text.textContent = 'Forecast loading'; when.textContent = ''; chk.textContent = '';
+      text.textContent = 'Forecast loading'; when.textContent = '';
       ribbon.setAttribute('aria-label', 'Forecast loading. Go to Today');
     } else {
       if (f.safetyLevel === 'good' || f.safetyLevel === 'caution' || f.safetyLevel === 'dangerous') ribbon.classList.add(f.safetyLevel);
@@ -5866,9 +5848,9 @@
       var hh = (f.arrival && f.arrival.hhmm) ? f.arrival.hhmm : '';
       var day = f.timeCtx === 'tomorrow' ? 'Tomorrow' : 'Today';
       when.textContent = hh;
-      chk.textContent = f.siteCheck ? f.siteCheck.charAt(0).toUpperCase() + f.siteCheck.slice(1) : '';
-      ribbon.setAttribute('aria-label', day + (hh ? ' ' + hh : '') + ': ' + text.textContent +
-                          (chk.textContent ? '. ' + chk.textContent : '') + '. Go to Today');
+      // The ribbon used to print siteCheck here (CLAUDE.md §1's "consume, never
+      // derive"). Removed with the answer line's copy, 21 Sep 2026, owner's ruling.
+      ribbon.setAttribute('aria-label', day + (hh ? ' ' + hh : '') + ': ' + text.textContent + '. Go to Today');
     }
     paintDot();
   }
@@ -11760,34 +11742,30 @@ const AL_SENTENCES = {
   'Caution|Messy|Drifty':      'Tricky one, consider halfway',
   'Caution|Messy|Surgy':       'Consider Shelly',
   'Caution|Messy|Washy':       'Consider Shelly',
-  // THE DANGEROUS ROWS CARRY A SECOND LINE — facts.siteCheck, printed verbatim
-  // underneath (alWrite). So a headline here must not pre-empt it: 'Consider Shelly'
-  // above "check on site for entry at Shelly Beach" said Shelly twice and read as a
-  // stutter (owner, 21 Sep 2026) — hence 'Red off South Steyne' on the Surgy/Washy
-  // rows, which names the PLACE that is red and leaves the way in to the sentence.
-  // The Steady/Drifty rows keep 'Consider halfway': their sentence offers Bower Lane
-  // OR Shelly, so the two lines are not saying the same thing.
-  // Never solve this by deleting the second line. It is the only carrier of which way
-  // in when the Worker is unreachable or its draft was rejected (CLAUDE.md §1, §9),
-  // and it already hides itself when the Oracle paragraph echoes the sentence.
-  // The Caution rows above keep 'Consider Shelly': siteCheck is null unless ENTRY is
-  // Dangerous, so nothing is printed under them to repeat.
+  // THESE HEADLINES NOW STAND ALONE. The site-check second line they used to sit
+  // above is gone from both local surfaces (owner's ruling, 21 Sep 2026) — see the
+  // note on alWrite. So on a Dangerous + Surgy/Washy morning 'Consider Shelly' IS
+  // the whole of the local advice, which is why it names the beach again; the brief
+  // 'Red off South Steyne' experiment only made sense while the sentence followed it.
+  // The sentence itself still reaches swimmers through the Oracle's water paragraph,
+  // which the Worker validator forces to carry it verbatim (CLAUDE.md §1). If that
+  // draft is rejected or the Worker is unreachable, these headlines are all there is.
   'Dangerous|Smooth|Steady':   'Consider halfway',
   'Dangerous|Smooth|Drifty':   'Consider halfway',
-  'Dangerous|Smooth|Surgy':    'Red off South Steyne',
-  'Dangerous|Smooth|Washy':    'Red off South Steyne',
+  'Dangerous|Smooth|Surgy':    'Consider Shelly',
+  'Dangerous|Smooth|Washy':    'Consider Shelly',
   'Dangerous|Ripply|Steady':   'Consider halfway',
   'Dangerous|Ripply|Drifty':   'Consider halfway',
-  'Dangerous|Ripply|Surgy':    'Red off South Steyne',
-  'Dangerous|Ripply|Washy':    'Red off South Steyne',
+  'Dangerous|Ripply|Surgy':    'Consider Shelly',
+  'Dangerous|Ripply|Washy':    'Consider Shelly',
   'Dangerous|Choppy|Steady':   'Consider halfway',
   'Dangerous|Choppy|Drifty':   'Consider halfway',
-  'Dangerous|Choppy|Surgy':    'Red off South Steyne',
-  'Dangerous|Choppy|Washy':    'Red off South Steyne',
+  'Dangerous|Choppy|Surgy':    'Consider Shelly',
+  'Dangerous|Choppy|Washy':    'Consider Shelly',
   'Dangerous|Messy|Steady':    'Consider halfway',
   'Dangerous|Messy|Drifty':    'Consider halfway',
-  'Dangerous|Messy|Surgy':     'Red off South Steyne',
-  'Dangerous|Messy|Washy':     'Red off South Steyne',
+  'Dangerous|Messy|Surgy':     'Consider Shelly',
+  'Dangerous|Messy|Washy':     'Consider Shelly',
 };
 // Split point for the emphasised half. A sentence with ' — ' renders as
 // head + <span class="al-driver">rest</span>; a single-clause sentence is all
@@ -11848,7 +11826,7 @@ function renderAnswerLine(result) {
     const pancake = deep(result.entry) && deep(result.swim) && deep(result.water);
 
     alWrite(el, 'green' + (pancake ? ' flat' : ''),
-            alSentence(result, pancake, v, 'all three clear'), null);
+            alSentence(result, pancake, v, 'all three clear'));
     return;
   }
 
@@ -11862,7 +11840,7 @@ function renderAnswerLine(result) {
                    ' ' + (words.length > 1 ? 'are' : 'is') + ' what’s setting it';
 
   alWrite(el, v.safetyLevel === 'dangerous' ? 'red' : 'yellow',
-          alSentence(result, false, v, fallback), v.siteCheck);
+          alSentence(result, false, v, fallback));
 }
 
 // Look up the authored sentence for this band triple. PANCAKE wins when all three
@@ -11876,8 +11854,22 @@ function alSentence(result, pancake, v, fallback) {
 // Paint the line. Built as nodes with textContent rather than an innerHTML string:
 // there is no global esc() in this scope, and a verdict surface is the last place
 // to start concatenating markup.
-let _alSiteCheck = null;   // the sentence currently on the answer line, for alSyncSiteCheck
-function alWrite(el, cls, sentence, siteCheck) {
+// THE SITE-CHECK SECOND LINE IS GONE (owner's ruling, 21 Sep 2026). This line used
+// to print facts.siteCheck verbatim underneath the headline, and the tab ribbon
+// carried the same sentence; both are removed, so the headline is now the whole of
+// the LOCAL advice on a dangerous morning.
+// SAFE TO REMOVE because the sentence still reaches the swimmer on BOTH paths, which
+// the note that used to sit here denied — it claimed the local baseline prose did not
+// carry it, and that has been false since 19 Jul 2026 (widened 20 Aug). Checked
+// before deleting, and it is the whole basis for the deletion:
+//   • Worker up   → the Oracle's water paragraph, echoing it verbatim because the
+//                   Worker's own validator rejects a draft that omits it.
+//   • Worker down, slow, or its draft rejected → generateBannerSummaryLocal() pushes
+//                   the same _sv.siteCheck sentence into the local water paragraph.
+// facts.siteCheck is still computed and still sent to the Worker; only the two
+// standalone LINE surfaces are gone. If either carrier above is ever removed, this
+// line has to come back — that would be the last copy going.
+function alWrite(el, cls, sentence) {
   el.className = 'answer-line ' + cls;
   const cut = sentence.indexOf(AL_SPLIT);
   el.textContent = cut > -1 ? sentence.slice(0, cut) + AL_SPLIT : '';
@@ -11885,39 +11877,13 @@ function alWrite(el, cls, sentence, siteCheck) {
   drv.className = 'al-driver';
   drv.textContent = cut > -1 ? sentence.slice(cut + AL_SPLIT.length) : sentence;
   el.appendChild(drv);
-  // VERBATIM. Do not summarise, truncate or re-word this string.
-  if (siteCheck) {
-    const site = document.createElement('span');
-    site.className = 'al-site';
-    site.textContent = siteCheck;
-    el.appendChild(site);
-  }
   el.hidden = false;
-  _alSiteCheck = siteCheck || null;
-  alSyncSiteCheck();
 }
 
-// ── De-duplicate the site-check sentence ───────────────────────────────────
-// On a dangerous day the sentence has TWO carriers: this line (computed locally
-// by swimVerdict, so it survives a dead connection) and the Oracle's water
-// paragraph (which the Worker validator forces to echo it verbatim). Both on
-// screen at once reads as a stutter.
-//
-// The answer-line copy is the one that must never be deleted outright: the LOCAL
-// baseline prose does NOT contain the sentence, so with the Worker unreachable,
-// slow, or its draft rejected by summaryConflict, this line is the ONLY place a
-// swimmer is told which way in. So hide it only when the Oracle paragraph is
-// actually rendered AND actually carries the sentence — never pre-emptively.
-// Re-runs whenever either side changes, because the Oracle lands asynchronously
-// and can arrive before or after the answer line is painted.
-function alSyncSiteCheck() {
-  const site = document.querySelector('#answerLine .al-site');
-  if (!site || !_alSiteCheck) return;
-  const water = document.getElementById('banner-water-text');
-  const prose = (water && !water.hidden) ? (water.textContent || '') : '';
-  const echoed = prose.toLowerCase().indexOf(String(_alSiteCheck).toLowerCase()) > -1;
-  site.hidden = echoed;
-}
+// The site-check de-duplicator (alSyncSiteCheck) lived here. It existed because the
+// sentence had two carriers on screen — this line and the Oracle's water paragraph —
+// and it hid the local one whenever the Oracle echoed it. With the local line gone
+// (see alWrite) there is one carrier and nothing to de-duplicate.
 
 function renderSnapshot(h, wx) {
   if (!h || !h.dateTime) {
@@ -17705,7 +17671,6 @@ async function generateBannerSummary() {
     }
     renderUnderwaterCommunity();
     renderAfterParagraph(j.after_text);
-    alSyncSiteCheck();   // Oracle prose now carries the sentence — drop the duplicate
   } catch (e) { /* keep the local baseline */ }
 }
 

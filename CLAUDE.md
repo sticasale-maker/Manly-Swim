@@ -18,6 +18,16 @@ computed client-side as `facts.siteCheck` (`index.html`, search `siteCheck:`):
 - Surge = Surgy or Washy → "check on site for entry at Shelly Beach"
 - otherwise → "check on site for entry at Bower Lane or Shelly Beach"
 
+**It is PROSE-ONLY now** (owner's ruling, 21 Sep 2026). The two standalone line
+surfaces that printed it — under the answer-line headline, and on the tab ribbon —
+were removed as a stutter under headlines that already name the beach. It has
+exactly two carriers left, and between them they cover both states of the network:
+the Oracle's water paragraph (the Worker validator forces the echo) and, when the
+Worker is unreachable or its draft rejected, `generateBannerSummaryLocal()`, which
+pushes the same `_sv.siteCheck` sentence into the local paragraph. **If you remove
+or rewrite either carrier, the sentence needs a home first** — do not assume the
+other one covers it, and do not restore a standalone line without saying why.
+
 The Worker echoes that string **verbatim** and its validator **rejects** any
 Oracle draft that omits it, and also rejects an absolute no-swim call. So:
 
