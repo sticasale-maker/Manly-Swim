@@ -11273,6 +11273,14 @@ document.addEventListener('visibilitychange', function () {
 // a small amber dot is appended to the version stamp in the header (which nobody
 // but Marco reads), and exactly one analytics beacon is fired per session. The
 // beacon lands in Supabase log_events as event='ns_degraded'.
+// True once the background config loader has finished its three fetches.
+// The degradation check below must not run before then: loadAndRender() is
+// fired at second zero, deliberately ahead of the config downloads, so the
+// first paint routinely happens while SITE.gemTable is still null. Checking
+// during that paint reported an outage that was really just the boot order,
+// once per session, forever. nsDisp escaped it only because nuovoPreflight()
+// loads that one before first paint; GEM has no such preflight.
+let _configSettled = false;
 let _nsDegradedSent = false;
 function markNsDegraded(reason) {
   try {
@@ -11931,8 +11939,11 @@ function renderSnapshot(h, wx) {
   // were told out-of-band, so the "forced WW" strip is redundant noise. Still fires the
   // genuine red "ESTIMATED CONDITIONS" banner when NS is the default but an hour lacks coverage.
   setNsFallbackBanner(!FORCE_WW && !h._nsFeed);
-  if (!SITE.nsDisp)  markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
-  if (!SITE.gemTable) markNsDegraded('gem_table_missing');      // vecchio fallback has no table either
+  // Only meaningful once the tables have had their chance to load (see
+  // _configSettled). The background loader re-renders when it finishes, so a
+  // genuine outage still reports on that pass.
+  if (_configSettled && !SITE.nsDisp)  markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
+  if (_configSettled && !SITE.gemTable) markNsDegraded('gem_table_missing');      // vecchio fallback has no table either
   _forecastRendered = true;       // real data is on screen — dots have left the 50% default
   hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
 
@@ -16352,6 +16363,8 @@ async function nuovoPreflight() {
     try { await loadGemConfig(); }    catch(e) { console.warn('loadGemConfig failed at startup:', e); }
     try { await loadNsDispConfig(); } catch(e) { console.warn('loadNsDispConfig failed at startup:', e); }
     try { await loadChopShelterConfig(); } catch(e) { console.warn('loadChopShelterConfig failed at startup:', e); }
+
+    _configSettled = true;   // tables have had their chance; degradation checks mean something now
 
     // NS dispersion is the live model — if its table didn't load, every swell
     // silently transmits at the 0.5 fallback (direction ignored), inflating
