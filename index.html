@@ -18617,7 +18617,20 @@ function submitFeedback(e) {
       body: JSON.stringify(body || {})
     });
     if (!r.ok) { var e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
-    return r.json();
+    // A VOID RPC ANSWERS 204 WITH AN EMPTY BODY, and r.json() throws on empty. r.ok
+    // is TRUE for 204, so the old `return r.json()` sailed past the check above and
+    // threw SyntaxError on success. That is why reacting to a COMMENT looked broken
+    // (swimmers reported it, 21 Sep 2026): vote_feature_reply returns void, so every
+    // successful reaction landed in doReplyReact's catch, showed "Couldn't register
+    // your reaction." and was rolled back on screen by the refresh — while the row
+    // was in fact saved and reappeared on the next load. Reactions on a POST were
+    // fine throughout, because vote_feature_request returns a table (200 + JSON).
+    // Read as text and parse only if there is something to parse. Callers either
+    // ignore the result or already tolerate a null/non-array (the list_* ones test
+    // Array.isArray), so this cannot turn a working path into a broken one.
+    if (r.status === 204) return null;
+    var txt = await r.text();
+    return txt ? JSON.parse(txt) : null;
   }
 
   // Relative time, self-contained (mirrors visAgo but takes an ISO string).
