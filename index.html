@@ -11602,7 +11602,6 @@ function bbfRiskChartSVG(samples, nowMs){
 
 function renderBluebottleForecast(h){
   const strip = document.getElementById('bbfStrip');
-  const row   = document.getElementById('bbfRow');
   const note  = document.getElementById('bbfNote');
   if (!strip || !Array.isArray(_matrix)) return;
 
@@ -11612,9 +11611,11 @@ function renderBluebottleForecast(h){
   const yesterdayStr = `${y.getFullYear()}-${String(y.getMonth()+1).padStart(2,'0')}-${String(y.getDate()).padStart(2,'0')}`;
   const allDays = [...new Set(_matrix.map(r => String(r.dateTime).substring(0,10)))];
   // SAFETY / integration rule: a WIND FORECAST must never outrank an observed photo
-  // sighting. When one is live, the whole strip steps back and points to the reports.
+  // sighting. When one is live, the note below says so and points to the reports.
+  // The note IS the whole cue: there is deliberately no dimming (owner's ruling,
+  // 21 Sep 2026). A bbf-subordinate class was toggled here with no CSS behind it,
+  // and opacity alone would be a weaker signal than the words. Do not re-add it.
   const sightingLive = (typeof _bbWarningActive !== 'undefined') && _bbWarningActive;
-  if (row) row.classList.toggle('bbf-subordinate', sightingLive);
   if (note) note.textContent = sightingLive ? 'Reported sightings below take precedence' : '';
 
   // ── Continuous 4-hourly risk series ──────────────────────────────────────────
