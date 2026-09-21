@@ -8,6 +8,11 @@
 -- statement below was read back out of production (pg_get_functiondef,
 -- information_schema, pg_constraint) rather than reconstructed from memory.
 --
+-- UPDATED 21 Sep 2026, after board_reply_reactions_hash_device.sql was applied:
+-- the column is device_hash and holds md5(device), matching feature_votes. This
+-- file now describes the CURRENT shape, so a rebuild lands hashed and never has to
+-- replay that migration; the migration stays in the repo as the record of the move.
+--
 -- RUNNING IT ON THE LIVE DATABASE IS A NO-OP by construction: the table is
 -- create-if-not-exists and the functions are create-or-replace with the definitions
 -- already in place. It is here so a rebuilt database matches, and so the next change
@@ -24,16 +29,15 @@ begin;
 --    delete in /board-reply cannot leave orphans behind.
 create table if not exists public.feature_reply_reactions (
   reply_id   bigint      not null references public.feature_replies(id) on delete cascade,
-  device     text        not null,
+  device_hash text       not null,
   reaction   text        not null,
   created_at timestamptz not null default now(),
-  primary key (reply_id, device)
+  primary key (reply_id, device_hash)
 );
 
--- NOTE, not a change: this table stores the RAW device id, while feature_votes
--- stores md5(p_device). Both are the same per-device UUID the app already sends
--- (CLAUDE.md §4), but only the post table hashes it. Left as it is so this file
--- matches production; worth aligning deliberately rather than in a schema capture.
+-- device_hash is md5 of the per-device UUID, the same treatment feature_votes gives
+-- it. The raw id never lands in a table: both functions below hash what the client
+-- sends, so a caller cannot store an unhashed one by passing it in.
 
 alter table public.feature_reply_reactions
   drop constraint if exists feature_reply_reactions_reaction_check;
@@ -61,13 +65,17 @@ create or replace function public.vote_feature_reply(p_reply_id bigint, p_device
  security definer
  set search_path to 'public'
 as $function$
+declare
+  v_hash text := md5(p_device);
 begin
+  if p_device is null or char_length(p_device) < 8 then raise exception 'bad device'; end if;
+
   delete from feature_reply_reactions
-   where reply_id = p_reply_id and device = p_device and reaction = p_reaction;   -- same click = remove
+   where reply_id = p_reply_id and device_hash = v_hash and reaction = p_reaction;   -- same click = remove
   if not found then
-    insert into feature_reply_reactions (reply_id, device, reaction)
-    values (p_reply_id, p_device, p_reaction)
-    on conflict (reply_id, device) do update set reaction = excluded.reaction, created_at = now();  -- switch
+    insert into feature_reply_reactions (reply_id, device_hash, reaction)
+    values (p_reply_id, v_hash, p_reaction)
+    on conflict (reply_id, device_hash) do update set reaction = excluded.reaction, created_at = now();  -- switch
   end if;
 end $function$;
 grant execute on function public.vote_feature_reply(bigint, text, text) to anon;
@@ -84,7 +92,8 @@ as $function$
   select reply_id,
          jsonb_object_agg(reaction, cnt) as reactions,
          (array_agg(reaction) filter (where mine))[1] as my_reaction
-  from (select reply_id, reaction, count(*) cnt, bool_or(device = p_device) mine
+  from (select reply_id, reaction, count(*) cnt,
+               bool_or(device_hash = md5(coalesce(p_device, ''))) mine
         from feature_reply_reactions group by reply_id, reaction) t
   group by reply_id;
 $function$;
