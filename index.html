@@ -2618,6 +2618,19 @@
   .chl-edge { font-family:'Inter',sans-serif; font-size:10.5px; color:var(--dim);
     margin-top:3px; line-height:1.35; }
   .chl-edge[hidden] { display:none; }
+  /* Time-lapse: on-demand "play last few days" control. */
+  .chl-play-row { display:flex; align-items:center; gap:10px; margin:8px 0 0; }
+  .chl-play {
+    font-family:'Inter',sans-serif; font-size:12px; font-weight:600; letter-spacing:0.3px;
+    color:var(--ocean); background:rgba(74,143,173,0.10);
+    border:1px solid rgba(74,143,173,0.35); border-radius:16px; padding:5px 12px;
+    cursor:pointer; transition:background 0.15s, opacity 0.15s;
+  }
+  .chl-play:hover { background:rgba(74,143,173,0.18); }
+  .chl-play:disabled { opacity:0.55; cursor:default; }
+  .chl-play[hidden] { display:none; }
+  .chl-frames { font-family:'Inter',sans-serif; font-size:11px; color:var(--dim); letter-spacing:0.4px; }
+  .chl-frames[hidden] { display:none; }
   /* WHAT THE COLOURS MEAN FOR VIZ. Local knowledge shared in a Sydney dive group by
      someone who has watched this layer against real water for months. The app cannot
      derive it and has no business implying it can, so it is labelled a rule of thumb
@@ -4490,6 +4503,12 @@
           <span id="chlScene">&nbsp;</span>
           <span class="chl-age" id="chlAge">&nbsp;</span>
         </div>
+        <!-- Time-lapse control. Hidden until the newest still is on screen; building the
+             loop is on demand only, so quota is spent only when someone asks for the trend. -->
+        <div class="chl-play-row">
+          <button type="button" class="chl-play" id="chlPlay" aria-pressed="false" hidden>&#9654; Play last few days</button>
+          <span class="chl-frames" id="chlFrames" hidden></span>
+        </div>
         <div class="chl-edge" id="chlEdge" hidden></div>
         <!-- Placed ABOVE the explainer because it is the only part of this card anyone
              reads before deciding where to swim; the biology below is context. -->
@@ -4762,6 +4781,8 @@
   var scen = document.getElementById('chlScene');
   var aged = document.getElementById('chlAge');
   var edge = document.getElementById('chlEdge');
+  var play = document.getElementById('chlPlay');
+  var framesEl = document.getElementById('chlFrames');
   if (!head || !body || !img) return;
 
   // NASA GIBS WMS. One GetMap per (layer, date), rendered straight to our own bbox —
@@ -4827,6 +4848,14 @@
   var LOOKBACK_DAYS = 21;
   var STALE_DAYS = 4;            // beyond this the picture is faded, not just labelled
   var started = false;
+
+  // TIME-LAPSE (on demand). Opening the card still shows only the newest still — one walk,
+  // one Copernicus charge. The Play button then collects up to MAX_FRAMES daily scenes
+  // TOTAL; the newest is reused from the still above (same object URL), so a play spends
+  // quota on at most MAX_FRAMES-1 more days, and only when someone asks to see the trend.
+  var MAX_FRAMES = 5;
+  var dayList = null, newestIdx = -1, frames = [], collecting = false;
+  var playing = false, tid = null, cur = 0;
 
   function two(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -4916,8 +4945,14 @@
     })).then(function (rs) {
       var hit = null;
       for (var k = 0; k < rs.length && !hit; k++) if (rs[k]) hit = rs[k];
-      if (hit) show({ iso: day.iso, age: day.age, sensor: hit.sensor }, hit.blob);
-      else tryFrom(days, i + 1, deadline);
+      if (hit) {
+        newestIdx = i;
+        show({ iso: day.iso, age: day.age, sensor: hit.sensor }, hit.blob);
+        // Seed the loop's first frame from the still we just painted — same object URL,
+        // so Play never re-charges the newest day.
+        frames = [{ iso: day.iso, age: day.age, sensor: hit.sensor, url: img.src, stretch: hit.blob.chlStretch }];
+        if (play) play.hidden = false;
+      } else tryFrom(days, i + 1, deadline);
     });
   }
 
@@ -4963,9 +4998,50 @@
       .catch(function () {});
   }
 
+  // The date/sensor/age labels for one scene. Split out of show() so the time-lapse
+  // paints exactly the same captions as the initial still. Idempotent: it both ADDS and
+  // REMOVES the stale styling, so stepping from an old frame to a fresh one (or back)
+  // never leaves the card greyscaled for the wrong scene.
+  function caption(iso, age, sensor, stretch) {
+    // Parsed at midday so no timezone can nudge it onto the day either side; this is
+    // only ever used to print "11 Sept".
+    var dt = new Date(iso + 'T12:00:00');
+    var when_ = dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+    // The instrument is named: the chain falls through sensors as cloud allows, and two
+    // scenes from different ones are not quite the same measurement.
+    scen.textContent = 'Satellite pass ' + when_ + ' · ' + sensor;
+
+    // EDGE-OF-SWATH PASSES. OLCI looks out to ~55° on its western side, and there a
+    // pixel is up to ~2.7x wider east-west. About twice a week the only pass has
+    // Sydney out there (15 and 19 Sep 2026), and the picture smears sideways. The
+    // Worker already puts the sharpest pass of the day on top; this just says so when
+    // even that one is soft, so a blurry morning does not read as a broken card.
+    // 1.8 matches CHL_EDGE_STRETCH in the Worker.
+    if (edge) {
+      if (stretch >= 1.8) {
+        edge.textContent = 'Sydney was near the edge of this pass, so pixels are about ' +
+          Math.round(300 * stretch / 50) * 50 + ' m wide east–west rather than 300 m — ' +
+          'the picture is blurrier sideways.';
+        edge.hidden = false;
+      } else {
+        edge.hidden = true;
+      }
+    }
+
+    var label = age <= 0 ? 'today' : age === 1 ? 'yesterday' : age + ' days old';
+    aged.textContent = label;
+    // A scene this old is still the newest there is, but it must not look current.
+    if (age >= STALE_DAYS) {
+      aged.classList.add('is-old');
+      fig.classList.add('is-stale');
+    } else {
+      aged.classList.remove('is-old');
+      fig.classList.remove('is-stale');
+    }
+    when.textContent = 'Open-ocean water colour · ' + label;
+  }
+
   function show(hit, blob) {
-    // The age is the walk's own counter, so it can never disagree with the date beside it.
-    var days = hit.age;
     // The blob is already in hand from the coverage scan, so this paints what was
     // measured rather than fetching the tile a second time and hoping it matches.
     img.src = URL.createObjectURL(blob);
@@ -4980,47 +5056,75 @@
     land.hidden = false;
     here.hidden = false;
     hereL.hidden = false;
-
-    // Parsed at midday so no timezone can nudge it onto the day either side; this is
-    // only ever used to print "11 Sept".
-    var dt = new Date(hit.iso + 'T12:00:00');
-    var when_ = dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
-    // The instrument is named: the chain falls through sensors as cloud allows, and two
-    // scenes from different ones are not quite the same measurement.
-    scen.textContent = 'Satellite pass ' + when_ + ' · ' + hit.sensor;
-
-    // EDGE-OF-SWATH PASSES. OLCI looks out to ~55° on its western side, and there a
-    // pixel is up to ~2.7x wider east-west. About twice a week the only pass has
-    // Sydney out there (15 and 19 Sep 2026), and the picture smears sideways. The
-    // Worker already puts the sharpest pass of the day on top; this just says so when
-    // even that one is soft, so a blurry morning does not read as a broken card.
-    // 1.8 matches CHL_EDGE_STRETCH in the Worker.
-    var s = blob.chlStretch;
-    if (edge) {
-      if (s >= 1.8) {
-        edge.textContent = 'Sydney was near the edge of this pass, so pixels are about ' +
-          Math.round(300 * s / 50) * 50 + ' m wide east–west rather than 300 m — ' +
-          'the picture is blurrier sideways.';
-        edge.hidden = false;
-      } else {
-        edge.hidden = true;
-      }
-    }
-
-    var label = days <= 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days old';
-    aged.textContent = label;
-    // A scene this old is still the newest there is, but it must not look current.
-    if (days >= STALE_DAYS) {
-      aged.classList.add('is-old');
-      fig.classList.add('is-stale');
-    }
-    when.textContent = 'Open-ocean water colour · ' + label;
+    caption(hit.iso, hit.age, hit.sensor, blob.chlStretch);
   }
 
   head.addEventListener('click', function () {
     var open = body.classList.toggle('chl-open');
     head.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open && !started) { started = true; tryFrom(candidates(), 0, Date.now() + SEARCH_MS); }
+    if (open && !started) { started = true; dayList = candidates(); tryFrom(dayList, 0, Date.now() + SEARCH_MS); }
+  });
+
+  // ── Time-lapse player (on demand) ──────────────────────────────────────────
+  // Paint one already-collected frame. Its object URL is cached, so this never refetches
+  // and never spends quota — the collecting was done once, up front.
+  function paintFrame() {
+    var f = frames[cur];
+    img.src = f.url;
+    caption(f.iso, f.age, f.sensor, f.stretch);
+    if (framesEl) framesEl.textContent = (cur + 1) + ' / ' + frames.length;
+  }
+  function startPlay() {
+    if (frames.length < 2) return;
+    playing = true;
+    play.textContent = '⏸ Pause';
+    play.setAttribute('aria-pressed', 'true');
+    paintFrame();
+    tid = setInterval(function () { cur = (cur + 1) % frames.length; paintFrame(); }, 950);
+  }
+  function stopPlay() {
+    playing = false;
+    if (tid) { clearInterval(tid); tid = null; }
+    play.textContent = '▶ Play trend';
+    play.setAttribute('aria-pressed', 'false');
+  }
+  function finishCollect() {
+    collecting = false;
+    play.disabled = false;
+    if (frames.length < 2) {
+      play.textContent = 'Only one recent scene';
+      play.disabled = true;
+      return;
+    }
+    // Collected newest-first; play oldest → newest so the loop reads as time moving forward.
+    frames.reverse();
+    cur = 0;
+    if (framesEl) framesEl.hidden = false;
+    startPlay();
+  }
+  // Walk on from the newest scene, taking the first good sensor per day, until we have
+  // MAX_FRAMES total or the window/deadline runs out. Mirrors tryFrom's per-day logic;
+  // it starts at newestIdx+1 so the newest day is never fetched (hence charged) twice.
+  function collectMore(i, deadline) {
+    if (frames.length >= MAX_FRAMES || i >= dayList.length || Date.now() > deadline) return finishCollect();
+    var day = dayList[i];
+    Promise.all(day.tries.map(function (t) {
+      return scan(t.url).then(function (b) { return b ? { blob: b, sensor: t.sensor } : null; });
+    })).then(function (rs) {
+      var hit = null;
+      for (var k = 0; k < rs.length && !hit; k++) if (rs[k]) hit = rs[k];
+      if (hit) frames.push({ iso: day.iso, age: day.age, sensor: hit.sensor,
+                             url: URL.createObjectURL(hit.blob), stretch: hit.blob.chlStretch });
+      collectMore(i + 1, deadline);
+    });
+  }
+  if (play) play.addEventListener('click', function () {
+    if (collecting) return;
+    if (frames.length > 1) { playing ? stopPlay() : startPlay(); return; }  // already collected → toggle
+    collecting = true;
+    play.disabled = true;
+    play.textContent = 'Loading…';
+    collectMore(newestIdx + 1, Date.now() + SEARCH_MS);
   });
 })();
 </script>
