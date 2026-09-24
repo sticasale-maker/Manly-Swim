@@ -4371,9 +4371,8 @@
                a swimmer who shot the bluebottle a minute ago on the beach can't attach
                that shot. Without it the OS offers camera AND camera roll. -->
           <input type="file" id="bbPhotoInput" accept="image/*" style="display:none" onchange="bbPhotoPicked(event)">
-          <!-- Camera ONLY (capture). Offered when a picked photo carries no date: iOS strips
-               the EXIF date even from a shot taken via the picker's Take Photo. A photo
-               from this input was taken just now, so it may start a warning. -->
+          <!-- Camera ONLY (capture), offered beside the library when a warning needs a
+               photo: on iPhone the picker's own Take Photo was unreliable. -->
           <input type="file" id="bbCamInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
           <div class="bb-pick" id="bbPick" hidden>
             <button class="bb-btn" id="bbCamBtn" type="button" onclick="bbCamPick()">📷 Take photo now</button>
@@ -14641,10 +14640,7 @@ function bbPickWhere(w) {
 // board's public 'board-images' bucket + the same compress/upload approach.
 const BB_PHOTO_BUCKET = 'board-images';
 const BB_PHOTO_PREFIX = `${BB_SUPABASE_URL}/storage/v1/object/public/${BB_PHOTO_BUCKET}/`;
-let _bbPhoto = null;   // { blob, url, shotAt } while a photo is staged, else null
-// True when the staged photo carries no usable EXIF date. Such a photo may
-// corroborate a warning that is already running, but may never start one.
-let _bbPhotoUndated = false;
+let _bbPhoto = null;   // { blob, url } while a photo is staged, else null
 // A warning is "active" when there's at least one photo-backed report in the
 // window. Starting a warning REQUIRES a photo; once active, others may confirm
 // with a bare tap. Kept in sync by bbRenderFromData.
@@ -14666,7 +14662,6 @@ function bbPhotoPick() {
 function bbPhotoReset() {
   if (_bbPhoto && _bbPhoto.url) { try { URL.revokeObjectURL(_bbPhoto.url); } catch(e){} }
   _bbPhoto = null;
-  _bbPhotoUndated = false;
   const inp   = document.getElementById('bbPhotoInput'); if (inp)   inp.value = '';
   const cinp  = document.getElementById('bbCamInput');   if (cinp)  cinp.value = '';
   const wrap  = document.getElementById('bbPhotoWrap');  if (wrap)  wrap.hidden = true;
@@ -14696,126 +14691,8 @@ function bbCompressImage(file) {
   });
 }
 
-// ── Photo freshness (EXIF) ───────────────────────────────────────────────────
-// A photo is what lets one swimmer START a bluebottle warning, and a warning
-// pushes a notification to everyone. Now that the picker offers the camera roll
-// as well as the camera, "there is a photo" no longer implies "this happened
-// just now" — last summer's bluebottle, or one forwarded from a mate, would
-// read identically on the strip. So we date it.
-//
-// EXIF only, and read from the ORIGINAL file: bbCompressImage re-encodes through
-// a canvas, which strips metadata, so this has to run before the photo is staged
-// and the answer carried alongside it. What EXIF gives is the camera's own local
-// wall clock with no zone (unless OffsetTimeOriginal is there), which is exactly
-// right here — the swimmer photographing the bay and the phone reading it back
-// are in the same zone.
-const BB_PHOTO_MAX_AGE_MS = 6 * 3600 * 1000;  // "this morning", not "this week"
-const BB_PHOTO_SKEW_MS    = 60 * 60 * 1000;   // tolerate an hour of clock skew
-
-// Minimal JPEG APP1/TIFF walk. Returns a Date, or null when the file carries no
-// usable timestamp — screenshots, downloads, and anything re-saved by a
-// messaging app all land here. Null is NOT read as fresh; see bbPhotoPicked.
-function bbExifShotAt(buf) {
-  const dv = new DataView(buf);
-  if (dv.byteLength < 4 || dv.getUint16(0) !== 0xFFD8) return null;   // not a JPEG
-
-  // Walk the marker segments looking for APP1 holding "Exif\0\0".
-  let p = 2, tiff = -1;
-  while (p + 4 <= dv.byteLength) {
-    if (dv.getUint8(p) !== 0xFF) break;                 // desynced — give up
-    const marker = dv.getUint8(p + 1);
-    if (marker === 0xD8 || (marker >= 0xD0 && marker <= 0xD9)) { p += 2; continue; }
-    if (marker === 0xDA) break;                         // start of scan: no EXIF
-    const len = dv.getUint16(p + 2);
-    if (len < 2) break;
-    if (marker === 0xE1 && p + 10 <= dv.byteLength &&
-        dv.getUint32(p + 4) === 0x45786966 && dv.getUint16(p + 8) === 0x0000) {
-      tiff = p + 10; break;
-    }
-    p += 2 + len;
-  }
-  if (tiff < 0 || tiff + 8 > dv.byteLength) return null;
-
-  // TIFF header: byte order, magic 42, offset to IFD0 (all offsets from `tiff`).
-  const bom = dv.getUint16(tiff);
-  if (bom !== 0x4949 && bom !== 0x4D4D) return null;
-  const LE = bom === 0x4949;
-  if (dv.getUint16(tiff + 2, LE) !== 0x002A) return null;
-
-  const str = (off, len) => {
-    let s = '';
-    for (let i = 0; i < len && tiff + off + i < dv.byteLength; i++) {
-      const c = dv.getUint8(tiff + off + i);
-      if (!c) break;
-      s += String.fromCharCode(c);
-    }
-    return s;
-  };
-
-  // Pull the handful of tags we care about out of one IFD.
-  const want = {};
-  function readIFD(ifdOff, tags) {
-    if (ifdOff <= 0 || tiff + ifdOff + 2 > dv.byteLength) return;
-    const n = dv.getUint16(tiff + ifdOff, LE);
-    if (n > 512) return;                                 // implausible — bail
-    for (let i = 0; i < n; i++) {
-      const e = ifdOff + 2 + i * 12;
-      if (tiff + e + 12 > dv.byteLength) return;
-      const tag = dv.getUint16(tiff + e, LE);
-      if (tags.indexOf(tag) < 0) continue;
-      if (tag === 0x8769) { want.sub = dv.getUint32(tiff + e + 8, LE); continue; }
-      const type  = dv.getUint16(tiff + e + 2, LE);
-      const count = dv.getUint32(tiff + e + 4, LE);
-      if (type !== 2 || count > 64) continue;            // ASCII only
-      // <=4 bytes live inline in the value field; anything longer is a pointer.
-      const off = count <= 4 ? e + 8 : dv.getUint32(tiff + e + 8, LE);
-      want[tag] = str(off, count);
-    }
-  }
-  readIFD(dv.getUint32(tiff + 4, LE), [0x8769, 0x0132]);              // IFD0
-  if (want.sub) readIFD(want.sub, [0x9003, 0x9004, 0x9011, 0x9012]);  // Exif SubIFD
-
-  // Preference order: when it was shot, when it was digitised, when the file was
-  // last written. The first two have a matching offset tag.
-  const pick = want[0x9003] || want[0x9004] || want[0x0132];
-  if (!pick) return null;
-  const offs = (want[0x9003] ? want[0x9011] : want[0x9004] ? want[0x9012] : '') || '';
-
-  // "YYYY:MM:DD HH:MM:SS" — a zoneless local wall clock.
-  const m = /^(\d{4}):(\d\d):(\d\d)[ T](\d\d):(\d\d):(\d\d)/.exec(pick.trim());
-  if (!m) return null;
-  const Y = +m[1], Mo = +m[2], D = +m[3], H = +m[4], Mi = +m[5], S = +m[6];
-  if (Y < 1990 || Mo < 1 || Mo > 12 || D < 1 || D > 31 || H > 23 || Mi > 59 || S > 60) return null;
-
-  // An explicit offset ("+10:00") makes the instant unambiguous; without one,
-  // read the wall clock as the phone's own local time.
-  const mo = /^([+-])(\d\d):(\d\d)$/.exec(offs.trim());
-  if (mo) {
-    const sign = mo[1] === '-' ? -1 : 1;
-    return new Date(Date.UTC(Y, Mo - 1, D, H, Mi, S) - sign * ((+mo[2]) * 60 + (+mo[3])) * 60000);
-  }
-  return new Date(Y, Mo - 1, D, H, Mi, S);
-}
-
-// Read only the head of the file — EXIF sits in the first segments, and a 12MP
-// photo isn't worth pulling into memory whole.
-async function bbPhotoShotAt(file) {
-  try {
-    const head = file.slice(0, 256 * 1024);
-    const buf  = await (head.arrayBuffer ? head.arrayBuffer() : new Response(head).arrayBuffer());
-    const d    = bbExifShotAt(buf);
-    if (!d || isNaN(d.getTime())) return null;
-    // A timestamp in the future is a wrong clock, not a fresh photo — undated.
-    if (d.getTime() - Date.now() > BB_PHOTO_SKEW_MS) return null;
-    return d;
-  } catch (e) { return null; }
-}
-
-// An undated photo confirms; a dated one can raise the alarm. Say which.
 function bbPhotoHint() {
-  return _bbPhotoUndated
-    ? 'Photo attached — tap Send to confirm the warning'
-    : 'Photo attached — tap Send to alert other swimmers';
+  return 'Photo attached — tap Send to alert other swimmers';
 }
 
 async function bbPhotoPicked(ev) {
@@ -14825,43 +14702,20 @@ async function bbPhotoPicked(ev) {
   if (!/^image\//.test(file.type || '')) { ev.target.value = ''; if (sub) sub.textContent = 'That file isn’t an image.'; return; }
   if (file.size > 15 * 1024 * 1024) { ev.target.value = ''; if (sub) sub.textContent = 'That photo is too large (max 15MB).'; return; }
 
-  // Date it BEFORE compressing: bbCompressImage re-encodes through a canvas,
-  // which drops EXIF, so after that point the age is unknowable.
-  let shotAt = await bbPhotoShotAt(file);
-  // Straight from the camera-only input: taken now, even with no EXIF date. The
-  // lastModified bound stops a desktop (where capture is ignored) passing an old file.
-  const fromCam = ev.target.id === 'bbCamInput';
-  if (!shotAt && fromCam && (!file.lastModified || Date.now() - file.lastModified < 10 * 60 * 1000)) {
-    shotAt = new Date();
-  }
-  if (shotAt && Date.now() - shotAt.getTime() > BB_PHOTO_MAX_AGE_MS) {
-    ev.target.value = '';
-    const t = shotAt.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
-    if (sub) sub.textContent = `That photo was taken ${bbRelDay(shotAt)} at ${t} — a warning needs one from this morning.`;
-    return;
-  }
-  // Undated — a screenshot, a download, one forwarded by a mate. It can back up
-  // a warning that is already running, but it cannot start one: nothing in it
-  // says this is happening now, and starting a warning pushes a notification.
-  if (!shotAt && !_bbWarningActive) {
-    ev.target.value = '';
-    if (sub) sub.textContent = 'Can’t tell when that photo was taken — use Take photo now.';
-    bbShowCam(true);
-    return;
-  }
-
+  // No date check on the photo (removed 25 Sep 2026). iOS strips EXIF, and a
+  // shot saved from the Bold & Beautiful group carries none either, so an EXIF
+  // gate turned away genuine reports. Any photo may start a warning.
   try {
     const blob = await bbCompressImage(file);
     bbPhotoReset();
     const url = URL.createObjectURL(blob);
-    const rec = { blob, url, shotAt, remoteUrl: null };
+    const rec = { blob, url, remoteUrl: null };
     // Upload NOW, not at send time. The send can happen from the pagehide /
     // visibility flush, which cannot wait for an upload — it used to go out
     // photo-less, the server refused it (a photo is required to START a warning)
     // and the button silently fell back to "Report" (19 Sep 2026).
     rec.uploadP = bbUploadPhoto(blob).then(u => (rec.remoteUrl = u), e => { console.warn('Bluebottle photo upload failed:', e.message); return null; });
     _bbPhoto = rec;
-    _bbPhotoUndated = !shotAt;
     bbShowCam(false);
     bbShowWhere(true);
     const sbtn = document.getElementById('bbBtn');
@@ -15133,10 +14987,10 @@ function bbReport() {
   if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
 
   // Starting a NEW warning requires a photo; confirming an active one does not.
-  // No photo staged + no active warning → offer the camera (trusted: taken now)
-  // or the library (needs an EXIF date). Opening the picker straight away made the
+  // No photo staged + no active warning → offer the camera or the library.
+  // Opening the picker straight away made the
   // picker's own Take Photo fail on iPhone, which strips the date (19 Sep 2026).
-  if ((!_bbPhoto || _bbPhotoUndated) && !_bbWarningActive) {
+  if (!_bbPhoto && !_bbWarningActive) {
     bbCancelConfirm();
     const sub = document.getElementById('bbSub');
     if (sub) sub.textContent = 'Add a photo to start a bluebottle warning';
