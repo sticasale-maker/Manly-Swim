@@ -7566,12 +7566,21 @@ const SITE_DEFAULTS = {
   // Once the tide is up the swell skips the beach and hits the wall, and the reflected
   // waves come back through the bay. Below surgeWallTideLo nothing; between Lo and Hi a
   // reflected share ramps in (smoothstep); above Hi the full share surgeWallReflect of the
-  // bay's arriving swell + sea heave is added. Multiplicative like the tide term: no
-  // arriving energy, no reflection. Anchored on 14 Sep 10:00 (1.65 m, 0.83 m ENE sea) ->
-  // Surgy, the swimmer's call; wall reached at ~1.3 m per the user.
-  surgeWallTideLo:  1.3,   // m — water starts reaching the wall
-  surgeWallTideHi:  1.6,   // m — full reflection
-  surgeWallReflect: 1.0,   // reflected share of the bay's swell + sea at full reflection; 0 = off
+  // bay's arriving swell + sea heave is added, CAPPED at surgeWallMaxPts. Multiplicative
+  // like the tide term: no arriving energy, no reflection.
+  // REFIT 26 Sep 2026 (per user) on TWO swimmer calls, both Surgy:
+  //   14 Sep 10:00 — 1.65 m tide, 0.83 m 5.8 s ENE sea  (base 21.3 -> 37.3)
+  //   26 Sep 07-08 — 1.53-1.56 m, 1.05 m 7 s NE sea     (base ~40 -> 46.3 / 48.6)
+  // The old 1.3–1.6 m / 1.0 / uncapped read 26 Sep Washy 66-68, with a 25-point jump
+  // between 06:00 and 07:00: the 30 cm ramp was crossed in one hourly step, and the
+  // uncapped share doubled a big wind-sea. No uncapped share can fit both days — 26 Sep
+  // has twice the energy at nearly the same tide — so the cap is what does it. Start
+  // moved 1.3 -> 1.4 m (the user saw water reach the wall at ~1.3; within tide-forecast
+  // noise, and it buys margin on both anchors).
+  surgeWallTideLo:  1.4,   // m — water starts reaching the wall
+  surgeWallTideHi:  1.8,   // m — full reflection
+  surgeWallReflect: 1.6,   // reflected share of the bay's swell + sea at full reflection; 0 = off
+  surgeWallMaxPts:  24,    // ceiling on the reflected demerits at full reflection
   pointSens:      7.0,   // LOCAL — no sheet cell. Demerit scale on swellPower(H,P) at the point.
                          // ANCHORED on the one observed event: 0.38 m / 15.09 s / 124.6° on
                          // 12 Sep 2026 → ~26 demerits, i.e. mid-Drifty. The rail comes off green
@@ -9119,15 +9128,18 @@ function pointSurge(d) {
   return Math.min(cap, raw);
 }
 
-// Reflected share (0..surgeWallReflect) of the bay's arriving energy at this tide — see
-// SITE.surgeWallTideLo. One helper so the score and any readout cannot disagree.
-function surgeWallFactor(tideM) {
+// Wall reflection demerits for this tide and the bay's arriving energy — see
+// SITE.surgeWallTideLo. ramp(tide) × min(share × energy, cap): the cap is what lets a
+// small sea still reflect in full while a big one cannot double the bay. One helper so
+// the score and any readout cannot disagree.
+function surgeWallDemerits(tideM, energy) {
   const R  = (SITE.surgeWallReflect != null) ? SITE.surgeWallReflect : 0;
-  const lo = (SITE.surgeWallTideLo  != null) ? SITE.surgeWallTideLo  : 1.3;
-  const hi = (SITE.surgeWallTideHi  != null) ? SITE.surgeWallTideHi  : 1.6;
-  if (!(R > 0) || tideM == null || !isFinite(tideM)) return 0;
+  const lo = (SITE.surgeWallTideLo  != null) ? SITE.surgeWallTideLo  : 1.4;
+  const hi = (SITE.surgeWallTideHi  != null) ? SITE.surgeWallTideHi  : 1.8;
+  const cap = (SITE.surgeWallMaxPts != null) ? SITE.surgeWallMaxPts : 24;
+  if (!(R > 0) || !(energy > 0) || tideM == null || !isFinite(tideM)) return 0;
   const t = Math.max(0, Math.min(1, (tideM - lo) / Math.max(0.05, hi - lo)));
-  return R * t * t * (3 - 2 * t);
+  return t * t * (3 - 2 * t) * Math.min(R * energy, cap);
 }
 
 function blSwimWater(d, chop) {
@@ -9174,9 +9186,10 @@ function blSwimWater(d, chop) {
   // all untouched.
   const chop_d = 0;
   // Wall reflection: at high tide a share of the swell + sea heave reaching the bay comes
-  // back off the wall (SITE.surgeWallReflect). Zero below surgeWallTideLo and zero on a
-  // flat day, so it can only make a big-tide day with real energy rougher.
-  const wall_d = surgeWallFactor(tideM) * (s1_d + sea_d);
+  // back off the wall (SITE.surgeWallReflect), capped (surgeWallMaxPts). Zero below
+  // surgeWallTideLo and zero on a flat day, so it can only make a big-tide day with real
+  // energy rougher.
+  const wall_d = surgeWallDemerits(tideM, s1_d + sea_d);
   const rawBay = s1_d + sea_d + tide_d + wall_d;  // swell + sea heave + tide + wall reflection
   // SURGE IS NOW THE WORST POINT ON THE LINE, NOT ONE NODE (12 Sep 2026). The bay
   // term above is scored at Bower Lane; pointSurge is the point you pass on the
@@ -15637,7 +15650,8 @@ const TUNE_PARAMS = [
   // Surge at the point (12 Sep 2026). LOCAL — no sheet cell; SITE is the only
   // home, so the panel is the only place to turn them. Moves re-score live through
   // pointSurge(), which reads SITE on every call.
-  { key:'surgeWallReflect', label:'SURGE · Wall reflection (share)', min:0, max:2, step:0.05, hint:'LOCAL — no sheet cell. At full reflection this share of the bay swell + sea heave is added again (waves off the wall at high tide). 0 turns it off. 1.0 = 14 Sep 10:00 reads Surgy.' },
+  { key:'surgeWallReflect', label:'SURGE · Wall reflection (share)', min:0, max:2, step:0.05, hint:'LOCAL — no sheet cell. At full reflection this share of the bay swell + sea heave is added again (waves off the wall at high tide), up to the ceiling below. 0 turns it off. Fitted 26 Sep: 1.6 with a 24 ceiling reads both 14 Sep 10:00 and 26 Sep 07:00 Surgy.' },
+  { key:'surgeWallMaxPts', label:'SURGE · Wall reflection — ceiling (pts)', min:0, max:60, step:1, hint:'LOCAL — no sheet cell. The most the wall can add at full reflection, however big the sea. Stops a big wind-sea doubling the bay.' },
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
@@ -15687,7 +15701,7 @@ const TUNE_LIVE_KEYS = [
   'entryChopPts', 'entryChopFloorCm', 'entryChopMaxPts',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
   'pointSens', 'pointPeriodLo', 'pointWashyMult', 'pointMinH',
-  'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi',
+  'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi', 'surgeWallMaxPts',
 ];
 // The New NS cell a sheet-backed knob must be typed into, read off its own hint
 // ("New NS AQ2 — COPY here") so there is no second list to fall out of step.
