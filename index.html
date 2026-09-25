@@ -15959,8 +15959,8 @@ function buildTunePanel() {
               </div>
               <button id="tune-push" style="background:#a95e1e;color:#fff3e8;border-color:#a95e1e;width:100%;margin-top:6px;">Push LOCAL knobs to live</button>
               <div class="tw-hint" id="tune-push-hint">Sends the ${TUNE_LIVE_KEYS.length} <span class="tw-prov local">LOCAL</span> knobs to every swimmer (asks for the admin passphrase). Sheet-backed knobs are <b>not</b> included — those still go through their cell.</div>
-              <button id="tune-reload">Reload from sheet</button>
-              <div class="tw-hint">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches.</div>
+              <button id="tune-reload">Reload from sheet and app</button>
+              <div class="tw-hint">Re-pulls the New NS tab — both dispersion tables (SS + BL) and every sensitivity/threshold — bypassing the local and upstream caches, <b>and</b> puts every <span class="tw-prov local">LOCAL</span> slider back to what is live for everyone now. Press it before you Push if you have been playing.</div>
               <div id="tune-msg"></div>
               <div class="tw-hint">Live preview only persists on <b>this device</b>. To make a tune global, edit the New NS cell named beside each knob. “Copy values” gives you a snapshot to paste back.</div>
             </div>
@@ -16140,11 +16140,13 @@ function buildTunePanel() {
     msg('Cleared — reload to re-pull exact sheet values');
   });
 
-  // RELOAD FROM SHEET — hard re-pull of the entire New NS tab: both dispersion
-  // tables (SS + BL) plus every sensitivity/threshold. Busts the local cache and
-  // forces the upstream (fresh=1) so a sheet edit shows up without a hard refresh.
-  // Non-destructive to local slider overrides — if any are set they still mask the
-  // freshly-pulled scalar values, so we flag that in the confirmation.
+  // RELOAD FROM SHEET AND APP — hard re-pull of the entire New NS tab: both
+  // dispersion tables (SS + BL) plus every sensitivity/threshold. Busts the local
+  // cache and forces the upstream (fresh=1) so a sheet edit shows up without a
+  // hard refresh. It ALSO puts the LOCAL knobs back to what is live for everyone
+  // (coded SITE default, then the Worker's /tune values, fetched fresh). A slider
+  // writes straight into SITE, so clearing the override store alone left a played
+  // LOCAL value sitting there — and the next Push sent it to every swimmer.
   panel.querySelector('#tune-reload').addEventListener('click', async () => {
     const btn = panel.querySelector('#tune-reload');
     const prev = btn.textContent;
@@ -16156,15 +16158,19 @@ function buildTunePanel() {
                                                       // re-clobbers on the next applyTuneOverrides.
       localStorage.removeItem(NS_DISP_CONFIG_KEY);   // bust local cache
       await loadNsDispConfig(true);                  // force upstream re-pull
-      refreshAll();                                  // repaint sliders from fresh sheet values
+      // LOCAL knobs: coded default < live, same precedence as boot.
+      TUNE_LIVE_KEYS.forEach(k => tuneSet(k, SITE_DEFAULTS[k]));
+      const live = await refreshLiveTune();          // fresh from the Worker; null = kept the cache
+      applyLiveTune();
+      refreshAll();                                  // repaint sliders from fresh sheet + live values
       applyAndRender();                              // re-score with new tables/sensitivities
       const rows = SITE.nsDisp ? SITE.nsDisp.length : 0;
       const blOK = SITE.blDisp ? 'BL\u2713' : 'BL\u2717';
-      const ov = loadTuneOverrides();
-      const nOv = Object.keys(ov).filter(k => ov[k] != null).length;
       let t = 'Reloaded from sheet \u2713 (' + rows + ' SS rows, ' + blOK + ', ss=' + SITE.ssWaveSens + ')';
-      if (nOv) t += ' \u2014 ' + nOv + ' slider' + (nOv > 1 ? 's' : '') + ' still overridden locally; Reset to clear.';
-      msg(t);
+      t += live ? ' \u00b7 LOCAL knobs back to live \u2713'
+                : (loadLiveTune() ? ' \u00b7 LOCAL knobs back to the last-known live values (Worker unreachable)'
+                                  : ' \u00b7 LOCAL knobs back to coded defaults (no live values found)');
+      msg(t, live ? 4000 : 0);
     } catch (e) {
       msg('Reload failed \u2014 ' + (e.message || e));
     } finally {
