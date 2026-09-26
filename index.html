@@ -7725,6 +7725,23 @@ const SITE_DEFAULTS = {
   entryChopPts:     1.0,  // Entry demerit points per cm of Chop face above the floor
   entryChopFloorCm: 4,    // cm of Chop face that adds nothing (the Smooth/Ripply edge)
   entryChopMaxPts:  15,   // ceiling on what chop can add to Entry. 20 → 15 (13 Sep 2026, per user)
+  // ── Gentle-sea weight at the entry (27 Sep 2026, per user) ────────────────────
+  // Entry scored the forecast sea as H²·P whatever its shape, so a GENTLE sea — low and
+  // long, rolling in — counted like a steep one of the same energy. Three observed
+  // mornings, all an ENE sea at ~60° with the swell from the same bearing:
+  //   27 Aug 08:00  0.46 m / 7.5 s  steepness 0.005  read Doable 13, swimmer: flat
+  //   27 Sep 07:00  0.60 m / 7.0 s  steepness 0.008  read Doable 15, swimmer: mid green
+  //   14 Sep 09:00  0.89 m / 5.8 s  steepness 0.017  read Caution 29, swimmer: WORSE
+  // The SS table cannot tell them apart (60°: 0.78 @ 5.8 s vs 0.79 @ 7 s) and neither can
+  // any sensitivity without undoing 14 Sep. Steepness (H over deep-water wavelength) can.
+  // So the sea term is weighted: full at or above entrySeaSteepHi, entrySeaSteepFloor at
+  // or below entrySeaSteepLo, smoothstep between. 27 Sep 07:00 → 8 Easy, 27 Aug → 8–9,
+  // 14 Sep and the 0.9 m / 7 s sea forecast for 3 Oct unchanged; 27 of 352 daylight hours
+  // changed band (26 Doable → Easy). NS path only. Chop is untouched: this weights the
+  // Entry sea, and the tide term that rides on it, nothing else. Floor 1 turns it off.
+  entrySeaSteepLo:    0.007,  // steepness at or below which the sea counts at the floor
+  entrySeaSteepHi:    0.011,  // steepness at or above which the sea counts in full
+  entrySeaSteepFloor: 0.4,    // share of a gentle sea that still counts; 1 = off
   offshoreFloorKmh: 3,    // 12 → 10 → 8 → 0 → 3; BAKED from live KV (saved 2026-08-27T21:23Z).
                           // A 3 km/h floor, i.e. barely any: everything above a dead calm
                           // earns some credit, but a reading that is really just sensor
@@ -9299,6 +9316,20 @@ function entryChopDemerit(chopCm) {
   return Math.max(0, Math.min(cap, pts * Math.max(0, chopCm - floor)));
 }
 
+// Share of the forecast sea that counts at the entry, by steepness — see
+// SITE.entrySeaSteepLo. Steepness is H over the deep-water wavelength (2πH / gT²), the
+// same measure chopSlapWeight uses on its own, steeper, band. One helper, so calcScore
+// and the tune=1 mirror cannot state the rule twice.
+function entrySeaSteepWeight(H, T) {
+  const lo    = (SITE.entrySeaSteepLo    != null) ? SITE.entrySeaSteepLo    : 0.007;
+  const hi    = (SITE.entrySeaSteepHi    != null) ? SITE.entrySeaSteepHi    : 0.011;
+  const floor = (SITE.entrySeaSteepFloor != null) ? SITE.entrySeaSteepFloor : 1;
+  if (!(H > 0) || !(T > 0) || !(floor < 1)) return 1;
+  const s = 2 * Math.PI * H / (9.81 * T * T);
+  const t = Math.max(0, Math.min(1, (s - lo) / Math.max(1e-9, hi - lo)));
+  return Math.max(0, floor) + (1 - Math.max(0, floor)) * t * t * (3 - 2 * t);
+}
+
 function offshoreFlatten(windKmh, windDir) {
   const dir0 = (SITE.offshoreDir    != null) ? SITE.offshoreDir    : 270;
   const arc  = (SITE.offshoreArc    != null) ? SITE.offshoreArc    : 30;
@@ -9383,7 +9414,7 @@ function calcScore(d, modelOverride) {
   const wwRoute = Math.max(0, dirLookup(lk.wind, windWaveDir || windDir)) / 100;
 
   // swell2 removed 11 Jul 2026 — no secondary-swell input exists on the NS feed.
-  let ww_d, s1_d, rif_d, ws_d = 0, wwTxForChop = 0;
+  let ww_d, s1_d, rif_d, ws_d = 0, wwTxForChop = 0, seaSteepW = 1;
 
   if (useGem) {
     // ── NS DISPERSION model ─────────────────────────────────────────────────
@@ -9403,7 +9434,8 @@ function calcScore(d, modelOverride) {
     wwTxForChop = Math.max(0, Math.min(1, wwTx)); // handover weight for CHOP crossfade
     const s1Tx = Math.max(0, nsDispLookup(swell1Dir, swell1P));
 
-    ww_d  = nrg(windWaveH || 0, wwP)          * wwTx * ess;
+    seaSteepW = entrySeaSteepWeight(windWaveH || 0, wwP);   // gentle sea counts less — see SITE.entrySeaSteepLo
+    ww_d  = nrg(windWaveH || 0, wwP)          * wwTx * ess * seaSteepW;
     s1_d  = nrg(swell1H, swell1P)             * s1Tx * ess;
     rif_d = 0; // refraction absorbed into the dispersion table
 
@@ -9586,6 +9618,8 @@ function calcScore(d, modelOverride) {
       tide:     Math.round(tide_d  * 10) / 10,
       wind:     Math.round(wind_d  * 10) / 10,
       windWave: Math.round(ww_d    * 10) / 10,
+      // Share of the forecast sea counted at the entry (1 = all; see entrySeaSteepWeight).
+      seaSteep: Math.round(seaSteepW * 100) / 100,
       windSea:  Math.round(ws_d    * 10) / 10,
       windEntry: Math.round(windEntry * 10) / 10,
       chop:     Math.round(chopQ7  * 10) / 10,
@@ -13093,7 +13127,7 @@ function renderGemComparison(h) {
   // windSeaSens now scales ONLY the SS entry wind-sea (ws_d_g below).
   const blChopImpact_g = (SITE.blChopImpact != null) ? SITE.blChopImpact : 1;
   const wind_d_g = nrg_g(wsBL_g.hs, wsBL_g.tp) * blChopImpact_g * (wsBL_g.survive != null ? wsBL_g.survive : 1);
-  const ww_d_g   = nrg_g(windWaveH || 0, wwP_g) * wwTx_g * ess_g;
+  const ww_d_g   = nrg_g(windWaveH || 0, wwP_g) * wwTx_g * ess_g * entrySeaSteepWeight(windWaveH || 0, wwP_g);
   const s1_d_g   = s1pow_g * s1Tx_g * ess_g;
   const wsSS_g   = windSeaAt(SITE.fetchMaskSS, windKmh, windDir, windDurHrs_g);
   const ws_d_g   = nrg_g(wsSS_g.hs, wsSS_g.tp) * ess_g * wsSens_g;
@@ -15700,6 +15734,9 @@ const TUNE_PARAMS = [
   { key:'entryChopPts', label:'ENTRY · Chop at entry (pts per cm)', min:0, max:5, step:0.1, hint:'LOCAL — no sheet cell. Entry demerit points added per cm of Chop face above the floor. 0 turns it off. 1.5 = a 9.4 cm Choppy hour adds 8 pts.' },
   { key:'entryChopFloorCm', label:'ENTRY · Chop at entry — floor (cm)', min:0, max:12, step:0.5, hint:'LOCAL — no sheet cell. Chop face below this adds nothing to Entry. 4 = the Smooth/Ripply edge.' },
   { key:'entryChopMaxPts', label:'ENTRY · Chop at entry — ceiling (pts)', min:0, max:45, step:1, hint:'LOCAL — no sheet cell. The most chop can ever add to Entry. 15 keeps chop alone to Doable on a flat-swell day.' },
+  { key:'entrySeaSteepFloor', label:'ENTRY · Gentle sea — share counted', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. How much of a gentle (low, long) forecast sea still counts at the entry. 1 turns the weighting off. 0.4 = 27 Sep 07:00 reads Easy 8.' },
+  { key:'entrySeaSteepLo', label:'ENTRY · Gentle sea — below this steepness', min:0.002, max:0.02, step:0.0005, hint:'LOCAL — no sheet cell. Steepness (H over wavelength) at or below which the sea counts only the share above. 0.6 m at 7 s is 0.008.' },
+  { key:'entrySeaSteepHi', label:'ENTRY · Gentle sea — full from this steepness', min:0.004, max:0.03, step:0.0005, hint:'LOCAL — no sheet cell. Steepness at or above which the sea counts in full. 0.9 m at 5.8 s (14 Sep) is 0.017. Keep above the one before.' },
   { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
@@ -15712,6 +15749,7 @@ const TUNE_PARAMS = [
 const TUNE_LIVE_KEYS = [
   'offshorePts', 'offshoreArc', 'offshoreMaxPts', 'offshoreMaxFrac', 'offshoreFloorKmh',
   'entryChopPts', 'entryChopFloorCm', 'entryChopMaxPts',
+  'entrySeaSteepFloor', 'entrySeaSteepLo', 'entrySeaSteepHi',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
   'pointSens', 'pointPeriodLo', 'pointWashyMult', 'pointMinH',
   'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi', 'surgeWallMaxPts',
@@ -15843,6 +15881,9 @@ const TW_GROUPS = [
       { key:'entryChopPts',     name:'Chop at entry', tag:'LIVE', desc:'Adds a share of the <b>Chop face</b> into Entry: points per cm above the floor. The slap you wade into at South Steyne. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'entryChopFloorCm', name:'Chop at entry — floor', desc:'Chop face (cm) that adds nothing. 4 = Smooth edge.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'entryChopMaxPts',  name:'Chop at entry — ceiling', desc:'The most chop can add to Entry, however messy.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'entrySeaSteepFloor', name:'Gentle sea — share counted', tag:'LIVE', desc:'A <b>low, long</b> forecast sea rolls in rather than dumping, so only this share of it counts at the entry (and in the tide term riding on it). 1 = off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'entrySeaSteepLo',    name:'Gentle sea — below', desc:'Steepness (height over wavelength) at or below which only the share above counts. 0.6 m @ 7 s = 0.008.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'entrySeaSteepHi',    name:'Gentle sea — full from', desc:'Steepness at or above which the sea counts in full. 0.9 m @ 5.8 s = 0.017.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
     bands:{ label:'Bands', edges:'AQ2:AQ5', items:[
       { key:'entryThresholds.easy',    lab:'Easy ≤' },
@@ -15885,7 +15926,8 @@ const TW_GROUPS = [
 function buildTunePanel() {
   if (!TUNE_PANEL) return;
   try {
-  const fmt = v => (v == null ? '—' : (Math.round(v * 100) / 100));
+  // Small knobs (steepness 0.007 / 0.011) keep four decimals — at two they both read 0.01.
+  const fmt = v => (v == null ? '—' : (Math.abs(v) < 0.1 && v !== 0 ? +v.toFixed(4) : Math.round(v * 100) / 100));
   const TP = {};
   TUNE_PARAMS.forEach(p => { TP[p.key] = p; });
 
@@ -19988,14 +20030,14 @@ function metricBreakdownHTML(key) {
     const chopCapped = chopD >= chopCap - 0.05;
     return wrap(
       row('Primary swell', f(dm.swell1)) +
-      row('Wind (sea ↔ wave)', f(we), '(SS fetch + wind-wave, crossfaded at arc)') +
+      row('Wind (sea ↔ wave)', f(we), '(SS fetch + wind-wave, crossfaded at arc'
+        + ((dm.seaSteep != null && dm.seaSteep < 0.995) ? '; gentle sea, counted ×' + dm.seaSteep.toFixed(2) : '') + ')') +
       (Math.abs(dm.refrac) > 0.05 ? row('Refraction', f(dm.refrac)) : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Subtotal (before tide)', f(o)) +
-      // tideGate is start 70 -> full 90, and tideDir() gates swell1 AND the
-      // wind-wave. The old note said "only swell from >90°", which named the
-      // wrong angle and the wrong set of terms.
-      row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 70°, full at 90°)`) +
+      // tideGate is start 40 -> full 70 since 14 Sep 2026, and tideDir() gates swell1
+      // AND the wind-wave. (The note said 70/90 until 27 Sep, a leftover from before.)
+      row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 40°, full at 70°)`) +
       // Credit, so it prints negative — an offshore westerly flattens the swell face
       // at the entry. Only shown when it actually bites.
       (Math.abs(dm.offshore || 0) > 0.05
