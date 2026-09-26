@@ -7737,7 +7737,8 @@ const SITE_DEFAULTS = {
   // So the sea term is weighted: full at or above entrySeaSteepHi, entrySeaSteepFloor at
   // or below entrySeaSteepLo, smoothstep between. 27 Sep 07:00 → 8 Easy, 27 Aug → 8–9,
   // 14 Sep and the 0.9 m / 7 s sea forecast for 3 Oct unchanged; 27 of 352 daylight hours
-  // changed band (26 Doable → Easy). NS path only. Chop is untouched: this weights the
+  // changed band (26 Doable → Easy). Both paths: the WW backup weights its own
+  // (Open-Meteo) sea the same way since the same day. Chop is untouched: this weights the
   // Entry sea, and the tide term that rides on it, nothing else. Floor 1 turns it off.
   entrySeaSteepLo:    0.007,  // steepness at or below which the sea counts at the floor
   entrySeaSteepHi:    0.011,  // steepness at or above which the sea counts in full
@@ -9476,7 +9477,11 @@ function calcScore(d, modelOverride) {
     const wwTx      = (1 - wwBlend) * wwArrival + wwBlend * wwRoute;
     const s1Tx      = Math.max(0, gemLookup(swell1Dir, swell1P));
 
-    ww_d  = swellPower(seaH, wwP)                  * wwTx * wwSens;
+    // Same gentle-sea weight as the NS branch (27 Sep 2026, per user), on the sea this
+    // path actually scores — Open-Meteo's when it has one — so a failover morning does
+    // not jump a band just because the feed changed. See SITE.entrySeaSteepLo.
+    seaSteepW = entrySeaSteepWeight(seaH, wwP);
+    ww_d  = swellPower(seaH, wwP)                  * wwTx * wwSens * seaSteepW;
     s1_d  = swellPower(swell1H, swell1P)           * s1Tx * SITE.swellSens;
     rif_d = 0; // absorbed into gemLookup
     // Activate the Entry wind crossfade (windEntry = ws_d·(1−w) + ww_d·w, w below)
