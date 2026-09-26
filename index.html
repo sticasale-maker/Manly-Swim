@@ -5755,6 +5755,12 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
     <span>Display &amp; swim times<small>Indicator style, character, time picker, usual swim times, where your heart is</small></span><span class="chev">&rsaquo;</span></button>
   </section>
+  <!-- Install the tile: always here for anyone who dismissed the banner and later wants
+       it (26 Sep 2026, per user). Hidden by default; the Add-to-Home-Screen script shows
+       it only in a browser, so it never appears inside the installed app. -->
+  <button type="button" class="more-item" data-more="install" id="moreInstall" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M12 7v7M9 11l3 3 3-3M10.5 18.5h3"/></svg>
+    <span>Install the app<small>Put the Swim Manly tile on your home screen</small></span><span class="chev">&rsaquo;</span></button>
   <div class="more-grp">Share</div>
   <button type="button" class="more-item" data-more="share">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M5 12v8h14v-8"/></svg>
@@ -5915,6 +5921,8 @@
       if (typeof shareApp === 'function') shareApp();
     } else if (what === 'qr') {
       if (typeof showQr === 'function') showQr();
+    } else if (what === 'install') {
+      if (typeof window.a2hsOpen === 'function') window.a2hsOpen();
     }
   });
 
@@ -25486,6 +25494,32 @@ else theftLoad();
       fire('a2hs_dismissed', { variant: variant });
     });
   }
+
+  /* ON REQUEST — the "Install the app" row in More. Asked for, so no engagement gate,
+     no snooze check and no cadence spent: it opens the right instructions for this
+     device at once. Counted as its own funnel variant, 'more'. */
+  window.a2hsOpen = function () {
+    var ua = navigator.userAgent || '';
+    var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var el = /FBAN|FBAV|FB_IAB|FBIOS|Instagram/i.test(ua) ? byId('a2hsInApp')
+           : ios ? byId('a2hsIos') : null;
+    fire('a2hs_cta', { variant: 'more', native: !!(typeof deferredPrompt !== 'undefined' && deferredPrompt) });
+    if (!el && typeof deferredPrompt !== 'undefined' && deferredPrompt) {
+      var dp = deferredPrompt; deferredPrompt = null;
+      if (pill) pill.hidden = true;
+      dp.prompt();
+      if (dp.userChoice) dp.userChoice.then(function (c) { fire('a2hs_choice', { outcome: (c && c.outcome) || 'unknown' }); });
+      return;
+    }
+    if (!el) el = hint;                                   // Android/desktop with no native prompt: the ⋮ steps
+    if (!el) return;
+    ['a2hsPill', 'a2hsIos', 'a2hsHint', 'a2hsInApp'].forEach(function (id) { var b = byId(id); if (b && b !== el) b.hidden = true; });
+    el.hidden = false;
+    fire('a2hs_shown', { variant: 'more' });
+    var x = el.querySelector('.a2hs-x');
+    if (x) x.addEventListener('click', function () { el.hidden = true; }, { once: true });
+  };
+  (function () { var mi = byId('moreInstall'); if (mi) mi.hidden = false; })();
 
   // ---- 0) In-app browsers (Facebook, Instagram) CANNOT install a tile at all:
   // iOS gives them no "Add to Home Screen" in the share sheet, and Android never
