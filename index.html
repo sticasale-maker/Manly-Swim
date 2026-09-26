@@ -25323,12 +25323,12 @@ else theftLoad();
   .a2hs-banner[hidden]{display:none!important;}
 </style>
 <div id="a2hsPill" class="a2hs-banner" role="dialog" aria-label="Install Swim Manly" hidden>
-  <span class="a2hs-banner-txt"><strong>&#128241; Enable full functionality</strong>Install the Swim Manly tile to unlock the full-screen app &mdash; faster, distraction-free, and always a tap away.</span>
+  <span class="a2hs-banner-txt"><strong class="a2hs-h">&#128241; Opens straight to this morning&rsquo;s forecast</strong><span class="a2hs-lead">Put the Swim Manly tile on your home screen &mdash; one tap, full screen, no address bar.</span></span>
   <button id="a2hsInstall" type="button" class="a2hs-cta">Install</button>
   <button id="a2hsClose" type="button" class="a2hs-x" aria-label="Dismiss install prompt">&times;</button>
 </div>
 <div id="a2hsIos" class="a2hs-banner" role="dialog" aria-label="Add to Home Screen" hidden>
-  <span class="a2hs-banner-txt"><strong>&#128241; Enable full functionality</strong>Install the Swim Manly tile to unlock the full-screen app:
+  <span class="a2hs-banner-txt"><strong class="a2hs-h">&#129724; Get bluebottle alerts on your iPhone</strong><span class="a2hs-lead">iPhone only sends alerts to the Home Screen app, not to a browser tab. Add the Swim Manly tile:</span>
     <ol class="a2hs-steps">
       <li>Tap the <b>Share</b> icon (the square-with-up-arrow) &mdash; bottom toolbar in Safari, top-right in Chrome.</li>
       <li>Scroll down and tap &lsquo;<b>Add to Home Screen</b>&rsquo;.</li>
@@ -25338,7 +25338,7 @@ else theftLoad();
   <button id="a2hsIosClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
 </div>
 <div id="a2hsHint" class="a2hs-banner" role="dialog" aria-label="Install Swim Manly" hidden>
-  <span class="a2hs-banner-txt"><strong>&#128241; Enable full functionality</strong>Install the Swim Manly tile to unlock the full-screen app: tap the &#8942; menu (top-right), then &lsquo;Install app&rsquo;.</span>
+  <span class="a2hs-banner-txt"><strong>&#128241; Install the Swim Manly tile</strong>Tap the &#8942; menu (top-right), then &lsquo;Install app&rsquo;.</span>
   <button id="a2hsHintClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
 </div>
 <!-- Facebook/Instagram in-app browser: installing is impossible here, so the only
@@ -25375,6 +25375,40 @@ else theftLoad();
   function ls(k)      { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k,v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
+  /* THE REGULAR WHO HASN'T INSTALLED (26 Sep 2026, per user). Someone opening the app
+     in a browser on 3+ different days in a week is a regular — the likeliest person
+     to take the tile, and the one the generic ask has already failed. For them the
+     banner names the habit and may break through the 2-day snooze once a week. It
+     keeps the normal engagement gate: the start-up popup sits above the banner, and
+     closing it is the tap that opens the gate, so the ask lands just after it. Counted on the device only: a list
+     of local dates, mirrored to a cookie via persistSet because Safari evicts
+     localStorage after 7 idle days — the very gap this counts across. Tagged as its
+     own funnel variant (ios_regular / android_regular) so the dashboard shows
+     whether it converts better than the plain ask. */
+  var REGULAR_DAYS = 3, REGULAR_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
+  var pGet = window.persistGet || ls, pSet = window.persistSet || lsSet;
+  function dayKey(d) { return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+  var visitDays = 0;
+  try {
+    var today = new Date(), keep = {};
+    for (var i = 0; i < 7; i++) keep[dayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() - i))] = 1;
+    var days = String(pGet('a2hs_visit_days') || '').split(',').filter(function (k) { return keep[k]; });
+    if (days.indexOf(dayKey(today)) < 0) days.push(dayKey(today));
+    pSet('a2hs_visit_days', days.join(','));
+    visitDays = days.length;
+  } catch (e) {}
+  var REGULAR = visitDays >= REGULAR_DAYS;
+  var regularDue = REGULAR && (Date.now() - parseInt(ls('a2hs_regular_at') || '0', 10) > REGULAR_EVERY_MS);
+  var SUF = regularDue ? '_regular' : '';
+  var regularShown = false;                              // the regular ask is up; snooze() spends its week
+  // The regular's words replace the headline and lead; the steps below them stay.
+  function regularCopy(el, lead) {
+    if (!regularDue || !el) return;
+    var h = el.querySelector('.a2hs-h'), l = el.querySelector('.a2hs-lead');
+    if (h) h.textContent = 'You\u2019ve checked the bay ' + visitDays + ' days this week';
+    if (l) l.textContent = lead;
+  }
+
   // Recurring cadence: an install offer is "due" unless the app is already
   // installed (permanent stop) or we've shown one within the last ~2 days.
   // A home-screen (standalone) launch returned above, so the cadence only
@@ -25382,10 +25416,14 @@ else theftLoad();
   function installed() { return !!ls('a2hs_installed_v1'); }
   function remindDue() {
     if (installed()) return false;
+    if (regularDue) return true;                         // once a week, through the snooze
     var until = parseInt(ls('a2hs_snooze_until') || '0', 10);
     return !(until && Date.now() < until);
   }
-  function snooze() { lsSet('a2hs_snooze_until', String(Date.now() + REMIND_MS)); }
+  function snooze() {
+    lsSet('a2hs_snooze_until', String(Date.now() + REMIND_MS));
+    if (regularShown) { lsSet('a2hs_regular_at', String(Date.now())); regularDue = false; }
+  }
   function fire(ev, props) { try { if (window.track) window.track(ev, props || {}); } catch (e) {} }
 
   /* WHEN TO ASK — after the value, not before it.
@@ -25437,6 +25475,7 @@ else theftLoad();
     // impression and stack a second close handler on the same button.
     if (!el.hidden) return;
     el.hidden = false;
+    if (regularDue && variant !== 'inapp') regularShown = true;
     fire('a2hs_shown', { variant: variant });
     var seen = setTimeout(function () { if (!el.hidden) snooze(); }, SEEN_MS);
     var x = closeId && byId(closeId);
@@ -25462,6 +25501,7 @@ else theftLoad();
 
   // ---- A) Android / Chromium: capture the native prompt, offer an install pill.
   var deferredPrompt = null;
+  var pillVariant = 'android';                          // what the CTA reports; set when the pill shows
   window.addEventListener('beforeinstallprompt', function (e) {
     // Capture immediately — the browser offers this event once — but hold the pill
     // back until the engagement gate opens.
@@ -25470,7 +25510,9 @@ else theftLoad();
     deferredPrompt = e;
     whenEngaged(function () {
       if (hint) hint.hidden = true;                     // native prompt beats the manual hint
-      show(pill, 'android', 'a2hsClose');
+      if (pill && pill.hidden) pillVariant = 'android' + SUF;
+      regularCopy(pill, 'Make it one tap \u2014 install the Swim Manly tile and it opens straight to the forecast.');
+      show(pill, pillVariant, 'a2hsClose');
     });
   });
   if (pill) {
@@ -25478,7 +25520,7 @@ else theftLoad();
     if (installBtn) installBtn.addEventListener('click', function () {
       // Acting on it settles the question either way, so the cadence is spent here.
       snooze();
-      fire('a2hs_cta', { variant: 'android', native: !!deferredPrompt });
+      fire('a2hs_cta', { variant: pillVariant, native: !!deferredPrompt });
       if (deferredPrompt) {
         deferredPrompt.prompt();
         if (deferredPrompt.userChoice) deferredPrompt.userChoice.then(function (c) {
@@ -25516,7 +25558,9 @@ else theftLoad();
   if (isAndroid && !isFirefox && remindDue()) {
     whenEngaged(function () {
       if (!deferredPrompt && pill && pill.hidden && (!hint || hint.hidden)) {
-        show(pill, 'android_fallback', 'a2hsClose');
+        pillVariant = 'android_fallback' + SUF;
+        regularCopy(pill, 'Make it one tap \u2014 install the Swim Manly tile and it opens straight to the forecast.');
+        show(pill, pillVariant, 'a2hsClose');
       }
     });
   }
@@ -25529,7 +25573,11 @@ else theftLoad();
   var isIOS = /iPhone|iPad|iPod/.test(ua) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);  // iPadOS 13+ reports as Mac
   if (isIOS && !window.navigator.standalone && remindDue()) {
-    whenEngaged(function () { show(byId('a2hsIos'), 'ios', 'a2hsIosClose'); });
+    whenEngaged(function () {
+      var ios = byId('a2hsIos'), v = 'ios' + SUF;
+      regularCopy(ios, 'Make it one tap \u2014 and get bluebottle alerts, which iPhone only sends to the Home Screen app:');
+      show(ios, v, 'a2hsIosClose');
+    });
   }
 })();
 </script>
