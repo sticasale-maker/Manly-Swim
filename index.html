@@ -25356,7 +25356,12 @@ else theftLoad();
   <button id="a2hsIosClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
 </div>
 <div id="a2hsHint" class="a2hs-banner" role="dialog" aria-label="Install Swim Manly" hidden>
-  <span class="a2hs-banner-txt"><strong>&#128241; Install the Swim Manly tile</strong>Tap the &#8942; menu (top-right), then &lsquo;Install app&rsquo;.</span>
+  <!-- Leads with the forecast, matching the Android pill it follows (26 Sep 2026, per
+       user). NOT bluebottle alerts: Android Chrome alerts without the tile, so that would
+       sell the tile for something it does not add. Chrome's menu says "Install app" on
+       some phones and "Add to Home screen" on others; Samsung Internet has no ⋮ menu at
+       all, so the a2hs script swaps in its route (#a2hsHintSteps). -->
+  <span class="a2hs-banner-txt"><strong>&#128241; One tap to this morning&rsquo;s forecast</strong><span id="a2hsHintSteps">Tap the &#8942; menu (top-right), then &lsquo;<b>Install app</b>&rsquo; or &lsquo;<b>Add to Home screen</b>&rsquo;.</span></span>
   <button id="a2hsHintClose" type="button" class="a2hs-x" aria-label="Dismiss">&times;</button>
 </div>
 <!-- Facebook/Instagram in-app browser: installing is impossible here, so the only
@@ -25392,6 +25397,13 @@ else theftLoad();
   var byId = function (id) { return document.getElementById(id); };
   var pill = byId('a2hsPill');
   var hint = byId('a2hsHint');
+  // Samsung Internet: no ⋮ menu. Its route is ≡ (bottom-right) → Add page to → Home screen.
+  try {
+    var hs = byId('a2hsHintSteps');
+    if (hs && /SamsungBrowser/.test(navigator.userAgent || '')) {
+      hs.innerHTML = 'Tap the <b>&#8801;</b> menu (bottom-right), then &lsquo;<b>Add page to</b>&rsquo; &rarr; &lsquo;<b>Home screen</b>&rsquo;.';
+    }
+  } catch (e) {}
 
   function ls(k)      { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k,v) { try { localStorage.setItem(k, v); } catch (e) {} }
