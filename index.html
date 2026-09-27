@@ -909,6 +909,12 @@
   .aq-warn { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: #3a2419;
     border-left: 5px solid var(--aq-col, #e08a3c); color: #f1e3d3; font-size: 13.5px; line-height: 1.45; }
   .aq-warn b { color: #fff; }
+  .bb-warn[hidden] { display: none; }
+  .bb-warn { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: #142f3d;
+    border-left: 5px solid #5aa9e6; color: #e3eef5; font-size: 13.5px; line-height: 1.45;
+    cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .bb-warn b { color: #fff; }
+  .bb-warn .bb-warn-sub { display: block; color: #b9cfdc; font-size: 12.5px; }
   .aq-warn .aq-attr { color: #d9c6b3; }
 
   /* ── Live cam row (Surfline stills, 2 cols) ── */
@@ -4148,6 +4154,12 @@
          worse now, or forecast to be within 12 h. Reports the air; never advises about
          the water. Filled by paintAir(). -->
     <div class="aq-warn" id="aqWarn" data-tab="today" hidden></div>
+
+    <!-- BLUEBOTTLE WARNING (28 Sep 2026, per owner) — only while a report is under 30 h
+         old, and always with its age (§8: nothing undated). Reports what swimmers saw,
+         where and when; never advises about the water. Filled by bbTodayWarn() from the
+         same reports the Community strip shows; tap goes to that strip. -->
+    <div class="bb-warn" id="bbWarn" data-tab="today" hidden role="button" tabindex="0"></div>
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim" data-tab="today">
@@ -14686,6 +14698,64 @@ function bbRpc(args, keepalive) {
 // Where the bluebottles are. Required: every report says sand or water.
 let _bbWhere = null;
 const BB_WHERE_TEXT = { sand: 'on the sand', water: 'in the water' };
+
+// ── Recent-report warning (28 Sep 2026, per owner) ─────────────────────────
+// ONE summary of the reports under BB_WARN_MS old, read by both the Today warning
+// and the Storm Watch dashboard tile, so the two can never disagree. Null when
+// there is none. Age is always given: a sighting ages, and an undated one reads
+// as current (§8).
+const BB_WARN_MS = 30 * 3600 * 1000;
+// The reports the strip last drew. Both readers default to THIS rather than the
+// fetch cache, so the Today warning, the dashboard tile and the strip are always
+// the same data — including the failed-fetch path, which redraws from a copy.
+let _bbLastReports = null;
+function bbAgeText(ts) {
+  const min = Math.max(0, Math.round((Date.now() - ts) / 60000));
+  if (min < 2) return 'just now';
+  if (min < 60) return min + ' min ago';
+  const h = Math.floor(min / 60);
+  return h + (h === 1 ? ' hour ago' : ' hours ago');
+}
+function bbRecentSummary(reports) {
+  const list = (reports || _bbLastReports || [])
+    .map(r => ({ r: r, t: new Date(r.reported_at).getTime() }))
+    .filter(x => isFinite(x.t) && Date.now() - x.t <= BB_WARN_MS);
+  if (!list.length) return null;
+  list.sort((a, b) => b.t - a.t);
+  const latest = list[0];
+  return {
+    count: list.length,
+    age: bbAgeText(latest.t),
+    where: BB_WHERE_TEXT[latest.r.location] || '',
+    photo: list.some(x => bbSafePhoto(x.r.photo_url)),
+  };
+}
+window.bbRecentSummary = bbRecentSummary;
+function bbTodayWarn(reports) {
+  const el = document.getElementById('bbWarn'); if (!el) return;
+  const s = bbRecentSummary(reports);
+  if (!s) { el.hidden = true; el.innerHTML = ''; return; }
+  el.innerHTML = '🪼 <b>Bluebottles reported ' + s.age + '</b>' + (s.where ? ' · ' + s.where : '') +
+    '<span class="bb-warn-sub">' +
+      (s.count > 1 ? s.count + ' reports in the last 30 hours · ' : '') +
+      'See the reports' + (s.photo ? ' and photos' : '') + ' &rsaquo;</span>';
+  el.setAttribute('aria-label', 'Bluebottles reported ' + s.age + (s.where ? ', ' + s.where : '') + '. Open the reports.');
+  el.hidden = false;
+}
+(function () {
+  const go = function () {
+    const strip = document.getElementById('bbSection'); if (!strip) return;
+    try { if (window.showTabFor) window.showTabFor(strip); } catch (e) {}
+    setTimeout(function () { try { strip.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }, 60);
+  };
+  document.addEventListener('click', function (e) { if (e.target.closest && e.target.closest('#bbWarn')) go(); });
+  document.addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.id === 'bbWarn') { e.preventDefault(); go(); }
+  });
+  // The age is shown in minutes for the first hour, and the 30 h edge has to be
+  // met on time, so repaint once a minute from the cache — no refetch.
+  setInterval(function () { try { bbTodayWarn(null); } catch (e) {} }, 60000);
+})();
 function bbShowWhere(show) {
   const w = document.getElementById('bbWhere'); if (!w) return;
   w.hidden = !show;
@@ -14961,6 +15031,9 @@ function bbRenderFromData(reports) {
     .filter(r => bbSafePhoto(r.photo_url))
     .sort((a, b) => new Date(b.reported_at) - new Date(a.reported_at));
   _bbWarningActive = count > 0;   // any report, photo or not (§8: a forecast never outranks a community report)
+  _bbLastReports = reports;
+  try { bbTodayWarn(reports); } catch (e) {}
+  try { document.dispatchEvent(new Event('bbreports')); } catch (e) {}   // Storm Watch tile repaints
   // A sighting appearing (or ageing out) changes whether the wind-forecast card
   // must step back, so repaint it from the slot currently on screen.
   try {
@@ -22188,6 +22261,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     }
 
     var h = '<div class="ssd-grid">';
+    /* Bluebottles (28 Sep 2026, per owner): leads the dashboard while a report is
+       under 30 h old, with its age — the same bbRecentSummary the Today warning
+       reads, so the two always agree. */
+    try {
+      var bbs = window.bbRecentSummary ? window.bbRecentSummary() : null;
+      if (bbs) {
+        h += '<div class="ssd-tile ssd-wide ssd-bb"><div class="ssd-cap">🪼 Bluebottles reported</div>' +
+          '<div class="ssd-txt"><b>' + bbs.age.charAt(0).toUpperCase() + bbs.age.slice(1) + '</b>' +
+          (bbs.where ? ' · ' + bbs.where : '') + '</div>' +
+          '<div class="ssd-sub">' + (bbs.count > 1 ? bbs.count + ' reports in the last 30 hours · ' : '') +
+          'details in Community, under Bluebottles</div></div>';
+      }
+    } catch (e) {}
     /* No "Right now" tile: it showed a zone chip off the PINNED tide-neutral
        score, which disagreed with the Entry pictogram below (and with the app's
        own rail) whenever the tide term mattered — e.g. raw 13.8 "Easy"
@@ -22291,6 +22377,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       _retry = setTimeout(function () { if (document.body.contains(sc)) fill(sc); }, 1200);
     }
   }
+  // Bluebottle reports usually land after the dashboard has drawn; repaint then.
+  document.addEventListener('bbreports', function () {
+    if (_sc && document.body.contains(_sc) && _sc.querySelector('[data-ssd]')) fill(_sc);
+  });
   window.stormStatsInject = function (sc) {
     try {
       if (sc.innerHTML.indexOf('[[STORM_STATS]]') === -1) return;
@@ -22308,6 +22398,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     '.ssd-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}' +
     '.ssd-tile{background:#f2f6f7;border:1px solid rgba(17,53,65,0.12);border-radius:10px;padding:10px 11px;min-width:0;}' +
     '.ssd-wide{grid-column:1 / -1;}' +
+    '.ssd-bb{background:#eaf4fb;border-color:rgba(90,169,230,0.55);border-left:4px solid #5aa9e6;}' +
     '.ssd-center{display:flex;flex-direction:column;justify-content:center;}' +
     '.ssd-cap{font-family:"Inter",sans-serif;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#4a5f6e;margin-bottom:6px;}' +
     /* hh:mm:ss is 8 glyphs where "17h" was 3 — 64px would overflow a half-width
