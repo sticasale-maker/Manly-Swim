@@ -4371,8 +4371,9 @@
                a swimmer who shot the bluebottle a minute ago on the beach can't attach
                that shot. Without it the OS offers camera AND camera roll. -->
           <input type="file" id="bbPhotoInput" accept="image/*" style="display:none" onchange="bbPhotoPicked(event)">
-          <!-- Camera ONLY (capture), offered beside the library when a warning needs a
-               photo: on iPhone the picker's own Take Photo was unreliable. -->
+          <!-- Camera ONLY (capture), offered beside the library as the OPTIONAL photo
+               (no longer required since 28 Sep 2026): on iPhone the picker's own Take
+               Photo was unreliable. -->
           <input type="file" id="bbCamInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
           <div class="bb-pick" id="bbPick" hidden>
             <button class="bb-btn" id="bbCamBtn" type="button" onclick="bbCamPick()">📷 Take photo now</button>
@@ -14695,7 +14696,7 @@ function bbPickWhere(w) {
   _bbWhere = (w === 'sand' || w === 'water') ? w : null;
   bbShowWhere(true);
   const sub = document.getElementById('bbSub');
-  if (sub && !_bbPending) sub.textContent = _bbPhoto ? bbPhotoHint() : 'Tap Report to confirm the warning';
+  if (sub && !_bbPending) sub.textContent = _bbPhoto ? bbPhotoHint() : 'Tap Report to send — a photo is optional';
 }
 
 // ── Optional photo ───────────────────────────────────────────────────────────
@@ -14706,9 +14707,11 @@ function bbPickWhere(w) {
 const BB_PHOTO_BUCKET = 'board-images';
 const BB_PHOTO_PREFIX = `${BB_SUPABASE_URL}/storage/v1/object/public/${BB_PHOTO_BUCKET}/`;
 let _bbPhoto = null;   // { blob, url } while a photo is staged, else null
-// A warning is "active" when there's at least one photo-backed report in the
-// window. Starting a warning REQUIRES a photo; once active, others may confirm
-// with a bare tap. Kept in sync by bbRenderFromData.
+// A sighting is "live" when there is at least one report in the window, photo or
+// not. Until 28 Sep 2026 a photo was REQUIRED to start a warning (bare taps could
+// only confirm one); owner removed that — the photo is optional everywhere now.
+// A photo still matters: only a photo-backed report sends the push (push-bluebottle
+// Worker skips rows without photo_url). Kept in sync by bbRenderFromData.
 let _bbWarningActive = false;
 
 function bbCamPick() {
@@ -14932,7 +14935,7 @@ function bbRenderFromData(reports) {
   if (count === 0) {
     strip.className  = 'bb-strip community bb-quiet';
     status.textContent = 'No blue bottles · last 48h';
-    sub.textContent  = '📷 Photo required to start a warning';
+    sub.textContent  = 'Seen some? Tap Report — a photo is optional';
   } else {
     strip.className  = count >= 3 ? 'bb-strip community bb-alert-2' : 'bb-strip community bb-alert-1';
     status.textContent = `${count} blue bottle report${count > 1 ? 's' : ''} · last 48h`;
@@ -14955,7 +14958,7 @@ function bbRenderFromData(reports) {
   const shots = reports
     .filter(r => bbSafePhoto(r.photo_url))
     .sort((a, b) => new Date(b.reported_at) - new Date(a.reported_at));
-  _bbWarningActive = shots.length > 0;
+  _bbWarningActive = count > 0;   // any report, photo or not (§8: a forecast never outranks a community report)
   // A sighting appearing (or ageing out) changes whether the wind-forecast card
   // must step back, so repaint it from the slot currently on screen.
   try {
@@ -15051,24 +15054,17 @@ function bbReport() {
   const lastMine = bbGetLastMine();
   if (lastMine > 0 && now - lastMine < BB_COOLDOWN) return;
 
-  // Starting a NEW warning requires a photo; confirming an active one does not.
-  // No photo staged + no active warning → offer the camera or the library.
-  // Opening the picker straight away made the
-  // picker's own Take Photo fail on iPhone, which strips the date (19 Sep 2026).
-  if (!_bbPhoto && !_bbWarningActive) {
-    bbCancelConfirm();
-    const sub = document.getElementById('bbSub');
-    if (sub) sub.textContent = 'Add a photo to start a bluebottle warning';
-    bbShowCam(true);
-    return;
-  }
-
-  // Where are they? Required on every report.
+  // No photo gate (removed 28 Sep 2026, per owner): any report can start a warning.
+  // Where are they? Required on every report. The photo buttons are offered beside it
+  // as OPTIONAL — a photo is what sends the push, so it is still worth asking for.
   if (!_bbWhere) {
     bbCancelConfirm();
     bbShowWhere(true);
+    if (!_bbPhoto) bbShowCam(true);
     const sub = document.getElementById('bbSub');
-    if (sub) sub.textContent = 'Where are they? Pick one, then tap ' + (_bbPhoto ? 'Send' : 'Report');
+    if (sub) sub.textContent = _bbPhoto
+      ? 'Where are they? Pick one, then tap Send'
+      : 'Where are they? Pick one, then tap Report — a photo is optional';
     return;
   }
 
@@ -15162,6 +15158,7 @@ async function bbSendNow(keepalive) {
     bbPhotoReset();
     _bbWhere = null;
     bbShowWhere(false);
+    bbShowCam(false);
     _bbCache   = null; // bust cache so we re-fetch fresh count
     _bbCacheAt = 0;
     await bbLoad();
@@ -15172,7 +15169,9 @@ async function bbSendNow(keepalive) {
     const sub = document.getElementById('bbSub');
     if (sub) sub.textContent =
       e.message === 'cooldown_active' ? 'You’ve already reported in the last 4 hours.'
-      : e.message === 'photo_required' ? 'The photo didn’t upload — tap Send to try again.'
+      // Only a server still on the pre-28-Sep rule answers this (run
+      // sql/2026-09-28_bluebottle_photo_optional.sql). Say so and offer the photo.
+      : e.message === 'photo_required' ? (bbShowCam(true), 'A photo is still needed to start a warning — add one, then tap Send.')
       : 'Couldn’t send — check your connection and tap ' + (_bbPhoto ? 'Send' : 'Report') + ' again.';
   }
 }
@@ -15180,9 +15179,10 @@ async function bbSendNow(keepalive) {
 // Never lose a genuine report to a backgrounded/closed page mid-undo-window.
 function bbFlushPending() {
   if (!_bbPending) return;
-  // Starting a warning needs the photo. If it hasn't finished uploading, a flush
-  // would be refused — keep it queued instead; the timer resumes when the page does.
-  if (!_bbWarningActive && _bbPhoto && !_bbPhoto.remoteUrl) return;
+  // A staged photo that hasn't finished uploading would be dropped by a teardown send
+  // — and with it the push, which only a photo-backed report sends. Keep it queued;
+  // the timer resumes when the page does.
+  if (_bbPhoto && !_bbPhoto.remoteUrl) return;
   bbSendNow(true);
 }
 window.addEventListener('pagehide', bbFlushPending);
