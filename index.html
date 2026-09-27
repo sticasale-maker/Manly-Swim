@@ -14700,18 +14700,19 @@ function bbPickWhere(w) {
 }
 
 // ── Optional photo ───────────────────────────────────────────────────────────
-// A bluebottle photo is what makes a report trustworthy enough to push an alert
-// (a curious tapper won't have one). The photo is OPTIONAL: a bare tap still
-// counts on the strip; only a photo-backed report is push-worthy. Reuses the
-// board's public 'board-images' bucket + the same compress/upload approach.
+// The photo is OPTIONAL. Every report counts on the strip and sends the push (both
+// photo-only once — the photo gate went on 28 Sep 2026, the push rule the same day,
+// per owner). A photo still shows in the gallery. Reuses the board's public
+// 'board-images' bucket + the same compress/upload approach.
 const BB_PHOTO_BUCKET = 'board-images';
 const BB_PHOTO_PREFIX = `${BB_SUPABASE_URL}/storage/v1/object/public/${BB_PHOTO_BUCKET}/`;
 let _bbPhoto = null;   // { blob, url } while a photo is staged, else null
 // A sighting is "live" when there is at least one report in the window, photo or
 // not. Until 28 Sep 2026 a photo was REQUIRED to start a warning (bare taps could
 // only confirm one); owner removed that — the photo is optional everywhere now.
-// A photo still matters: only a photo-backed report sends the push (push-bluebottle
-// Worker skips rows without photo_url). Kept in sync by bbRenderFromData.
+// Every report sends the push, photo or not (push-bluebottle Worker, since the same
+// day). The photo is still asked for: it is what the gallery shows and what lets
+// others see what was reported. Kept in sync by bbRenderFromData.
 let _bbWarningActive = false;
 
 function bbCamPick() {
@@ -14828,7 +14829,8 @@ function bbToggle(ev) {
 }
 
 // ── Push opt-in ──────────────────────────────────────────────────────────────
-// A photo-backed report triggers a push (sent by the Worker). Users opt in here.
+// Every bluebottle report triggers a push, photo or not (sent by the push-bluebottle
+// Worker; photo-only until 28 Sep 2026). Users opt in here.
 // Everything is inert until VAPID_PUBLIC_KEY is filled in — the toggle stays
 // hidden, so this is safe to ship before the push backend is deployed.
 const VAPID_PUBLIC_KEY = 'BMmtVCbwuuz-uPiLILJow0Jds6620nzYuUZ6fmdbvPznamv5uVYev0RnKoEeY0D8ugtFbwac1alwmMV9U6DlB2o';   // VAPID public key (base64url) — private key lives only in the Worker
@@ -14910,7 +14912,7 @@ async function bbPushToggle() {
     sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bbUrlB64ToUint8(VAPID_PUBLIC_KEY) });
     const j = sub.toJSON();
     await bbPushRpc('save_push_subscription', { p_endpoint: sub.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
-    bbPushRender('on', 'You’ll get a heads-up when someone reports bluebottles with a photo.');
+    bbPushRender('on', 'You’ll get a heads-up when someone reports bluebottles.');
   } catch (e) {
     console.warn('Push toggle failed:', e.message);
     bbPushRender('off', 'Couldn’t change notifications — try again.');
@@ -15056,7 +15058,7 @@ function bbReport() {
 
   // No photo gate (removed 28 Sep 2026, per owner): any report can start a warning.
   // Where are they? Required on every report. The photo buttons are offered beside it
-  // as OPTIONAL — a photo is what sends the push, so it is still worth asking for.
+  // as OPTIONAL — every report pushes; a photo lets others see what was reported.
   if (!_bbWhere) {
     bbCancelConfirm();
     bbShowWhere(true);
@@ -15179,9 +15181,9 @@ async function bbSendNow(keepalive) {
 // Never lose a genuine report to a backgrounded/closed page mid-undo-window.
 function bbFlushPending() {
   if (!_bbPending) return;
-  // A staged photo that hasn't finished uploading would be dropped by a teardown send
-  // — and with it the push, which only a photo-backed report sends. Keep it queued;
-  // the timer resumes when the page does.
+  // A staged photo that hasn't finished uploading would be dropped by a teardown send,
+  // and the report would go out without it. Keep it queued; the timer resumes when
+  // the page does.
   if (_bbPhoto && !_bbPhoto.remoteUrl) return;
   bbSendNow(true);
 }

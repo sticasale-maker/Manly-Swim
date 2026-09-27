@@ -50,14 +50,14 @@ fires without a sender. So the code is safe to ship before activating.
    - Type: **HTTP Request**, method **POST**, URL: the Worker URL
    - HTTP header: `x-webhook-secret: <the WEBHOOK_SECRET from step 4>`
 
-   The Worker ignores rows without a `photo_url`, so only photo-backed reports push.
+   Every report pushes, photo or not (since 28 Sep 2026; photo-only before).
 
 ## Test end-to-end
 1. On an **installed** instance (Home Screen on iOS; installed PWA on Android/desktop),
    tap **🔔 Get notified about bluebottles** and allow.
-2. From a second device, submit a bluebottle report **with a photo**.
+2. From a second device, submit a bluebottle report (a photo is optional).
 3. The first device should get a "🪼 Bluebottles at Manly" notification; tapping it opens the app.
-4. A report **without** a photo should NOT push.
+4. A report **without** a photo pushes too (since 28 Sep 2026).
 
 ## Notes
 - iOS delivers web push only to a Home-Screen install (16.4+); the toggle tells

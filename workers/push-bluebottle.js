@@ -1,11 +1,13 @@
 /**
  * push-bluebottle — Cloudflare Worker
  * ------------------------------------------------------------------
- * Fans out a Web Push "bluebottles reported" alert when a photo-backed
- * bluebottle report is inserted.
+ * Fans out a Web Push "bluebottles reported" alert when a bluebottle report is
+ * inserted — EVERY report, photo or not (28 Sep 2026, per owner; until then only
+ * rows with a photo_url pushed, when a photo was also required to start a warning).
  *
  * Trigger: a Supabase Database Webhook on public.bluebottle_reports (INSERT)
- * POSTs the new row here. We only push when the row has a photo_url.
+ * POSTs the new row here. The notification carries tag 'bluebottle' (sw.js), so a
+ * burst of reports replaces one notification on the phone rather than stacking.
  *
  * Push is PAYLOAD-LESS: we send a VAPID-signed POST with an empty body, so we
  * skip RFC 8291 payload encryption. The service worker's `push` handler shows a
@@ -39,8 +41,8 @@ export default {
 
     // Supabase webhook shape: { type, table, record, old_record, ... }
     const record = payload && (payload.record || payload.new || payload);
-    const photoUrl = record && record.photo_url;
-    if (!photoUrl) return new Response('no-photo', { status: 200 }); // bare tap — nothing to push
+    if (!record || typeof record !== 'object') return new Response('no-record', { status: 200 });
+    // No photo check: a report without a photo pushes too (28 Sep 2026, per owner).
 
     const subs = await getSubscriptions(env);
     if (!subs.length) return new Response('no-subs', { status: 200 });

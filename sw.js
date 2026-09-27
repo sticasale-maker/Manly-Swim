@@ -92,7 +92,7 @@ self.addEventListener('push', event => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) { /* no or non-JSON payload */ }
   const title = data.title || '🪼 Bluebottles at Manly';
-  const body  = data.body  || 'A swimmer reported bluebottles with a photo. Tap to check the bay.';
+  const body  = data.body  || 'A swimmer reported bluebottles. Tap to check the bay.';
   event.waitUntil(
     self.registration.showNotification(title, {
       body,

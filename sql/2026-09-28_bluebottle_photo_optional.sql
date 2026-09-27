@@ -4,8 +4,8 @@
 -- removed. Everything else is unchanged from 2026-09-19_bluebottle_location.sql:
 -- the 4 h IP cooldown, the own-bucket photo allowlist, and the sand/water location.
 --
--- Push is unaffected by this file: the push-bluebottle Worker (fired by the
--- INSERT webhook) still sends only for rows with a photo_url.
+-- Push is not decided here: the push-bluebottle Worker (fired by the INSERT
+-- webhook) sends for EVERY row, photo or not, since the same day.
 --
 -- Run once in the Supabase SQL editor. Safe to re-run.
 
