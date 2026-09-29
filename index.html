@@ -22494,7 +22494,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var _editId = null;   // admin: id being edited (null = new)
   var _imgUrl = '';     // admin: image url currently in the form
   var _apps   = ['swim']; // admin: which app(s) the form publishes to: one or both (29 Sep 2026, per owner)
-  var _editApp = null;  // admin: the app of the row being edited (a post is one row per app)
+  var _sib    = {};     // admin: app -> row id of each copy of the post being edited (one row per app)
   var _quiet  = false;  // admin: quiet = pill+dot only (no popup); default mandatory
   var _showOnce = false;// admin: show-once = never re-arms; dismissed = gone for good on that device
   var _rows   = [];     // admin: last loaded list (for edit)
@@ -23444,7 +23444,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function saveDraft(){
     try {
       var d = {
-        editId: _editId, editApp: _editApp, apps: _apps, quiet: _quiet, showOnce: _showOnce, imgUrl: _imgUrl,
+        editId: _editId, sib: _sib, apps: _apps, quiet: _quiet, showOnce: _showOnce, imgUrl: _imgUrl,
         title: $('annInTitle') ? $('annInTitle').value : '',
         body:  $('annEdBody')  ? $('annEdBody').innerHTML : '',
         start: $('annInStart') ? $('annInStart').value : '',
@@ -23463,8 +23463,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (!d) return;
     _editId = d.editId || null;
     _imgUrl = d.imgUrl || '';
-    // drafts saved before the both-apps change carry a single `app`
-    _editApp = _editId ? (d.editApp || d.app || 'swim') : null;
+    // drafts saved before the both-apps change carry a single `app` and no `sib`
+    _sib = {};
+    if (d.sib && typeof d.sib === 'object') { for (var sa in d.sib) if (d.sib[sa]) _sib[sa] = d.sib[sa]; }
+    else if (_editId) _sib[d.editApp || d.app || 'swim'] = _editId;
     setApps(d.apps || [d.app || 'swim']);
     setQuiet(!!d.quiet);
     setShowOnce(!!d.showOnce);
@@ -23486,7 +23488,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   }
 
   function resetForm(){
-    _editId = null; _editApp = null; _imgUrl = '';
+    _editId = null; _sib = {}; _imgUrl = '';
     if ($('annInTitle')) $('annInTitle').value = '';
     if ($('annEdBody'))  $('annEdBody').innerHTML = '';
     if ($('annInStart')) $('annInStart').value = '';
@@ -23509,54 +23511,106 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (!title && !_imgUrl && !hasBodyText) { $('annPubMsg').textContent = 'Add a picture, title, or message.'; return; }
     if (!starts || !ends) { $('annPubMsg').textContent = 'Set start and end.'; return; }
     if (new Date(ends) <= new Date(starts)) { $('annPubMsg').textContent = 'End must be after start.'; return; }
+    // A post is one row per app, so "both" is two rows. _sib holds the copies that already exist
+    // (filled by editRow). Each ticked app updates its copy in place; a ticked app with no copy
+    // takes over a switched-off copy (a move) or else gets a new one; a copy still switched off
+    // is removed from that app, after asking.
+    var have = {}; for (var ha in _sib) if (_sib[ha]) have[ha] = _sib[ha];
+    var spare = Object.keys(have).filter(function (x) { return _apps.indexOf(x) === -1; });
+    var plan = _apps.map(function (app) {
+      if (have[app]) return { app: app, id: have[app], kind: 'update' };
+      if (spare.length) { var from = spare.shift(); return { app: app, id: have[from], kind: 'move' }; }
+      return { app: app, id: null, kind: 'add' };
+    });
+    var drops = spare.map(function (x) { return { app: x, id: have[x], kind: 'drop' }; });
+    function names(list){ return list.map(function (x) { return APP_LABEL[x.app] || x.app; }).join(' and '); }
+    if (drops.length && !window.confirm('Remove this post from the ' + names(drops) + '?')) {
+      $('annPubMsg').textContent = 'Nothing saved. Tick the ' + names(drops) + ' again to keep it there.';
+      return;
+    }
     $('annPubMsg').textContent = 'Publishing\u2026';
-    // A post is one row per app, so "both" saves two rows. When editing, the row being edited
-    // is updated in place (moved, if its own app was switched off) and any other ticked app
-    // gets a new copy; from then on each copy is edited, ordered and deleted on its own.
-    var keepId = _editId;
-    var keepApp = keepId ? (_apps.indexOf(_editApp) !== -1 ? _editApp : _apps[0]) : null;
-    var done = [], failed = [], onceDropped = false, errMsg = '';
+    var results = [], onceDropped = false, errMsg = '';
     function save(body){ return fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify(body) }); }
-    for (var ai = 0; ai < _apps.length; ai++) {
-      var app = _apps[ai], isEdit = !!keepId && app === keepApp;
+    for (var pi = 0; pi < plan.length; pi++) {
+      var step = plan[pi];
       try {
-        var base = { p_token: tk, p_id: isEdit ? keepId : null, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: app, p_quiet: _quiet };
+        var base = { p_token: tk, p_id: step.id, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: step.app, p_quiet: _quiet };
         var withOnce = {}; for (var kk in base) withOnce[kk] = base[kk]; withOnce.p_show_once = _showOnce;
         var r = await save(withOnce);
         // PGRST202 (404): the RPC hasn't been given a p_show_once param yet — retry
         // without it so publishing still works. Run the DB migration to persist it.
         if (r.status === 404) { r = await save(base); if (r.ok && _showOnce) onceDropped = true; }
         if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
-        done.push({ app: app, isEdit: isEdit });
-      } catch (e) { failed.push({ app: app, isEdit: isEdit }); errMsg = (e && e.message) ? e.message : 'unknown'; }
+        step.ok = true;
+      } catch (e) { step.ok = false; errMsg = (e && e.message) ? e.message : 'unknown'; }
+      results.push(step);
     }
-    function names(list){ return list.map(function (x) { return APP_LABEL[x.app] || x.app; }).join(' and '); }
+    for (var di = 0; di < drops.length; di++) {
+      var dr = drops[di];
+      try {
+        var rd = await fetch(RPC + 'admin_delete_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: dr.id }) });
+        if (!rd.ok) { var dt = await rd.text().catch(function () { return ''; }); throw new Error(rd.status + ' ' + dt.slice(0, 180)); }
+        dr.ok = true;
+      } catch (e) { dr.ok = false; errMsg = (e && e.message) ? e.message : 'unknown'; }
+      results.push(dr);
+    }
+    var ok = results.filter(function (x) { return x.ok; }), bad = results.filter(function (x) { return !x.ok; });
+    function of(kinds, list){ return list.filter(function (x) { return kinds.indexOf(x.kind) !== -1; }); }
     var once = onceDropped ? ' (Show-once not saved — DB migration needed.)' : '';
-    if (!failed.length) {
-      var upd = done.filter(function (x) { return x.isEdit; }), add = done.filter(function (x) { return !x.isEdit; });
-      $('annPubMsg').textContent = (upd.length
-        ? 'Updated ' + names(upd) + '.' + (add.length ? ' Also published to ' + names(add) + '.' : '')
-        : 'Published to ' + names(add) + '.') + once;
+    var upd = of(['update', 'move'], ok), add = of(['add'], ok), gone = of(['drop'], ok);
+    var said = (upd.length ? 'Updated in the ' + names(upd) + '. ' : '') +
+               (add.length ? (upd.length ? 'Added to the ' : 'Published to the ') + names(add) + '. ' : '') +
+               (gone.length ? 'Removed from the ' + names(gone) + '. ' : '');
+    if (!bad.length) {
+      $('annPubMsg').textContent = said.trim() + once;
       resetForm();
       clearDraft();
     } else {
-      // Keep the form, ticked for the failed apps only, so pressing the button again retries
-      // just those and never duplicates a copy that already went out.
-      if (done.some(function (x) { return x.isEdit; })) {
-        _editId = null; _editApp = null;
-        if ($('annFormTitle')) $('annFormTitle').textContent = 'Publish announcement';
-        if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
-      }
-      setApps(failed.map(function (x) { return x.app; }));
+      // Keep the form so pressing the button again finishes the job without doubling anything:
+      // copies that exist stay linked (updating them again is harmless), a copy that was just
+      // added is left alone (its id isn't known here, so it isn't ticked), a failed add stays
+      // ticked, a failed removal stays linked but unticked.
+      var nextSib = {}, nextApps = [];
+      results.forEach(function (x) {
+        if (x.kind === 'add') { if (!x.ok) nextApps.push(x.app); }
+        else if (x.kind === 'drop') { if (!x.ok) nextSib[x.app] = x.id; }
+        else { nextSib[x.app] = x.id; nextApps.push(x.app); }
+      });
+      _sib = nextSib;
+      _editId = nextSib[nextApps[0]] || nextSib[Object.keys(nextSib)[0]] || null;
+      if ($('annFormTitle')) $('annFormTitle').textContent = _editId ? 'Edit announcement' : 'Publish announcement';
+      if ($('annPubBtn')) $('annPubBtn').textContent = _editId ? 'Save changes' : 'Publish';
+      if (nextApps.length) setApps(nextApps);
       saveDraft();
-      $('annPubMsg').textContent = (done.length ? 'Published to ' + names(done) + '. ' : '') +
-        'Save failed for ' + names(failed) + ': ' + errMsg + ' Press the button again to retry.' + once;
+      $('annPubMsg').textContent = said + 'Failed for the ' + names(bad) + ': ' + errMsg + ' Press the button again to retry.' + once;
     }
-    if (done.length) { loadAdminList(); loadActive(); }
+    if (ok.length) { loadAdminList(); loadActive(); }
   }
 
   /* ---- admin list: grouped by app, with previews + reorder ---------------- */
   function appOf(x){ return x.app === 'viz' ? 'viz' : 'swim'; }   // null/legacy -> swim
+  // The copies of one post (one row per app) are saved together, so they share title, schedule
+  // and picture; that is what recognises them. The newest copy per other app wins; an older
+  // identical row in the SAME app is a duplicate, flagged in the list.
+  function groupKey(x){ return [x.title || '', x.starts_at || '', x.ends_at || '', x.image_url || ''].join('\u0001'); }
+  function copiesOf(x){
+    var out = {}; out[appOf(x)] = x;
+    _rows.forEach(function (r) {
+      if (r.id === x.id || appOf(r) === appOf(x) || groupKey(r) !== groupKey(x)) return;
+      var cur = out[appOf(r)];
+      if (!cur || String(r.updated_at || '') > String(cur.updated_at || '')) out[appOf(r)] = r;
+    });
+    return out;
+  }
+  function rowTags(x){
+    var k = groupKey(x), other = false, dup = false;
+    _rows.forEach(function (r) {
+      if (r.id === x.id || groupKey(r) !== k) return;
+      if (appOf(r) === appOf(x)) dup = true; else other = true;
+    });
+    return (other ? '<span class="aa-pbadge" style="color:#1e6c8c;background:rgba(74,143,173,.15);">BOTH APPS</span>' : '') +
+           (dup ? '<span class="aa-pbadge" style="color:#8a4b08;background:rgba(224,152,47,.2);">DUPLICATE</span>' : '');
+  }
   function excerpt(html){
     var t = String(html || '').replace(/<[^>]*>/g, ' ')
              .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
@@ -23585,7 +23639,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         '<div class="aa-pmeta">' +
           '<div class="aa-phead">' +
             '<span class="aa-ptitle">' + ttl + '</span>' +
-            '<span class="aa-pbadge" style="color:' + st.c + ';background:' + st.bg + ';">' + st.lab + '</span>' +
+            '<span class="aa-pbadge" style="color:' + st.c + ';background:' + st.bg + ';">' + st.lab + '</span>' + rowTags(x) +
           '</div>' + excHtml +
         '</div>' +
         '<div class="aa-acts">' +
@@ -23651,8 +23705,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     $('annInStart').value = isoToDtLocal(x.starts_at);
     $('annInEnd').value   = isoToDtLocal(x.ends_at);
     if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; } else { $('annImgWrap').style.display = 'none'; }
-    _editApp = appOf(x);
-    setApps([_editApp]);
+    var copies = copiesOf(x);
+    _sib = {}; for (var ca in copies) _sib[ca] = copies[ca].id;
+    setApps(Object.keys(_sib));
     setQuiet(!!x.quiet);
     setShowOnce(!!x.show_once);
     $('annFormTitle').textContent = 'Edit announcement';
@@ -23664,11 +23719,28 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 
   async function delRow(id){
     var tk = token(); if (!tk) return;
-    if (!window.confirm('Delete this announcement?')) return;
-    try {
-      var r = await fetch(RPC + 'admin_delete_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: id }) });
-      if (r.ok) { if (_editId === id) { resetForm(); clearDraft(); } loadAdminList(); loadActive(); }
-    } catch (e) {}
+    var x = _rows.filter(function (r) { return r.id === id; })[0];
+    var ids = [id];
+    var copies = x ? copiesOf(x) : {};
+    var others = x ? Object.keys(copies).filter(function (a) { return a !== appOf(x); }) : [];
+    if (others.length) {
+      var here = APP_LABEL[appOf(x)], there = others.map(function (a) { return APP_LABEL[a]; }).join(' and ');
+      if (window.confirm('This post is in the ' + here + ' and the ' + there + '.\n\nOK: delete it from both.\nCancel: choose again.')) {
+        others.forEach(function (a) { ids.push(copies[a].id); });
+      } else if (!window.confirm('Delete it from the ' + here + ' only?')) return;
+    } else if (!window.confirm('Delete this announcement?')) return;
+    var any = false;
+    for (var i = 0; i < ids.length; i++) {
+      try {
+        var r = await fetch(RPC + 'admin_delete_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk, p_id: ids[i] }) });
+        if (r.ok) any = true;
+      } catch (e) {}
+    }
+    if (any) {
+      var editing = ids.some(function (d) { if (d === _editId) return true; for (var a in _sib) if (_sib[a] === d) return true; return false; });
+      if (editing) { resetForm(); clearDraft(); }
+      loadAdminList(); loadActive();
+    }
   }
 
   function openAnnounceAdmin(){ if (!token()) return; buildAdminOverlay(); var ov = $('annAdminOverlay'); if (ov) ov.classList.add('show'); loadAdminList(); }
