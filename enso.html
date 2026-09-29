@@ -191,7 +191,7 @@
   <div class="wrap">
     <div class="topbar">
       <span class="topbar-name">Swim Manly</span>
-      <a class="back-link" href="./">&larr;&nbsp; Back to the app</a>
+      <a class="back-link" id="backLink" href="./">&larr;&nbsp; Back to the app</a>
     </div>
 
     <div class="hero-card">
@@ -622,6 +622,16 @@
 </div>
 
 <script>
+// Reached from the Forecast app (its announcement links carry from=forecast): "Back to the app"
+// returns there, not to the Swim app this page lives in.
+(function () {
+  try {
+    if (new URLSearchParams(location.search).get('from') !== 'forecast') return;
+    var a = document.getElementById('backLink');
+    if (a) { a.href = '../Forecast/'; a.innerHTML = '&larr;&nbsp; Back to Forecast'; }
+  } catch (e) {}
+})();
+
 // Three-state diagram: tabs show one panel at a time. Without JS every panel shows, stacked.
 (function () {
   document.documentElement.classList.add('js');
@@ -679,13 +689,14 @@
   } catch (e) {}
   var REFERRER = '';
   try { REFERRER = document.referrer || ''; } catch (e) {}
-  var UTM = {}, SRC = '';
+  var UTM = {}, SRC = '', FROM = '';
   try {
     var sp = new URLSearchParams(location.search);
     ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) {
       var v = sp.get(k); if (v) UTM[k.replace('utm_', '')] = String(v).slice(0, 120);
     });
     SRC = String(sp.get('src') || '').slice(0, 40);
+    FROM = String(sp.get('from') || '').slice(0, 40);        // which app sent them (forecast)
   } catch (e) {}
   try {
     var payload = JSON.stringify({
@@ -693,7 +704,7 @@
         device_id:  deviceId(),
         session_id: uuid(),
         event:      'enso_open',
-        props:      SRC ? { src: SRC } : {},
+        props:      Object.assign(SRC ? { src: SRC } : {}, FROM ? { from: FROM } : {}),
         referrer:   REFERRER,
         utm:        UTM,
         app_build:  null,
