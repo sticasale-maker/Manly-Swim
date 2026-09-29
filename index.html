@@ -4035,6 +4035,12 @@
            renderAnswerLine() from swimVerdict(); hidden until it has content so
            a failed render degrades to exactly the old layout. -->
       <div class="answer-line" id="answerLine" hidden></div>
+      <!-- BLUEBOTTLE WARNING (28 Sep 2026, per owner; under the answer line since 29 Sep)
+           — only while a report is under 30 h
+           old, and always with its age (§8: nothing undated). Reports what swimmers saw,
+           where and when; never advises about the water. Filled by bbTodayWarn() from the
+           same reports the Community strip shows; tap goes to that strip. -->
+      <div class="bb-warn" id="bbWarn" data-tab="today" hidden role="button" tabindex="0"></div>
       <div class="cond-strip" id="verdictBar" role="button" tabindex="0"
            onclick="openNews()"
            onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openNews();}"
@@ -4154,12 +4160,6 @@
          worse now, or forecast to be within 12 h. Reports the air; never advises about
          the water. Filled by paintAir(). -->
     <div class="aq-warn" id="aqWarn" data-tab="today" hidden></div>
-
-    <!-- BLUEBOTTLE WARNING (28 Sep 2026, per owner) — only while a report is under 30 h
-         old, and always with its age (§8: nothing undated). Reports what swimmers saw,
-         where and when; never advises about the water. Filled by bbTodayWarn() from the
-         same reports the Community strip shows; tap goes to that strip. -->
-    <div class="bb-warn" id="bbWarn" data-tab="today" hidden role="button" tabindex="0"></div>
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim" data-tab="today">
@@ -4310,6 +4310,47 @@
       </div>
     </div>
 
+    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
+    <div id="bbSection">
+      <div class="bb-strip community" id="bbStrip">
+        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
+          <div class="bb-icon">🪼</div>
+          <div class="bb-body">
+            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
+            <div class="bb-sub" id="bbSub"></div>
+          </div>
+          <!-- No `capture` attribute: with it, iOS/Android open the camera directly and
+               a swimmer who shot the bluebottle a minute ago on the beach can't attach
+               that shot. Without it the OS offers camera AND camera roll. -->
+          <input type="file" id="bbPhotoInput" accept="image/*" style="display:none" onchange="bbPhotoPicked(event)">
+          <!-- Camera ONLY (capture), offered beside the library as the OPTIONAL photo
+               (no longer required since 28 Sep 2026): on iPhone the picker's own Take
+               Photo was unreliable. -->
+          <input type="file" id="bbCamInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
+          <div class="bb-pick" id="bbPick" hidden>
+            <button class="bb-btn" id="bbCamBtn" type="button" onclick="bbCamPick()">📷 Take photo now</button>
+            <button class="bb-lib" id="bbLibBtn" type="button" onclick="bbPhotoPick()">Choose from library</button>
+          </div>
+          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
+            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
+            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
+          </span>
+          <div class="bb-where" id="bbWhere" hidden role="group" aria-label="Where are the bluebottles?">
+            <span class="bb-where-q">Where?</span>
+            <button type="button" data-w="sand" onclick="bbPickWhere('sand')">On the sand</button>
+            <button type="button" data-w="water" onclick="bbPickWhere('water')">In the water</button>
+          </div>
+          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
+          <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
+            <span id="bbNotifyLabel">🔔 Get notifications</span>
+          </button>
+          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
+        </div>
+        <div class="bb-gallery" id="bbGallery"></div>
+      </div>
+      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
+    </div>
+
     <!-- Stolen bag reports strip — builds the evidence base shared with police
          and (in aggregate only) with the Bold & Beautiful group. -->
     <div id="theftSection">
@@ -4368,47 +4409,6 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Bluebottle reports strip — community reports (Supabase) for the last 48h -->
-    <div id="bbSection">
-      <div class="bb-strip community" id="bbStrip">
-        <div class="bb-head" id="bbHead" onclick="bbToggle(event)">
-          <div class="bb-icon">🪼</div>
-          <div class="bb-body">
-            <div class="bb-status" id="bbStatus">Checking bluebottle reports…</div>
-            <div class="bb-sub" id="bbSub"></div>
-          </div>
-          <!-- No `capture` attribute: with it, iOS/Android open the camera directly and
-               a swimmer who shot the bluebottle a minute ago on the beach can't attach
-               that shot. Without it the OS offers camera AND camera roll. -->
-          <input type="file" id="bbPhotoInput" accept="image/*" style="display:none" onchange="bbPhotoPicked(event)">
-          <!-- Camera ONLY (capture), offered beside the library as the OPTIONAL photo
-               (no longer required since 28 Sep 2026): on iPhone the picker's own Take
-               Photo was unreliable. -->
-          <input type="file" id="bbCamInput" accept="image/*" capture="environment" style="display:none" onchange="bbPhotoPicked(event)">
-          <div class="bb-pick" id="bbPick" hidden>
-            <button class="bb-btn" id="bbCamBtn" type="button" onclick="bbCamPick()">📷 Take photo now</button>
-            <button class="bb-lib" id="bbLibBtn" type="button" onclick="bbPhotoPick()">Choose from library</button>
-          </div>
-          <span class="bb-photo-wrap" id="bbPhotoWrap" hidden>
-            <img id="bbPhotoThumb" alt="Attached bluebottle photo">
-            <button type="button" class="bb-photo-remove" id="bbPhotoRemove" onclick="bbPhotoReset()" aria-label="Remove photo">&times;</button>
-          </span>
-          <div class="bb-where" id="bbWhere" hidden role="group" aria-label="Where are the bluebottles?">
-            <span class="bb-where-q">Where?</span>
-            <button type="button" data-w="sand" onclick="bbPickWhere('sand')">On the sand</button>
-            <button type="button" data-w="water" onclick="bbPickWhere('water')">In the water</button>
-          </div>
-          <button class="bb-btn" id="bbBtn" type="button" onclick="bbReport()">Report</button>
-          <button class="bb-notify" id="bbNotifyBtn" type="button" hidden onclick="bbPushToggle()">
-            <span id="bbNotifyLabel">🔔 Get notifications</span>
-          </button>
-          <span class="bb-chev" id="bbChev" hidden>&#9662;</span>
-        </div>
-        <div class="bb-gallery" id="bbGallery"></div>
-      </div>
-      <div class="bb-notify-note" id="bbNotifyNote" hidden></div>
     </div>
 
     </div><!-- /community-group -->
