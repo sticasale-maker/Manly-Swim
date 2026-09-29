@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swim Manly &mdash; How Waves Reach the Bay</title>
+<meta name="description" content="The physics of waves in plain words for South Steyne swimmers, with a model built from two years of NSW Nearshore data and a simulator.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<!--
+  WAVES — an explainer + simulator for South Steyne regulars (29 Sep 2026, per owner).
+  Unlinked on purpose, the way species.html launched: reviewed before a link goes in More.
+
+  RULES THIS PAGE KEEPS (CLAUDE.md):
+  §1  Physics only. No Entry/Surge/Chop verdict, no band labels, no "fine / manageable /
+      not a problem". The simulator never says whether to swim: today's call lives in the
+      app and nowhere else, so this page cannot drift from it.
+  §2  No modelled height INSIDE the bay is printed. The simulator carries the ramp wave
+      internally and shows only what it does to the water around you (sway, push speed)
+      and the share of energy that gets round the corner. The heights it prints are the
+      forecast offshore swell (an input) and the bay-mouth swell (the same kind of number
+      NSW Nearshore publishes for node 103218).
+
+  THE MODEL (numbers baked in below — see MODEL):
+  - Offshore: Open-Meteo marine hindcast, cell -33.79 / 151.38, Dec 2023–Dec 2025.
+  - Bay mouth: NSW Nearshore Wave Tool hindcast, node 103218, same hours (5,650 with
+    offshore swell >= 0.4 m).
+  - Fit: bay-mouth swell = a · exp(-((dir-th0)/w)^2) · (T/10)^q · H^r   (R^2 0.78,
+    typical error 0.18 m). A cosine form scored R^2 0.68 and under-read east swells.
+  - WillyWeather check: 1,416 real WW/NS hour pairs from forecast_history
+    (31 Jul–29 Sep 2026). WW reads 1.30x the hindcast's height, 1.16x its period and
+    +7 deg on direction, so the simulator converts forecast numbers first. After that the
+    model matches NS with ~0.12 m typical error and no bias; raw WW vs NS was 0.96 m.
+  - Bay mouth -> South Steyne entry: the app's own SS shelter table (New NS sheet,
+    folded rows 0–180 deg, snapshot 29 Sep 2026). Chop: the app's SPM growth law, fetch
+    table, lee factor (0.75 over 180–280 deg) and chop wind gain (0.60).
+-->
+<style>
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8795; --faint:#8fb0bb;
+    --sun:#e0982f; --ocean:#0a7ea4; --deep:#0b4f6c;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66);
+    --radius:14px;
+    /* chart series — validated (dataviz validate_palette, light, surface #fbf6ec): all pass */
+    --s7:#c2780f; --s10:#0a7ea4; --s13:#5b4bb0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--cream);
+    background-image:radial-gradient(120% 55% at 50% 0,#fff 0,rgba(255,255,255,0) 60%),linear-gradient(180deg,var(--cream2),var(--cream2));
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:'Newsreader',Georgia,serif; font-weight:400;
+    font-size:19px; line-height:1.62;
+    padding:0 0 64px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:0 18px}
+  h1,h2,h3{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink)}
+  .eyebrow,.mono,.back-link,.fig-cap,.ctl label,.out-k,.src li{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:6px}
+
+  header{padding:calc(18px + env(safe-area-inset-top,0px)) 0 8px}
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:16px}
+  .topbar-name{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:17px; color:var(--ink)}
+  .back-link{display:inline-flex; align-items:center; min-height:44px; margin:-11px 0; padding-left:14px;
+    font-size:12.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); text-decoration:none}
+  .back-link:hover,.back-link:focus-visible{color:var(--sun)}
+
+  .hero{background:linear-gradient(180deg,rgba(255,255,255,.8),rgba(255,255,255,.5));
+    border:1px solid var(--border); border-radius:22px; padding:28px 24px 30px; text-align:center;
+    box-shadow:0 4px 20px rgba(6,78,110,.07)}
+  .hero .eyebrow{color:var(--sun)}
+  h1{font-weight:800; font-size:clamp(40px,11vw,62px); line-height:.95; letter-spacing:-.02em; margin:4px 0 16px}
+  .lede{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:clamp(20px,5vw,25px);
+    line-height:1.28; color:var(--ink); max-width:24em; margin:0 auto}
+  .hero p.why{font-size:18.5px; opacity:.88; margin:16px auto 0; max-width:30em}
+
+  nav.toc{margin:22px 0 4px; display:flex; flex-wrap:wrap; gap:8px}
+  nav.toc a{font-family:'DM Mono',monospace; font-size:12.5px; letter-spacing:.04em; text-decoration:none;
+    color:var(--deep); background:var(--card); border:1px solid var(--border); border-radius:999px; padding:6px 12px}
+  nav.toc a:hover{border-color:var(--ocean)}
+
+  section{margin-top:44px; scroll-margin-top:16px}
+  h2{font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  h3{font-weight:600; font-size:20px; margin:22px 0 6px}
+  p{margin:0 0 14px}
+  strong{font-weight:500; color:var(--ink)}
+  .num{font-family:'DM Mono',monospace; font-size:.86em; color:var(--deep); white-space:nowrap}
+
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0}
+  .rule{border-left:3px solid var(--sun); padding:2px 0 2px 14px; margin:18px 0; font-style:italic; color:var(--ink)}
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:16px 0}
+  .fact{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:12px 14px}
+  .fact b{display:block; font-family:'Bricolage Grotesque',sans-serif; font-weight:800; font-size:26px; line-height:1.05; color:var(--ink)}
+  .fact span{display:block; font-size:15px; line-height:1.35; color:var(--text); margin-top:4px}
+
+  .fig{margin:16px 0}
+  .fig-cap{font-size:12.5px; line-height:1.5; color:var(--dim); margin-top:8px}
+  canvas{display:block; width:100%; border-radius:12px}
+
+  /* controls */
+  .ctl{display:grid; grid-template-columns:1fr auto; align-items:center; gap:2px 12px; margin:12px 0 4px}
+  .ctl label{font-size:12.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--dim)}
+  .ctl output{font-family:'DM Mono',monospace; font-size:14px; color:var(--ink); text-align:right}
+  .ctl input[type=range]{grid-column:1 / -1; width:100%; accent-color:var(--ocean); height:28px}
+  .seg{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px}
+  .seg button{font-family:'DM Mono',monospace; font-size:12.5px; border:1px solid var(--border); background:#fff;
+    color:var(--deep); border-radius:999px; padding:7px 12px; cursor:pointer; min-height:36px}
+  .seg button[aria-pressed=true]{background:var(--deep); color:#fff; border-color:var(--deep)}
+
+  /* chart */
+  .chart{position:relative}
+  .chart svg{display:block; width:100%; height:auto; overflow:visible}
+  .chart .tip{position:absolute; pointer-events:none; background:#fff; border:1px solid var(--border);
+    border-radius:10px; padding:8px 10px; font-family:'DM Mono',monospace; font-size:12px; line-height:1.5;
+    color:var(--text); box-shadow:0 4px 14px rgba(13,43,62,.12); opacity:0; transition:opacity .12s; white-space:nowrap}
+  .legend{display:flex; flex-wrap:wrap; gap:6px 16px; font-family:'DM Mono',monospace; font-size:12px; color:var(--text); margin:6px 0 2px}
+  .legend i{display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px}
+  .legend i.dot{width:9px; height:9px; border-radius:50%; background:var(--ink)}
+  details{margin-top:10px}
+  summary{font-family:'DM Mono',monospace; font-size:12.5px; color:var(--deep); cursor:pointer}
+  table{border-collapse:collapse; width:100%; font-family:'DM Mono',monospace; font-size:12.5px; margin-top:8px}
+  th,td{padding:5px 6px; border-bottom:1px solid var(--border); text-align:right}
+  th:first-child,td:first-child{text-align:left}
+
+  /* simulator */
+  .sim{background:linear-gradient(180deg,#fff,rgba(255,255,255,.7)); border:1px solid var(--border);
+    border-radius:20px; padding:16px; box-shadow:0 4px 20px rgba(6,78,110,.08)}
+  .map{border-radius:12px; overflow:hidden; border:1px solid var(--border)}
+  .map svg{display:block; width:100%; height:auto}
+  .ctl-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 18px}
+  @media (max-width:520px){ .ctl-grid{grid-template-columns:1fr} }
+  .ctl-head{grid-column:1 / -1; font-family:'Bricolage Grotesque',sans-serif; font-weight:600; font-size:15px; color:var(--ink); margin:14px 0 -4px}
+  .outs{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
+  @media (max-width:520px){ .outs{grid-template-columns:1fr} }
+  .out{background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 14px}
+  .out-k{font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim)}
+  .out-v{font-family:'Bricolage Grotesque',sans-serif; font-weight:800; font-size:25px; line-height:1.1; color:var(--ink); margin:4px 0 2px}
+  .out-s{font-size:15px; line-height:1.4}
+  .bar{height:6px; border-radius:3px; background:rgba(13,43,62,.08); margin-top:8px; overflow:hidden}
+  .bar i{display:block; height:100%; background:var(--ocean); border-radius:3px}
+  .caveat{font-size:15px; line-height:1.5; color:var(--dim); margin-top:14px}
+
+  .src{list-style:none; font-size:12.5px; line-height:1.55}
+  .src li{margin:0 0 8px; word-break:break-word}
+  .src a{color:var(--deep)}
+  footer{margin-top:44px; font-size:14px; color:var(--dim); text-align:center}
+  footer a{color:var(--deep)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="topbar-name">Swim Manly</span>
+      <a class="back-link" href="./">&larr; Back to the app</a>
+    </div>
+    <div class="hero">
+      <div class="eyebrow">The physics of the bay</div>
+      <h1>How waves reach South Steyne</h1>
+      <p class="lede">Why a two-metre south-easterly can barely reach the corner while a one-metre easterly runs straight in.</p>
+      <p class="why">This is the physics behind the Entry, Surge and Chop cards, in plain words. It ends with a model built from two years of wave data at the bay mouth, and a simulator you can play with.</p>
+    </div>
+    <nav class="toc" aria-label="On this page">
+      <a href="#energy">A wave is energy</a><a href="#size">Height &amp; period</a><a href="#swell-sea">Swell vs sea</a>
+      <a href="#shoaling">Feeling the bottom</a><a href="#bending">Bending round</a><a href="#bounce">Bouncing back</a>
+      <a href="#wind">Wind</a><a href="#data">What the data says</a><a href="#sim">Simulator</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section id="energy">
+  <div class="eyebrow">01</div>
+  <h2>A wave is energy passing through, not water arriving</h2>
+  <p>When a swell rolls in, the water itself hardly travels. Each bit of water goes round in a loop and comes back to nearly where it started. What moves across the ocean is the <strong>energy</strong>, handed from one loop to the next.</p>
+  <p>You know this already. Float out past the ramp on a swell day and you rise, drift forward, sink and drift back. That loop is the wave going through you.</p>
+  <div class="fig card">
+    <canvas id="orbit" height="260" aria-label="Animation of water particles moving in loops under a passing wave"></canvas>
+    <div class="seg" role="group" aria-label="Water depth">
+      <button type="button" data-depth="80" aria-pressed="true">Open water (80 m)</button>
+      <button type="button" data-depth="8">Bay mouth (8 m)</button>
+      <button type="button" data-depth="2">At the ramp (2 m)</button>
+    </div>
+    <div class="fig-cap" id="orbitCap">Each dot is a parcel of water under a 10-second swell. Height is exaggerated so the loops are visible.</div>
+  </div>
+  <p>In deep water the loops are circles, and they shrink fast as you go down. Half a wavelength below the surface they're about <span class="num">4%</span> of their size at the top, which is why divers can sit still under a big swell.</p>
+  <p>In shallow water the seabed gets in the way. The circles are squashed into flat ovals, and near the bottom the water just <strong>slides back and forth</strong>. That sideways slosh is what the app calls <strong>Surge</strong>. Switch the animation to <em>At the ramp</em> to see it.</p>
+</section>
+
+<section id="size">
+  <div class="eyebrow">02</div>
+  <h2>Height matters. Period matters more than you'd think.</h2>
+  <p>A forecast gives three numbers for a swell: <strong>height</strong>, <strong>period</strong> (seconds between crests) and <strong>direction</strong>. Most people read the height and skip the rest.</p>
+  <div class="facts">
+    <div class="fact"><b>&times;4</b><span>A 2 m swell carries four times the energy of a 1 m swell. Energy goes with height squared.</span></div>
+    <div class="fact"><b>156 m</b><span>Crest to crest for a 10 s swell in open water. A 12 s swell is 225 m.</span></div>
+    <div class="fact"><b>56 km/h</b><span>How fast a 10 s swell travels in deep water. The long ones outrun everything.</span></div>
+  </div>
+  <p>Period sets the <strong>wavelength</strong>, and wavelength decides how deep the wave reaches. A wave starts to feel the seabed once the water is shallower than about half its wavelength. For a 10-second swell that's around <span class="num">78 m</span> down, so it's scraping the bottom across the whole shelf off Manly, which sits at 20 to 40 m.</p>
+  <p class="rule">A long-period swell feels the bottom sooner, bends more, and carries more punch for its height. It's the one that finds its way into places you'd expect to be sheltered.</p>
+</section>
+
+<section id="swell-sea">
+  <div class="eyebrow">03</div>
+  <h2>Swell and sea are two different things</h2>
+  <p><strong>Swell</strong> was made by a storm somewhere else, often days ago and hundreds of kilometres away. By the time it gets here it has sorted itself into long, even lines.</p>
+  <p><strong>Sea</strong> (or wind-wave) is made by the wind that's blowing now, nearby. It's short, steep and jumbled, and it stops growing soon after the wind drops.</p>
+  <p>The forecast usually gives both, and the app scores them differently. Swell mostly drives <strong>Entry</strong> and <strong>Surge</strong>. The local wind's sea is most of <strong>Chop</strong>, the bumpy surface you feel mid-swim.</p>
+</section>
+
+<section id="shoaling">
+  <div class="eyebrow">04</div>
+  <h2>Feeling the bottom: waves slow, bunch up and stand taller</h2>
+  <p>Once a wave feels the seabed, the bottom drags on it and it slows down. In shallow water the speed depends only on depth:</p>
+  <div class="facts">
+    <div class="fact"><b>9.9 m/s</b><span>Wave speed in 10 m of water</span></div>
+    <div class="fact"><b>4.4 m/s</b><span>Wave speed in 2 m of water</span></div>
+  </div>
+  <p>The back of the wave is still in deeper water and moving faster, so it catches up with the front. The energy gets packed into less space and the wave stands taller. This is <strong>shoaling</strong>. It's why a swell you barely noticed from the promenade can rear up over the last few metres before the sand.</p>
+  <p>Shoaling also changes what the water around you does. The loops flatten into that back-and-forth slide. So the same swell feels more like a push and pull the shallower you are.</p>
+</section>
+
+<section id="bending">
+  <div class="eyebrow">05</div>
+  <h2>Bending round: refraction and diffraction</h2>
+  <h3>Refraction</h3>
+  <p>A wave line arriving at an angle hits shallow water at one end first. That end slows down while the other end keeps going, so the whole line <strong>swings round</strong> to face the shore. It's the same thing that makes a straw look bent in a glass of water.</p>
+  <p>Cabbage Tree Bay opens to the north-east, with Shelly headland guarding its south-east side. A south-easterly has to swing round that headland to get in. The data shows it. A swell forecast from about <span class="num">157&deg;</span> (SSE) turns up at the bay mouth from around <span class="num">124&deg;</span>. It has bent about <strong>30 degrees</strong>, and lost most of its height doing it.</p>
+  <h3>Diffraction</h3>
+  <p>When a wave passes the end of a headland, some of its energy spills sideways into the sheltered water behind it. That's <strong>diffraction</strong>. The shadow behind a headland is never completely flat: it gets a weaker, spread-out copy of the swell outside.</p>
+  <p>Both effects are stronger for longer waves. That's why, at the same height, a 12-second south-easterly gets more into the bay than an 8-second one. In our data it's roughly <strong>a third more</strong>.</p>
+</section>
+
+<section id="bounce">
+  <div class="eyebrow">06</div>
+  <h2>Bouncing back: reflection</h2>
+  <p>A wave that hits something steep and solid, like a sea wall or a rock shelf, doesn't break. It <strong>bounces back</strong> out to sea. The reflected wave runs into the next one coming in, and the two add together.</p>
+  <p>Close to the wall, the water mostly goes up and down. A few metres out, the back-and-forth motion of the two waves stacks up, and the slosh can be close to <strong>double</strong> what the incoming swell alone would give.</p>
+  <p>This depends on the tide. At high tide the waves reach the wall and reflect. At low tide they spend their energy on the sand and rocks first. The app's Surge score includes a wall-reflection term that grows at high tide for this reason.</p>
+</section>
+
+<section id="wind">
+  <div class="eyebrow">07</div>
+  <h2>Wind: direction first, then speed</h2>
+  <p>Wind builds sea over the stretch of open water it blows across. That stretch is called the <strong>fetch</strong>. Roughly, the chop grows with the wind speed times the square root of the fetch. So the <strong>direction</strong> of the wind matters as much as its strength, because it decides how much water the wind has to work with.</p>
+  <ul style="margin:0 0 14px 22px">
+    <li><strong>North-east:</strong> the wind comes across about 6 km of open water, and the chop has room to grow.</li>
+    <li><strong>East to south:</strong> the wind has crossed Fairy Bower and Shelly headland, so it only has a few hundred metres of water in the bay.</li>
+    <li><strong>West:</strong> offshore at South Steyne. It blows against incoming waves and flattens them, and the buildings behind the beach take some of its strength before it reaches the water.</li>
+  </ul>
+  <p>At the bay mouth, two years of data show it clearly. When a north-easter blows 30 to 45 km/h, the model holds a median of about <span class="num">1.1 m</span> of wind sea there. A westerly of the same strength leaves about <span class="num">0.2 m</span>.</p>
+</section>
+
+<section id="data">
+  <div class="eyebrow">08</div>
+  <h2>What two years of data say</h2>
+  <p>We lined up two sets of numbers hour by hour, from December 2023 to December 2025:</p>
+  <ul style="margin:0 0 14px 22px">
+    <li>the <strong>offshore swell</strong>, from an ocean wave model about 8 km east of Manly, which is the kind of number a forecast gives you;</li>
+    <li>the swell the <strong>NSW Nearshore Wave Tool</strong> puts at the mouth of Cabbage Tree Bay (node 103218). That's the model the app runs on.</li>
+  </ul>
+  <p>From <span class="num">5,650</span> hours with a real swell running, we fitted one formula for how much of the offshore swell reaches the bay mouth, depending on its direction and period.</p>
+
+  <div class="fig card">
+    <div class="eyebrow" style="margin-bottom:2px">Share of the forecast swell height that reaches the bay mouth</div>
+    <div class="legend" aria-hidden="true">
+      <span><i style="background:var(--s7)"></i>7 s period</span>
+      <span><i style="background:var(--s10)"></i>10 s</span>
+      <span><i style="background:var(--s13)"></i>13 s</span>
+      <span><i class="dot"></i>measured median, all periods</span>
+    </div>
+    <div class="chart" id="kChart"></div>
+    <div class="fig-cap">Lines are the fitted model. Dots are the median of all the matched hours in each 15&deg; band, whatever their period. Swells from the ENE here are mostly short, wind-made ones, which is why that dot sits low. Direction is the forecast's swell direction.</div>
+    <details>
+      <summary>Show the numbers</summary>
+      <table id="kTable"><thead><tr><th>Direction</th><th>Measured</th><th>7 s</th><th>10 s</th><th>13 s</th></tr></thead><tbody></tbody></table>
+    </details>
+  </div>
+
+  <div class="facts">
+    <div class="fact"><b>~45%</b><span>Median share of the offshore swell height that reaches the bay mouth.</span></div>
+    <div class="fact"><b>E vs SE</b><span>An easterly gets about two-thirds of its height in. A south-easterly around 150&deg; gets about a quarter.</span></div>
+    <div class="fact"><b>0.12 m</b><span>Typical error on 1,416 real WillyWeather hours (Aug&ndash;Sep 2026). Taken as-is, WillyWeather was off by 0.96 m.</span></div>
+  </div>
+  <p>That last number is the reason the app doesn't use the forecast height directly. WillyWeather's offshore swell is a fair picture of what's happening out at sea. What gets past the headlands is a very different number, and it depends on direction.</p>
+  <p class="rule">The biggest number on the forecast isn't the one that matters. Look at the direction next to it.</p>
+</section>
+
+<section id="sim">
+  <div class="eyebrow">09</div>
+  <h2>Simulator</h2>
+  <p>Set a swell and a wind the way a forecast would show them. The simulator runs them through the bay: the fitted formula takes the swell to the bay mouth, the app's own shelter table takes it round the corner to the South Steyne entry, and wave physics turns it into what the water around you does.</p>
+
+  <div class="sim">
+    <div class="map">
+      <svg id="simMap" viewBox="40 150 1480 802" role="img" aria-label="Chart of Cabbage Tree Bay: the forecast swell offshore, the bent swell at the bay mouth, the share reaching South Steyne, and the wind"></svg>
+    </div>
+
+    <div class="ctl-grid">
+      <div class="ctl-head">Swell (as the forecast shows it)</div>
+      <div class="ctl"><label for="inH">Height</label><output id="oH"></output><input id="inH" type="range" min="0.3" max="4" step="0.1" value="1.5"></div>
+      <div class="ctl"><label for="inT">Period</label><output id="oT"></output><input id="inT" type="range" min="5" max="16" step="0.5" value="10"></div>
+      <div class="ctl"><label for="inD">Coming from</label><output id="oD"></output><input id="inD" type="range" min="60" max="185" step="1" value="140"></div>
+      <div class="ctl"><label for="inZ">Water under you</label><output id="oZ"></output><input id="inZ" type="range" min="1" max="6" step="0.5" value="2"></div>
+      <div class="ctl-head">Wind</div>
+      <div class="ctl"><label for="inU">Speed</label><output id="oU"></output><input id="inU" type="range" min="0" max="50" step="1" value="15"></div>
+      <div class="ctl"><label for="inW">Coming from</label><output id="oW"></output><input id="inW" type="range" min="0" max="355" step="5" value="45"></div>
+    </div>
+
+    <div class="outs" aria-live="polite">
+      <div class="out">
+        <div class="out-k">At the bay mouth</div>
+        <div class="out-v" id="rMouth">&mdash;</div>
+        <div class="out-s" id="rMouthS"></div>
+        <div class="bar"><i id="bMouth"></i></div>
+      </div>
+      <div class="out">
+        <div class="out-k">Round the corner to the ramp</div>
+        <div class="out-v" id="rRamp">&mdash;</div>
+        <div class="out-s" id="rRampS"></div>
+        <div class="bar"><i id="bRamp"></i></div>
+      </div>
+      <div class="out">
+        <div class="out-k">The water around you</div>
+        <div class="out-v" id="rSway">&mdash;</div>
+        <div class="out-s" id="rSwayS"></div>
+      </div>
+      <div class="out">
+        <div class="out-k">Wind-made chop</div>
+        <div class="out-v" id="rChop">&mdash;</div>
+        <div class="out-s" id="rChopS"></div>
+      </div>
+    </div>
+    <p class="caveat">These numbers are modelled, not measured, and this isn't a forecast. The simulator shows how the pieces fit together; it doesn't say whether to swim. For today's call, use the app.</p>
+  </div>
+</section>
+
+<section id="sources">
+  <div class="eyebrow">Sources</div>
+  <h2 style="font-size:24px">Further reading</h2>
+  <ul class="src">
+    <li><a href="https://viz-on-web.pages.dev/the-physics-of-waves">VIZ Sydney Diving &mdash; The physics of waves</a></li>
+    <li><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
+    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
+    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
+    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
+    <li><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
+    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
+    <li><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
+    <li>Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
+  </ul>
+</section>
+
+<footer><a href="./">Swim Manly</a> &middot; South Steyne &amp; Cabbage Tree Bay</footer>
+</main>
+
+<script>
+(function () {
+'use strict';
+var G = 9.81;
+var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ── MODEL (see the header comment for provenance) ────────────────────────────
+var MODEL = {
+  // bay-mouth swell = a·exp(-((dir-th0)/w)^2)·(T/10)^q·H^r, on the hindcast's own basis
+  a: 1.0828, th0: 44.43, w: 96.22, q: 0.735, r: 1.041,
+  // forecast (WillyWeather) -> hindcast basis, from 1,416 matched hours
+  wwH: 1.30, wwT: 1.16, wwDir: 7,
+  // forecast period -> bay-mouth peak period (NS peak / hindcast mean 1.27; WW/hindcast 1.16)
+  mouthT: 1.27 / 1.16,
+  // measured all-period medians, already on the forecast basis: [dir, share]
+  measured: [[67,.46],[82,.63],[97,.65],[112,.47],[127,.41],[142,.29],[157,.20],[172,.16]],
+  // forecast direction -> median arrival direction at the bay mouth
+  bend: [[67,85],[82,81.5],[97,85.5],[112,99.3],[127,111.8],[142,118.9],[157,123.9],[172,124.6],[187,124.7]],
+  nodeDepth: 10   // m, roughly the bay mouth where node 103218 sits
+};
+// The app's South Steyne shelter table (New NS sheet, SS block), folded 0–180° @10°,
+// periods 2–17 s. Transmit % of wave ENERGY from the bay mouth to the entry corner.
+var SS = [[100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],[99,99,99,99,99,99,99,99,100,100,100,100,100,100,100,100],[99,99,99,99,99,99,99,99,100,100,100,100,100,100,100,100],[98,98,98,98,98,99,99,99,99,99,99,99,100,100,100,100],[93,93,94,94,95,95,96,96,97,97,98,98,98,99,99,100],[84,84,85,86,87,88,89,90,91,92,93,94,94,95,96,97],[74,74,75,77,78,79,80,82,83,84,85,86,88,89,90,91],[64,64,66,68,69,71,72,74,75,77,79,80,82,83,85,87],[54,54,56,58,59,61,63,65,66,68,70,71,73,75,77,78],[45,45,47,48,50,52,53,55,57,58,60,61,63,65,66,68],[36,36,38,39,40,41,42,44,45,46,47,49,50,51,52,53],[27,27,28,29,30,31,32,32,33,34,35,36,37,37,38,39],[21,21,21,22,22,22,23,23,24,24,25,25,26,26,27,27],[14,14,15,15,15,16,16,16,17,17,17,18,18,18,19,19],[8.9,8.9,9,9,9.1,9.2,9.3,9.3,9.4,9.5,9.5,9.6,9.7,9.8,9.8,9.9],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]];
+// The app's chop fetch table: metres of water, index = wind-from bearing / 10.
+var FETCH = [1766,2766,5936,5890,5456,4445,3599,2572,1622,800,257,232,171,127,109,94,72,57,50,46,46,47,52,60,70,74,87,115,159,214,412,624,789,1022,1273,1530];
+var CHOP_GAIN = 0.60, LEE = 0.75, LEE_FROM = 180, LEE_TO = 280, LEE_TAPER = 20;
+
+function ang(a, b) { return ((a - b + 540) % 360) - 180; }
+function interp(tbl, x) {
+  if (x <= tbl[0][0]) return tbl[0][1];
+  for (var i = 1; i < tbl.length; i++) if (x <= tbl[i][0]) {
+    var f = (x - tbl[i-1][0]) / (tbl[i][0] - tbl[i-1][0]);
+    return tbl[i-1][1] + f * (tbl[i][1] - tbl[i-1][1]);
+  }
+  return tbl[tbl.length-1][1];
+}
+function compass(d) {
+  var n = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return n[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
+}
+// bay-mouth swell height from a FORECAST-basis swell
+function mouthH(H, T, D) {
+  var Ho = H / MODEL.wwH, To = T / MODEL.wwT, Do = D - MODEL.wwDir;
+  return MODEL.a * Math.exp(-Math.pow(ang(Do, MODEL.th0) / MODEL.w, 2)) * Math.pow(To / 10, MODEL.q) * Math.pow(Ho, MODEL.r);
+}
+function ssTransmit(dir, T) {                         // same bilinear + fold as the app
+  var d = ((dir % 360) + 360) % 360; if (d > 180) d = 360 - d;
+  var per = Math.max(2, Math.min(17, T));
+  var ri = d / 10, r0 = Math.floor(ri), r1 = Math.min(18, r0 + 1), rf = ri - r0;
+  var ci = per - 2, c0 = Math.floor(ci), c1 = Math.min(15, c0 + 1), cf = ci - c0;
+  var tx = SS[r0][c0]*(1-rf)*(1-cf) + SS[r0][c1]*(1-rf)*cf + SS[r1][c0]*rf*(1-cf) + SS[r1][c1]*rf*cf;
+  return Math.max(0, tx / 100);
+}
+// wavenumber from the dispersion relation w^2 = g k tanh(k h)
+function waveK(T, h) {
+  var w = 2 * Math.PI / T, k = w * w / G;
+  for (var i = 0; i < 40; i++) {
+    var th = Math.tanh(k * h), f = G * k * th - w * w;
+    var df = G * th + G * k * h * (1 - th * th);
+    k -= f / df;
+  }
+  return k;
+}
+function groupSpeed(T, h) {
+  var k = waveK(T, h), c = (2 * Math.PI / T) / k, kh = k * h;
+  return c * 0.5 * (1 + 2 * kh / Math.sinh(2 * kh));
+}
+function spmGrowth(U, F) {                            // the app's fetch-limited growth law
+  if (U <= 0 || F <= 0) return 0;
+  var X = G * F / (U * U);
+  return Math.min(1.6e-3 * Math.sqrt(X) * U * U / G, 0.243 * U * U / G);
+}
+function leeFactor(d) {
+  d = ((d % 360) + 360) % 360;
+  var out = (d >= LEE_FROM && d <= LEE_TO) ? 0 : Math.min(Math.abs(ang(d, LEE_FROM)), Math.abs(ang(d, LEE_TO)));
+  if (out >= LEE_TAPER) return 1;
+  return 1 - (1 - LEE) * Math.cos((out / LEE_TAPER) * Math.PI / 2);
+}
+function fetchFor(d) {
+  d = ((d % 360) + 360) % 360;
+  var i = Math.floor(d / 10), f = (d - i * 10) / 10;
+  return FETCH[i] + (FETCH[(i + 1) % 36] - FETCH[i]) * f;
+}
+
+// ── 1. Orbit animation ──────────────────────────────────────────────────────
+(function orbit() {
+  var cv = document.getElementById('orbit'); if (!cv) return;
+  var ctx = cv.getContext('2d'), depth = 80, T = 10, t0 = performance.now(), visible = true, raf = 0;
+  var cap = document.getElementById('orbitCap');
+  function size() {
+    var dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = 260;
+    cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function draw(now) {
+    var W = cv.clientWidth, Hc = 260, top = 56, bot = Hc - 16;
+    var k = waveK(T, depth), L = 2 * Math.PI / k, kh = k * depth, w = 2 * Math.PI / T;
+    var t = REDUCED ? 0 : (now - t0) / 1000;
+    var a = 16;                                           // drawn amplitude, px (exaggerated)
+    ctx.clearRect(0, 0, W, Hc);
+    var g = ctx.createLinearGradient(0, top, 0, bot);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#7fbcd2');
+    // surface (1.5 wavelengths across the canvas)
+    var span = 1.5, px = function (x) { return x / L * (W / span); };
+    ctx.beginPath(); ctx.moveTo(0, bot);
+    for (var x = 0; x <= W; x += 3) {
+      var xm = x / (W / span) * L;
+      ctx.lineTo(x, top - a * Math.cos(k * xm - w * t));   // eta = a cos(kx - wt), up is -y
+    }
+    ctx.lineTo(W, bot); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    // seabed
+    ctx.fillStyle = '#d9c9a3'; ctx.fillRect(0, bot, W, Hc - bot);
+    // particles: 5 levels from surface to bed, depth drawn to the same frame whatever h
+    var levels = 5, cols = Math.max(7, Math.round(W / 70));
+    for (var li = 0; li < levels; li++) {
+      var zf = li / (levels - 1) * 0.92;                   // 0 = surface, ~1 = bed
+      var z = -zf * depth;
+      var A = a * Math.cosh(k * (z + depth)) / Math.sinh(kh);   // horizontal semi-axis
+      var B = a * Math.sinh(k * (z + depth)) / Math.sinh(kh);   // vertical semi-axis
+      if (depth > 20) { A = Math.min(A, a * 1.02); B = Math.min(B, a * 1.02); }
+      var y0 = top + zf * (bot - top - 6);
+      for (var ci = 0; ci < cols; ci++) {
+        var x0 = (ci + 0.5) * W / cols, xm0 = x0 / (W / span) * L, ph = k * xm0 - w * t;
+        ctx.strokeStyle = 'rgba(11,79,108,.18)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.ellipse(x0, y0, Math.max(A, .5), Math.max(B, .5), 0, 0, 2 * Math.PI); ctx.stroke();
+        ctx.fillStyle = '#0b4f6c';
+        ctx.beginPath(); ctx.arc(x0 - A * Math.sin(ph), y0 - B * Math.cos(ph), 3.2, 0, 2 * Math.PI); ctx.fill();
+      }
+    }
+    ctx.fillStyle = '#0d2b3e'; ctx.font = '500 12px "DM Mono", monospace';
+    ctx.fillText('wavelength ' + Math.round(L) + ' m  ·  depth ' + depth + ' m', 10, 18);
+    if (!REDUCED && visible) raf = requestAnimationFrame(draw);
+  }
+  function setDepth(d) {
+    depth = d;
+    var k = waveK(T, depth), kh = k * depth, bedShare = 1 / Math.cosh(kh);
+    var msg = {
+      80: 'Open water: the loops are circles and shrink quickly with depth.',
+      8:  'Bay mouth: the seabed is starting to flatten the loops into ovals.',
+      2:  'At the ramp: the loops are flat. The water slides back and forth from the surface to the sand, and that slide is surge.'
+    }[d];
+    cap.textContent = msg + ' Water at the bottom moves ' + Math.round(bedShare * 100) + '% as far sideways as at the surface.';
+    if (REDUCED || !visible) draw(performance.now());
+  }
+  document.querySelectorAll('[data-depth]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('[data-depth]').forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+      setDepth(+b.getAttribute('data-depth'));
+    });
+  });
+  size(); setDepth(80);
+  window.addEventListener('resize', function () { size(); if (REDUCED || !visible) draw(performance.now()); });
+  if ('IntersectionObserver' in window && !REDUCED) {
+    new IntersectionObserver(function (es) {
+      visible = es[0].isIntersecting;
+      cancelAnimationFrame(raf); if (visible) raf = requestAnimationFrame(draw);
+    }).observe(cv);
+  } else { draw(performance.now()); if (!REDUCED) raf = requestAnimationFrame(draw); }
+})();
+
+// ── 2. Model chart ──────────────────────────────────────────────────────────
+(function chart() {
+  var host = document.getElementById('kChart'); if (!host) return;
+  var NS = 'http://www.w3.org/2000/svg';
+  var W = 600, Hh = 300, m = { l: 44, r: 44, t: 12, b: 38 };
+  var x0 = 60, x1 = 185, y1 = 0.9;
+  var sx = function (d) { return m.l + (d - x0) / (x1 - x0) * (W - m.l - m.r); };
+  var sy = function (v) { return Hh - m.b - v / y1 * (Hh - m.t - m.b); };
+  var ref = 1.5;   // share is near-independent of height (H^0.04); drawn at 1.5 m
+  var series = [{ T: 7, c: 'var(--s7)' }, { T: 10, c: 'var(--s10)' }, { T: 13, c: 'var(--s13)' }];
+  var share = function (d, T) { return mouthH(ref, T, d) / ref; };
+  var svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Hh); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Share of forecast swell height reaching the bay mouth by direction, for 7, 10 and 13 second periods, with measured medians');
+  function el(n, a, p) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); (p || svg).appendChild(e); return e; }
+  // grid + y axis
+  [0, .2, .4, .6, .8].forEach(function (v) {
+    el('line', { x1: m.l, x2: W - m.r, y1: sy(v), y2: sy(v), stroke: 'rgba(13,43,62,.10)', 'stroke-width': 1 });
+    var t = el('text', { x: m.l - 8, y: sy(v) + 4, 'text-anchor': 'end', 'font-size': 12, fill: '#5f8795', 'font-family': 'DM Mono, monospace' });
+    t.textContent = Math.round(v * 100) + '%';
+  });
+  [[67,'ENE'],[90,'E'],[112,'ESE'],[135,'SE'],[157,'SSE'],[180,'S']].forEach(function (p) {
+    var t = el('text', { x: sx(p[0]), y: Hh - m.b + 18, 'text-anchor': 'middle', 'font-size': 12, fill: '#5f8795', 'font-family': 'DM Mono, monospace' });
+    t.textContent = p[1];
+    var t2 = el('text', { x: sx(p[0]), y: Hh - m.b + 32, 'text-anchor': 'middle', 'font-size': 10.5, fill: '#8fb0bb', 'font-family': 'DM Mono, monospace' });
+    t2.textContent = p[0] + '°';
+  });
+  el('line', { x1: m.l, x2: W - m.r, y1: sy(0), y2: sy(0), stroke: 'rgba(13,43,62,.35)', 'stroke-width': 1 });
+  // lines
+  series.forEach(function (s) {
+    var d = '';
+    for (var a = x0; a <= x1; a += 1) d += (a === x0 ? 'M' : 'L') + sx(a).toFixed(1) + ' ' + sy(share(a, s.T)).toFixed(1);
+    el('path', { d: d, fill: 'none', stroke: s.c, 'stroke-width': 2, 'stroke-linecap': 'round' });
+    var lab = el('text', { x: sx(x1) + 6, y: sy(share(x1, s.T)) + 4, 'font-size': 12, fill: '#14333f', 'font-family': 'DM Mono, monospace' });
+    lab.textContent = s.T + ' s';
+  });
+  // nudge overlapping end labels apart
+  var labs = [].slice.call(svg.querySelectorAll('text')).slice(-3).sort(function (a, b) { return +a.getAttribute('y') - +b.getAttribute('y'); });
+  for (var i = 1; i < labs.length; i++) {
+    var prev = +labs[i-1].getAttribute('y'), cur = +labs[i].getAttribute('y');
+    if (cur - prev < 13) labs[i].setAttribute('y', prev + 13);
+  }
+  // measured dots (surface ring so they read over the lines)
+  MODEL.measured.forEach(function (p) {
+    el('circle', { cx: sx(p[0]), cy: sy(p[1]), r: 5, fill: '#0d2b3e', stroke: '#fbf6ec', 'stroke-width': 2 });
+  });
+  // hover layer
+  var cross = el('line', { y1: m.t, y2: Hh - m.b, stroke: 'rgba(13,43,62,.35)', 'stroke-width': 1, opacity: 0 });
+  var hit = el('rect', { x: m.l, y: m.t, width: W - m.l - m.r, height: Hh - m.t - m.b, fill: 'transparent' });
+  host.appendChild(svg);
+  var tip = document.createElement('div'); tip.className = 'tip'; host.appendChild(tip);
+  function move(ev) {
+    var r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) / r.width * W;
+    var d = Math.round(Math.max(x0, Math.min(x1, x0 + (px - m.l) / (W - m.l - m.r) * (x1 - x0))));
+    cross.setAttribute('x1', sx(d)); cross.setAttribute('x2', sx(d)); cross.setAttribute('opacity', 1);
+    var near = MODEL.measured.filter(function (p) { return Math.abs(p[0] - d) <= 7; })[0];
+    tip.innerHTML = '<b>' + d + '° ' + compass(d) + '</b><br>' + series.map(function (s) {
+      return '<span style="color:' + s.c + '">&#9644;</span> ' + s.T + ' s  ' + Math.round(share(d, s.T) * 100) + '%';
+    }).join('<br>') + (near ? '<br>&#9679; measured ' + Math.round(near[1] * 100) + '%' : '');
+    tip.style.opacity = 1;
+    var tx = (sx(d) / W) * r.width, tw = tip.offsetWidth;
+    tip.style.left = Math.min(r.width - tw, Math.max(0, tx + (tx > r.width / 2 ? -tw - 12 : 12))) + 'px';
+    tip.style.top = '8px';
+  }
+  function out() { cross.setAttribute('opacity', 0); tip.style.opacity = 0; }
+  hit.addEventListener('pointermove', move); hit.addEventListener('pointerdown', move); hit.addEventListener('pointerleave', out);
+  // table view
+  var tb = document.querySelector('#kTable tbody');
+  MODEL.measured.forEach(function (p) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + p[0] + '° ' + compass(p[0]) + '</td><td>' + Math.round(p[1] * 100) + '%</td>' +
+      series.map(function (s) { return '<td>' + Math.round(share(p[0], s.T) * 100) + '%</td>'; }).join('');
+    tb.appendChild(tr);
+  });
+})();
+
+// ── 3. Simulator ────────────────────────────────────────────────────────────
+(function sim() {
+  var $ = function (id) { return document.getElementById(id); };
+  var ins = ['inH','inT','inD','inZ','inU','inW'].map($);
+  var map = $('simMap');
+  // Drawn chart of the bay, traced from the seabed chart (map_flat.png, 1520x952 px,
+  // north up). Coordinates are that image's pixels; the SVG viewBox crops to the bay.
+  var LAND = 'M40 150 L160 150 L185 260 L205 340 L235 420 L270 490 L300 540 L330 590 L352 640 L372 656 ' +
+    'L400 646 L430 662 L470 690 L520 702 L540 732 L555 790 L590 845 L640 880 L720 868 L800 860 L880 862 ' +
+    'L925 850 L935 820 L905 770 L870 720 L845 680 L838 650 L855 632 L900 630 L960 640 L1020 656 L1090 696 ' +
+    'L1160 760 L1230 840 L1290 920 L1310 952 L40 952 Z';
+  var MOUTH = { x: 640, y: 560 }, ENTRY = { x: 385, y: 628 }, OFF = { x: 1180, y: 330 };
+  var WIND = { x: 1380, y: 520 };
+  function P(x, y) { return x.toFixed(0) + ' ' + y.toFixed(0); }
+  function arrowHead(x, y, deg, s, col) {
+    var r = deg * Math.PI / 180;                       // deg = direction of travel (0 = up the page)
+    var ux = Math.sin(r), uy = -Math.cos(r), px = -uy, py = ux;
+    return '<path d="M' + P(x + ux * s, y + uy * s) + ' L' + P(x - ux * s * .6 + px * s * .7, y - uy * s * .6 + py * s * .7) +
+      ' L' + P(x - ux * s * .6 - px * s * .7, y - uy * s * .6 - py * s * .7) + 'Z" fill="' + col + '"/>';
+  }
+  // Three wave crests centred on c, for a swell coming FROM dir, plus an arrow the way it travels.
+  function crests(c, dir, len, gap, col, op, w) {
+    var r = dir * Math.PI / 180, tx = -Math.sin(r), ty = Math.cos(r);   // travel (towards dir+180)
+    var cx = Math.cos(r), cy = Math.sin(r);                              // along the crest
+    var s = '';
+    for (var k = -1; k <= 1; k++) {
+      var mx = c.x + tx * k * gap, my = c.y + ty * k * gap, l = len * (1 - Math.abs(k) * 0.18);
+      s += '<path d="M' + P(mx - cx * l, my - cy * l) + ' Q' + P(mx + tx * 14, my + ty * 14) + ' ' + P(mx + cx * l, my + cy * l) +
+        '" fill="none" stroke="' + col + '" stroke-width="' + w + '" stroke-linecap="round" opacity="' + op + '"/>';
+    }
+    s += arrowHead(c.x + tx * (gap * 1.9), c.y + ty * (gap * 1.9), dir + 180, 26, col);
+    return s;
+  }
+  function label(x, y, t, anchor, size, col) {
+    return '<text x="' + x + '" y="' + y + '" text-anchor="' + (anchor || 'start') + '" font-family="DM Mono, monospace" font-size="' + (size || 34) +
+      '" fill="' + (col || '#0d2b3e') + '" stroke="rgba(251,246,236,.85)" stroke-width="8" paint-order="stroke">' + t + '</text>';
+  }
+  function drawMap(D, arr, shareM, tx, U, Wd) {
+    var s = '<defs><linearGradient id="sea" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#cbe8f1"/><stop offset="1" stop-color="#7fbcd2"/></linearGradient></defs>';
+    s += '<rect x="0" y="0" width="1520" height="952" fill="url(#sea)"/>';
+    s += '<path d="' + LAND + '" fill="#efe4c6" stroke="#b9a77c" stroke-width="4" stroke-linejoin="round"/>';
+    s += label(170, 520, 'Manly', 'middle', 34, '#8a7a55') + label(760, 915, 'Fairy Bower', 'middle', 30, '#8a7a55');
+    s += label(640, 780, 'Cabbage Tree Bay', 'middle', 34, '#0b4f6c') + label(1010, 800, 'Shelly', 'middle', 30, '#8a7a55');
+    s += label(1150, 190, 'open ocean', 'middle', 34, '#0b4f6c');
+    // path the energy takes: offshore -> mouth (dotted, faint)
+    s += '<path d="M' + P(OFF.x, OFF.y) + ' Q' + P(940, 460) + ' ' + P(MOUTH.x, MOUTH.y) + '" fill="none" stroke="#0b4f6c" stroke-width="5" stroke-dasharray="3 16" stroke-linecap="round" opacity=".45"/>';
+    // offshore crests (forecast direction) and bay-mouth crests (bent), fading with the share that gets in
+    s += crests(OFF, D, 110, 46, '#0b4f6c', 0.9, 9);
+    s += label(OFF.x, OFF.y + 150, 'forecast ' + Math.round(D) + '°', 'middle', 32);
+    var op = (0.3 + 0.7 * Math.min(1, shareM / 0.7)).toFixed(2);
+    s += crests(MOUTH, arr, 80, 38, '#0b4f6c', op, 8);
+    s += label(MOUTH.x + 30, MOUTH.y - 118, 'arrives ' + Math.round(arr) + '°', 'start', 32);
+    // round the corner: band width and strength by the energy share
+    s += '<path d="M' + P(MOUTH.x - 30, MOUTH.y + 20) + ' Q' + P(480, 560) + ' ' + P(ENTRY.x + 16, ENTRY.y - 6) + '" fill="none" stroke="#e0982f" stroke-width="' +
+      (6 + 30 * tx).toFixed(0) + '" stroke-linecap="round" opacity="' + (0.35 + 0.6 * tx).toFixed(2) + '"/>';
+    s += '<circle cx="' + ENTRY.x + '" cy="' + ENTRY.y + '" r="17" fill="#e0982f" stroke="#fff" stroke-width="6"/>';
+    s += label(ENTRY.x - 26, ENTRY.y - 34, 'South Steyne', 'end', 34);
+    // wind: arrow in a compass disc, pointing the way the wind blows
+    s += '<circle cx="' + WIND.x + '" cy="' + WIND.y + '" r="92" fill="rgba(255,255,255,.55)" stroke="rgba(13,43,62,.25)" stroke-width="3"/>';
+    s += label(WIND.x, WIND.y - 104, 'N', 'middle', 26, '#5f8795');
+    if (U > 0) {
+      var r = Wd * Math.PI / 180, ux = -Math.sin(r), uy = Math.cos(r), L = 40 + Math.min(34, U * 0.9);
+      s += '<line x1="' + (WIND.x - ux * L).toFixed(0) + '" y1="' + (WIND.y - uy * L).toFixed(0) + '" x2="' + (WIND.x + ux * (L - 20)).toFixed(0) + '" y2="' + (WIND.y + uy * (L - 20)).toFixed(0) +
+        '" stroke="#0d2b3e" stroke-width="10" stroke-linecap="round"/>';
+      s += arrowHead(WIND.x + ux * L, WIND.y + uy * L, Wd + 180, 26, '#0d2b3e');
+    }
+    s += label(WIND.x, WIND.y + 136, 'wind', 'middle', 30);
+    map.innerHTML = s;
+  }
+
+  function run() {
+    var H = +ins[0].value, T = +ins[1].value, D = +ins[2].value, z = +ins[3].value, U = +ins[4].value, Wd = +ins[5].value;
+    $('oH').textContent = H.toFixed(1) + ' m';
+    $('oT').textContent = T + ' s';
+    $('oD').textContent = D + '° ' + compass(D);
+    $('oZ').textContent = z + ' m';
+    $('oU').textContent = U + ' km/h';
+    $('oW').textContent = Wd + '° ' + compass(Wd);
+
+    // bay mouth
+    var hm = mouthH(H, T, D), share = hm / H, arr = interp(MODEL.bend, D);
+    $('rMouth').textContent = '~' + hm.toFixed(1) + ' m';
+    $('rMouthS').textContent = Math.round(share * 100) + '% of the forecast height, arriving from ' + Math.round(arr) + '° ' + compass(arr) +
+      (Math.abs(ang(arr, D)) >= 8 ? ' (bent ' + Math.round(Math.abs(ang(arr, D))) + '°)' : '') + '.';
+    $('bMouth').style.width = Math.min(100, share * 100 / 0.9) + '%';
+
+    // round the corner (energy share) — ramp wave stays internal (CLAUDE.md §2)
+    var Tm = Math.min(17, T * MODEL.mouthT), tx = ssTransmit(arr, Tm);
+    $('rRamp').textContent = Math.round(tx * 100) + '% of the energy';
+    $('rRampS').textContent = tx >= 0.6 ? 'From this direction the swell runs almost straight at the South Steyne corner.'
+      : tx >= 0.3 ? 'The corner takes part of it; the rest spends itself on the rocks and the bay.'
+      : 'Most of it is spent in the bay and on the rocks before it gets to the corner.';
+    $('bRamp').style.width = Math.round(tx * 100) + '%';
+
+    // the water around you: shoal the ramp wave to depth z, report sway + push only
+    var hr = hm * Math.sqrt(tx);
+    var ks = Math.sqrt(groupSpeed(Tm, MODEL.nodeDepth) / groupSpeed(Tm, z));
+    // Linear theory only holds until the wave breaks (H ~ 0.78 depth). Past that the
+    // numbers mean nothing, so say so instead of printing a sway of 8 m.
+    var hl = hr * ks, broken = hl >= 0.78 * z;
+    var k = waveK(Tm, z), kh = k * z;
+    var amp = (hl / 2) / Math.tanh(kh);                    // horizontal semi-excursion at the surface
+    var push = amp * 2 * Math.PI / Tm;
+    var sway = 2 * amp;
+    if (broken) {
+      $('rSway').textContent = 'past the model';
+      $('rSwayS').textContent = 'Waves this size break before they reach ' + z + ' m of water, and the simple wave physics used here stops working.';
+    } else {
+      $('rSway').textContent = sway < 0.1 ? 'sway under 0.1 m' : 'sway ~' + sway.toFixed(1) + ' m';
+      $('rSwayS').textContent = sway < 0.1 ? 'In ' + z + ' m of water the modelled back-and-forth is under 10 cm.'
+        : 'In ' + z + ' m of water the swell carries you through about ' + sway.toFixed(1) + ' m, forward then back, every ' + Math.round(Tm) + ' s, at up to ' + push.toFixed(1) + ' m/s.';
+    }
+
+    // chop
+    var Ue = U / 3.6 * leeFactor(Wd) * CHOP_GAIN, F = fetchFor(Wd), hc = spmGrowth(Ue, F) * 100;
+    $('rChop').textContent = U === 0 ? 'none' : '~' + Math.round(hc) + ' cm';
+    $('rChopS').textContent = U === 0 ? 'No wind, no local chop.'
+      : 'Wind from ' + compass(Wd) + ' crosses about ' + (F >= 1000 ? (F / 1000).toFixed(1) + ' km' : Math.round(F / 10) * 10 + ' m') + ' of water before the swim patch' +
+        (leeFactor(Wd) < 0.99 ? ', and the buildings behind the beach take some of its strength.' : '.');
+
+    drawMap(D, arr, share, tx, U, Wd);
+  }
+  ins.forEach(function (i) { i.addEventListener('input', run); });
+  run();
+})();
+})();
+</script>
+</body>
+</html>
