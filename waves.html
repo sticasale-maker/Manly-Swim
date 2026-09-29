@@ -24,9 +24,9 @@
 
   THE MODEL (numbers baked in below — see MODEL):
   - Offshore: Open-Meteo marine hindcast, cell -33.79 / 151.38, Dec 2023–Dec 2025.
-  - Bay mouth: NSW Nearshore Wave Tool hindcast, node 103218, same hours (5,650 with
-    offshore swell >= 0.4 m).
-  - Fit: bay-mouth swell = a · exp(-((dir-th0)/w)^2) · (T/10)^q · H^r   (R^2 0.78,
+  - Bay mouth: NSW Nearshore Wave Tool hindcast, node 103218, same hours (8,184 matched,
+    8,142 with offshore swell >= 0.4 m; rows stamped HH:59:59 are rounded UP to the hour).
+  - Fit: bay-mouth swell = a · exp(-((dir-th0)/w)^2) · (T/10)^q · H^r   (R^2 0.79,
     typical error 0.18 m). A cosine form scored R^2 0.68 and under-read east swells.
   - WillyWeather check: 1,416 real WW/NS hour pairs from forecast_history
     (31 Jul–29 Sep 2026). WW reads 1.30x the hindcast's height, 1.16x its period and
@@ -150,6 +150,18 @@
   .src a{color:var(--deep)}
   footer{margin-top:44px; font-size:14px; color:var(--dim); text-align:center}
   footer a{color:var(--deep)}
+
+  /* ── figure: hero ── */
+  .hero-cv{max-width:30em; margin:14px auto -8px; border-radius:0}
+  /* ── figure: size ── */
+  /* 02 height & period figure: readouts under the sliders */
+  .size-read{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:12px}
+  /* 4 across needs ~105 px a cell for "90 km/h"; below a 600 px viewport go 2 x 2 */
+  @media (max-width:600px){ .size-read{grid-template-columns:1fr 1fr} }
+  .size-cell{background:#fff; border:1px solid var(--border); border-radius:10px; padding:8px 10px; min-width:0}
+  .size-cell .out-k{font-size:10.5px; letter-spacing:.06em; line-height:1.3}
+  .size-v{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:800; font-size:21px; line-height:1.15; color:var(--ink); margin-top:3px; white-space:nowrap}
+  .size-sub{font-family:'DM Mono',ui-monospace,monospace; font-size:11px; line-height:1.3; color:var(--dim); margin-top:2px}
 </style>
 </head>
 <body>
@@ -165,6 +177,7 @@
       <h1>How waves reach South Steyne</h1>
       <p class="lede">Why a two-metre south-easterly can barely reach the corner while a one-metre easterly runs straight in.</p>
       <p class="why">This is the physics behind the Entry, Surge and Chop cards, in plain words. It ends with a model built from two years of wave data at the bay mouth, and a simulator you can play with.</p>
+      <canvas id="heroCv" class="hero-cv" aria-hidden="true"></canvas>
     </div>
     <nav class="toc" aria-label="On this page">
       <a href="#energy">A wave is energy</a><a href="#size">Height &amp; period</a><a href="#swell-sea">Swell vs sea</a>
@@ -182,7 +195,7 @@
   <p>When a swell rolls in, the water itself hardly travels. Each bit of water goes round in a loop and comes back to nearly where it started. What moves across the ocean is the <strong>energy</strong>, handed from one loop to the next.</p>
   <p>You know this already. Float out past the ramp on a swell day and you rise, drift forward, sink and drift back. That loop is the wave going through you.</p>
   <div class="fig card">
-    <canvas id="orbit" height="260" aria-label="Animation of water particles moving in loops under a passing wave"></canvas>
+    <canvas id="orbit" aria-label="Animation of water particles moving in loops under a passing wave"></canvas>
     <div class="seg" role="group" aria-label="Water depth">
       <button type="button" data-depth="80" aria-pressed="true">Open water (80 m)</button>
       <button type="button" data-depth="8">Bay mouth (8 m)</button>
@@ -197,13 +210,27 @@
 <section id="size">
   <div class="eyebrow">02</div>
   <h2>Height matters. Period matters more than you'd think.</h2>
-  <p>A forecast gives three numbers for a swell: <strong>height</strong>, <strong>period</strong> (seconds between crests) and <strong>direction</strong>. Most people read the height and skip the rest.</p>
+  <p>A forecast gives three numbers for a swell: <strong>height</strong>, <strong>period</strong> (seconds between crests) and <strong>direction</strong>. Most people read the height and skip the rest. The figure below lets you set the first two and see what each one changes.</p>
   <div class="facts">
     <div class="fact"><b>&times;4</b><span>A 2 m swell carries four times the energy of a 1 m swell. Energy goes with height squared.</span></div>
     <div class="fact"><b>156 m</b><span>Crest to crest for a 10 s swell in open water. A 12 s swell is 225 m.</span></div>
-    <div class="fact"><b>56 km/h</b><span>How fast a 10 s swell travels in deep water. The long ones outrun everything.</span></div>
+    <div class="fact"><b>56 km/h</b><span>How fast a 10 s swell&rsquo;s crests travel in deep water. The energy they carry follows at half that speed.</span></div>
   </div>
   <p>Period sets the <strong>wavelength</strong>, and wavelength decides how deep the wave reaches. A wave starts to feel the seabed once the water is shallower than about half its wavelength. For a 10-second swell that's around <span class="num">78 m</span> down, so it's scraping the bottom across the whole shelf off Manly, which sits at 20 to 40 m.</p>
+  <div class="fig card">
+    <canvas id="sizeCv" height="250" aria-label="Animation of a swell crossing 600 metres of open ocean at its true speed, with a bar one wavelength long, a float that rises and falls once each period, and a faint 1 metre, 10 second swell for comparison"></canvas>
+    <div class="ctl-grid">
+      <div class="ctl"><label for="sizeT">Period</label><output id="sizeTo" for="sizeT"></output><input id="sizeT" type="range" min="6" max="16" step="0.5" value="12"></div>
+      <div class="ctl"><label for="sizeH">Height</label><output id="sizeHo" for="sizeH"></output><input id="sizeH" type="range" min="0.5" max="3" step="0.1" value="2"></div>
+    </div>
+    <div class="size-read" aria-live="polite">
+      <div class="size-cell"><div class="out-k">Wavelength</div><div class="size-v" id="sizeL">&mdash;</div><div class="size-sub">crest to crest</div></div>
+      <div class="size-cell"><div class="out-k">Crest speed</div><div class="size-v" id="sizeC">&mdash;</div><div class="size-sub" id="sizeCs"></div></div>
+      <div class="size-cell"><div class="out-k">Energy</div><div class="size-v" id="sizeE">&mdash;</div><div class="size-sub">vs a 1 m swell</div></div>
+      <div class="size-cell"><div class="out-k">Power</div><div class="size-v" id="sizeP">&mdash;</div><div class="size-sub">vs 1 m, 10 s</div></div>
+    </div>
+    <div class="fig-cap" id="sizeCap">Real time, to scale across 600 m of open ocean, with heights stretched so they show. The dashed line is a 1 m, 10 s swell, the yardstick for the energy and power figures.</div>
+  </div>
   <p class="rule">A long-period swell feels the bottom sooner, bends more, and carries more punch for its height. It's the one that finds its way into places you'd expect to be sheltered.</p>
 </section>
 
@@ -211,20 +238,36 @@
   <div class="eyebrow">03</div>
   <h2>Swell and sea are two different things</h2>
   <p><strong>Swell</strong> was made by a storm somewhere else, often days ago and hundreds of kilometres away. By the time it gets here it has sorted itself into long, even lines.</p>
-  <p><strong>Sea</strong> (or wind-wave) is made by the wind that's blowing now, nearby. It's short, steep and jumbled, and it stops growing soon after the wind drops.</p>
+  <p><strong>Sea</strong> (or wind-wave) is made by the wind that's blowing now, nearby. It's short, steep and jumbled, and it stops growing soon after the wind drops. In the water you get both at once, added together.</p>
   <p>The forecast usually gives both, and the app scores them differently. Swell mostly drives <strong>Entry</strong> and <strong>Surge</strong>. The local wind's sea is most of <strong>Chop</strong>, the bumpy surface you feel mid-swim.</p>
+  <div class="fig card">
+    <canvas id="swellseaCv" height="300" aria-label="Animation in three stacked strips of water: a long, even 12 second swell on top; a jumbled wind sea of short waves in the middle; and the two added together at the bottom, which is what a swimmer feels"></canvas>
+    <div class="seg" role="group" aria-label="Wind strength">
+      <button type="button" data-swellsea-wind="light" aria-pressed="true">Light wind (15 km/h)</button>
+      <button type="button" data-swellsea-wind="strong" aria-pressed="false">Fresh wind (35 km/h)</button>
+    </div>
+    <div class="fig-cap" id="swellseaCap">The bottom strip is the top two added together, which is what you swim through; its dashed line is the swell alone. Real time, heights stretched, and sea waves crossing at an angle look longer from the side.</div>
+  </div>
 </section>
 
 <section id="shoaling">
   <div class="eyebrow">04</div>
   <h2>Feeling the bottom: waves slow, bunch up and stand taller</h2>
-  <p>Once a wave feels the seabed, the bottom drags on it and it slows down. In shallow water the speed depends only on depth:</p>
+  <p>Once a wave feels the seabed, the bottom drags on it and it slows down. In shallow water the speed depends mainly on depth:</p>
   <div class="facts">
-    <div class="fact"><b>9.9 m/s</b><span>Wave speed in 10 m of water</span></div>
+    <div class="fact"><b>9 m/s</b><span>Wave speed in 10 m of water, for an 8 to 12 s swell</span></div>
     <div class="fact"><b>4.4 m/s</b><span>Wave speed in 2 m of water</span></div>
   </div>
   <p>The back of the wave is still in deeper water and moving faster, so it catches up with the front. The energy gets packed into less space and the wave stands taller. This is <strong>shoaling</strong>. It's why a swell you barely noticed from the promenade can rear up over the last few metres before the sand.</p>
-  <p>Shoaling also changes what the water around you does. The loops flatten into that back-and-forth slide. So the same swell feels more like a push and pull the shallower you are.</p>
+  <div class="fig card">
+    <canvas id="shoalCv" height="260" role="img" aria-label="Animation of a swell running in over a sloping seabed from 25 metres deep to a beach: the crests slow down, bunch up and grow taller until they break into foam near the sand. Labels give the crest speed at 20, 10 and 2 metres. Two close-ups show water moving in loops at 20 metres and sliding back and forth in 4 metres."></canvas>
+    <div class="seg" id="shoalSeg" role="group" aria-label="Swell period">
+      <button type="button" data-shoal="8" aria-pressed="false">8 s swell</button>
+      <button type="button" data-shoal="12" aria-pressed="true">12 s swell</button>
+    </div>
+    <div class="fig-cap" id="shoalCap">A 12-second swell slows, bunches up and stands taller as the seabed rises, then breaks (heights exaggerated, time sped up three times). In the close-ups its loops are already flattened at 20 m: a long swell feels the bottom that far down.</div>
+  </div>
+  <p>Shoaling also changes what the water around you does. The loops flatten into that back-and-forth slide: compare the two close-ups above. So the same swell feels more like a push and pull the shallower you are.</p>
 </section>
 
 <section id="bending">
@@ -232,27 +275,65 @@
   <h2>Bending round: refraction and diffraction</h2>
   <h3>Refraction</h3>
   <p>A wave line arriving at an angle hits shallow water at one end first. That end slows down while the other end keeps going, so the whole line <strong>swings round</strong> to face the shore. It's the same thing that makes a straw look bent in a glass of water.</p>
+  <div class="fig card">
+    <canvas id="refractCv" height="260" aria-label="Animated map: swell lines cross a seabed that gets shallower towards a straight beach on the left. As the water shallows the lines slow down and swing round to face the beach, and three thin arrows tracing the swell's path curve in towards the shore."></canvas>
+    <div class="seg" role="group" aria-label="Swell direction out at sea">
+      <button type="button" data-refract-from="90" aria-pressed="false">From the east</button>
+      <button type="button" data-refract-from="125" aria-pressed="true">From the south-east</button>
+    </div>
+    <div class="seg" role="group" aria-label="Swell period">
+      <button type="button" data-refract-t="7" aria-pressed="true">7 s swell</button>
+      <button type="button" data-refract-t="13" aria-pressed="false">13 s swell</button>
+    </div>
+    <div class="fig-cap" id="refractCap">The seabed deepens from 1 m at the beach to 40 m a kilometre out; thin lines trace the swell's path, and the animation runs at three times real speed. Out at sea this 7 s swell comes in 55° off straight-in; it is still at 55° at the 40 m edge but down to 29° by the 5 m line, where a 13 s swell would be at 16°.</div>
+  </div>
   <p>Cabbage Tree Bay opens to the north-east, with Shelly headland guarding its south-east side. A south-easterly has to swing round that headland to get in. The data shows it. A swell forecast from about <span class="num">157&deg;</span> (SSE) turns up at the bay mouth from around <span class="num">124&deg;</span>. It has bent about <strong>30 degrees</strong>, and lost most of its height doing it.</p>
   <h3>Diffraction</h3>
   <p>When a wave passes the end of a headland, some of its energy spills sideways into the sheltered water behind it. That's <strong>diffraction</strong>. The shadow behind a headland is never completely flat: it gets a weaker, spread-out copy of the swell outside.</p>
-  <p>Both effects are stronger for longer waves. That's why, at the same height, a 12-second south-easterly gets more into the bay than an 8-second one. In our data it's roughly <strong>a third more</strong>.</p>
+  <div class="fig card">
+    <canvas id="diffractCv" height="260" aria-label="Animated map: swell comes up from the open sea and passes the tip of a headland. Behind the headland the crests bend round in arcs into the sheltered water, weaker the further in they go. A dashed line marks the edge of the shadow."></canvas>
+    <div class="seg" role="group" aria-label="Swell period">
+      <button type="button" data-diffract-t="7" aria-pressed="true">7 s swell</button>
+      <button type="button" data-diffract-t="13" aria-pressed="false">13 s swell</button>
+    </div>
+    <div class="fig-cap" id="diffractCap">Swell passing the tip of a headland in 10 m of water, at three times real speed; the wave bouncing off the rocks is left out, and faint swell is drawn stronger so you can see it. At the dot this 7 s swell (crests 60 m apart) keeps about 11% of its open-water height, where a 13 s swell keeps about 15%.</div>
+  </div>
+  <p>Both effects are stronger for longer waves: switch either animation to 13 s to see it. At this bay mouth, though, two years of data barely show it. A south-easterly arrives from about <span class="num">124&deg;</span> whatever its period, because the headland sets the angle. And most of the extra height a longer swell seems to bring is the Nearshore model counting more of the same waves as swell rather than sea.</p>
 </section>
 
 <section id="bounce">
   <div class="eyebrow">06</div>
   <h2>Bouncing back: reflection</h2>
   <p>A wave that hits something steep and solid, like a sea wall or a rock shelf, doesn't break. It <strong>bounces back</strong> out to sea. The reflected wave runs into the next one coming in, and the two add together.</p>
-  <p>Close to the wall, the water mostly goes up and down. A few metres out, the back-and-forth motion of the two waves stacks up, and the slosh can be close to <strong>double</strong> what the incoming swell alone would give.</p>
-  <p>This depends on the tide. At high tide the waves reach the wall and reflect. At low tide they spend their energy on the sand and rocks first. The app's Surge score includes a wall-reflection term that grows at high tide for this reason.</p>
+  <p>Close to the wall, the water mostly goes up and down. About a quarter of a wavelength out, often around 10 m, the back-and-forth motion of the two waves stacks up, and the slosh can be close to <strong>double</strong> what the incoming swell alone would give.</p>
+  <div class="fig card">
+    <canvas id="reflectCv" height="250" role="img" aria-label="Animation of a swell running into a sea wall and bouncing back. At high tide the reflected wave adds to the incoming one: at the wall the water only rises and falls, and a quarter of a wavelength out it slides back and forth almost twice as far. At low tide the waves break on a sand and rock slope in front of the wall and little comes back. A dashed line shows the incoming wave on its own, and arrows show the back-and-forth."></canvas>
+    <div class="seg" id="reflectSeg" role="group" aria-label="Tide">
+      <button type="button" data-reflect="high" aria-pressed="true">High tide: waves reach the wall</button>
+      <button type="button" data-reflect="low" aria-pressed="false">Low tide: sand and rocks first</button>
+    </div>
+    <div class="fig-cap" id="reflectCap">High tide: the swell (dashed line) bounces off the wall almost as tall as it came in, and the solid line is the two added together (time runs twice as fast). At the wall the water only rises and falls; a quarter of a wavelength out it slides back and forth (orange) nearly twice as far as the swell alone would move it (grey).</div>
+  </div>
+  <p>This depends on the tide. At high tide the waves reach the wall and reflect. At low tide they spend their energy on the sand and rocks first. Switch the animation to <em>Low tide</em> to see the difference. The app's Surge score includes a wall-reflection term that grows at high tide for this reason.</p>
 </section>
 
 <section id="wind">
   <div class="eyebrow">07</div>
   <h2>Wind: direction first, then speed</h2>
   <p>Wind builds sea over the stretch of open water it blows across. That stretch is called the <strong>fetch</strong>. Roughly, the chop grows with the wind speed times the square root of the fetch. So the <strong>direction</strong> of the wind matters as much as its strength, because it decides how much water the wind has to work with.</p>
+  <div class="fig card">
+    <canvas id="windCv" aria-label="Map of Cabbage Tree Bay with short strokes of wind chop drifting downwind. The strokes are longer and darker where the wind has crossed more open water, and a dashed line shows how much water lies upwind of the South Steyne corner."></canvas>
+    <div class="seg" role="group" aria-label="Wind coming from">
+      <button type="button" data-wind-from="45" aria-pressed="true">NE</button>
+      <button type="button" data-wind-from="90" aria-pressed="false">E</button>
+      <button type="button" data-wind-from="135" aria-pressed="false">SE</button>
+      <button type="button" data-wind-from="270" aria-pressed="false">W</button>
+    </div>
+    <div class="fig-cap" id="windCap">The same 30 km/h wind from four directions. Direction decides how much water it gets to work with.</div>
+  </div>
   <ul style="margin:0 0 14px 22px">
     <li><strong>North-east:</strong> the wind comes across about 6 km of open water, and the chop has room to grow.</li>
-    <li><strong>East to south:</strong> the wind has crossed Fairy Bower and Shelly headland, so it only has a few hundred metres of water in the bay.</li>
+    <li><strong>East round to south:</strong> the wind has just crossed Shelly headland or Fairy Bower, so it gets a short run of water: under a kilometre from the east, and only about 50 to 120 m from the south-east round to the south.</li>
     <li><strong>West:</strong> offshore at South Steyne. It blows against incoming waves and flattens them, and the buildings behind the beach take some of its strength before it reaches the water.</li>
   </ul>
   <p>At the bay mouth, two years of data show it clearly. When a north-easter blows 30 to 45 km/h, the model holds a median of about <span class="num">1.1 m</span> of wind sea there. A westerly of the same strength leaves about <span class="num">0.2 m</span>.</p>
@@ -266,7 +347,7 @@
     <li>the <strong>offshore swell</strong>, from an ocean wave model about 8 km east of Manly, which is the kind of number a forecast gives you;</li>
     <li>the swell the <strong>NSW Nearshore Wave Tool</strong> puts at the mouth of Cabbage Tree Bay (node 103218). That's the model the app runs on.</li>
   </ul>
-  <p>From <span class="num">5,650</span> hours with a real swell running, we fitted one formula for how much of the offshore swell reaches the bay mouth, depending on its direction and period.</p>
+  <p>From <span class="num">8,142</span> hours with a real swell running, we fitted one formula for how much of the offshore swell reaches the bay mouth, depending on its direction and period.</p>
 
   <div class="fig card">
     <div class="eyebrow" style="margin-bottom:2px">Share of the forecast swell height that reaches the bay mouth</div>
@@ -338,7 +419,7 @@
         <div class="out-s" id="rChopS"></div>
       </div>
     </div>
-    <p class="caveat">These numbers are modelled, not measured, and this isn't a forecast. The simulator shows how the pieces fit together; it doesn't say whether to swim. For today's call, use the app.</p>
+    <p class="caveat">These numbers are modelled, not measured, and this isn't a forecast. The simulator shows how the pieces fit together; it doesn't say whether to swim. For today's call, use the app. The arrival direction depends on the forecast direction only: in theory a longer swell swings a few degrees further towards the beach, but two years of data here show no consistent effect.</p>
   </div>
 </section>
 
@@ -370,15 +451,15 @@ var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: r
 // ── MODEL (see the header comment for provenance) ────────────────────────────
 var MODEL = {
   // bay-mouth swell = a·exp(-((dir-th0)/w)^2)·(T/10)^q·H^r, on the hindcast's own basis
-  a: 1.0828, th0: 44.43, w: 96.22, q: 0.735, r: 1.041,
+  a: 1.1231, th0: 41.22, w: 97.24, q: 0.763, r: 1.066,
   // forecast (WillyWeather) -> hindcast basis, from 1,416 matched hours
   wwH: 1.30, wwT: 1.16, wwDir: 7,
   // forecast period -> bay-mouth peak period (NS peak / hindcast mean 1.27; WW/hindcast 1.16)
   mouthT: 1.27 / 1.16,
   // measured all-period medians, already on the forecast basis: [dir, share]
-  measured: [[67,.46],[82,.63],[97,.65],[112,.47],[127,.41],[142,.29],[157,.20],[172,.16]],
+  measured: [[67,.47],[82,.63],[97,.66],[112,.46],[127,.41],[142,.29],[157,.20],[172,.16]],
   // forecast direction -> median arrival direction at the bay mouth
-  bend: [[67,85],[82,81.5],[97,85.5],[112,99.3],[127,111.8],[142,118.9],[157,123.9],[172,124.6],[187,124.7]],
+  bend: [[67,85],[82,81.5],[97,85.4],[112,99.2],[127,111.9],[142,118.9],[157,124.1],[172,124.6],[187,124.7]],
   nodeDepth: 10   // m, roughly the bay mouth where node 103218 sits
 };
 // The app's South Steyne shelter table (New NS sheet, SS block), folded 0–180° @10°,
@@ -445,19 +526,1210 @@ function fetchFor(d) {
   return FETCH[i] + (FETCH[(i + 1) % 36] - FETCH[i]) * f;
 }
 
+// ── Shared canvas runner (every animation below uses it) ────────────────────
+// Sizes a canvas for the device pixel ratio at a fixed CSS height, runs
+// draw(ctx, W, H, t) every frame while the canvas is on screen (t in seconds), pauses
+// off screen, and under prefers-reduced-motion draws one still frame (t = 0).
+// Returns { redraw } — call it after a control changes so a paused or still canvas
+// shows the new setting.
+function runCanvas(cv, height, draw) {
+  var ctx = cv.getContext('2d'), visible = false, raf = 0, t0 = performance.now(), W = 0;
+  function size() {
+    var dpr = window.devicePixelRatio || 1;
+    W = cv.clientWidth || 300;
+    cv.style.height = height + 'px';
+    cv.width = Math.round(W * dpr); cv.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function now() { return REDUCED ? 0 : (performance.now() - t0) / 1000; }
+  function frame() { draw(ctx, W, height, now()); if (!REDUCED && visible) raf = requestAnimationFrame(frame); }
+  function redraw() { if (REDUCED || !visible) draw(ctx, W, height, now()); }
+  size();
+  window.addEventListener('resize', function () { size(); redraw(); });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      var v = es[0].isIntersecting; if (v === visible) return;
+      visible = v; cancelAnimationFrame(raf);
+      if (visible && !REDUCED) raf = requestAnimationFrame(frame); else redraw();
+    }).observe(cv);
+  } else { visible = true; if (!REDUCED) raf = requestAnimationFrame(frame); }
+  draw(ctx, W, height, 0);
+  return { redraw: redraw };
+}
+
+// ── ANIMATION MODULES (sections 02–07) go here ─────────────────────────────
+
+// ── Hero: a swell line under the intro (decorative) ─────────────────────────
+// Three swell trains drifting shoreward. Longer waves run faster, as in deep water
+// (c grows with the square root of wavelength), and crests are a touch peaked,
+// troughs a touch flat (second-order Stokes). Still frame under reduced motion.
+(function hero() {
+  var cv = document.getElementById('heroCv'); if (!cv) return;
+  var LAYERS = [                                       // L, a in CSS px; y = still-water line
+    { L: 190, a: 2.8, y: 13, col: 'rgba(127,188,210,.8)', w: 1.2, ph: 0.0 },
+    { L: 124, a: 3.2, y: 21, col: 'rgba(10,126,164,.55)', w: 1.3, ph: 1.9 },
+    { L: 82,  a: 3.4, y: 30, col: 'rgba(11,79,108,.78)', w: 1.6, ph: 4.1, fill: true }
+  ];
+  var V0 = 13;                                         // CSS px/s for the longest train
+  var pts = [];
+  runCanvas(cv, 44, function (ctx, W, H, t) {
+    ctx.clearRect(0, 0, W, H);
+    for (var i = 0; i < LAYERS.length; i++) {
+      var s = LAYERS[i], k = 2 * Math.PI / s.L, w = k * V0 * Math.sqrt(s.L / LAYERS[0].L), ka = k * s.a, n = 0;
+      for (var x = 0; x <= W + 3; x += 3) {
+        var th = k * x - w * t + s.ph;                 // crests travel towards +x
+        pts[n++] = x; pts[n++] = s.y - s.a * (Math.cos(th) + 0.5 * ka * Math.cos(2 * th));
+      }
+      if (s.fill) {
+        var g = ctx.createLinearGradient(0, s.y - s.a, 0, H);
+        g.addColorStop(0, 'rgba(127,188,210,.38)'); g.addColorStop(1, 'rgba(127,188,210,0)');
+        ctx.beginPath(); ctx.moveTo(0, H);
+        for (var p = 0; p < n; p += 2) ctx.lineTo(pts[p], pts[p + 1]);
+        ctx.lineTo(pts[n - 2], H); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+      }
+      ctx.beginPath(); ctx.moveTo(pts[0], pts[1]);
+      for (var q = 2; q < n; q += 2) ctx.lineTo(pts[q], pts[q + 1]);
+      ctx.strokeStyle = s.col; ctx.lineWidth = s.w; ctx.lineJoin = 'round'; ctx.stroke();
+    }
+    // soft ends: fade both sides to nothing
+    ctx.globalCompositeOperation = 'destination-in';
+    var m = ctx.createLinearGradient(0, 0, W, 0);
+    m.addColorStop(0, 'rgba(0,0,0,0)'); m.addColorStop(0.16, '#000'); m.addColorStop(0.84, '#000'); m.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = m; ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+  });
+})();
+
+// ── 02. Height & period: one swell, to scale, in real time ────────────────────
+// Side view of 600 m of open ocean. The wave moves at its true deep-water crest
+// speed (full dispersion via waveK at 1000 m, which is deep for every period here),
+// in real time. Horizontal is to scale; heights are stretched and the canvas says
+// by how much. Readouts: wavelength, crest speed, energy vs a 1 m swell (H^2) and
+// power vs a 1 m, 10 s swell (H^2 · group speed, i.e. H^2 · T/10 in deep water).
+(function size() {
+  var cv = document.getElementById('sizeCv'); if (!cv) return;
+  var inT = document.getElementById('sizeT'), inH = document.getElementById('sizeH');
+  var oT = document.getElementById('sizeTo'), oH = document.getElementById('sizeHo');
+  var rL = document.getElementById('sizeL'), rC = document.getElementById('sizeC');
+  var rE = document.getElementById('sizeE'), rP = document.getElementById('sizeP'), rCs = document.getElementById('sizeCs');
+
+  // --- pure maths (tested in node: test_size.js) ---
+  var SIZE_SPAN = 600, SIZE_DEEP = 1000, SIZE_REF_H = 1, SIZE_REF_T = 10;
+  function sizeWave(T) {                     // deep-water wave of period T
+    var k = waveK(T, SIZE_DEEP), w = 2 * Math.PI / T;
+    return { T: T, k: k, w: w, L: 2 * Math.PI / k, c: w / k };
+  }
+  function sizeEnergyRel(H) { return (H * H) / (SIZE_REF_H * SIZE_REF_H); }
+  function sizePowerRel(H, T) {              // power per metre of crest = E · group speed
+    return sizeEnergyRel(H) * groupSpeed(T, SIZE_DEEP) / groupSpeed(SIZE_REF_T, SIZE_DEEP);
+  }
+  // surface height (m, up is +) at x metres, t seconds; a crest sits at x0 when t = 0
+  function sizeEta(wv, H, x0, x, t) { return (H / 2) * Math.cos(wv.k * (x - x0) - wv.w * t); }
+  // --- end pure maths ---
+
+  var HC = 250, Y0 = 108, SC = 28;          // canvas height, still-water line (px), px per metre of height
+  var ref = sizeWave(SIZE_REF_T), cur = null, hgt = 1;
+  var FONT = '500 12px "DM Mono", monospace', INK = '#0d2b3e', DEEPC = '#0b4f6c';
+
+  function rel(v) { return '×' + (v < 1 ? v.toFixed(2) : v.toFixed(1)); }
+
+  function draw(ctx, W, Hc, t) {
+    ctx.clearRect(0, 0, W, Hc);
+    if (!cur) return;
+    var mpx = W / SIZE_SPAN;                  // px per metre along the sea
+    var x0 = 12 / mpx;                         // the wavelength bar starts 12 px in
+    var step = W < 400 ? 1.5 : 2, x, i;
+
+    // water, filled from the moving surface to the bottom of the canvas
+    var g = ctx.createLinearGradient(0, Y0 - 1.5 * SC, 0, Hc);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#7fbcd2');
+    ctx.beginPath(); ctx.moveTo(0, Hc);
+    for (x = 0; x < W + step; x += step) { var xx = Math.min(x, W); ctx.lineTo(xx, Y0 - SC * sizeEta(cur, hgt, x0, xx / mpx, t)); }
+    ctx.lineTo(W, Hc); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+
+    // ghost: a 1 m, 10 s swell for comparison
+    ctx.beginPath();
+    for (x = 0; x < W + step; x += step) { var gx = Math.min(x, W), gy = Y0 - SC * sizeEta(ref, SIZE_REF_H, x0, gx / mpx, t); if (x === 0) ctx.moveTo(gx, gy); else ctx.lineTo(gx, gy); }
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(13,43,62,.42)'; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+
+    // the swell's surface
+    ctx.beginPath();
+    for (x = 0; x < W + step; x += step) { var sx = Math.min(x, W), sy = Y0 - SC * sizeEta(cur, hgt, x0, sx / mpx, t); if (x === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy); }
+    ctx.strokeStyle = DEEPC; ctx.lineWidth = 1.6; ctx.stroke();
+
+    // wavelength bar: fixed, one wavelength long. Crests pass under both ends together.
+    var bx0 = x0 * mpx, bx1 = (x0 + cur.L) * mpx, yB = 46;
+    ctx.strokeStyle = 'rgba(13,43,62,.35)'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(bx0, yB + 5); ctx.lineTo(bx0, Y0); ctx.moveTo(bx1, yB + 5); ctx.lineTo(bx1, Y0); ctx.stroke();
+    ctx.setLineDash([]); ctx.strokeStyle = INK;
+    ctx.beginPath(); ctx.moveTo(bx0, yB); ctx.lineTo(bx1, yB);
+    ctx.moveTo(bx0, yB - 5); ctx.lineTo(bx0, yB + 5); ctx.moveTo(bx1, yB - 5); ctx.lineTo(bx1, yB + 5); ctx.stroke();
+    ctx.font = FONT; ctx.fillStyle = INK;
+    var lab = 'wavelength ' + Math.round(cur.L) + ' m', tw = ctx.measureText(lab).width;
+    if (bx1 - bx0 >= tw + 8) { ctx.textAlign = 'center'; ctx.fillText(lab, (bx0 + bx1) / 2, yB - 9); }
+    else { ctx.textAlign = 'left'; ctx.fillText(lab, bx1 + 7, yB + 4); }
+
+    // a float at the bar's start: rises and falls once every period
+    var fy = Y0 - SC * sizeEta(cur, hgt, x0, x0, t);
+    ctx.beginPath(); ctx.arc(bx0, fy, 4.5, 0, 2 * Math.PI);
+    ctx.fillStyle = '#e0982f'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // top row: what this is, and how much the heights are stretched
+    ctx.fillStyle = INK; ctx.textAlign = 'left'; ctx.fillText('deep water', 10, 17);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#5f8795';
+    ctx.fillText('heights ×' + Math.round(SC / mpx), W - 10, 17);
+
+    // distance ruler along the bottom, in the water
+    var yR = Hc - 26, every = W < 420 ? 200 : 100;
+    ctx.strokeStyle = 'rgba(13,43,62,.45)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, yR); ctx.lineTo(W, yR);
+    for (i = 0; i <= SIZE_SPAN; i += 100) { var tx = i * mpx; ctx.moveTo(tx, yR - (i % every ? 3 : 5)); ctx.lineTo(tx, yR + (i % every ? 0 : 1)); }
+    ctx.stroke();
+    ctx.fillStyle = INK;
+    for (i = 0; i <= SIZE_SPAN; i += every) {
+      ctx.textAlign = i === 0 ? 'left' : i === SIZE_SPAN ? 'right' : 'center';
+      ctx.fillText(i === SIZE_SPAN ? i + ' m' : String(i), i === 0 ? 4 : i === SIZE_SPAN ? W - 6 : i * mpx, yR + 16);
+    }
+    ctx.textAlign = 'left';
+  }
+
+  function read() {
+    var T = +inT.value; hgt = +inH.value;
+    cur = sizeWave(T);
+    oT.textContent = T + ' s';
+    oH.textContent = hgt.toFixed(1) + ' m';
+    rL.textContent = Math.round(cur.L) + ' m';
+    rC.textContent = Math.round(cur.c * 3.6) + ' km/h';
+    if (rCs) rCs.textContent = cur.c.toFixed(1) + ' m/s';
+    rE.textContent = rel(sizeEnergyRel(hgt));
+    rP.textContent = rel(sizePowerRel(hgt, T));
+  }
+  read();
+  var run = runCanvas(cv, HC, draw);
+  [inT, inH].forEach(function (el) { el.addEventListener('input', function () { read(); run.redraw(); }); });
+})();
+
+// ── 03. Swell vs sea: three lanes over the same 300 m of water ───────────────
+// SWELL: one regular 12 s wave. SEA: a wind sea built from a JONSWAP spectrum
+// (height from the page's own SPM growth law, peak period from the matching JONSWAP
+// fetch law, both capped at full development) split into 16 components across four
+// frequencies and four directions. The picture is a vertical slice along the swell's
+// line of travel, so a sea wave crossing at angle th keeps its true period but shows a
+// stretched wavelength L/cos(th) and a faster trace speed c/cos(th). WHAT YOU FEEL is
+// the plain sum (linear theory). All three lanes share one height scale. Real time.
+(function swellsea() {
+  var cv = document.getElementById('swellseaCv'); if (!cv) return;
+  var btns = [].slice.call(document.querySelectorAll('[data-swellsea-wind]'));
+
+  // --- pure maths (tested in node: test_swellsea.js) ---
+  var SWSEA_SPAN = 300, SWSEA_DEEP = 1000, SWSEA_FETCH = 40000;   // m of window, deep water, open-sea fetch
+  var SWSEA_SWELL = { H: 1.5, T: 12 };
+  var SWSEA_WIND = { light: 15, strong: 35 };                     // km/h (BOM terms: light < 20, fresh 30-39; button says "Fresh")
+  var SWSEA_XFULL = Math.pow(0.243 / 1.6e-3, 2);                  // gF/U^2 where spmGrowth's cap starts
+  var SWSEA_FR = [0.85, 1.0, 1.15, 1.35];                         // f / f_peak
+  var SWSEA_TH = [-38, -13, 12, 36];                              // deg off the wind sea's mean heading
+  var SWSEA_MEAN = 18;                                            // the wind sea heads 18 deg off the swell
+  function swseaState(Ukmh) {                                     // fetch-limited wind sea
+    var U = Ukmh / 3.6, X = Math.min(G * SWSEA_FETCH / (U * U), SWSEA_XFULL);
+    return { Hs: spmGrowth(U, SWSEA_FETCH), Tp: 0.286 * Math.pow(X, 1 / 3) * U / G };
+  }
+  function swseaJonswap(f, fp) {                                  // spectral shape, gamma 3.3
+    var s = f <= fp ? 0.07 : 0.09, r = Math.exp(-Math.pow(f - fp, 2) / (2 * s * s * fp * fp));
+    return Math.pow(f, -5) * Math.exp(-1.25 * Math.pow(fp / f, 4)) * Math.pow(3.3, r);
+  }
+  function swseaRand(seed) {                                      // Park-Miller: exact in doubles
+    return function () { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  }
+  // components {T, th (deg off the swell), w (rad/s), kx (1/m along the slice), ph, a (m)};
+  // sum of a^2/2 = (Hs/4)^2, so the components carry exactly the sea's energy
+  function swseaComponents(Ukmh) {
+    var st = swseaState(Ukmh), fp = 1 / st.Tp, m0 = st.Hs * st.Hs / 16, rnd = swseaRand(20260929);
+    var out = [], e = [], wsum = 0, i, j, n = SWSEA_FR.length;
+    for (i = 0; i < n; i++) {
+      var lo = i === 0 ? SWSEA_FR[0] - (SWSEA_FR[1] - SWSEA_FR[0]) / 2 : (SWSEA_FR[i - 1] + SWSEA_FR[i]) / 2;
+      var hi = i === n - 1 ? SWSEA_FR[n - 1] + (SWSEA_FR[n - 1] - SWSEA_FR[n - 2]) / 2 : (SWSEA_FR[i] + SWSEA_FR[i + 1]) / 2;
+      var f = SWSEA_FR[i] * fp, Sf = swseaJonswap(f, fp) * (hi - lo) * fp;
+      for (j = 0; j < SWSEA_TH.length; j++) {
+        var dth = SWSEA_TH[j] + (rnd() - 0.5) * 8;                  // a little jitter so no two match
+        var D = Math.pow(Math.cos(dth * Math.PI / 360), 4);         // cos-2s spreading, s = 2
+        var th = SWSEA_MEAN + dth, T = 1 / f, k = waveK(T, SWSEA_DEEP);
+        out.push({ T: T, th: th, w: 2 * Math.PI * f, kx: k * Math.cos(th * Math.PI / 180), ph: rnd() * 2 * Math.PI, a: 0 });
+        e.push(Sf * D); wsum += Sf * D;
+      }
+    }
+    for (i = 0; i < out.length; i++) out[i].a = Math.sqrt(2 * m0 * e[i] / wsum);
+    return { Hs: st.Hs, Tp: st.Tp, comps: out };
+  }
+  function swseaSwell() { var k = waveK(SWSEA_SWELL.T, SWSEA_DEEP); return { a: SWSEA_SWELL.H / 2, kx: k, w: 2 * Math.PI / SWSEA_SWELL.T }; }
+  function swseaSea(comps, x, t) {
+    var s = 0; for (var i = 0; i < comps.length; i++) { var c = comps[i]; s += c.a * Math.cos(c.kx * x - c.w * t + c.ph); }
+    return s;
+  }
+  // drawing range: swell amplitude + 4 standard deviations (= Hs) of the taller sea
+  function swseaRange(swellA, seas) { var h = 0; for (var i = 0; i < seas.length; i++) h = Math.max(h, seas[i].Hs); return swellA + h; }
+  // --- end pure maths ---
+
+  // canvas: three 92 px lanes (label strip, then a +-35 px wave band) and a 24 px scale strip
+  var HC = 300, LANE = 92, BAND = 35, FONT = '500 12px "DM Mono", monospace';
+  var swell = swseaSwell();
+  var SEAS = { light: swseaComponents(SWSEA_WIND.light), strong: swseaComponents(SWSEA_WIND.strong) };
+  var SC = BAND / swseaRange(swell.a, [SEAS.light, SEAS.strong]);   // px per metre of height, all lanes
+  var mode = 'light';
+
+  function periods(comps) {
+    var lo = 99, hi = 0; comps.forEach(function (c) { lo = Math.min(lo, c.T); hi = Math.max(hi, c.T); });
+    return Math.round(lo) + '–' + Math.round(hi) + ' s';
+  }
+  function trace(ctx, pts, y0, moveFirst) {
+    for (var i = 0; i < pts.length; i += 2) {
+      var y = y0 - SC * pts[i + 1];
+      if (i === 0 && moveFirst) ctx.moveTo(pts[i], y); else ctx.lineTo(pts[i], y);
+    }
+  }
+  // one lane: water filled up to the moving surface, clipped to the lane so a rare
+  // big sum can never spill into the lane above or below
+  function lane(ctx, W, top, pts, ghost) {
+    var y0 = top + 18 + BAND, bot = top + LANE - 2;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, top, W, LANE - 2); ctx.clip();
+    var g = ctx.createLinearGradient(0, y0 - BAND, 0, bot);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#7fbcd2');
+    ctx.beginPath(); ctx.moveTo(0, bot); trace(ctx, pts, y0, false); ctx.lineTo(W, bot); ctx.closePath();
+    ctx.fillStyle = g; ctx.fill();
+    if (ghost) {
+      ctx.beginPath(); trace(ctx, ghost, y0, true);
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(13,43,62,.4)'; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.beginPath(); trace(ctx, pts, y0, true);
+    ctx.strokeStyle = '#0b4f6c'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.restore();
+  }
+  function label(ctx, text, y) {
+    ctx.font = FONT; ctx.textAlign = 'left';
+    ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.strokeText(text, 10, y);
+    ctx.lineJoin = 'miter';
+    ctx.fillStyle = '#0d2b3e'; ctx.fillText(text, 10, y);
+  }
+
+  function draw(ctx, W, Hc, t) {
+    ctx.clearRect(0, 0, W, Hc);
+    var sea = SEAS[mode].comps, mpx = W / SWSEA_SPAN, step = W < 400 ? 1 : 1.5;
+    var sw = [], se = [], su = [];
+    for (var x = 0; x < W + step; x += step) {
+      var px = Math.min(x, W), xm = px / mpx;
+      var a = swell.a * Math.cos(swell.kx * xm - swell.w * t), b = swseaSea(sea, xm, t);
+      sw.push(px, a); se.push(px, b); su.push(px, a + b);
+    }
+    lane(ctx, W, 0, sw, null);
+    lane(ctx, W, LANE, se, null);
+    lane(ctx, W, 2 * LANE, su, sw);                                // faint dashed line: the swell alone
+    label(ctx, 'SWELL · ' + SWSEA_SWELL.T + ' s · a far-off storm', 13);
+    label(ctx, 'SEA · ' + periods(sea) + ' · today\'s wind', LANE + 13);
+    label(ctx, 'WHAT YOU FEEL · both added', 2 * LANE + 13);
+    // strip under the lanes: how much heights are stretched, and a 100 m bar
+    var yR = Hc - 11, xr = W - 10, m100 = 100 * mpx;
+    ctx.strokeStyle = 'rgba(13,43,62,.55)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xr - m100, yR); ctx.lineTo(xr, yR);
+    ctx.moveTo(xr - m100, yR - 4); ctx.lineTo(xr - m100, yR + 4); ctx.moveTo(xr, yR - 4); ctx.lineTo(xr, yR + 4); ctx.stroke();
+    ctx.font = FONT; ctx.fillStyle = '#0d2b3e'; ctx.textAlign = 'right'; ctx.fillText('100 m', xr - m100 - 8, yR + 4);
+    ctx.fillStyle = '#5f8795'; ctx.textAlign = 'left'; ctx.fillText('heights ×' + Math.round(SC / mpx), 10, yR + 4);
+  }
+
+  var run = runCanvas(cv, HC, draw);
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      mode = b.getAttribute('data-swellsea-wind');
+      btns.forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+      run.redraw();
+    });
+  });
+})();
+
+// ── 04. Shoaling: one swell running up a sloping seabed ───────────────────────
+// Side view of a straight slope from 25 m deep to a generic beach. Linear theory,
+// full dispersion, slowly varying depth (WKB): the local wavenumber k(x) comes from
+// waveK at the local depth, the phase is the running integral of k dx minus w t, and
+// the height grows by the shoaling coefficient Ks = sqrt(Cg_deep / Cg(x)) (normal
+// incidence) until it reaches 0.78 x depth, where it is held at that limit and drawn as
+// foam. Horizontal is to scale; heights are stretched 2.2x against the depth scale.
+// The two close-ups show water at a quarter, half and three-quarters of the depth
+// moving by xi = -A sin(phase), zeta = B cos(phase), as in the orbit figure (01).
+(function shoal() {
+  var cv = document.getElementById('shoalCv'); if (!cv) return;
+  var cap = document.getElementById('shoalCap');
+  var btns = [].slice.call(document.querySelectorAll('#shoalSeg button'));
+
+  // --- pure maths (tested in node: test_shoal.js) ---
+  var SHOAL = { d0: 25, len: 600, beach: 40, n: 480, gamma: 0.78, Hdeep: 0.8, hMin: 0.3 };
+  // seabed: 25 m deep at x = 0, waterline at x = len; negative depth = dry beach
+  function shoalDepth(x) { return SHOAL.d0 * (1 - x / SHOAL.len); }
+  function shoalBuild(T, Hdeep) {
+    var w = 2 * Math.PI / T, cg0 = G * T / (4 * Math.PI), n = SHOAL.n, xmax = SHOAL.len + SHOAL.beach;
+    var r = { T: T, w: w, x: [], h: [], k: [], S: [], a: [], iBreak: -1, iShore: n + 1 };
+    for (var i = 0; i <= n; i++) {
+      var x = i / n * xmax, h = shoalDepth(x), hk = Math.max(h, SHOAL.hMin);
+      var k = waveK(T, hk), a = 0;
+      if (h > 0) {
+        var Hs = Hdeep * Math.sqrt(cg0 / groupSpeed(T, hk)), Hb = SHOAL.gamma * h;
+        if (Hs >= Hb && r.iBreak < 0) r.iBreak = i;
+        a = Math.min(Hs, Hb) / 2;
+      } else if (r.iShore > n) r.iShore = i;               // first dry sample
+      r.S.push(i ? r.S[i - 1] + 0.5 * (r.k[i - 1] + k) * (x - r.x[i - 1]) : 0);
+      r.x.push(x); r.h.push(h); r.k.push(k); r.a.push(a);
+    }
+    return r;
+  }
+  function shoalIndex(r, depth) {                          // sample nearest a given depth
+    var x = SHOAL.len * (1 - depth / SHOAL.d0);
+    return Math.max(0, Math.min(SHOAL.n, Math.round(x / (SHOAL.len + SHOAL.beach) * SHOAL.n)));
+  }
+  // semi-axes (m) of a water parcel's path at fraction f of the depth (0 top, 1 bed)
+  function shoalOrbit(r, i, f) {
+    var kh = r.k[i] * r.h[i], s = Math.sinh(kh);
+    return { A: r.a[i] * Math.cosh(kh * (1 - f)) / s, B: r.a[i] * Math.sinh(kh * (1 - f)) / s };
+  }
+  function shoalCrestSpeed(T, h) { return (2 * Math.PI / T) / waveK(T, h); }
+  function shoalWavelength(T, h) { return 2 * Math.PI / waveK(T, h); }
+  // --- end pure maths ---
+
+  var HC = 260, TOP = 84, AMP_E = 2.2, SPEED = 3, SG = 18;  // SG: close-up px per metre of motion
+  var MARKS = [20, 10, 2], NEAR = 20, FAR = 4, ROWS = [0.25, 0.5, 0.75];
+  var FONT = '500 12px "DM Mono", monospace', INK = '#0d2b3e', DEEPC = '#0b4f6c', DIM = '#5f8795';
+  var m = null, T = 12, speeds = [], head = '', headShort = '';
+  var CAPS = {
+    12: 'A 12-second swell slows, bunches up and stands taller as the seabed rises, then breaks (heights exaggerated, time sped up three times). In the close-ups its loops are already flattened at 20 m: a long swell feels the bottom that far down.',
+    8: 'An 8-second swell slows too, but grows less and breaks further in (heights exaggerated, time sped up three times). In the close-ups its loops at 20 m are rounder: a shorter swell feels the bottom less at that depth.'
+  };
+
+  function set(p) {
+    T = p; m = shoalBuild(T, SHOAL.Hdeep);
+    speeds = MARKS.map(function (d) { return shoalCrestSpeed(T, d); });
+    var L0 = Math.round(shoalWavelength(T, SHOAL.d0)), L1 = Math.round(shoalWavelength(T, 2));
+    head = T + ' s swell · crests ' + L0 + ' m → ' + L1 + ' m apart';
+    headShort = T + ' s · crests ' + L0 + ' → ' + L1 + ' m apart';   // narrow phones (< ~285 px)
+    if (cap) cap.textContent = CAPS[T];
+    btns.forEach(function (b) { b.setAttribute('aria-pressed', +b.getAttribute('data-shoal') === T ? 'true' : 'false'); });
+  }
+
+  // foam: a soft band from the break to the waterline, and a whitecap on each crest as it runs in
+  function shoalFoam(ctx, p) {
+    if (p.length < 2) return;
+    var j, g = ctx.createLinearGradient(p[0][0], 0, p[0][0] + 12, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,.75)');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); for (j = 0; j < p.length; j++) ctx[j ? 'lineTo' : 'moveTo'](p[j][0], p[j][1] + 1.5);
+    ctx.strokeStyle = 'rgba(11,79,108,.14)'; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = g; ctx.lineWidth = 5; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    for (j = 1; j < p.length; j++) if (Math.floor(p[j][2] / (2 * Math.PI)) !== Math.floor(p[j - 1][2] / (2 * Math.PI))) {
+      ctx.beginPath(); ctx.ellipse(p[j][0], p[j][1], 4.5, 3, 0, 0, 2 * Math.PI); ctx.fill();
+    }
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
+  function text(ctx, s, x, y, W, col) {                    // centred, kept inside the canvas
+    var w = ctx.measureText(s).width;
+    ctx.fillStyle = col || INK;
+    ctx.fillText(s, Math.max(4, Math.min(W - 4 - w, x - w / 2)), y);
+  }
+  function rrect(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function closeUp(ctx, cx, cy, i, ph) {                   // water at 1/4, 1/2, 3/4 of the depth
+    var bw = 80, bh = 56;
+    rrect(ctx, cx - bw / 2, cy - bh / 2, bw, bh, 10);
+    ctx.fillStyle = 'rgba(255,255,255,.78)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(11,79,108,.35)'; ctx.lineWidth = 1; ctx.stroke();
+    var q = m.S[i] - ph;
+    ROWS.forEach(function (f, j) {
+      var o = shoalOrbit(m, i, f), A = o.A * SG, B = o.B * SG, y0 = cy + (j - 1) * 15;
+      ctx.strokeStyle = 'rgba(11,79,108,.22)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(cx, y0, Math.max(A, .5), Math.max(B, .5), 0, 0, 2 * Math.PI); ctx.stroke();
+      ctx.fillStyle = DEEPC;
+      ctx.beginPath(); ctx.arc(cx - A * Math.sin(q), y0 - B * Math.cos(q), 2.8, 0, 2 * Math.PI); ctx.fill();
+    });
+  }
+
+  function draw(ctx, W, H, t) {
+    var n = SHOAL.n, sx = W / (SHOAL.len + SHOAL.beach), v = (H - 10 - TOP) / SHOAL.d0, sa = AMP_E * v;
+    var ph = m.w * t * SPEED, i, X, Y;
+    var surf = function (j) { return TOP - m.a[j] * sa * Math.cos(m.S[j] - ph); };
+    var bed = function (j) { return TOP + m.h[j] * v; };
+    ctx.clearRect(0, 0, W, H);
+    // water, then the seabed and beach over it
+    var g = ctx.createLinearGradient(0, TOP, 0, H);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#7fbcd2');
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (i = 0; i <= n; i++) ctx.lineTo(m.x[i] * sx, surf(i));
+    ctx.lineTo(W, H); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    ctx.strokeStyle = 'rgba(11,79,108,.55)'; ctx.lineWidth = 1.25; ctx.beginPath();
+    for (i = 0; i < m.iShore && i <= n; i++) { X = m.x[i] * sx; Y = surf(i); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (i = 0; i <= n; i++) ctx.lineTo(m.x[i] * sx, bed(i));
+    ctx.lineTo(W, H); ctx.closePath(); ctx.fillStyle = '#d9c9a3'; ctx.fill();
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1; ctx.beginPath();
+    for (i = 0; i <= n; i++) { X = m.x[i] * sx; Y = bed(i); if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }
+    ctx.stroke();
+    // foam: from the break to the waterline, brightest on each crest as it runs in
+    if (m.iBreak >= 0) {
+      var fp = [];
+      for (i = m.iBreak; i < m.iShore && i <= n; i++) fp.push([m.x[i] * sx, surf(i), m.S[i] - ph]);
+      shoalFoam(ctx, fp);
+    }
+    // depth markers with the crest speed there
+    ctx.font = FONT;
+    MARKS.forEach(function (d, j) {
+      var k = shoalIndex(m, d), x = m.x[k] * sx;
+      ctx.strokeStyle = 'rgba(95,135,149,.6)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.moveTo(x, TOP - 14); ctx.lineTo(x, bed(k)); ctx.stroke(); ctx.setLineDash([]);
+      text(ctx, d + ' m deep', x, 36, W, DIM);
+      text(ctx, speeds[j].toFixed(1) + ' m/s', x, 51, W, INK);
+    });
+    text(ctx, ctx.measureText(head).width > W - 8 ? headShort : head, W / 2, 16, W, INK);
+    // close-ups: out deep (in the water column) and in the shallows (below the sand, with a leader)
+    var iN = shoalIndex(m, NEAR), iF = shoalIndex(m, FAR);
+    closeUp(ctx, m.x[iN] * sx, TOP + m.h[iN] * v / 2, iN, ph);
+    var fx = Math.min(W - 44, m.x[iF] * sx), fy = TOP + shoalDepth((fx - 40) / sx) * v + 36;
+    ctx.strokeStyle = 'rgba(11,79,108,.45)'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(m.x[iF] * sx, TOP + m.h[iF] * v / 2); ctx.lineTo(fx, fy - 28); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(m.x[iF] * sx, TOP + m.h[iF] * v / 2, 3, 0, 2 * Math.PI); ctx.stroke();
+    closeUp(ctx, fx, fy, iF, ph);
+    text(ctx, FAR + ' m deep', fx, fy + 44, W, DIM);
+  }
+
+  set(12);
+  var rc = runCanvas(cv, HC, draw);
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { set(+b.getAttribute('data-shoal')); rc.redraw(); });
+  });
+})();
+
+// ── Refraction: swell lines swinging round over a sloping seabed (section 05) ──
+// Plan view of a straight beach along the left edge. The seabed deepens evenly from
+// 1 m at the waterline to 40 m a kilometre out. The beach faces 070° (ENE), so out at
+// sea a swell from the east (090°) is 20° off straight-in and one from 125° (SE) is 55°.
+// Linear theory with the full dispersion relation. Snell's law over straight contours:
+// the alongshore wavenumber ky = k0·sin(theta0) is set in DEEP water (where a forecast
+// gives the direction) and is the same everywhere; kx(s) = sqrt(k(h)^2 - ky^2), and the
+// phase is -(∫kx ds + ky·y), so crests travel towards the beach and up the page.
+// Height = Ks·Kr relative to deep water (shoaling × refraction), which keeps the energy
+// flux E·cg·cos(theta) between two rays constant. Time runs SPEED times real.
+(function refract() {
+  var cv = document.getElementById('refractCv'); if (!cv) return;
+  var fig = cv.parentNode, cap = document.getElementById('refractCap');
+  var SPAN = 1000, H_SHORE = 1, H_OFF = 40, FACING = 70, SPEED = 3;
+  var NX = 240, SUB = 4, AREF = 1.9, RAYS = [0.1, 0.4, 0.7], MARK_H = 5, CONTOURS = [5, 10, 20];
+  var FONT = '500 12px "DM Mono", monospace';
+  var from = 125, T = 7;
+  var prof = null, profKey = '', re = null, im = null, nx = 0, ny = 0, lastW = 0, dirty = true;
+  var off = null, octx = null, img = null, baseC = null, upC = null, dnC = null;
+
+  // Everything along one line straight out from the beach, s = 0 (1 m) to span (40 m).
+  function refractProfile(T, th0Deg, span, hS, hO, n) {
+    var w = 2 * Math.PI / T, k0 = w * w / G, cg0 = G / (2 * w);
+    var th0 = th0Deg * Math.PI / 180, ky = k0 * Math.sin(th0), cos0 = Math.cos(th0);
+    var p = { n: n, ds: span / n, ky: ky, w: w, h: [], k: [], kx: [], th: [], phi: [], drift: [], amp: [] };
+    for (var i = 0; i <= n; i++) {
+      var h = hS + (hO - hS) * i / n, k = waveK(T, h);
+      var kx = Math.sqrt(Math.max(0, k * k - ky * ky)), th = Math.atan2(ky, kx);
+      p.h[i] = h; p.k[i] = k; p.kx[i] = kx; p.th[i] = th;
+      p.amp[i] = Math.sqrt(cg0 / groupSpeed(T, h)) * Math.sqrt(cos0 / Math.cos(th));
+      // trapezoid: phase = ∫kx ds, drift = ∫tan(theta) ds (how far a ray runs alongshore)
+      p.phi[i] = i ? p.phi[i - 1] + 0.5 * (kx + p.kx[i - 1]) * p.ds : 0;
+      p.drift[i] = i ? p.drift[i - 1] + 0.5 * (Math.tan(th) + Math.tan(p.th[i - 1])) * p.ds : 0;
+    }
+    return p;
+  }
+  function at(arr, s) {                                 // linear read of a profile array at s metres
+    var x = Math.max(0, Math.min(prof.n, s / prof.ds)), i = Math.min(prof.n - 1, Math.floor(x)), f = x - i;
+    return arr[i] + (arr[i + 1] - arr[i]) * f;
+  }
+  function deg(r) { return Math.round(r * 180 / Math.PI); }
+  function sAtDepth(h) { return (h - H_SHORE) / (H_OFF - H_SHORE) * SPAN; }
+
+  function ensureProf() {
+    var key = T + '/' + from;
+    if (key !== profKey) { prof = refractProfile(T, from - FACING, SPAN, H_SHORE, H_OFF, NX * SUB); profKey = key; }
+  }
+  function build(W, H) {
+    ensureProf();
+    var landW = Math.max(26, Math.round(W * 0.06)), ppm = (W - landW) / SPAN, ly = H / ppm;
+    nx = NX; ny = Math.max(60, Math.min(110, Math.round(ly / 8)));
+    re = new Float32Array(nx * ny); im = new Float32Array(nx * ny);
+    for (var j = 0; j < ny; j++) {
+      var y = (j + 0.5) * ly / ny;
+      for (var i = 0; i < nx; i++) {
+        var q = i * SUB + SUB / 2, a = prof.amp[q], ps = -prof.phi[q] - prof.ky * y;
+        re[j * nx + i] = a * Math.cos(ps); im[j * nx + i] = a * Math.sin(ps);
+      }
+    }
+    // colours by column: calm water darkens gently offshore; crests go to white, troughs deeper
+    baseC = new Float32Array(nx * 3); upC = new Float32Array(nx * 3); dnC = new Float32Array(nx * 3);
+    for (i = 0; i < nx; i++) {
+      var f = 0.45 * (i + 0.5) / nx;
+      var b = [207 + (127 - 207) * f, 233 + (188 - 233) * f, 242 + (210 - 242) * f];
+      var tr = [98, 161, 184];                          // #7fbcd2 with a quarter of #0b4f6c
+      for (var c = 0; c < 3; c++) { baseC[i * 3 + c] = b[c]; upC[i * 3 + c] = 255 - b[c]; dnC[i * 3 + c] = b[c] - tr[c]; }
+    }
+    off = document.createElement('canvas'); off.width = nx; off.height = ny;
+    octx = off.getContext('2d'); img = octx.createImageData(nx, ny);
+    lastW = W; dirty = false;
+  }
+
+  function label(ctx, txt, x, y, align, col) {
+    ctx.font = FONT; ctx.textAlign = align || 'left'; ctx.lineJoin = 'round';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(251,246,236,.85)'; ctx.strokeText(txt, x, y);
+    ctx.fillStyle = col || '#0d2b3e'; ctx.fillText(txt, x, y);
+  }
+  function arrowHead(ctx, x, y, ux, uy, s) {
+    ctx.beginPath(); ctx.moveTo(x + ux * s, y + uy * s);
+    ctx.lineTo(x - ux * s * 0.6 - uy * s * 0.6, y - uy * s * 0.6 + ux * s * 0.6);
+    ctx.lineTo(x - ux * s * 0.6 + uy * s * 0.6, y - uy * s * 0.6 - ux * s * 0.6);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function draw(ctx, W, H, t) {
+    if (dirty || W !== lastW || !img) build(W, H);
+    var landW = Math.max(26, Math.round(W * 0.06)), ppm = (W - landW) / SPAN, ly = H / ppm;
+    // the swell: Re(A·e^(-iωt))
+    var ph = prof.w * t * SPEED, cw = Math.cos(ph), sw = Math.sin(ph), d = img.data, n = nx * ny;
+    for (var q = 0; q < n; q++) {
+      var v = (re[q] * cw + im[q] * sw) / AREF, i3 = (q % nx) * 3, o = q * 4;
+      if (v > 1) v = 1; else if (v < -1) v = -1;
+      if (v >= 0) { d[o] = baseC[i3] + v * upC[i3]; d[o + 1] = baseC[i3 + 1] + v * upC[i3 + 1]; d[o + 2] = baseC[i3 + 2] + v * upC[i3 + 2]; }
+      else { d[o] = baseC[i3] + v * dnC[i3]; d[o + 1] = baseC[i3 + 1] + v * dnC[i3 + 1]; d[o + 2] = baseC[i3 + 2] + v * dnC[i3 + 2]; }
+      d[o + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, landW, 0, W - landW, H);
+
+    // depth contours
+    ctx.save(); ctx.setLineDash([3, 4]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(11,79,108,.28)';
+    CONTOURS.forEach(function (h) {
+      var x = landW + sAtDepth(h) * ppm;
+      ctx.beginPath(); ctx.moveTo(x, 22); ctx.lineTo(x, H); ctx.stroke();
+    });
+    ctx.restore();
+    CONTOURS.forEach(function (h) { label(ctx, h + ' m', landW + sAtDepth(h) * ppm, 15, 'center', '#0b4f6c'); });
+    label(ctx, H_OFF + ' m', W - 4, 15, 'right', '#0b4f6c');
+
+    // rays: they meet the beach at fixed points and run back out to sea
+    ctx.save(); ctx.beginPath(); ctx.rect(landW, 0, W - landW, H); ctx.clip();
+    ctx.strokeStyle = 'rgba(11,79,108,.85)'; ctx.fillStyle = '#0b4f6c'; ctx.lineWidth = 1.3;
+    var s0 = 0.03 * SPAN, th0s = at(prof.th, s0);
+    RAYS.forEach(function (f) {
+      var yS = f * ly - at(prof.drift, s0);            // alongshore offset so the ray ends at f·ly
+      ctx.beginPath();
+      for (var i = Math.ceil(s0 / prof.ds); i <= prof.n; i += SUB) {
+        var X = landW + i * prof.ds * ppm, Y = (yS + prof.drift[i]) * ppm;
+        if (i === Math.ceil(s0 / prof.ds)) ctx.moveTo(X, Y); else ctx.lineTo(X, Y);
+        if (Y > H + 4) break;
+      }
+      ctx.stroke();
+      arrowHead(ctx, landW + s0 * ppm, f * ly * ppm, -Math.cos(th0s), -Math.sin(th0s), 5);
+    });
+    // the angle to straight-in where the middle ray crosses the 5 m line
+    var sM = sAtDepth(MARK_H), thM = at(prof.th, sM);
+    var px = landW + sM * ppm, py = (RAYS[1] * ly - at(prof.drift, s0) + at(prof.drift, sM)) * ppm;
+    ctx.setLineDash([2, 3]); ctx.strokeStyle = '#0d2b3e'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 34, py); ctx.stroke();
+    ctx.setLineDash([]); ctx.beginPath(); ctx.arc(px, py, 22, 0, thM); ctx.stroke();
+    ctx.restore();
+    label(ctx, deg(thM) + '°', px + 38, py + 4, 'left');
+
+    // out at sea: the deep-water direction the swell starts with. The dashed straight-in
+    // line and the arc make "55°" read as an angle off straight-in, not a compass bearing.
+    var th0 = (from - FACING) * Math.PI / 180, ux = -Math.cos(th0), uy = -Math.sin(th0);
+    var ax = W - 16, ay = H - 30;
+    ctx.strokeStyle = '#0d2b3e'; ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax - 30, ay); ctx.stroke();
+    ctx.setLineDash([]); ctx.beginPath(); ctx.arc(ax, ay, 16, Math.PI, Math.PI + th0); ctx.stroke();
+    ctx.strokeStyle = '#0d2b3e'; ctx.fillStyle = '#0d2b3e'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax + ux * 30, ay + uy * 30); ctx.stroke();
+    arrowHead(ctx, ax + ux * 30, ay + uy * 30, ux, uy, 5);
+    label(ctx, 'out at sea ' + (from - FACING) + '°', W - 8, H - 10, 'right');
+
+    // land, with a north arrow (the beach faces 070°)
+    ctx.fillStyle = '#efe4c6'; ctx.fillRect(0, 0, landW, H);
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(landW - 0.75, 0); ctx.lineTo(landW - 0.75, H); ctx.stroke();
+    var nr = -FACING * Math.PI / 180, nxv = Math.cos(nr), nyv = Math.sin(nr), cx = landW / 2 - 1, cy = H - 24;
+    ctx.strokeStyle = '#5f8795'; ctx.fillStyle = '#5f8795'; ctx.lineWidth = 1.3;
+    ctx.beginPath(); ctx.moveTo(cx - nxv * 8, cy - nyv * 8); ctx.lineTo(cx + nxv * 6, cy + nyv * 6); ctx.stroke();
+    arrowHead(ctx, cx + nxv * 6, cy + nyv * 6, nxv, nyv, 4);
+    ctx.font = FONT; ctx.textAlign = 'center'; ctx.fillText('N', cx + nxv * 13, cy + nyv * 13 - 1);
+    ctx.save(); ctx.translate(landW / 2 - 4, 10); ctx.rotate(Math.PI / 2);
+    ctx.fillStyle = '#8a7a55'; ctx.textAlign = 'left'; ctx.fillText('beach', 0, 0); ctx.restore();
+  }
+
+  // Also says where the swell is at the picture's 40 m edge: a 13 s swell has already
+  // turned there (42° from the SE), so the out-at-sea arrow and the crests beside it differ.
+  function caption() {
+    ensureProf();
+    var o = T === 7 ? 13 : 7, th0 = from - FACING, sM = sAtDepth(MARK_H);
+    var other = refractProfile(o, th0, SPAN, H_SHORE, H_OFF, NX * SUB);
+    var a40 = deg(prof.th[prof.n]), a5 = deg(at(prof.th, sM)), o5 = deg(other.th[Math.round(sM / other.ds)]);
+    cap.textContent = "The seabed deepens from 1 m at the beach to 40 m a kilometre out; thin lines trace the swell's path, and the animation runs at three times real speed. " +
+      'Out at sea this ' + T + ' s swell comes in ' + th0 + '° off straight-in; ' +
+      (a40 < th0 ? 'it has already turned to ' + a40 + '° at the 40 m edge and is down to '
+                 : 'it is still at ' + a40 + '° at the 40 m edge but down to ') +
+      a5 + '° by the 5 m line, where a ' + o + ' s swell would be at ' + o5 + '°.';
+  }
+
+  var api = runCanvas(cv, 260, draw);
+  function wire(attr, set) {
+    var bs = fig.querySelectorAll('[' + attr + ']');
+    [].forEach.call(bs, function (b) {
+      b.addEventListener('click', function () {
+        [].forEach.call(bs, function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+        set(+b.getAttribute(attr)); dirty = true;
+        caption(); api.redraw();
+      });
+    });
+  }
+  wire('data-refract-from', function (v) { from = v; });
+  wire('data-refract-t', function (v) { T = v; });
+  caption();
+})();
+
+// ── Diffraction: swell spilling round the tip of a headland (section 05) ────────
+// Plan view. A thin headland runs from the left edge to just past the middle; swell
+// comes up the page from the open sea, water 10 m deep everywhere. The field is
+// Sommerfeld's exact half-plane solution, incident + diffracted term only:
+//   phi = F(sigma)·exp(i·k·r·cos(theta - theta0)),  sigma = 2·sqrt(k·r/pi)·sin((theta - theta0)/2)
+//   F(sigma) = (1 - i)/2 · ∫_-inf^sigma exp(i·pi·u²/2) du      (time factor exp(-i·w·t))
+// with theta measured from the headland round through the sheltered side. The wave that
+// bounces off the headland's seaward face is LEFT OUT, as if the rocks soak it up, so
+// only what passes the tip is shown. |F| = 1/2 on the shadow line, -> 1 in open water,
+// -> 0 deep in the shadow. Shading is boosted for weak swell (|v|^GAMMA) so the shelter's
+// swell shows; the caption quotes the true share. Time runs SPEED times real.
+(function diffract() {
+  var cv = document.getElementById('diffractCv'); if (!cv) return;
+  var fig = cv.parentNode, cap = document.getElementById('diffractCap');
+  var SPAN = 1200, DEPTH = 10, SPEED = 3, CELLS = 25000, TIPX = 0.58, TIPY = 0.62, HW = 8;
+  var AREF = 1.15, GAMMA = 0.65, DOT = 150;              // the dot: 150 m back along the headland, 150 m off it
+  var FONT = '500 12px "DM Mono", monospace';
+  var T = 7, re = null, im = null, nx = 0, ny = 0, lastW = 0, dirty = true;
+  var off = null, octx = null, img = null, lut = null;
+
+  // Fresnel integrals C(x), S(x): power series below 3.5, auxiliary functions f, g above.
+  function fresnelCS(x) {
+    var ax = Math.abs(x), C = 0, S = 0;
+    if (ax < 3.5) {
+      var z = Math.PI * ax * ax / 2, p = 1;
+      for (var m = 0; m < 200; m++) {
+        if (m > 0) p *= z / m;                            // z^m / m!
+        var term = p / (2 * m + 1), sg = (m & 2) ? -1 : 1;
+        if (m & 1) S += sg * term; else C += sg * term;
+        if (m > z && term < 1e-17) break;
+      }
+      C *= ax; S *= ax;
+    } else {
+      var w2 = 1 / (Math.PI * ax * ax * Math.PI * ax * ax), tf = 1, tg = 1, sf = 1, sgs = 1;
+      for (var n = 1; n < 40; n++) {                       // asymptotic: stop at the smallest term
+        var nf = -tf * (4 * n - 3) * (4 * n - 1) * w2, ng = -tg * (4 * n - 1) * (4 * n + 1) * w2;
+        if (Math.abs(nf) >= Math.abs(tf) || Math.abs(ng) >= Math.abs(tg)) break;
+        tf = nf; tg = ng; sf += tf; sgs += tg;
+        if (Math.abs(tf) < 1e-17 && Math.abs(tg) < 1e-17) break;
+      }
+      var f = sf / (Math.PI * ax), g = sgs / (Math.PI * Math.PI * ax * ax * ax);
+      var zz = Math.PI * ax * ax / 2, cz = Math.cos(zz), sz = Math.sin(zz);
+      C = 0.5 + f * sz - g * cz; S = 0.5 - f * cz - g * sz;
+    }
+    return x < 0 ? [-C, -S] : [C, S];
+  }
+  function fresnelF(sig) {                              // (1 - i)/2 · ((1/2 + C) + i(1/2 + S))
+    var cs = fresnelCS(sig), a = 0.5 + cs[0], b = 0.5 + cs[1];
+    return [(a + b) / 2, (b - a) / 2];
+  }
+  // Complex field at (xb, yb) metres: xb along the headland from its tip, yb off it on
+  // the sheltered side. th0 = direction the swell travels, measured the same way.
+  function halfPlane(xb, yb, k, th0) {
+    var r = Math.sqrt(xb * xb + yb * yb), th = Math.atan2(yb, xb);
+    if (th < 0) th += 2 * Math.PI;
+    var f = fresnelF(2 * Math.sqrt(k * r / Math.PI) * Math.sin((th - th0) / 2));
+    var ph = k * (xb * Math.cos(th0) + yb * Math.sin(th0)), c = Math.cos(ph), s = Math.sin(ph);
+    return [f[0] * c - f[1] * s, f[0] * s + f[1] * c];
+  }
+  function dotShare(T) { var v = halfPlane(DOT, DOT, waveK(T, DEPTH), Math.PI / 2); return Math.sqrt(v[0] * v[0] + v[1] * v[1]); }
+
+  function build(W, H) {
+    var mpp = SPAN / W, tx = TIPX * W, ty = TIPY * H, k = waveK(T, DEPTH);
+    nx = Math.round(Math.sqrt(CELLS * W / H)); ny = Math.max(1, Math.round(nx * H / W));
+    re = new Float32Array(nx * ny); im = new Float32Array(nx * ny);
+    for (var j = 0; j < ny; j++) {
+      var yb = (ty - (j + 0.5) * H / ny) * mpp;          // screen y is down; the shelter is up
+      for (var i = 0; i < nx; i++) {
+        var v = halfPlane((tx - (i + 0.5) * W / nx) * mpp, yb, k, Math.PI / 2);   // headland points left
+        re[j * nx + i] = v[0]; im[j * nx + i] = v[1];
+      }
+    }
+    if (!lut) {                                         // 512 shades: trough -> calm -> crest
+      lut = new Uint8ClampedArray(512 * 3);
+      var base = [207, 233, 242], tr = [127, 188, 210];   // #cfe9f2 calm, #7fbcd2 trough, white crest
+      for (var q = 0; q < 512; q++) {
+        var x = (q - 255.5) / 255.5, g = (x < 0 ? -1 : 1) * Math.pow(Math.abs(x), GAMMA);
+        for (var c = 0; c < 3; c++) lut[q * 3 + c] = g >= 0 ? base[c] + g * (255 - base[c]) : base[c] + g * (base[c] - tr[c]);
+      }
+    }
+    off = document.createElement('canvas'); off.width = nx; off.height = ny;
+    octx = off.getContext('2d'); img = octx.createImageData(nx, ny);
+    lastW = W; dirty = false;
+  }
+
+  function label(ctx, txt, x, y, align, col) {
+    ctx.font = FONT; ctx.textAlign = align || 'left'; ctx.lineJoin = 'round';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(251,246,236,.85)'; ctx.strokeText(txt, x, y);
+    ctx.fillStyle = col || '#0d2b3e'; ctx.fillText(txt, x, y);
+  }
+
+  function draw(ctx, W, H, t) {
+    if (dirty || W !== lastW || !img) build(W, H);
+    var mpp = SPAN / W, tx = TIPX * W, ty = TIPY * H;
+    var ph = 2 * Math.PI / T * t * SPEED, cw = Math.cos(ph), sw = Math.sin(ph), d = img.data, n = nx * ny;
+    for (var q = 0; q < n; q++) {                        // Re(phi·e^(-iωt))
+      var l = Math.round((re[q] * cw + im[q] * sw) / AREF * 255.5 + 255.5);
+      l = (l < 0 ? 0 : l > 511 ? 511 : l) * 3;
+      var o = q * 4; d[o] = lut[l]; d[o + 1] = lut[l + 1]; d[o + 2] = lut[l + 2]; d[o + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, 0, 0, W, H);
+
+    // the geometric shadow line, straight up from the tip
+    ctx.save(); ctx.setLineDash([3, 4]); ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(11,79,108,.45)';
+    ctx.beginPath(); ctx.moveTo(tx, ty - HW - 2); ctx.lineTo(tx, 22); ctx.stroke(); ctx.restore();
+    label(ctx, 'edge of shadow', tx + 6, 15, 'left');
+    label(ctx, 'sheltered water', 8, 16, 'left');
+    label(ctx, 'still gets some swell', 8, 31, 'left');
+
+    // the dot the caption reads from
+    ctx.fillStyle = '#e0982f'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(tx - DOT / mpp, ty - DOT / mpp, 4, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+
+    // swell coming in from the open sea
+    var ax = W - 16;
+    ctx.strokeStyle = '#0d2b3e'; ctx.fillStyle = '#0d2b3e'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ax, H - 12); ctx.lineTo(ax, H - 40); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ax, H - 46); ctx.lineTo(ax - 4, H - 38); ctx.lineTo(ax + 4, H - 38); ctx.closePath(); ctx.fill();
+    label(ctx, 'open sea', ax - 10, H - 12, 'right');
+
+    // the headland (thin, round-tipped; the maths treats it as a line)
+    ctx.beginPath(); ctx.moveTo(-2, ty - HW); ctx.lineTo(tx - HW, ty - HW);
+    ctx.arc(tx - HW, ty, HW, -Math.PI / 2, Math.PI / 2); ctx.lineTo(-2, ty + HW); ctx.closePath();
+    ctx.fillStyle = '#efe4c6'; ctx.fill(); ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.font = FONT; ctx.textAlign = 'left'; ctx.fillStyle = '#8a7a55'; ctx.fillText('headland', 8, ty + 4);
+  }
+
+  function caption() {
+    var L = 2 * Math.PI / waveK(T, DEPTH), o = T === 7 ? 13 : 7;
+    cap.textContent = 'Swell passing the tip of a headland in 10 m of water, at three times real speed; the wave bouncing off the rocks is left out, ' +
+      'and faint swell is drawn stronger so you can see it. At the dot this ' + T + ' s swell (crests ' + Math.round(L) + ' m apart) keeps about ' +
+      Math.round(dotShare(T) * 100) + '% of its open-water height, where a ' + o + ' s swell keeps about ' + Math.round(dotShare(o) * 100) + '%.';
+  }
+
+  var api = runCanvas(cv, 260, draw);
+  var bs = fig.querySelectorAll('[data-diffract-t]');
+  [].forEach.call(bs, function (b) {
+    b.addEventListener('click', function () {
+      [].forEach.call(bs, function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+      T = +b.getAttribute('data-diffract-t'); dirty = true;
+      caption(); api.redraw();
+    });
+  });
+  caption();
+})();
+
+// ── 06. Reflection: a swell bouncing off a sea wall ───────────────────────────
+// Side view, 64 m of water in front of a vertical wall, with a sand and rock slope
+// running up to its foot. Linear theory, full dispersion, slowly varying depth:
+//   surface = a(x) [cos(S - w t) + R cos(S + w t)],  S = integral of k dx from the
+//   reflection point (so S = 0 there and S < 0 out to sea).
+// With phi = 0 the reflection point is a crest-and-trough antinode and a node of the
+// back-and-forth motion, whose amplitude is A sqrt((1+R)^2 sin^2 S + (1-R)^2 cos^2 S):
+// (1-R) of the incoming wave's at S = 0 and (1+R) a quarter wavelength out (S = -pi/2).
+// High tide: the waves reach the wall, R = 0.9. Low tide: the water is 1.6 m lower,
+// the waves break on the slope first (height held at 0.78 x depth, drawn as foam) and
+// only a weak echo comes back, R = 0.15, taken from where they start to break.
+(function reflect() {
+  var cv = document.getElementById('reflectCv'); if (!cv) return;
+  var cap = document.getElementById('reflectCap');
+  var btns = [].slice.call(document.querySelectorAll('#reflectSeg button'));
+
+  // --- pure maths (tested in node: test_reflect.js) ---
+  var REFL = { T: 10, X: 64, toe: -26, bedFlat: -2.6, bedWall: -1.2, low: -1.6, Hdeep: 0.3, gamma: 0.78, n: 300, hMin: 0.1, zf: 0.6,
+    R: { high: 0.9, low: 0.15 } };
+  // seabed height (m, high-tide water level = 0) at x metres from the wall (x < 0 is seaward)
+  function reflBed(x) {
+    return x <= REFL.toe ? REFL.bedFlat : REFL.bedFlat + (REFL.bedWall - REFL.bedFlat) * (x - REFL.toe) / -REFL.toe;
+  }
+  function reflBuild(tide) {
+    var T = REFL.T, w = 2 * Math.PI / T, cg0 = G * T / (4 * Math.PI), n = REFL.n;
+    var level = tide === 'low' ? REFL.low : 0, R = REFL.R[tide], xEnd = 0;
+    if (reflBed(0) >= level) xEnd = REFL.toe + (level - REFL.bedFlat) / (REFL.bedWall - REFL.bedFlat) * -REFL.toe;
+    var r = { tide: tide, T: T, w: w, R: R, level: level, xEnd: xEnd, x: [], h: [], k: [], a: [], S: [], iBreak: -1 };
+    for (var i = 0; i <= n; i++) {
+      var x = -REFL.X + i / n * (xEnd + REFL.X), h = level - reflBed(x), hk = Math.max(h, REFL.hMin);
+      var Hs = REFL.Hdeep * Math.sqrt(cg0 / groupSpeed(T, hk)), Hb = REFL.gamma * Math.max(h, 0);
+      if (Hs >= Hb && r.iBreak < 0) r.iBreak = i;
+      r.x.push(x); r.h.push(h); r.k.push(waveK(T, hk)); r.a.push(Math.min(Hs, Hb) / 2); r.S.push(0);
+    }
+    // reflection point: the wall face at high tide, the start of the break at low tide
+    r.iRef = r.iBreak >= 0 ? r.iBreak : n;
+    for (i = r.iRef - 1; i >= 0; i--) r.S[i] = r.S[i + 1] - 0.5 * (r.k[i] + r.k[i + 1]) * (r.x[i + 1] - r.x[i]);
+    for (i = r.iRef + 1; i <= n; i++) r.S[i] = r.S[i - 1] + 0.5 * (r.k[i] + r.k[i - 1]) * (r.x[i] - r.x[i - 1]);
+    // a quarter wavelength seaward of the reflection point: S = -pi/2
+    for (i = r.iRef; i > 0 && r.S[i - 1] > -Math.PI / 2; i--);
+    r.iQuarter = i > 0 && Math.abs(r.S[i - 1] + Math.PI / 2) < Math.abs(r.S[i] + Math.PI / 2) ? i - 1 : i;
+    return r;
+  }
+  function reflEta(r, i, t) {                               // surface height, m (up +)
+    return r.a[i] * (Math.cos(r.S[i] - r.w * t) + r.R * Math.cos(r.S[i] + r.w * t));
+  }
+  function reflEtaIn(r, i, t) { return r.a[i] * Math.cos(r.S[i] - r.w * t); }   // incoming wave alone
+  // back-and-forth at fraction zf of the depth: the incoming wave's amplitude, the ratio
+  // of the combined motion to it, and the displacement now (m, + = towards the wall)
+  function reflSway(r, i, t) {
+    var kh = r.k[i] * Math.max(r.h[i], REFL.hMin), A = r.a[i] * Math.cosh(kh * (1 - REFL.zf)) / Math.sinh(kh);
+    var s = Math.sin(r.S[i]), c = Math.cos(r.S[i]), R = r.R;
+    return { A: A, ratio: Math.sqrt((1 + R) * (1 + R) * s * s + (1 - R) * (1 - R) * c * c),
+      xi: -A * (Math.sin(r.S[i] - r.w * t) + R * Math.sin(r.S[i] + r.w * t)) };
+  }
+  // --- end pure maths ---
+
+  var HC = 250, Y0 = 104, SPEED = 2, SG = 12, WALLPAD = 30;  // SG: px per metre of back-and-forth
+  var FONT = '500 12px "DM Mono", monospace', INK = '#0d2b3e', DEEPC = '#0b4f6c', DIM = '#5f8795', SUN = '#e0982f';
+  var ROCKS = [[-0.9, 10, 8], [-2.6, 12, 7], [-4.3, 9, 5], [-5.7, 7, 4]];   // x (m), half-width and height (px)
+  var CAPS = {
+    high: 'High tide: the swell (dashed line) bounces off the wall almost as tall as it came in, and the solid line is the two added together (time runs twice as fast). At the wall the water only rises and falls; a quarter of a wavelength out it slides back and forth (orange) nearly twice as far as the swell alone would move it (grey).',
+    low: 'Low tide: the same swell breaks on the sand and rocks first and only a weak echo comes back, so the solid line stays close to the dashed one (time runs twice as fast). The back-and-forth (orange) stays within about 15% of what the swell alone would give (grey).'
+  };
+  var m = null, tide = 'high';
+
+  function set(td) {
+    tide = td; m = reflBuild(tide);
+    if (cap) cap.textContent = CAPS[tide];
+    btns.forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-reflect') === tide ? 'true' : 'false'); });
+  }
+  // foam: a soft band from the break to the waterline, and a whitecap on each crest as it runs in
+  function reflFoam(ctx, p) {
+    if (p.length < 2) return;
+    var j, g = ctx.createLinearGradient(p[0][0], 0, p[0][0] + 16, 0);
+    g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(255,255,255,.75)');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); for (j = 0; j < p.length; j++) ctx[j ? 'lineTo' : 'moveTo'](p[j][0], p[j][1] + 1.5);
+    ctx.strokeStyle = 'rgba(11,79,108,.14)'; ctx.lineWidth = 8; ctx.stroke();
+    ctx.strokeStyle = g; ctx.lineWidth = 6; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.95)';
+    for (j = 1; j < p.length; j++) if (Math.floor(p[j][2] / (2 * Math.PI)) !== Math.floor(p[j - 1][2] / (2 * Math.PI))) {
+      ctx.beginPath(); ctx.ellipse(p[j][0], p[j][1], 5, 3.2, 0, 0, 2 * Math.PI); ctx.fill();
+    }
+    ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
+  }
+  function fmt(x) { return '×' + x.toFixed(2).replace(/0$/, ''); }
+  function arrow(ctx, x0, x1, y, head) {
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+    if (!head) return;
+    ctx.beginPath(); ctx.moveTo(x0 + 5, y - 3.5); ctx.lineTo(x0, y); ctx.lineTo(x0 + 5, y + 3.5);
+    ctx.moveTo(x1 - 5, y - 3.5); ctx.lineTo(x1, y); ctx.lineTo(x1 - 5, y + 3.5); ctx.stroke();
+  }
+
+  function draw(ctx, W, H, t) {
+    var wall = W - WALLPAD, sx = wall / REFL.X, v = (H - 10 - Y0) / -REFL.bedFlat;
+    var n = REFL.n, tt = t * SPEED, i, X, Y;
+    var px = function (x) { return (x + REFL.X) * sx; };
+    var ySwl = Y0 - m.level * v;
+    ctx.clearRect(0, 0, W, H);
+    // water
+    var g = ctx.createLinearGradient(0, Y0, 0, H);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#7fbcd2');
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (i = 0; i <= n; i++) ctx.lineTo(px(m.x[i]), ySwl - reflEta(m, i, tt) * v);
+    ctx.lineTo(px(m.xEnd), H); ctx.closePath(); ctx.fillStyle = g; ctx.fill();
+    // seabed and slope, with rocks at the foot of the wall
+    ctx.beginPath(); ctx.moveTo(0, H); ctx.lineTo(0, Y0 - REFL.bedFlat * v);
+    ctx.lineTo(px(REFL.toe), Y0 - REFL.bedFlat * v); ctx.lineTo(wall, Y0 - REFL.bedWall * v); ctx.lineTo(wall, H); ctx.closePath();
+    ctx.fillStyle = '#d9c9a3'; ctx.fill();
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, Y0 - REFL.bedFlat * v); ctx.lineTo(px(REFL.toe), Y0 - REFL.bedFlat * v); ctx.lineTo(wall, Y0 - REFL.bedWall * v); ctx.stroke();
+    ROCKS.forEach(function (r) {
+      var cx = px(r[0]), cy = Y0 - reflBed(r[0]) * v;
+      ctx.beginPath(); ctx.ellipse(cx, cy + 1, r[1], r[2], 0, Math.PI, 2 * Math.PI);
+      ctx.closePath(); ctx.fillStyle = '#b9a77c'; ctx.fill();
+    });
+    // the wall and the promenade behind it
+    var top = Y0 - 1.3 * v;
+    ctx.fillStyle = '#efe4c6'; ctx.fillRect(wall, top, W - wall, H - top);
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(W, top); ctx.lineTo(wall, top); ctx.lineTo(wall, H); ctx.stroke();
+    // the incoming wave on its own (dashed), then the real surface
+    ctx.strokeStyle = 'rgba(95,135,149,.85)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath();
+    for (i = 0; i <= n; i++) { X = px(m.x[i]); Y = ySwl - reflEtaIn(m, i, tt) * v; if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(11,79,108,.6)'; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (i = 0; i <= n; i++) { X = px(m.x[i]); Y = ySwl - reflEta(m, i, tt) * v; if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y); }
+    ctx.stroke();
+    // foam where the waves are breaking (low tide)
+    if (m.iBreak >= 0) {
+      var fp = [];
+      for (i = m.iBreak; i <= n; i++) fp.push([px(m.x[i]), ySwl - reflEta(m, i, tt) * v, m.S[i] - m.w * tt]);
+      reflFoam(ctx, fp);
+    }
+    // back-and-forth a quarter wavelength out, and at the wall (high tide only: at low tide the
+    // wall is dry and the water's edge is foam, where this simple wave physics stops working)
+    var aMax = 0; for (i = 0; i <= n; i++) aMax = Math.max(aMax, m.a[i] * (1 + m.R));
+    var yLab = ySwl - aMax * v - 10, spots = [[m.iQuarter, yLab]];
+    if (m.iBreak < 0) spots.push([m.iRef, yLab - 16]);
+    ctx.font = FONT;
+    spots.forEach(function (p) {
+      var j = p[0], sw = reflSway(m, j, tt), half = sw.A * sw.ratio * SG, ref = sw.A * SG;
+      var cx = Math.min(px(m.x[j]), wall - 4), y = ySwl + REFL.zf * Math.max(m.h[j], 0) * v;
+      if (cx + ref < wall - 2) {                             // incoming wave alone, where it fits
+        ctx.strokeStyle = 'rgba(95,135,149,.7)'; ctx.lineWidth = 1.2; arrow(ctx, cx - ref, cx + ref, y - 8, false);
+        ctx.beginPath(); ctx.moveTo(cx - ref, y - 11); ctx.lineTo(cx - ref, y - 5); ctx.moveTo(cx + ref, y - 11); ctx.lineTo(cx + ref, y - 5); ctx.stroke();
+      }
+      ctx.strokeStyle = SUN; ctx.lineWidth = 2; arrow(ctx, cx - half, cx + half, y, half > 6);
+      ctx.fillStyle = DEEPC; ctx.beginPath(); ctx.arc(cx + sw.xi * SG, y, 3, 0, 2 * Math.PI); ctx.fill();
+      var s = fmt(sw.ratio), w = ctx.measureText(s).width;
+      ctx.fillStyle = INK; ctx.fillText(s, Math.max(4, Math.min(wall - 4 - w, cx - w / 2)), p[1]);
+      ctx.strokeStyle = 'rgba(95,135,149,.5)'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(cx, p[1] + 4); ctx.lineTo(cx, y - 14); ctx.stroke(); ctx.setLineDash([]);
+    });
+    ctx.fillStyle = INK; ctx.fillText(REFL.T + ' s swell · ' + tide + ' tide', 10, 18);
+    var lw = ctx.measureText('sea wall').width;
+    ctx.fillStyle = DIM; ctx.fillText('sea wall', W - 4 - lw, top - 8);
+  }
+
+  set('high');
+  var rc = runCanvas(cv, HC, draw);
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () { set(b.getAttribute('data-reflect')); rc.redraw(); });
+  });
+})();
+
+// ── 7. Wind over the bay: fetch decides the chop ────────────────────────────
+// Plan view on the simulator's chart. For every water point the upwind ray is
+// marched to the land trace to get the fetch; a ray that leaves the chart has the
+// open sea behind it (6 km, the app's open-bearing fetch). Chop there is the app's
+// own growth law: Hs = spmGrowth(U · leeFactor · CHOP_GAIN, fetch). Strokes are
+// crests drifting downwind at the chop's phase speed (SPM 1984 period, sped up);
+// their length and ink scale with the local Hs. No height is printed (§2).
+(function wind() {
+  var cv = document.getElementById('windCv'); if (!cv) return;
+  var cap = document.getElementById('windCap');
+  var btns = [].slice.call(document.querySelectorAll('[data-wind-from]'));
+  // The simulator's LAND trace (map_flat.png pixels, 1520x952, north up), as x,y pairs.
+  var LAND = [40,150, 160,150, 185,260, 205,340, 235,420, 270,490, 300,540, 330,590, 352,640, 372,656,
+    400,646, 430,662, 470,690, 520,702, 540,732, 555,790, 590,845, 640,880, 720,868, 800,860, 880,862,
+    925,850, 935,820, 905,770, 870,720, 845,680, 838,650, 855,632, 900,630, 960,640, 1020,656, 1090,696,
+    1160,760, 1230,840, 1290,920, 1310,952, 40,952];
+  var VX = 40, VY = 150, VW = 1480, VH = 802;            // the simulator's viewBox
+  var ROI = { x0: 250, y0: 380, x1: 1100, y1: 900 };    // fully in view from 305 px wide up
+  var REF = { x: 380, y: 645 };                          // just off the South Steyne corner
+  var M_PX = 1.1, OPEN_M = 6000, U_KMH = 30;             // chart px -> m; open-sea fetch; wind
+  var GAIN = typeof CHOP_GAIN === 'number' ? CHOP_GAIN : 0.60;   // the app's chop wind gain (declared with FETCH)
+  var MR = 4, FS = 12, STEP = 4, SPREAD = 8;             // mask cell, field node, ray step (chart px); ray fan (deg)
+  var SP = 22, TIME_X = 5, BED = 8;                      // stroke spacing (CSS px); speed-up; depth for dispersion (m)
+  var DIRS = {
+    45:  'From the north-east the wind has crossed about 6 km of open sea, so the chop builds across the whole bay except close in behind Shelly.',
+    90:  'From the east the wind reaches the bay mouth straight off the open sea, but over most of the inner bay it has only just crossed Shelly headland.',
+    135: 'From the south-east the wind has just crossed Shelly headland and Fairy Bower, so the chop starts again at the shoreline with only the bay to grow over.',
+    270: 'From the west the wind comes off the beach and the buildings behind it, so the chop starts from nothing at the shore and builds slowly out to sea.'
+  };
+  var deg = 45;
+
+  // land mask, scanline-filled from the trace
+  var mnx = Math.ceil(VW / MR), mny = Math.ceil(VH / MR), mask = new Uint8Array(mnx * mny);
+  (function () {
+    var n = LAND.length / 2;
+    for (var j = 0; j < mny; j++) {
+      var yc = Math.min(VY + (j + 0.5) * MR, VY + VH - 0.5), xs = [];   // last row sits on the chart edge
+      for (var i = 0, k = n - 1; i < n; k = i++) {
+        var xi = LAND[2 * i], yi = LAND[2 * i + 1], xk = LAND[2 * k], yk = LAND[2 * k + 1];
+        if ((yi > yc) !== (yk > yc)) xs.push(xi + (yc - yi) * (xk - xi) / (yk - yi));
+      }
+      xs.sort(function (a, b) { return a - b; });
+      for (var p = 0; p + 1 < xs.length; p += 2) {
+        var c0 = Math.max(0, Math.ceil((xs[p] - VX) / MR - 0.5)), c1 = Math.min(mnx - 1, Math.floor((xs[p + 1] - VX) / MR - 0.5));
+        for (var c = c0; c <= c1; c++) mask[j * mnx + c] = 1;
+      }
+    }
+  })();
+  function isLand(x, y) {                                // past the chart edge, the edge carries on
+    var c = Math.max(0, Math.min(mnx - 1, Math.floor((x - VX) / MR))), j = Math.max(0, Math.min(mny - 1, Math.floor((y - VY) / MR)));
+    return mask[j * mnx + c] === 1;
+  }
+  // chart px of water upwind of (x, y) before land; -1 = the ray left the chart (open sea)
+  function rayPx(x, y, from) {
+    var r = from * Math.PI / 180, dx = Math.sin(r) * STEP, dy = -Math.cos(r) * STEP, s = 0;
+    for (;;) {
+      x += dx; y += dy; s += STEP;
+      var c = Math.floor((x - VX) / MR), j = Math.floor((y - VY) / MR);
+      if (c < 0 || j < 0 || c >= mnx || j >= mny) return -1;
+      if (mask[j * mnx + c]) return s;
+    }
+  }
+  function fetchM(x, y, from) { var p = rayPx(x, y, from); return p < 0 ? OPEN_M : p * M_PX; }
+
+  // chop field on a node grid, one per direction, built on first use
+  var fnx = Math.ceil(VW / FS) + 1, fny = Math.ceil(VH / FS) + 1, cache = {};
+  var HREF = spmGrowth(U_KMH / 3.6 * GAIN, OPEN_M);          // the most any bearing can give
+  function field(from) {
+    if (cache[from]) return cache[from];
+    var Ue = U_KMH / 3.6 * leeFactor(from) * GAIN, hs = new Float32Array(fnx * fny);
+    for (var j = 0; j < fny; j++) for (var i = 0; i < fnx; i++) {
+      var x = VX + i * FS, y = VY + j * FS;
+      // three rays (±SPREAD°, weights 1-2-1): the wind wanders, so shadow edges are soft
+      hs[j * fnx + i] = isLand(x, y) ? -1 : (spmGrowth(Ue, fetchM(x, y, from - SPREAD)) +
+        2 * spmGrowth(Ue, fetchM(x, y, from)) + spmGrowth(Ue, fetchM(x, y, from + SPREAD))) / 4;
+    }
+    var p = rayPx(REF.x, REF.y, from);
+    return (cache[from] = { hs: hs, Ue: Ue, refPx: p });
+  }
+  function hsAt(f, x, y) {                                           // bilinear over water nodes
+    if (isLand(x, y)) return -1;
+    var gx = (x - VX) / FS, gy = (y - VY) / FS, i = Math.floor(gx), j = Math.floor(gy);
+    if (i < 0 || j < 0 || i >= fnx - 1 || j >= fny - 1) return -1;
+    var fx = gx - i, fy = gy - j, sum = 0, wsum = 0;
+    var w = [(1 - fx) * (1 - fy), fx * (1 - fy), (1 - fx) * fy, fx * fy], id = [j * fnx + i, j * fnx + i + 1, (j + 1) * fnx + i, (j + 1) * fnx + i + 1];
+    for (var q = 0; q < 4; q++) { var v = f.hs[id[q]]; if (v >= 0) { sum += w[q] * v; wsum += w[q]; } }
+    return wsum > 1e-6 ? sum / wsum : -1;
+  }
+  // phase speed of the local chop: SPM 1984 fetch-limited period from the same Hs law
+  function chopSpeed(hs, Ue) {
+    if (!(hs > 0) || !(Ue > 0)) return 0;
+    var X = Math.pow(G * hs / (1.6e-3 * Ue * Ue), 2);
+    var Tm = Math.max(0.4, Math.min(0.2857 * Math.pow(X, 1 / 3), 8.134) * Ue / G);
+    return (2 * Math.PI / Tm) / waveK(Tm, BED);
+  }
+
+  // view: fit ROI, fill the canvas with chart, never past the chart edge
+  function view(W, H) {
+    var s = Math.max(Math.min(W / (ROI.x1 - ROI.x0), H / (ROI.y1 - ROI.y0)), W / VW, H / VH);
+    var vw = W / s, vh = H / s;
+    return { s: s,
+      x0: Math.min(Math.max((ROI.x0 + ROI.x1 - vw) / 2, VX), VX + VW - vw),
+      y0: Math.min(Math.max((ROI.y0 + ROI.y1 - vh) / 2, VY), VY + VH - vh) };
+  }
+  // stroke seeds: jittered grid in CSS px, deterministic
+  var seeds = [], seedKey = '', vw0 = null;
+  function build(W, H) {
+    var f = field(deg), v = view(W, H), r = deg * Math.PI / 180, wx = -Math.sin(r), wy = Math.cos(r), D = 2 * SP;
+    var rnd = 20260929; function rand() { rnd = (rnd * 1103515245 + 12345) % 2147483648; return rnd / 2147483648; }
+    seeds = []; vw0 = v;
+    for (var y = SP / 2; y < H; y += SP) for (var x = SP / 2; x < W; x += SP) {
+      var sx = x + (rand() - 0.5) * SP * 0.7, sy = y + (rand() - 0.5) * SP * 0.7, ph = rand(), best = -1;
+      for (var q = -1; q <= 1; q++) best = Math.max(best, hsAt(f, v.x0 + (sx + wx * q * D / 2) / v.s, v.y0 + (sy + wy * q * D / 2) / v.s));
+      if (best <= 0) continue;                                       // all land along its run
+      seeds.push({ x: sx, y: sy, ph: ph, v: chopSpeed(best, f.Ue) / M_PX * v.s * TIME_X });
+    }
+    seedKey = W + 'x' + H + '@' + deg;
+  }
+  function P(ctx, v, x, y, first) { var X = (x - v.x0) * v.s, Y = (y - v.y0) * v.s; if (first) ctx.moveTo(X, Y); else ctx.lineTo(X, Y); }
+  function text(ctx, s, x, y, align, col) {
+    ctx.textAlign = align || 'left';
+    ctx.strokeStyle = 'rgba(251,246,236,.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y);
+    ctx.fillStyle = col || '#0d2b3e'; ctx.fillText(s, x, y);
+  }
+  function fetchLabel(p) {
+    if (p < 0) return 'about 6 km';
+    var m = p * M_PX; return m < 100 ? 'under 100 m' : 'about ' + Math.round(m / 50) * 50 + ' m';
+  }
+
+  function draw(ctx, W, H, t) {
+    if (seedKey !== W + 'x' + H + '@' + deg) build(W, H);
+    var f = field(deg), v = vw0, r = deg * Math.PI / 180, wx = -Math.sin(r), wy = Math.cos(r), nx = -wy, ny = wx, D = 2 * SP;
+    ctx.clearRect(0, 0, W, H);
+    var g = ctx.createLinearGradient(0, H, W, 0);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#7fbcd2');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // chop crests, bucketed by ink so a frame is ~10 stroke calls (land is painted over
+    // them afterwards, so a crest near the shore never pokes onto the land)
+    var paths = [], b, k;
+    for (b = 0; b <= 10; b++) paths.push([]);
+    for (k = 0; k < seeds.length; k++) {
+      var s = seeds[k], fr = (s.ph + t * s.v / D) % 1;
+      var px = s.x + wx * (fr - 0.5) * D, py = s.y + wy * (fr - 0.5) * D;
+      var h = hsAt(f, v.x0 + px / v.s, v.y0 + py / v.s); if (h <= 0) continue;
+      var q = Math.min(1, h / HREF), a = Math.sin(Math.PI * fr) * (0.12 + 0.68 * q);
+      b = Math.round(a * 10); if (b < 1) continue;
+      paths[b].push(px, py, 2 + 6 * q);
+    }
+    ctx.strokeStyle = '#0b4f6c'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    for (b = 1; b <= 10; b++) {
+      var L = paths[b]; if (!L.length) continue;
+      ctx.globalAlpha = b / 10; ctx.beginPath();
+      for (k = 0; k < L.length; k += 3) {
+        var x = L[k], y = L[k + 1], l = L[k + 2];
+        ctx.moveTo(x - nx * l, y - ny * l);
+        ctx.quadraticCurveTo(x + wx * l * 0.3, y + wy * l * 0.3, x + nx * l, y + ny * l);   // bowed downwind
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    for (var i = 0; i < LAND.length; i += 2) P(ctx, v, LAND[i], LAND[i + 1], i === 0);
+    ctx.closePath(); ctx.fillStyle = '#efe4c6'; ctx.fill();
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+
+    // the fetch at the corner: dashed line upwind to the shore, or off the chart
+    var rx = (REF.x - v.x0) * v.s, ry = (REF.y - v.y0) * v.s, ux = -wx, uy = -wy;
+    var len = f.refPx < 0 ? W + H : f.refPx * v.s;
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = '#e0982f'; ctx.lineWidth = 1.6; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx + ux * len, ry + uy * len); ctx.stroke(); ctx.setLineDash([]);
+    if (f.refPx >= 0) { ctx.fillStyle = '#e0982f'; ctx.beginPath(); ctx.arc(rx + ux * len, ry + uy * len, 2.5, 0, 2 * Math.PI); ctx.fill(); }
+    ctx.beginPath(); ctx.arc(rx, ry, 4.5, 0, 2 * Math.PI); ctx.fillStyle = '#e0982f'; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // labels
+    ctx.font = '500 12px "DM Mono", monospace'; ctx.textBaseline = 'alphabetic';
+    var sw = ctx.measureText('South Steyne').width;
+    if (rx - 8 - sw > 4) text(ctx, 'South Steyne', rx - 8, ry - 8, 'right'); else text(ctx, 'South Steyne', Math.max(4, rx - 10), ry + 20, 'left');
+    text(ctx, 'Cabbage Tree Bay', (640 - v.x0) * v.s, (790 - v.y0) * v.s, 'center', '#0b4f6c');
+    text(ctx, 'Shelly', (1010 - v.x0) * v.s, (800 - v.y0) * v.s, 'center', '#8a7a55');
+    text(ctx, 'wind from ' + compass(deg) + ', ' + U_KMH + ' km/h', 10, 20);
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = '#e0982f'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.moveTo(10, 34); ctx.lineTo(24, 34); ctx.stroke(); ctx.setLineDash([]);
+    // compass disc, arrow the way the wind blows
+    var cx = W - 28, cy = 44, R = 18;
+    var ft = 'fetch to the corner: ' + fetchLabel(f.refPx);
+    if (30 + ctx.measureText(ft).width > cx - R - 8) ft = 'fetch: ' + fetchLabel(f.refPx);
+    text(ctx, ft, 30, 38);
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.fill(); ctx.strokeStyle = 'rgba(13,43,62,.25)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.font = '500 12px "DM Mono", monospace'; ctx.fillStyle = '#5f8795'; ctx.textAlign = 'center'; ctx.fillText('N', cx, cy - R - 4);
+    ctx.strokeStyle = '#0d2b3e'; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx - wx * 13, cy - wy * 13); ctx.lineTo(cx + wx * 6, cy + wy * 6); ctx.stroke();
+    ctx.fillStyle = '#0d2b3e'; ctx.beginPath();
+    ctx.moveTo(cx + wx * 14, cy + wy * 14); ctx.lineTo(cx + wx * 4 + nx * 5, cy + wy * 4 + ny * 5); ctx.lineTo(cx + wx * 4 - nx * 5, cy + wy * 4 - ny * 5);
+    ctx.closePath(); ctx.fill();
+  }
+
+  var rc = runCanvas(cv, 260, draw);
+  function set(d) {
+    deg = d;
+    btns.forEach(function (o) { o.setAttribute('aria-pressed', +o.getAttribute('data-wind-from') === d ? 'true' : 'false'); });
+    if (cap) cap.textContent = DIRS[d] + ' Same 30 km/h wind each time; longer, darker strokes mean more chop (motion sped up).';
+    rc.redraw();
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () { set(+b.getAttribute('data-wind-from')); }); });
+  set(deg);
+})();
+
+
 // ── 1. Orbit animation ──────────────────────────────────────────────────────
 (function orbit() {
   var cv = document.getElementById('orbit'); if (!cv) return;
-  var ctx = cv.getContext('2d'), depth = 80, T = 10, t0 = performance.now(), visible = true, raf = 0;
+  var depth = 80, T = 10, anim = null;
   var cap = document.getElementById('orbitCap');
-  function size() {
-    var dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = 260;
-    cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  function draw(now) {
-    var W = cv.clientWidth, Hc = 260, top = 56, bot = Hc - 16;
+  function draw(ctx, W, Hc, t) {
+    var top = 56, bot = Hc - 16;
     var k = waveK(T, depth), L = 2 * Math.PI / k, kh = k * depth, w = 2 * Math.PI / T;
-    var t = REDUCED ? 0 : (now - t0) / 1000;
     var a = 16;                                           // drawn amplitude, px (exaggerated)
     ctx.clearRect(0, 0, W, Hc);
     var g = ctx.createLinearGradient(0, top, 0, bot);
@@ -491,7 +1763,6 @@ function fetchFor(d) {
     }
     ctx.fillStyle = '#0d2b3e'; ctx.font = '500 12px "DM Mono", monospace';
     ctx.fillText('wavelength ' + Math.round(L) + ' m  ·  depth ' + depth + ' m', 10, 18);
-    if (!REDUCED && visible) raf = requestAnimationFrame(draw);
   }
   function setDepth(d) {
     depth = d;
@@ -502,7 +1773,7 @@ function fetchFor(d) {
       2:  'At the ramp: the loops are flat. The water slides back and forth from the surface to the sand, and that slide is surge.'
     }[d];
     cap.textContent = msg + ' Water at the bottom moves ' + Math.round(bedShare * 100) + '% as far sideways as at the surface.';
-    if (REDUCED || !visible) draw(performance.now());
+    if (anim) anim.redraw();
   }
   document.querySelectorAll('[data-depth]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -510,14 +1781,8 @@ function fetchFor(d) {
       setDepth(+b.getAttribute('data-depth'));
     });
   });
-  size(); setDepth(80);
-  window.addEventListener('resize', function () { size(); if (REDUCED || !visible) draw(performance.now()); });
-  if ('IntersectionObserver' in window && !REDUCED) {
-    new IntersectionObserver(function (es) {
-      visible = es[0].isIntersecting;
-      cancelAnimationFrame(raf); if (visible) raf = requestAnimationFrame(draw);
-    }).observe(cv);
-  } else { draw(performance.now()); if (!REDUCED) raf = requestAnimationFrame(draw); }
+  setDepth(80);
+  anim = runCanvas(cv, 260, draw);
 })();
 
 // ── 2. Model chart ──────────────────────────────────────────────────────────
