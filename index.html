@@ -22493,7 +22493,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var _preview = false; // admin: popup is showing an UNSAVED draft, not _active
   var _editId = null;   // admin: id being edited (null = new)
   var _imgUrl = '';     // admin: image url currently in the form
-  var _app    = 'swim'; // admin: which app the form publishes to
+  var _apps   = ['swim']; // admin: which app(s) the form publishes to: one or both (29 Sep 2026, per owner)
+  var _editApp = null;  // admin: the app of the row being edited (a post is one row per app)
   var _quiet  = false;  // admin: quiet = pill+dot only (no popup); default mandatory
   var _showOnce = false;// admin: show-once = never re-arms; dismissed = gone for good on that device
   var _rows   = [];     // admin: last loaded list (for edit)
@@ -23003,10 +23004,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         '<button class="aa-close" id="annAdminClose" aria-label="Close">\u00d7</button>' +
         '<button type="button" class="aa-newbtn" id="annNewBtn">+ New post</button>' +
         '<div class="aa-h" id="annFormTitle">Publish announcement</div>' +
-        '<label class="aa-lbl">Publish to</label>' +
+        '<label class="aa-lbl">Publish to (tap one or both)</label>' +
         '<div class="aa-seg" id="annAppSeg">' +
-          '<button type="button" class="aa-segbtn on" data-app="swim">Swim app</button>' +
-          '<button type="button" class="aa-segbtn" data-app="viz">Forecast app</button>' +
+          '<button type="button" class="aa-segbtn on" data-app="swim" aria-pressed="true">Swim app</button>' +
+          '<button type="button" class="aa-segbtn" data-app="viz" aria-pressed="false">Forecast app</button>' +
         '</div>' +
         '<label class="aa-lbl">Visibility</label>' +
         '<div class="aa-seg" id="annQuietSeg">' +
@@ -23390,9 +23391,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     $('annImgRm').addEventListener('click', function () { _imgUrl = ''; $('annImgWrap').style.display = 'none'; $('annImgPrev').removeAttribute('src'); saveDraft(); });
     $('annPubBtn').addEventListener('click', publish);
 
-    // app selector (which app this post publishes to)
+    // app selector: each button toggles, so a post can go to one app or both
     Array.prototype.forEach.call(ov.querySelectorAll('#annAppSeg .aa-segbtn'), function (btn) {
-      btn.addEventListener('click', function () { setApp(btn.getAttribute('data-app')); saveDraft(); });
+      btn.addEventListener('click', function () { toggleApp(btn.getAttribute('data-app')); saveDraft(); });
     });
     Array.prototype.forEach.call(ov.querySelectorAll('#annQuietSeg .aa-segbtn'), function (btn) {
       btn.addEventListener('click', function () { setQuiet(btn.getAttribute('data-quiet') === '1'); saveDraft(); });
@@ -23412,11 +23413,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     restoreDraft();
   }
 
-  function setApp(app){
-    _app = (app === 'viz') ? 'viz' : 'swim';
+  function setApps(list){
+    var want = (list || []).filter(function (a) { return a === 'swim' || a === 'viz'; });
+    _apps = want.length ? ['swim', 'viz'].filter(function (a) { return want.indexOf(a) !== -1; }) : ['swim'];
     Array.prototype.forEach.call(document.querySelectorAll('#annAppSeg .aa-segbtn'), function (btn) {
-      btn.classList.toggle('on', btn.getAttribute('data-app') === _app);
+      var on = _apps.indexOf(btn.getAttribute('data-app')) !== -1;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+  }
+  // The last app left on stays on: a post has to go somewhere.
+  function toggleApp(app){
+    if (_apps.indexOf(app) === -1) setApps(_apps.concat([app]));
+    else if (_apps.length > 1) setApps(_apps.filter(function (a) { return a !== app; }));
   }
   function setQuiet(q){
     _quiet = !!q;
@@ -23435,7 +23444,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function saveDraft(){
     try {
       var d = {
-        editId: _editId, app: _app, quiet: _quiet, showOnce: _showOnce, imgUrl: _imgUrl,
+        editId: _editId, editApp: _editApp, apps: _apps, quiet: _quiet, showOnce: _showOnce, imgUrl: _imgUrl,
         title: $('annInTitle') ? $('annInTitle').value : '',
         body:  $('annEdBody')  ? $('annEdBody').innerHTML : '',
         start: $('annInStart') ? $('annInStart').value : '',
@@ -23454,7 +23463,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (!d) return;
     _editId = d.editId || null;
     _imgUrl = d.imgUrl || '';
-    setApp(d.app || 'swim');
+    // drafts saved before the both-apps change carry a single `app`
+    _editApp = _editId ? (d.editApp || d.app || 'swim') : null;
+    setApps(d.apps || [d.app || 'swim']);
     setQuiet(!!d.quiet);
     setShowOnce(!!d.showOnce);
     if ($('annInTitle')) $('annInTitle').value = d.title || '';
@@ -23475,7 +23486,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   }
 
   function resetForm(){
-    _editId = null; _imgUrl = '';
+    _editId = null; _editApp = null; _imgUrl = '';
     if ($('annInTitle')) $('annInTitle').value = '';
     if ($('annEdBody'))  $('annEdBody').innerHTML = '';
     if ($('annInStart')) $('annInStart').value = '';
@@ -23483,7 +23494,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annImgWrap')) $('annImgWrap').style.display = 'none';
     if ($('annFormTitle')) $('annFormTitle').textContent = 'Publish announcement';
     if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
-    setApp('swim');
+    setApps(['swim']);
     setQuiet(false);
     setShowOnce(false);
   }
@@ -23499,21 +23510,49 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (!starts || !ends) { $('annPubMsg').textContent = 'Set start and end.'; return; }
     if (new Date(ends) <= new Date(starts)) { $('annPubMsg').textContent = 'End must be after start.'; return; }
     $('annPubMsg').textContent = 'Publishing\u2026';
-    try {
-      var base = { p_token: tk, p_id: _editId, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: _app, p_quiet: _quiet };
-      function save(body){ return fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify(body) }); }
-      var withOnce = {}; for (var kk in base) withOnce[kk] = base[kk]; withOnce.p_show_once = _showOnce;
-      var r = await save(withOnce), onceDropped = false;
-      // PGRST202 (404): the RPC hasn't been given a p_show_once param yet — retry
-      // without it so publishing still works. Run the DB migration to persist it.
-      if (r.status === 404) { r = await save(base); onceDropped = r.ok && _showOnce; }
-      if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
-      $('annPubMsg').textContent = (_editId ? 'Updated.' : 'Published to ' + (APP_LABEL[_app] || _app) + '.') + (onceDropped ? ' (Show-once not saved — DB migration needed.)' : '');
+    // A post is one row per app, so "both" saves two rows. When editing, the row being edited
+    // is updated in place (moved, if its own app was switched off) and any other ticked app
+    // gets a new copy; from then on each copy is edited, ordered and deleted on its own.
+    var keepId = _editId;
+    var keepApp = keepId ? (_apps.indexOf(_editApp) !== -1 ? _editApp : _apps[0]) : null;
+    var done = [], failed = [], onceDropped = false, errMsg = '';
+    function save(body){ return fetch(RPC + 'admin_save_announcement', { method: 'POST', headers: hdrs, body: JSON.stringify(body) }); }
+    for (var ai = 0; ai < _apps.length; ai++) {
+      var app = _apps[ai], isEdit = !!keepId && app === keepApp;
+      try {
+        var base = { p_token: tk, p_id: isEdit ? keepId : null, p_title: title, p_body_html: bodyHtml, p_image_url: _imgUrl, p_starts: starts, p_ends: ends, p_app: app, p_quiet: _quiet };
+        var withOnce = {}; for (var kk in base) withOnce[kk] = base[kk]; withOnce.p_show_once = _showOnce;
+        var r = await save(withOnce);
+        // PGRST202 (404): the RPC hasn't been given a p_show_once param yet — retry
+        // without it so publishing still works. Run the DB migration to persist it.
+        if (r.status === 404) { r = await save(base); if (r.ok && _showOnce) onceDropped = true; }
+        if (!r.ok) { var et = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + et.slice(0, 180)); }
+        done.push({ app: app, isEdit: isEdit });
+      } catch (e) { failed.push({ app: app, isEdit: isEdit }); errMsg = (e && e.message) ? e.message : 'unknown'; }
+    }
+    function names(list){ return list.map(function (x) { return APP_LABEL[x.app] || x.app; }).join(' and '); }
+    var once = onceDropped ? ' (Show-once not saved — DB migration needed.)' : '';
+    if (!failed.length) {
+      var upd = done.filter(function (x) { return x.isEdit; }), add = done.filter(function (x) { return !x.isEdit; });
+      $('annPubMsg').textContent = (upd.length
+        ? 'Updated ' + names(upd) + '.' + (add.length ? ' Also published to ' + names(add) + '.' : '')
+        : 'Published to ' + names(add) + '.') + once;
       resetForm();
       clearDraft();
-      loadAdminList();
-      loadActive();
-    } catch (e) { $('annPubMsg').textContent = 'Save failed: ' + ((e && e.message) ? e.message : 'unknown'); }
+    } else {
+      // Keep the form, ticked for the failed apps only, so pressing the button again retries
+      // just those and never duplicates a copy that already went out.
+      if (done.some(function (x) { return x.isEdit; })) {
+        _editId = null; _editApp = null;
+        if ($('annFormTitle')) $('annFormTitle').textContent = 'Publish announcement';
+        if ($('annPubBtn')) $('annPubBtn').textContent = 'Publish';
+      }
+      setApps(failed.map(function (x) { return x.app; }));
+      saveDraft();
+      $('annPubMsg').textContent = (done.length ? 'Published to ' + names(done) + '. ' : '') +
+        'Save failed for ' + names(failed) + ': ' + errMsg + ' Press the button again to retry.' + once;
+    }
+    if (done.length) { loadAdminList(); loadActive(); }
   }
 
   /* ---- admin list: grouped by app, with previews + reorder ---------------- */
@@ -23612,7 +23651,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     $('annInStart').value = isoToDtLocal(x.starts_at);
     $('annInEnd').value   = isoToDtLocal(x.ends_at);
     if (_imgUrl) { $('annImgPrev').src = _imgUrl; $('annImgWrap').style.display = 'block'; } else { $('annImgWrap').style.display = 'none'; }
-    setApp(appOf(x));
+    _editApp = appOf(x);
+    setApps([_editApp]);
     setQuiet(!!x.quiet);
     setShowOnce(!!x.show_once);
     $('annFormTitle').textContent = 'Edit announcement';
