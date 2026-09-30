@@ -8502,6 +8502,17 @@ async function loadGemConfig(force) {
     diag('GEM table: FAIL — ' + (e.message || e));
     console.warn('GEM config: sheet unavailable, GEM model will use fallback.', e.message);
   }
+  // The download failed or did not parse: reuse the last saved table at any age. It is
+  // config and rarely changes, so a stale copy beats gemLookup's flat 0.5 transmit.
+  if (!SITE.gemTable) {
+    try {
+      const c = JSON.parse(localStorage.getItem(GEM_CONFIG_KEY) || 'null');
+      if (c && Array.isArray(c.gemTable) && c.gemTable.length === 19) {
+        SITE.gemTable = c.gemTable;
+        diag('GEM table: stale cache (' + c.gemTable.length + ' rows)');
+      }
+    } catch (e) {}
+  }
 }
 
 // Retry handler — invoked when user taps the red model-table badge.
@@ -12293,7 +12304,10 @@ function renderSnapshot(h, wx) {
   // _configSettled). The background loader re-renders when it finishes, so a
   // genuine outage still reports on that pass.
   if (_configSettled && !SITE.nsDisp)  markNsDegraded('ns_disp_table_missing');   // quiet operator tell, no banner
-  if (_configSettled && !SITE.gemTable) markNsDegraded('gem_table_missing');      // vecchio fallback has no table either
+  // No gem_table_missing report any more (30 Sep 2026). Since calcScore fails closed,
+  // the GEM table feeds only ?src=ww and the CAL compare, so a missing one changes
+  // nothing a swimmer sees. Reporting it sent a weekly "scoring on the legacy branch"
+  // email for phones that had simply been offline when the table was due.
   _forecastRendered = true;       // real data is on screen — dots have left the 50% default
   hideRefreshPrompt();            // dismiss the "pull to refresh" popup if it was showing
 
