@@ -5,6 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Swim Manly &mdash; How Waves Reach the Bay</title>
 <meta name="description" content="The physics of waves in plain words for South Steyne swimmers, with a model built from two years of NSW Nearshore data and a simulator.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Swim Manly">
+<meta property="og:title" content="How waves reach South Steyne">
+<meta property="og:description" content="The physics behind the Entry, Surge and Chop cards, in plain words, with a simulator built on two years of wave data at the bay mouth.">
+<meta property="og:url" content="https://app.viz.net.au/Manly-Swim/waves.html">
+<meta property="og:image" content="https://app.viz.net.au/Manly-Swim/images/og-waves.jpg">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="How waves reach South Steyne: a chart of Cabbage Tree Bay with swell crests bending in towards the South Steyne corner">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="How waves reach South Steyne">
+<meta name="twitter:description" content="The physics behind the Entry, Surge and Chop cards, in plain words, with a simulator built on two years of wave data at the bay mouth.">
+<meta name="twitter:image" content="https://app.viz.net.au/Manly-Swim/images/og-waves.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="images/logos/favicon-32.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
@@ -26,15 +41,24 @@
   - Offshore: Open-Meteo marine hindcast, cell -33.79 / 151.38, Dec 2023–Dec 2025.
   - Bay mouth: NSW Nearshore Wave Tool hindcast, node 103218, same hours (8,184 matched,
     8,142 with offshore swell >= 0.4 m; rows stamped HH:59:59 are rounded UP to the hour).
-  - Fit: bay-mouth swell = a · exp(-((dir-th0)/w)^2) · (T/10)^q · H^r   (R^2 0.79,
-    typical error 0.18 m). A cosine form scored R^2 0.68 and under-read east swells.
-  - WillyWeather check: 1,416 real WW/NS hour pairs from forecast_history
-    (31 Jul–29 Sep 2026). WW reads 1.30x the hindcast's height, 1.16x its period and
-    +7 deg on direction, so the simulator converts forecast numbers first. After that the
-    model matches NS with ~0.12 m typical error and no bias; raw WW vs NS was 0.96 m.
-  - Bay mouth -> South Steyne entry: the app's own SS shelter table (New NS sheet,
-    folded rows 0–180 deg, snapshot 29 Sep 2026). Chop: the app's SPM growth law, fetch
-    table, lee factor (0.75 over 180–280 deg) and chop wind gain (0.60).
+  - Fit (30 Sep 2026): bay-mouth swell = f(dir) · (T/10)^q · H^r, with f a piecewise-linear
+    table on 15-deg knots (60–180 deg), held flat beyond the ends (R^2 0.81, typical error
+    0.17 m). It replaced a Gaussian in dir (R^2 0.79) whose peak was extrapolated towards
+    the NE, where there is little data: it gave ENE swell ~75% at 10 s against ~47%
+    measured. A cosine form scored R^2 0.68 and under-read east swells.
+  - WillyWeather check: 1,431 real WW/NS hour pairs from forecast_history (31 Jul–30 Sep
+    2026; archived in Drive data-exports/waves-model-2026-09-30, because the table keeps
+    only 60 days). WW reads 1.30x the hindcast's height, 1.16x its period and +7 deg on
+    direction, so the simulator converts forecast numbers first. After that the model
+    matches NS with ~0.11 m typical error (ENE hours 0.23 -> 0.14 m with the table); raw
+    WW vs NS was 0.96 m.
+  - Bay mouth -> South Steyne entry: the app's own SS shelter table (New NS sheet, folded
+    rows 0–180 deg). Chop: the app's SPM growth law, fetch table, lee factor and chop wind
+    gain. Sea wall: the app's tide window (surgeWallTideLo/Hi) with a physical reflection
+    coefficient. The page reads the sheet table and the Worker /tune values LIVE on open
+    (the same sources the app reads) and falls back to the baked copies, which the page
+    dates (CLAUDE.md §8). The baked values equal the app's SITE defaults of 30 Sep 2026: if
+    a SITE default changes in index.html (not via /tune), update it here too.
 -->
 <style>
   :root{
@@ -144,6 +168,14 @@
   .bar{height:6px; border-radius:3px; background:rgba(13,43,62,.08); margin-top:8px; overflow:hidden}
   .bar i{display:block; height:100%; background:var(--ocean); border-radius:3px}
   .caveat{font-size:15px; line-height:1.5; color:var(--dim); margin-top:14px}
+  .ctl.span2{grid-column:1 / -1}
+  .out.wide{grid-column:1 / -1}
+  .sim-actions{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:14px}
+  .sim-share{font-family:'DM Mono',monospace; font-size:12.5px; border:1px solid var(--border); background:#fff;
+    color:var(--deep); border-radius:999px; padding:8px 14px; cursor:pointer; min-height:40px}
+  .sim-share:hover,.sim-share:focus-visible{border-color:var(--ocean)}
+  .sim-msg{font-family:'DM Mono',monospace; font-size:12.5px; color:var(--dim); word-break:break-all}
+  .sim-src{font-family:'DM Mono',monospace; font-size:12px; line-height:1.5; color:var(--dim); margin-top:10px}
 
   .src{list-style:none; font-size:12.5px; line-height:1.55}
   .src li{margin:0 0 8px; word-break:break-word}
@@ -347,7 +379,7 @@
     <li>the <strong>offshore swell</strong>, from an ocean wave model about 8 km east of Manly, which is the kind of number a forecast gives you;</li>
     <li>the swell the <strong>NSW Nearshore Wave Tool</strong> puts at the mouth of Cabbage Tree Bay (node 103218). That's the model the app runs on.</li>
   </ul>
-  <p>From <span class="num">8,142</span> hours with a real swell running, we fitted one formula for how much of the offshore swell reaches the bay mouth, depending on its direction and period.</p>
+  <p>From <span class="num">8,142</span> hours with a real swell running, we worked out how much of the offshore swell reaches the bay mouth, direction by direction, and how the swell's period and size change it.</p>
 
   <div class="fig card">
     <div class="eyebrow" style="margin-bottom:2px">Share of the forecast swell height that reaches the bay mouth</div>
@@ -368,7 +400,7 @@
   <div class="facts">
     <div class="fact"><b>~45%</b><span>Median share of the offshore swell height that reaches the bay mouth.</span></div>
     <div class="fact"><b>E vs SE</b><span>An easterly gets about two-thirds of its height in. A south-easterly around 150&deg; gets about a quarter.</span></div>
-    <div class="fact"><b>0.12 m</b><span>Typical error on 1,416 real WillyWeather hours (Aug&ndash;Sep 2026). Taken as-is, WillyWeather was off by 0.96 m.</span></div>
+    <div class="fact"><b>0.11 m</b><span>Typical error on 1,431 real WillyWeather hours (31 Jul&ndash;30 Sep 2026). Taken as-is, WillyWeather was off by 0.96 m.</span></div>
   </div>
   <p>That last number is the reason the app doesn't use the forecast height directly. WillyWeather's offshore swell is a fair picture of what's happening out at sea. What gets past the headlands is a very different number, and it depends on direction.</p>
   <p class="rule">The biggest number on the forecast isn't the one that matters. Look at the direction next to it.</p>
@@ -388,11 +420,13 @@
       <div class="ctl-head">Swell (as the forecast shows it)</div>
       <div class="ctl"><label for="inH">Height</label><output id="oH"></output><input id="inH" type="range" min="0.3" max="4" step="0.1" value="1.5"></div>
       <div class="ctl"><label for="inT">Period</label><output id="oT"></output><input id="inT" type="range" min="5" max="16" step="0.5" value="10"></div>
-      <div class="ctl"><label for="inD">Coming from</label><output id="oD"></output><input id="inD" type="range" min="60" max="185" step="1" value="140"></div>
-      <div class="ctl"><label for="inZ">Water under you</label><output id="oZ"></output><input id="inZ" type="range" min="1" max="6" step="0.5" value="2"></div>
+      <div class="ctl span2"><label for="inD">Coming from</label><output id="oD"></output><input id="inD" type="range" min="60" max="185" step="1" value="140"></div>
       <div class="ctl-head">Wind</div>
       <div class="ctl"><label for="inU">Speed</label><output id="oU"></output><input id="inU" type="range" min="0" max="50" step="1" value="15"></div>
       <div class="ctl"><label for="inW">Coming from</label><output id="oW"></output><input id="inW" type="range" min="0" max="355" step="5" value="45"></div>
+      <div class="ctl-head">Where you are</div>
+      <div class="ctl"><label for="inZ">Water under you</label><output id="oZ"></output><input id="inZ" type="range" min="1" max="6" step="0.5" value="2"></div>
+      <div class="ctl"><label for="inTd">Tide</label><output id="oTd"></output><input id="inTd" type="range" min="0" max="2.1" step="0.05" value="1"></div>
     </div>
 
     <div class="outs" aria-live="polite">
@@ -418,8 +452,19 @@
         <div class="out-v" id="rChop">&mdash;</div>
         <div class="out-s" id="rChopS"></div>
       </div>
+      <div class="out wide">
+        <div class="out-k">Off the sea wall</div>
+        <div class="out-v" id="rWall">&mdash;</div>
+        <div class="out-s" id="rWallS"></div>
+        <div class="bar"><i id="bWall"></i></div>
+      </div>
     </div>
     <p class="caveat">These numbers are modelled, not measured, and this isn't a forecast. The simulator shows how the pieces fit together; it doesn't say whether to swim. For today's call, use the app. The arrival direction depends on the forecast direction only: in theory a longer swell swings a few degrees further towards the beach, but two years of data here show no consistent effect.</p>
+    <div class="sim-actions">
+      <button type="button" class="sim-share" id="simShare">Share these settings</button>
+      <span class="sim-msg" id="simMsg" aria-live="polite"></span>
+    </div>
+    <p class="sim-src" id="simSrc">Shelter table and chop settings: the copy saved on 29 Sep 2026.</p>
   </div>
 </section>
 
@@ -450,8 +495,12 @@ var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: r
 
 // ── MODEL (see the header comment for provenance) ────────────────────────────
 var MODEL = {
-  // bay-mouth swell = a·exp(-((dir-th0)/w)^2)·(T/10)^q·H^r, on the hindcast's own basis
-  a: 1.1231, th0: 41.22, w: 97.24, q: 0.763, r: 1.066,
+  // bay-mouth swell = f(dir)·(T/10)^q·H^r on the hindcast's own basis. f is piecewise-linear
+  // on these knots and held flat beyond the ends (30 Sep 2026, owner's yes: it replaced a
+  // Gaussian whose peak was extrapolated towards the NE and over-read ENE swell).
+  dirKnots: [60, 75, 90, 105, 120, 135, 150, 165, 180],
+  dirF:     [0.831, 1.089, 0.861, 0.679, 0.602, 0.443, 0.272, 0.229, 0.272],
+  q: 0.679, r: 1.084,
   // forecast (WillyWeather) -> hindcast basis, from 1,416 matched hours
   wwH: 1.30, wwT: 1.16, wwDir: 7,
   // forecast period -> bay-mouth peak period (NS peak / hindcast mean 1.27; WW/hindcast 1.16)
@@ -471,6 +520,85 @@ var SS = [[100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],[99,
 // The app's chop fetch table: metres of water, index = wind-from bearing / 10.
 var FETCH = [1766,2766,5936,5890,5456,4445,3599,2572,1622,800,257,232,171,127,109,94,72,57,50,46,46,47,52,60,70,74,87,115,159,214,412,624,789,1022,1273,1530];
 var CHOP_GAIN = 0.60, LEE = 0.75, LEE_FROM = 180, LEE_TO = 280, LEE_TAPER = 20;
+// Sea wall: the app's tide window (surgeWallTideLo/Hi, m) — water starts reaching the wall at
+// WALL_LO and reflects fully by WALL_HI. WALL_R is the PHYSICAL reflection coefficient of a
+// vertical wall (~0.9), not the app's scoring share.
+var WALL_LO = 1.4, WALL_HI = 1.8, WALL_R = 0.9;
+var SAVED_ON = '29 Sep 2026';                               // date of the baked copies above
+
+// ── Live settings: the same two sources the app reads ─────────────────────────
+// The SS shelter table from the New NS sheet (via the sheet proxy), and the chop and wall
+// knobs from the Worker's /tune store (which only carries what has been pushed live; the
+// rest stay at the baked app defaults). Both allow any origin. On success the values are
+// swapped in, the note under the simulator says so with the time, and 'wavesconfig' fires
+// so the simulator and the wind figure rebuild. On failure the dated baked copies stand.
+(function liveSettings() {
+  var SHEET = 'https://middleman-to-sheet.sticasale.workers.dev/newindex/nsdisp';
+  var TUNE  = 'https://bold-rain-6ded.sticasale.workers.dev/tune';
+  var got = { sheet: false, tune: false }, pending = 2;
+  function timed(url) {
+    var ctl = ('AbortController' in window) ? new AbortController() : null;
+    var t = setTimeout(function () { if (ctl) ctl.abort(); }, 8000);
+    return fetch(url + '?t=' + Date.now(), ctl ? { signal: ctl.signal } : {})
+      .then(function (r) { clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r; });
+  }
+  function csvRows(txt) {                                  // small CSV reader: quotes, commas, CRLF
+    var rows = [], row = [], f = '', q = false;
+    for (var i = 0; i < txt.length; i++) {
+      var ch = txt[i];
+      if (q) { if (ch === '"') { if (txt[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(f); f = ''; }
+      else if (ch === '\n' || ch === '\r') { if (ch === '\r' && txt[i + 1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+      else f += ch;
+    }
+    if (f !== '' || row.length) { row.push(f); rows.push(row); }
+    return rows;
+  }
+  // Same cells the app reads (parseNsDispCsv): CSV rows 10–28 = bearings 0–180 deg, SS block
+  // columns 3–18 = periods 2–17 s; blank = 0 (blocked). The app pins SS to this folded half.
+  function parseSS(txt) {
+    var rows = csvRows(txt), t = [];
+    for (var r = 10; r <= 28; r++) {
+      var row = rows[r] || [], out = [];
+      for (var c = 3; c <= 18; c++) { var v = parseFloat(row[c]); out.push(isFinite(v) ? v : 0); }
+      t.push(out);
+    }
+    var ok = t[0][8] >= 50 && t.every(function (r) { return r.every(function (v) { return v >= 0 && v <= 100; }); });
+    return ok ? t : null;
+  }
+  function num(v, lo, hi) { return (typeof v === 'number' && isFinite(v) && v >= lo && v <= hi) ? v : null; }
+  function finish() {
+    if (--pending) return;
+    var el = document.getElementById('simSrc');
+    if (el) {
+      var hhmm = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+      el.textContent = (got.sheet && got.tune)
+        ? 'Shelter table and chop settings: live from the app\u2019s settings, loaded at ' + hhmm + '.'
+        : (got.sheet || got.tune)
+          ? 'Shelter table: ' + (got.sheet ? 'live' : 'the copy saved on ' + SAVED_ON) + '. Chop and sea-wall settings: ' +
+            (got.tune ? 'live' : 'the copy saved on ' + SAVED_ON) + ' (checked at ' + hhmm + ').'
+          : 'Shelter table and chop settings: the copy saved on ' + SAVED_ON + ' (the live settings could not be reached).';
+    }
+    if (got.sheet || got.tune) { try { document.dispatchEvent(new Event('wavesconfig')); } catch (e) {} }
+  }
+  timed(SHEET).then(function (r) { return r.text(); }).then(function (txt) {
+    var t = parseSS(txt); if (t) { SS = t; got.sheet = true; }
+  }).catch(function () {}).then(finish);
+  timed(TUNE).then(function (r) { return r.json(); }).then(function (j) {
+    var v = j && j.values; if (!v) return;
+    var x;
+    if ((x = num(v.chopWindGain, 0.05, 3)) != null) CHOP_GAIN = x;
+    if ((x = num(v.chopLeeFactor, 0.05, 1)) != null) LEE = x;
+    if ((x = num(v.chopLeeFrom, 0, 360)) != null) LEE_FROM = x;
+    if ((x = num(v.chopLeeTo, 0, 360)) != null) LEE_TO = x;
+    if ((x = num(v.chopLeeTaper, 0, 90)) != null) LEE_TAPER = x;
+    if ((x = num(v.surgeWallTideLo, 0, 3)) != null) WALL_LO = x;
+    if ((x = num(v.surgeWallTideHi, 0, 3)) != null) WALL_HI = x;
+    if (!(WALL_HI > WALL_LO)) WALL_HI = WALL_LO + 0.4;
+    got.tune = true;
+  }).catch(function () {}).then(finish);
+})();
 
 function ang(a, b) { return ((a - b + 540) % 360) - 180; }
 function interp(tbl, x) {
@@ -486,9 +614,16 @@ function compass(d) {
   return n[Math.round((((d % 360) + 360) % 360) / 22.5) % 16];
 }
 // bay-mouth swell height from a FORECAST-basis swell
+function dirShare(Do) {                                // piecewise-linear, flat beyond the ends
+  var k = MODEL.dirKnots, f = MODEL.dirF, n = k.length;
+  if (Do <= k[0]) return f[0];
+  if (Do >= k[n - 1]) return f[n - 1];
+  for (var i = 1; i < n; i++) if (Do <= k[i]) return f[i - 1] + (f[i] - f[i - 1]) * (Do - k[i - 1]) / (k[i] - k[i - 1]);
+  return f[n - 1];
+}
 function mouthH(H, T, D) {
   var Ho = H / MODEL.wwH, To = T / MODEL.wwT, Do = D - MODEL.wwDir;
-  return MODEL.a * Math.exp(-Math.pow(ang(Do, MODEL.th0) / MODEL.w, 2)) * Math.pow(To / 10, MODEL.q) * Math.pow(Ho, MODEL.r);
+  return dirShare(Do) * Math.pow(To / 10, MODEL.q) * Math.pow(Ho, MODEL.r);
 }
 function ssTransmit(dir, T) {                         // same bilinear + fold as the app
   var d = ((dir % 360) + 360) % 360; if (d > 180) d = 360 - d;
@@ -1714,6 +1849,10 @@ function runCanvas(cv, height, draw) {
   }
 
   var rc = runCanvas(cv, 260, draw);
+  // live settings arrived (liveSettings): rebuild with the app's current chop gain and lee
+  document.addEventListener('wavesconfig', function () {
+    GAIN = CHOP_GAIN; HREF = spmGrowth(U_KMH / 3.6 * GAIN, OPEN_M); cache = {}; rc.redraw();
+  });
   function set(d) {
     deg = d;
     btns.forEach(function (o) { o.setAttribute('aria-pressed', +o.getAttribute('data-wind-from') === d ? 'true' : 'false'); });
@@ -1793,7 +1932,7 @@ function runCanvas(cv, height, draw) {
   var host = document.getElementById('kChart'); if (!host) return;
   var NS = 'http://www.w3.org/2000/svg';
   var W = 600, Hh = 300, m = { l: 44, r: 44, t: 12, b: 38 };
-  var x0 = 60, x1 = 185, y1 = 0.9;
+  var x0 = 60, x1 = 185, y1 = 1.0;
   var sx = function (d) { return m.l + (d - x0) / (x1 - x0) * (W - m.l - m.r); };
   var sy = function (v) { return Hh - m.b - v / y1 * (Hh - m.t - m.b); };
   var ref = 1.5;   // share is near-independent of height (H^0.04); drawn at 1.5 m
@@ -1804,7 +1943,7 @@ function runCanvas(cv, height, draw) {
   svg.setAttribute('aria-label', 'Share of forecast swell height reaching the bay mouth by direction, for 7, 10 and 13 second periods, with measured medians');
   function el(n, a, p) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); (p || svg).appendChild(e); return e; }
   // grid + y axis
-  [0, .2, .4, .6, .8].forEach(function (v) {
+  [0, .2, .4, .6, .8, 1].forEach(function (v) {
     el('line', { x1: m.l, x2: W - m.r, y1: sy(v), y2: sy(v), stroke: 'rgba(13,43,62,.10)', 'stroke-width': 1 });
     var t = el('text', { x: m.l - 8, y: sy(v) + 4, 'text-anchor': 'end', 'font-size': 12, fill: '#5f8795', 'font-family': 'DM Mono, monospace' });
     t.textContent = Math.round(v * 100) + '%';
@@ -1867,7 +2006,7 @@ function runCanvas(cv, height, draw) {
 // ── 3. Simulator ────────────────────────────────────────────────────────────
 (function sim() {
   var $ = function (id) { return document.getElementById(id); };
-  var ins = ['inH','inT','inD','inZ','inU','inW'].map($);
+  var ins = ['inH','inT','inD','inZ','inU','inW','inTd'].map($);
   var map = $('simMap');
   // Drawn chart of the bay, traced from the seabed chart (map_flat.png, 1520x952 px,
   // north up). Coordinates are that image's pixels; the SVG viewBox crops to the bay.
@@ -1901,7 +2040,7 @@ function runCanvas(cv, height, draw) {
     return '<text x="' + x + '" y="' + y + '" text-anchor="' + (anchor || 'start') + '" font-family="DM Mono, monospace" font-size="' + (size || 34) +
       '" fill="' + (col || '#0d2b3e') + '" stroke="rgba(251,246,236,.85)" stroke-width="8" paint-order="stroke">' + t + '</text>';
   }
-  function drawMap(D, arr, shareM, tx, U, Wd) {
+  function drawMap(D, arr, shareM, tx, U, Wd, wall) {
     var s = '<defs><linearGradient id="sea" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#cbe8f1"/><stop offset="1" stop-color="#7fbcd2"/></linearGradient></defs>';
     s += '<rect x="0" y="0" width="1520" height="952" fill="url(#sea)"/>';
     s += '<path d="' + LAND + '" fill="#efe4c6" stroke="#b9a77c" stroke-width="4" stroke-linejoin="round"/>';
@@ -1919,6 +2058,12 @@ function runCanvas(cv, height, draw) {
     // round the corner: band width and strength by the energy share
     s += '<path d="M' + P(MOUTH.x - 30, MOUTH.y + 20) + ' Q' + P(480, 560) + ' ' + P(ENTRY.x + 16, ENTRY.y - 6) + '" fill="none" stroke="#e0982f" stroke-width="' +
       (6 + 30 * tx).toFixed(0) + '" stroke-linecap="round" opacity="' + (0.35 + 0.6 * tx).toFixed(2) + '"/>';
+    // the South Steyne sea wall, lit as the tide reaches it (wall = 0..1 through the app's window)
+    if (wall > 0) {
+      s += '<path d="M262 474 L292 526 L322 578 L344 628" fill="none" stroke="#c0392b" stroke-width="12" stroke-linecap="round" opacity="' +
+        (0.25 + 0.65 * wall).toFixed(2) + '"/>';
+      s += label(250, 440, 'sea wall', 'end', 30, '#8a3a2b');
+    }
     s += '<circle cx="' + ENTRY.x + '" cy="' + ENTRY.y + '" r="17" fill="#e0982f" stroke="#fff" stroke-width="6"/>';
     s += label(ENTRY.x - 26, ENTRY.y - 34, 'South Steyne', 'end', 34);
     // wind: arrow in a compass disc, pointing the way the wind blows
@@ -1935,7 +2080,8 @@ function runCanvas(cv, height, draw) {
   }
 
   function run() {
-    var H = +ins[0].value, T = +ins[1].value, D = +ins[2].value, z = +ins[3].value, U = +ins[4].value, Wd = +ins[5].value;
+    var H = +ins[0].value, T = +ins[1].value, D = +ins[2].value, z = +ins[3].value, U = +ins[4].value, Wd = +ins[5].value, td = +ins[6].value;
+    $('oTd').textContent = td.toFixed(2) + ' m';
     $('oH').textContent = H.toFixed(1) + ' m';
     $('oT').textContent = T + ' s';
     $('oD').textContent = D + '° ' + compass(D);
@@ -1984,11 +2130,129 @@ function runCanvas(cv, height, draw) {
       : 'Wind from ' + compass(Wd) + ' crosses about ' + (F >= 1000 ? (F / 1000).toFixed(1) + ' km' : Math.round(F / 10) * 10 + ' m') + ' of water before the swim patch' +
         (leeFactor(Wd) < 0.99 ? ', and the buildings behind the beach take some of its strength.' : '.');
 
-    drawMap(D, arr, share, tx, U, Wd);
+    // off the sea wall: the app's tide window, a physical reflection coefficient up to WALL_R,
+    // and the standing-wave maximum a quarter wavelength out (see section 06)
+    var xw = Math.max(0, Math.min(1, (td - WALL_LO) / (WALL_HI - WALL_LO))), wall = xw * xw * (3 - 2 * xw);
+    var R = WALL_R * wall, quarter = Math.round(Math.PI / (2 * k));
+    $('bWall').style.width = Math.round(wall * 100) + '%';
+    if (wall <= 0) {
+      $('rWall').textContent = 'no reflection';
+      $('rWallS').textContent = 'At ' + td.toFixed(2) + ' m of tide the swell spends itself on the sand before it reaches the wall. The app counts water reaching the wall from ' + WALL_LO.toFixed(1) + ' m.';
+    } else {
+      $('rWall').textContent = 'up to \u00d7' + (1 + R).toFixed(1);
+      $('rWallS').textContent = (wall < 1
+          ? 'At ' + td.toFixed(2) + ' m the water is starting to reach the wall, and part of the swell bounces back. '
+          : 'At ' + td.toFixed(2) + ' m the swell hits the wall and bounces back almost as tall as it came in. ') +
+        'About a quarter of a wavelength out, roughly ' + quarter + ' m, the back-and-forth can reach \u00d7' + (1 + R).toFixed(1) +
+        ' what the swell alone gives' + (!broken && sway >= 0.1 ? ': about ' + (sway * (1 + R)).toFixed(1) + ' m in ' + z + ' m of water.' : '.');
+    }
+
+    drawMap(D, arr, share, tx, U, Wd, wall);
   }
-  ins.forEach(function (i) { i.addEventListener('input', run); });
+
+  // Settings in the link (#h=1.5&t=10&d=140&z=2&u=15&w=45&td=1): read on open, kept up to
+  // date once the sliders move, and handed out by the share button, so a scenario can be
+  // posted as a link. Physics inputs only; nothing about the person.
+  var KEYS = ['h', 't', 'd', 'z', 'u', 'w', 'td'], touched = false;
+  function readHash() {
+    var h = location.hash.replace(/^#/, '');
+    if (h.indexOf('=') < 0) return false;
+    var sp; try { sp = new URLSearchParams(h); } catch (e) { return false; }
+    var any = false;
+    KEYS.forEach(function (key, i) {
+      var v = parseFloat(sp.get(key)); if (!isFinite(v)) return;
+      ins[i].value = Math.min(+ins[i].max, Math.max(+ins[i].min, v)); any = true;
+    });
+    return any;
+  }
+  // page + settings only: a shared link must not carry the sender's ?src= tag, or the
+  // recipient's visit would be counted as coming from wherever the sender came from
+  function linkFor() {
+    return location.origin + location.pathname + '#' + KEYS.map(function (key, i) { return key + '=' + ins[i].value; }).join('&');
+  }
+  function onInput() {
+    if (!touched) { touched = true; if (window.wavesLog) window.wavesLog('waves_sim'); }
+    run();
+    try { history.replaceState(null, '', linkFor()); } catch (e) {}
+  }
+  ins.forEach(function (i) { i.addEventListener('input', onInput); });
+  $('simShare').addEventListener('click', function () {
+    var url = linkFor(), msg = $('simMsg');
+    try { history.replaceState(null, '', url); } catch (e) {}
+    if (window.wavesLog) window.wavesLog('waves_share');
+    if (navigator.share) {
+      navigator.share({ title: 'How waves reach South Steyne', url: url }).catch(function () {});
+      return;
+    }
+    var copied = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(url) : Promise.reject();
+    copied.then(function () { msg.textContent = 'Link copied.'; }, function () { msg.textContent = url; });
+  });
+  window.addEventListener('hashchange', function () { if (readHash()) run(); });
+  document.addEventListener('wavesconfig', run);
+  if (readHash()) setTimeout(function () { var el = $('sim'); if (el) el.scrollIntoView(); }, 0);
   run();
 })();
+})();
+</script>
+
+<script>
+// WAVES PAGE VIEW — anonymous beacon, same contract as guide.html's guide_open and
+// enso.html's enso_open. Same origin as the app, so the same device id. No PII. Never
+// throws. window.wavesLog(event) lets the simulator report its first use and shares.
+(function () {
+  var LOG_URL = 'https://bold-rain-6ded.sticasale.workers.dev/log';
+  function uuid() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  function deviceId() {
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) { id = uuid(); localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return uuid(); }
+  }
+  var SESSION = uuid(), PWA = false, REFERRER = '', UTM = {}, SRC = '', FROM = '';
+  try {
+    PWA = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+          (navigator.standalone === true);
+  } catch (e) {}
+  try { REFERRER = document.referrer || ''; } catch (e) {}
+  try {
+    var sp = new URLSearchParams(location.search);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) {
+      var v = sp.get(k); if (v) UTM[k.replace('utm_', '')] = String(v).slice(0, 120);
+    });
+    SRC = String(sp.get('src') || '').slice(0, 40);
+    FROM = String(sp.get('from') || '').slice(0, 40);
+  } catch (e) {}
+  function send(event) {
+    try {
+      var payload = JSON.stringify({
+        events: [{
+          device_id:  deviceId(),
+          session_id: SESSION,
+          event:      event,
+          props:      Object.assign(SRC ? { src: SRC } : {}, FROM ? { from: FROM } : {}),
+          referrer:   REFERRER,
+          utm:        UTM,
+          app_build:  null,
+          pwa:        PWA
+        }]
+      });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(LOG_URL, new Blob([payload], { type: 'text/plain' }));
+      } else {
+        fetch(LOG_URL, { method: 'POST', body: payload,
+          headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+  window.wavesLog = send;
+  send('waves_open');
 })();
 </script>
 </body>
