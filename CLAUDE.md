@@ -132,6 +132,11 @@ and just as binding:
 - **Nothing undated.** If a number can go stale, show its age and fade it. The
   sea-temp tile shipped for five days showing an 11 Aug reading as if it were
   current, because the date was fetched and discarded.
+- **The scorer fails closed** (30 Sep 2026). An hour with no NS data gets
+  `noNearshoreScore()` from `calcScore`: cls `none`, grey on every surface, "No
+  call" on the answer line. It is never scored from the WW backup instead, which
+  once put a confident 72 red or 3.5 green on the same hour. `?src=ww` still scores
+  WW on purpose, and a real NS outage goes to vecchio.html.
 
 ## 9. Offline-first
 
@@ -139,6 +144,13 @@ The app must render on a dead connection in a car park. `sw.js` pre-caches the
 shell; API hosts are passthrough. Media is not intercepted — `<video>` needs
 HTTP Range/206 and a network-first SW breaks playback on iOS Safari. The splash
 video is the one exception and serves ranges by hand (`serveSplashVideo`).
+
+The forecast itself renders offline from the phone's saved copy: `loadWwCache()`
+for the WillyWeather rows and `mergeSavedNs()` for the NS feed, up to
+`SAVED_FORECAST_MAX_MS` (48 h) old. Once it is more than 2 h old, the "SAVED
+FORECAST" note above the rails gives its age. Until 30 Sep 2026 the copy was saved
+in one shape and read in another, so none of this ever ran. Keep one reader per
+saved copy.
 
 ---
 

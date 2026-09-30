@@ -354,6 +354,9 @@
   .metric-block.yellow { background:rgba(224,124,42,0.15);  border:1.5px solid var(--yellow); }
 
   .metric-block.red    { background:rgba(192,57,43,0.15);   border:1.5px solid var(--red); }
+  /* No NS data for the hour (calcScore noData): grey, never a band colour. The dashed
+     border and --dim ink carry it; the navy theme below gives it the same tan card. */
+  .metric-block.none   { background:rgba(74,143,173,0.10);  border:1.5px dashed var(--dim); }
   /* Name + value on one line */
   .metric-header {
     display:flex; align-items:baseline; gap:8px;
@@ -428,6 +431,12 @@
     border-color:rgba(255,255,255,0.34);
     box-shadow:0 2px 14px rgba(192,57,43,0.40);
   }
+  /* No NS data (calcScore noData). Slate, not a band: the line is saying there is NO
+     call, so it must not borrow the colour of one. White clears 5:1 on both stops. */
+  .answer-line.none {
+    background:linear-gradient(180deg,#5d707c 0%,#4d606c 100%);
+    border-color:rgba(255,255,255,0.18);
+  }
   /* Marks the rail that set the day. Sits inside .metric-name, which is why it
      has to reset the Bebas letter-spacing it inherits — and why it sets its own
      colour rather than taking currentColor: .metric-name is band-tinted, and on a
@@ -457,6 +466,7 @@
   .metric-block.yellow .metric-name { color:var(--yellow); }
   .metric-block.orange .metric-name { color:#c86414; }
   .metric-block.red    .metric-name { color:var(--red); }
+  .metric-block.none   .metric-name { color:var(--dim); }
   .metric-value {
     font-family:'Bebas Neue',sans-serif;
     font-size:22px; line-height:1;
@@ -466,6 +476,7 @@
   .metric-block.yellow .metric-value { color:var(--yellow); }
   .metric-block.orange .metric-value { color:#c86414; }
   .metric-block.red    .metric-value { color:var(--red); }
+  .metric-block.none   .metric-value { color:var(--dim); }
   /* ── Bluebottle risk strip (BBF_) ───────────────────────────────────────────
      One colour per day, like the swell day-picker. Each day is rated by its
      WORST 3 h onshore-wind window (see bbfDayBand), so the colour reflects a
@@ -2861,6 +2872,7 @@
   .tl-score.orange { background:#cf6a2e; color:#fff; }
   .tl-score.red    { background:var(--rail-red);    color:#fff; }
   .tl-score.dim    { background:rgba(74,143,173,0.2); color:var(--dim); }
+  .tl-score.none   { background:rgba(74,143,173,0.2); color:var(--dim); }   /* no NS data */
   .tl-day-hdr { background:rgba(74,143,173,0.06); font-weight:500; }
   #tl-tooltip {
     position:fixed; background:rgba(6,20,35,0.95); border:1px solid var(--border);
@@ -3428,7 +3440,7 @@
   .wx-bar-desc, .wx-bar-feels-label, .wx-bar-feels-val { color:#c8bda0; }
   .metrics-panel { background:rgba(22,50,66,0.60); border-color:rgba(180,210,230,0.10); }
   .metric-block.green, .metric-block.amber, .metric-block.yellow,
-  .metric-block.orange, .metric-block.red { background:#c8bda0; }
+  .metric-block.orange, .metric-block.red, .metric-block.none { background:#c8bda0; }
   .day-btn { background:rgba(22,50,66,0.75); border-color:rgba(180,210,230,0.10); color:rgba(200,189,160,0.85); }
   .slider-wrap { background:rgba(22,50,66,0.50); border-color:rgba(180,210,230,0.08); }
   .slider-date, .slider-time { color:#c8bda0; }
@@ -4061,7 +4073,9 @@
            border:1px solid var(--border);border-radius:8px;padding:5px 7px;margin-bottom:6px;
            white-space:normal;"></div>
       <div class="metrics-grid">
-        <div class="metric-block green" id="metricEntry" onclick="openMetricModal('entry')">
+        <!-- Start grey with the dots hidden: no block shows a band colour until renderSnapshot
+             has a scored hour to give it (CLAUDE.md §8, absent data is grey, never green). -->
+        <div class="metric-block none" id="metricEntry" onclick="openMetricModal('entry')">
           <div class="metric-header">
             <div class="metric-name">Entry: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricEntryVal">—</div>
@@ -4075,7 +4089,7 @@
               <div class="z" style="background:var(--rail-yellow);flex:1"></div>
               <div class="z" style="background:var(--rail-red);flex:1"></div>
             </div>
-            <div class="metric-track-dot" id="metricEntryDot" style="color:var(--rail-green)"></div>
+            <div class="metric-track-dot" id="metricEntryDot" style="visibility:hidden"></div>
             <div class="metric-track-wwtick" id="wwTickEntry"></div>
           </div>
           <div class="metric-track-labels" id="metricEntryLabels">
@@ -4087,7 +4101,7 @@
                    oninput="onAssess('entry', this.value)">
           </div>
         </div>
-        <div class="metric-block green" id="metricSurge" onclick="openMetricModal('surge')">
+        <div class="metric-block none" id="metricSurge" onclick="openMetricModal('surge')">
           <div class="metric-header">
             <div class="metric-name">Surge: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSurgeVal">—</div>
@@ -4101,7 +4115,7 @@
               <div class="z" style="background:var(--rail-yellow);flex:1"></div>
               <div class="z" style="background:var(--rail-red);flex:1"></div>
             </div>
-            <div class="metric-track-dot" id="metricSurgeDot" style="color:var(--rail-green)"></div>
+            <div class="metric-track-dot" id="metricSurgeDot" style="visibility:hidden"></div>
             <div class="metric-track-wwtick" id="wwTickSurge"></div>
           </div>
           <div class="metric-track-labels" id="metricSurgeLabels">
@@ -4113,7 +4127,7 @@
                    oninput="onAssess('surge', this.value)">
           </div>
         </div>
-        <div class="metric-block green" id="metricSwim" onclick="openMetricModal('swim')">
+        <div class="metric-block none" id="metricSwim" onclick="openMetricModal('swim')">
           <div class="metric-header">
             <div class="metric-name">Chop: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSwimVal">—</div>
@@ -4127,7 +4141,7 @@
               <div class="z" style="background:var(--rail-yellow);flex:1"></div>
               <div class="z" style="background:var(--rail-red);flex:1"></div>
             </div>
-            <div class="metric-track-dot" id="metricSwimDot" style="color:var(--rail-green)"></div>
+            <div class="metric-track-dot" id="metricSwimDot" style="visibility:hidden"></div>
             <div class="metric-track-wwtick" id="wwTickSwim"></div>
           </div>
           <div class="metric-track-labels" id="metricSwimLabels">
@@ -5983,6 +5997,14 @@
     var f = facts();
     var text = ribbon.querySelector('.tr-text'), when = ribbon.querySelector('.tr-when');
     ribbon.classList.remove('good', 'caution', 'dangerous');
+    // No NS data at the Oracle's hour: no call, said in grey rather than left on
+    // "Forecast loading" (it has loaded; there is just nothing to call).
+    if (f && f.noData) {
+      text.textContent = 'No call — no nearshore forecast'; when.textContent = '';
+      ribbon.setAttribute('aria-label', 'No call: no nearshore forecast. Go to Today');
+      paintDot();
+      return;
+    }
     if (!f || !f.verdict) {                               // absent is grey, never green (§8)
       text.textContent = 'Forecast loading'; when.textContent = '';
       ribbon.setAttribute('aria-label', 'Forecast loading. Go to Today');
@@ -6085,8 +6107,15 @@ const AQ_URL          = 'https://bold-rain-6ded.sticasale.workers.dev/aq';
 // while the Worker reaches the host fine. The Worker forwards the query string
 // verbatim, so the URL params below are unchanged — only the host swaps.
 const OM_WEATHER_PROXY = 'https://bold-rain-6ded.sticasale.workers.dev/weather';
-const WW_CACHE_KEY    = 'swim_ww_cache_v4';
+// v5 since 30 Sep 2026. v4 was written as {fetchedAt, data:{data, matrix}} and read as
+// if the rows sat at the top, so it was never read back (see loadWwCache). vecchio.html
+// writes v4 too, from its own matrix builder, so a fresh key keeps the two apart.
+const WW_CACHE_KEY    = 'swim_ww_cache_v5';
 const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
+// The oldest saved forecast the app will still show when it cannot get a fresh one
+// (30 Sep 2026). Two days covers "last opened yesterday, no signal in the car park
+// now"; older than that a saved forecast is too stale to stand in for a live one.
+const SAVED_FORECAST_MAX_MS = 48 * 60 * 60 * 1000;
 // ── NEARSHORE (NS) FEED — NSW Nearshore Wave Tool node 103218 ────────────────
 // Test build: reads a static nearshore.json sitting beside this html.
 // Later: NS_WORKER_URL will point at a Cloudflare /nearshore route that proxies
@@ -7426,6 +7455,8 @@ window.setIconTheme = setIconTheme; window.getIconTheme = getIconTheme;
 function renderMetricIcon(blockId, cls, cap) {
   const host = document.getElementById(blockId + 'Icon');
   if (!host) return;
+  // No data, no picture: falling through would draw zone 0, the calm one.
+  if (cls === 'none') { host.innerHTML = ''; host.style.display = 'none'; return; }
   const i = _ICON_ZONE[cls] != null ? _ICON_ZONE[cls] : 0;
   const key = blockId.replace('metric', '').toLowerCase(); // entry / swim / surge
   const words = _ICON_WORD[key];
@@ -8760,6 +8791,29 @@ function parseNsDispCSV(text) {
   };
 }
 
+// A saved New NS config (the table, its folds, the sensitivities and the band
+// thresholds) applied onto SITE. Shared by loadNsDispConfig's fresh-cache hit and
+// nuovoPreflight's stale last resort. The last resort used to restore the table
+// alone, so a launch that fell back to it scored with the code's default
+// sensitivities and thresholds instead of the sheet's: on 30 Sep 2026 the same saved
+// hour read Entry Caution from a fresh cache and Doable from a stale one.
+function applySavedNsDisp(c) {
+  SITE.nsDisp = c.table;
+  SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : (c.nsDispFold !== false);  // Entry frozen
+  SITE.blDispFold = (c.blDispFold !== false);   // absent → safe legacy mirror
+  if (c.ssWaveSens != null) SITE.ssWaveSens = c.ssWaveSens;
+  if (c.windSeaSens != null) SITE.windSeaSens = c.windSeaSens;
+  if (c.tideGain != null) SITE.tideGain = c.tideGain;
+  if (c.blDisp) SITE.blDisp = c.blDisp;
+  if (c.blWaveSens != null) SITE.blWaveSens = c.blWaveSens;
+  if (c.blChopImpact != null) SITE.blChopImpact = c.blChopImpact;
+  if (c.chopRefFetchM != null) SITE.chopRefFetchM = c.chopRefFetchM;
+  if (c.tideRef != null) SITE.tideRef = c.tideRef;
+  if (c.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...c.entryThresholds };
+  if (c.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...c.swimThresholds };
+  if (c.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...c.surgeThresholds };
+}
+
 async function loadNsDispConfig(force) {
   // Apply threshold objects parsed from the New NS tab (AN2:AQ13) onto SITE,
   // merging over defaults so a blank cell keeps the code fallback.
@@ -8776,18 +8830,7 @@ async function loadNsDispConfig(force) {
     const cacheShapeOk = cached && cached.table && cached.table.length === NS_DISP_ROWS
                          && (!cached.blDisp || cached.blDisp.length === NS_DISP_ROWS);
     if (!force && !FORCE_FRESH && cached && cacheShapeOk && (Date.now() - cached.fetchedAt) < SWIM_CONFIG_TTL) {
-      SITE.nsDisp = cached.table;
-      SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : (cached.nsDispFold !== false);  // Entry frozen
-      SITE.blDispFold = (cached.blDispFold !== false);   // absent → safe legacy mirror
-      if (cached.ssWaveSens != null) SITE.ssWaveSens = cached.ssWaveSens;
-      if (cached.windSeaSens != null) SITE.windSeaSens = cached.windSeaSens;
-      if (cached.tideGain != null) SITE.tideGain = cached.tideGain;
-      if (cached.blDisp) SITE.blDisp = cached.blDisp;
-      if (cached.blWaveSens != null) SITE.blWaveSens = cached.blWaveSens;
-      if (cached.blChopImpact != null) SITE.blChopImpact = cached.blChopImpact;
-      if (cached.chopRefFetchM != null) SITE.chopRefFetchM = cached.chopRefFetchM;
-      if (cached.tideRef != null) SITE.tideRef = cached.tideRef;
-      applyThresh(cached);
+      applySavedNsDisp(cached);
       diag('NS disp: cache hit (' + cached.table.length + ' rows, SS ' + (SS_DISP_LOCK_FOLD?'FOLDED (locked)':(SITE.nsDispFold?'FOLDED':'36-row'))
         + ', BL ' + (SITE.blDisp ? (SITE.blDispFold?'FOLDED':'36-row') : 'n')
         + ', ss_wave_sens=' + SITE.ssWaveSens + ', wind_sens=' + SITE.windSeaSens + ')');
@@ -9368,15 +9411,35 @@ function offshoreFlatten(windKmh, windDir) {
   return Math.min(cap, pts * sp * w);
 }
 
+// What calcScore returns for an hour it will not score (see FAIL CLOSED below).
+// Shaped like a real result so no caller throws, but nothing in it can be read as a
+// verdict: cls 'none' is grey on every surface, the label is the app's usual absent
+// dash, and there is no score or raw to place a dot or draw a line from. Callers
+// test `noData`; none of them re-derives it from the row.
+function noNearshoreScore() {
+  const none = () => ({ label: '—', cls: 'none', score: null, raw: null });
+  return {
+    noData: true, score: null, chopParts: null,
+    demerits: { tide: 0, wind: 0, windWave: 0, seaSteep: 1, windSea: 0, windEntry: 0,
+                chop: 0, swell1: 0, refrac: 0, offshore: 0, entryChop: 0 },
+    entry: none(), swim: none(), water: none(),
+  };
+}
+
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
   // on the same forecast slot for side-by-side comparison.
-  // Per-row failover: a row uses the NS-dispersion path ONLY if it actually carries
-  // NS-fed data (_nsFeed). When the nearshore feed is down, rows hold raw WW+OM values,
-  // so they must be scored through the 'orig' (WW-region) branch instead of the NS
-  // tables. Healthy state is unchanged: all displayed rows are _nsFeed, so this
-  // collapses to GEM_MODEL. An explicit modelOverride still wins (CAL/compare/logger).
+  // FAIL CLOSED (built 10 Sep 2026, shipped 30 Sep): a live-path row that carries no
+  // NS-fed data (_nsFeed) is not scored at all. It used to fail over per row to WW
+  // inputs through VECCHIO and show that as the verdict. In practice those rows were
+  // the first render of every app open, taken from the raw WillyWeather matrix before
+  // the NS merge: the same hour came out 72 red or 3.5 green depending on whether
+  // vecchio's table had loaded yet, and 41% of calibration_pairs (since retired) logged
+  // it as the NS score. Absent data is grey, never green (CLAUDE.md §8). WW scoring
+  // stays reachable on purpose: an explicit modelOverride (CAL/compare) and ?src=ww
+  // (FORCE_WW) still get it. A real NS outage goes to vecchio.html (nuovoPreflight).
+  if (!modelOverride && !FORCE_WW && d._nsFeed !== true) return noNearshoreScore();
   // The NS feed (Worker route) and the NS dispersion table (New NS sheet tab) are
   // separate sources and fail independently. Both are required for the nuovo branch:
   // without the table nsDispLookup() returns a flat 0.5 transmit for every direction
@@ -9389,8 +9452,8 @@ function calcScore(d, modelOverride) {
   // Input source for the WW/gem path. buildHourlyMatrix + the snapshot builder ZERO
   // every row's primary swell/sea slots and stash the real WillyWeather values in
   // `_ww` (so WW can never leak into an NS-fed hour). Therefore, whenever the live
-  // display path is NOT running the NS branch — because NS is down for this hour, or
-  // ?src=ww forces WW — it must score the `_ww` originals, not the zeroed slots, or
+  // display path is NOT running the NS branch — which since FAIL CLOSED above means
+  // ?src=ww forcing WW — it must score the `_ww` originals, not the zeroed slots, or
   // it would report a phantom flat-calm sea. Only wave keys are overlaid; wind + tide
   // stay as-is (WW already supplies those on `d`). Explicit modelOverride callers (CAL
   // compare, the calibration logger) pass their own pre-promoted slots and are left on
@@ -9857,6 +9920,10 @@ let _sliderIdx = 0;
 let _retryFn  = null;
 let _lastSnapshot = null; // { h, result } of the currently-shown slot, for breakdown modal
 let _forecastRendered = false; // true once a real snapshot has been drawn (dots off the 50% default)
+// When the forecast on screen was fetched, per source, as ms timestamps (0 = none on
+// screen): ww = the WillyWeather rows, ns = the NS feed merged into them. A saved
+// forecast carries its save time, a live one its load time. Read via forecastAsOf().
+let _fcAsOf = { ww: 0, ns: 0 };
 
 // Lightweight on-device diagnostics. Because the "stuck halfway" bug is intermittent
 // and only happens on real phones, we record a timestamped trace of the load path and
@@ -9893,6 +9960,38 @@ function cacheIsFresh(cache, ttl) {
 function wwCacheUsable(cache) {
   return !!(cache && cache.data && Array.isArray(cache.matrix)
             && cache.matrix.some(r => r && r.dateTime));
+}
+// The saved WillyWeather forecast, flattened to {fetchedAt, data, matrix}. saveCache
+// wraps its payload as {fetchedAt, data}, and the WW payload is itself {data, matrix},
+// so the rows sit at .data.matrix. Every reader used to look for .matrix at the top,
+// found nothing, and the saved forecast was never shown: from June to 30 Sep 2026
+// there was no instant paint on a warm open and no forecast at all on a dead
+// connection (CLAUDE.md §9). One reader now, so the shape cannot be misread again.
+function loadWwCache() {
+  const c = loadCache(WW_CACHE_KEY);
+  if (!c || !c.fetchedAt || !c.data) return null;
+  return { fetchedAt: c.fetchedAt, data: c.data.data, matrix: c.data.matrix };
+}
+// The saved NS feed merged into `rows` (and the snapshot `snap`), so a paint from saved
+// data is scored like a live one. Any age up to SAVED_FORECAST_MAX_MS: the preflight
+// already goes ahead on a saved feed when the live one fails, and a saved nearshore
+// forecast shown with its age beats a page of grey. Older, it is not used and those
+// hours stay unscored (calcScore fails closed on rows without NS data). Null when
+// there is nothing usable.
+function mergeSavedNs(rows, snap) {
+  const c = loadCache(NS_CACHE_KEY);
+  if (!c || !c.data || !c.fetchedAt || (Date.now() - c.fetchedAt) >= SAVED_FORECAST_MAX_MS) return null;
+  const nsMap = parseNearshore(c.data);
+  const hours = nsMap ? Object.keys(nsMap).length : 0;
+  if (!hours) return null;
+  return { rows: mergeNearshoreMatrix(rows, nsMap), snap: mergeNearshoreSnapshot(snap, nsMap),
+           nsMap: nsMap, at: c.fetchedAt, hours: hours };
+}
+// When the forecast on screen was fetched: the OLDER of its two parts, since a fresh
+// WillyWeather wind does not freshen a stale nearshore swell. 0 = nothing on screen.
+function forecastAsOf() {
+  const t = [_fcAsOf.ww, _fcAsOf.ns].filter(x => x > 0);
+  return t.length ? Math.min.apply(null, t) : 0;
 }
 
 // fetch() with a hard timeout. A stalled request (flaky mobile, captive portal,
@@ -10704,6 +10803,7 @@ function renderDayWindow(dateTimeStr){
       entry: res.entry.score, chop: res.swim.score, surge: res.water.score,
       combo: wgCombo(res.entry.score, res.swim.score, res.water.score),
       red:   (res.entry.cls === 'red' || res.swim.cls === 'red' || res.water.cls === 'red'),
+      noData: !!res.noData,   // no NS data => blank on every row, and no best time
       noWind: !!r._swellOnly                       // swell-only outlook row => no wind data
     };
   }).filter(function(p){ return p.t >= DW_FROM_H && p.t <= DW_TO_H; });
@@ -10748,7 +10848,8 @@ function renderDayWindow(dateTimeStr){
       // Chop is wind-driven; with no wind data (swell-only outlook) leave the middle
       // row blank rather than colour a meaningless value. CLAUDE.md section 8: absent
       // data is grey, never green.
-      var blank = (row[1] === 'chop') && p.noWind;
+      // An hour with no NS data is blank on all three rows, for the same reason.
+      var blank = p.noData || ((row[1] === 'chop') && p.noWind);
       var col = blank ? 'rgba(180,210,230,0.10)' : _wgColor(p[row[1]]);
       cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+col+'"/>';
     });
@@ -10831,6 +10932,10 @@ function renderDayLines(dateTimeStr){
     if (hh < DW_FROM_H || hh > DW_TO_H) return;
     var ts = tsOfRow(r); if (!isFinite(ts)) return;
     var res; try { res = calcScore(r); } catch(e){ return; }
+    // No NS data: no point on any line, where a null would plot as the calmest value.
+    // The pts entry stays so dayBestWindows sees the gap and names no best time, which
+    // also keeps the spans below from indexing E across a skipped hour.
+    if (res.noData){ pts.push({ hhmm: r.dateTime.substring(11,16), noData: true }); return; }
     // Scores (60 = best) for the best-times search, alongside the band positions
     // (0-100, 100 = roughest) the lines are drawn from. Two scales, opposite
     // directions — keep them straight.
@@ -11508,11 +11613,56 @@ function setNsFallbackBanner(isFallback) {
         el.style.background = '#8a5a1f';
         el.textContent = '\u26A0 WW / GEM PATH (forced) \u2014 independent backup model, not the live NS feed.';
       } else {
-        el.style.background = '#8a1f1f';
-        el.textContent = '\u26A0 ESTIMATED CONDITIONS \u2014 live nearshore feed unavailable, showing modelled backup.';
+        // Grey, not red: this is absent data, not a dangerous hour. And since calcScore
+        // fails closed there is no modelled backup on screen to announce any more.
+        el.style.background = '#4a5f6e';
+        el.textContent = '\u26A0 NO NEARSHORE FORECAST \u2014 no call on the water for this hour.';
       }
     }
     el.style.display = isFallback ? 'block' : 'none';
+  } catch (e) {}
+}
+
+// "9:14 pm yesterday, 9 hours ago" — the age of a saved forecast, in the device's time.
+function savedAgeText(at) {
+  const d = new Date(at), now = new Date();
+  const clock = d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })
+                 .replace(/\s+/g, ' ').toLowerCase();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const day = d.toDateString() === now.toDateString() ? ''
+            : d.toDateString() === yest.toDateString() ? ' yesterday'
+            : ' ' + d.toLocaleDateString('en-AU', { weekday: 'long' });
+  const min = Math.max(0, Math.round((Date.now() - at) / 60000));
+  const h = Math.round(min / 60);
+  return clock + day + ', ' + (min < 90 ? min + ' min ago' : h + (h === 1 ? ' hour' : ' hours') + ' ago');
+}
+
+// The saved-forecast note (30 Sep 2026). When the forecast on screen is older than
+// WW_CACHE_TTL because the app could not update it (no signal, or a feed that would
+// not answer), say so right above the rails, with its age: nothing undated (CLAUDE.md
+// §8). Text only, no dimming — the same call as the bluebottle chart (21 Sep 2026).
+// Hidden again by the first render that has fresh data.
+function renderSavedForecastNote() {
+  try {
+    const at = forecastAsOf();
+    const stale = !!at && (Date.now() - at) >= WW_CACHE_TTL;
+    let el = document.getElementById('savedFcNote');
+    if (!el) {
+      if (!stale) return;
+      // Same anchor as nsFallbackBanner: immediately above the metrics panel.
+      const host = document.querySelector('.metrics-panel');
+      if (!host) return;
+      el = document.createElement('div');
+      el.id = 'savedFcNote';
+      el.setAttribute('role', 'status');
+      el.style.cssText = 'display:none;margin:8px 0;padding:8px 10px;border-radius:8px;'
+        + 'background:#4a5f6e;color:#fff;font-size:11px;font-weight:700;letter-spacing:.3px;'
+        + 'text-align:center;line-height:1.35;';
+      (host.parentElement || host).insertBefore(el, host);
+    }
+    if (stale) el.textContent = '⏱ SAVED FORECAST — from ' + savedAgeText(at)
+      + '. The app couldn’t update it; pull down to try again.';
+    el.style.display = stale ? 'block' : 'none';
   } catch (e) {}
 }
 
@@ -11984,6 +12134,19 @@ function renderAnswerLine(result) {
   const el = document.getElementById('answerLine');
   if (!el || !result) return;
 
+  // No NS data for this hour: say there is no call, in grey. swimVerdict would read
+  // three non-band labels as 'good' and print the green all-clear. No site check
+  // either, since there is no Dangerous entry to point anyone away from.
+  if (result.noData) {
+    ['metricEntry', 'metricSwim', 'metricSurge'].forEach(id => {
+      const b = document.getElementById(id);
+      const tag = b && b.querySelector('.metric-setby');
+      if (tag) tag.remove();
+    });
+    alWrite(el, 'none', 'No call' + AL_SPLIT + 'no nearshore forecast for this hour');
+    return;
+  }
+
   const v = swimVerdict(result.entry.label, result.swim.label, result.water.label,
                         result.water.locus);
 
@@ -12122,8 +12285,10 @@ function renderSnapshot(h, wx) {
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   // Banner suppressed while WW is the deliberate, announced default (FORCE_WW) — users
   // were told out-of-band, so the "forced WW" strip is redundant noise. Still fires the
-  // genuine red "ESTIMATED CONDITIONS" banner when NS is the default but an hour lacks coverage.
-  setNsFallbackBanner(!FORCE_WW && !h._nsFeed);
+  // grey "NO NEARSHORE FORECAST" banner when NS is the default but an hour lacks coverage,
+  // read off the same result the rails use (noData is never set under FORCE_WW).
+  setNsFallbackBanner(!!result.noData);
+  renderSavedForecastNote();      // the forecast's age, when the app could not update it
   // Only meaningful once the tables have had their chance to load (see
   // _configSettled). The background loader re-renders when it finishes, so a
   // genuine outage still reports on that pass.
@@ -12148,7 +12313,9 @@ function renderSnapshot(h, wx) {
              h.windDir, result.swim.raw, (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14,
              result.swim.label, result.swim.cls, h.windKmh);
     // Same two functions the pictogram captions, the swell card and the Oracle use.
-    if (window.swellSetHeights) swellSetHeights(shelteredRampH(h), shelteredBayH(h));
+    // No NS data → no pins: both heights are modelled from the NS swell this hour lacks.
+    if (window.swellSetHeights) swellSetHeights(result.noData ? null : shelteredRampH(h),
+                                                result.noData ? null : shelteredBayH(h));
   }
 
   // "REALTIME" on the amber wind arrow, only where the North Head observation
@@ -12205,6 +12372,10 @@ function renderSnapshot(h, wx) {
   function setTrackDot(dotId, pct, colorVar) {
     const dot = document.getElementById(dotId);
     if (!dot) return;
+    // No NS data → no position to claim. Hidden rather than parked at either end of the
+    // rail, where it would read as a very calm or a very rough hour.
+    dot.style.visibility = result.noData ? 'hidden' : '';
+    if (result.noData) return;
     const clamped = Math.min(97, Math.max(3, pct));
     dot.style.setProperty('--pos', clamped + '%');
     dot.style.color = colorVar;
@@ -12332,7 +12503,8 @@ function renderSnapshot(h, wx) {
     // Also formerly an inline copy — now the shared definition, same as the card.
     const bayH  = shelteredBayH(h);
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
-    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _entryBreakH.toFixed(1) + ' m at the ramp');
+    // No NS data → no readouts: the ramp and bay heights are modelled from the NS swell.
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, result.noData ? '' : _entryBreakH.toFixed(1) + ' m at the ramp');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     // Surge's readout follows the LOCUS, because on a point day the bay figure is no
     // longer describing what set the band and printing it would put a reassuring number
@@ -12341,7 +12513,8 @@ function renderSnapshot(h, wx) {
     // the bay (CLAUDE.md §2, and see shelteredRampH), and inventing a third at the point
     // is precisely the modelled in-bay figure that rule exists to keep out of sight.
     // The bay number is still one tap away in the breakdown.
-    const surgeCap = (result.water && result.water.locus === 'point')
+    const surgeCap = result.noData ? ''
+      : (result.water && result.water.locus === 'point')
       ? 'surge at the point'
       : bayH.toFixed(1) + ' m in the bay';
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, surgeCap);
@@ -12362,14 +12535,16 @@ function renderSnapshot(h, wx) {
   // chop and surge are comfort factors shown separately, so they no longer drag
   // the headline verdict down (a choppy-but-enterable day still reads as good).
   (function renderVerdict(){
-    const cls = result.entry.cls || 'green';
+    const cls = result.entry.cls || 'none';
     const map = {
       green:  { t:'Good',    c:'#22a35a'  },
       amber:  { t:'Doable',  c:'#e0a020'  },
       yellow: { t:'Caution', c:'#e2701a'  },
       red:    { t:'Rough',   c:'#c0392b'  },
+      none:   { t:'—',       c:'#4a5f6e'  },   // no NS data
     };
-    const v = map[cls] || map.green;
+    // An unrecognised class lands on the grey dash, never on Good (CLAUDE.md §8).
+    const v = map[cls] || map.none;
     const tEl  = document.getElementById('verdictText');
     const aL   = document.getElementById('verdictArrowL');
     const aR   = document.getElementById('verdictArrowR');
@@ -12646,7 +12821,9 @@ function entryDayGradient(matrix, date) {
     .filter(r => { const h = +r.dateTime.substring(11, 13); return h >= 6 && h <= 18 && h % 2 === 0; })
     .sort((a, b) => a.dateTime.localeCompare(b.dateTime));
   if (!rows.length) return entryBand8am(matrix, date);   // fall back to the single-band colour
-  const RAIL = { green: 'var(--rail-green)', amber: 'var(--rail-amber)', yellow: 'var(--rail-yellow)', red: 'var(--rail-red)' };
+  // 'none' (no NS data that hour) is a grey stop, so a part-covered day shows the gap
+  // instead of stretching the covered hours' colour over it.
+  const RAIL = { green: 'var(--rail-green)', amber: 'var(--rail-amber)', yellow: 'var(--rail-yellow)', red: 'var(--rail-red)', none: 'rgba(200,189,160,0.35)' };
   const stops = [];
   rows.forEach(r => { let cls; try { const q = calcScore(r); cls = q && q.entry && q.entry.cls; } catch (e) {} if (cls && RAIL[cls]) stops.push(RAIL[cls]); });
   if (!stops.length) return entryBand8am(matrix, date);
@@ -13179,6 +13356,7 @@ function renderGemComparison(h) {
   // the old-index path).
   let res = null;
   try { res = calcScore(h); } catch (e) { res = null; }
+  if (res && res.noData) res = null;   // no NS data: nothing for the mirror to match
   const driftAmt = res ? Math.abs(total_g - res.entry.raw) : 0;
   const driftLine = res
     ? (driftAmt > 0.1
@@ -13327,6 +13505,9 @@ function dayBestWindows(pts){
   var out = { idx: [], txt: '', why: 'none' };
   if (!pts || pts.length < 3) return out;
   if (pts.some(function(p){ return p.red; })){ out.why = 'red'; return out; }   // guard 1 — safety
+  // An hour with no NS data could be anything, so nothing that day can be named best
+  // against it. Silent, like the red day: there is nothing true to say.
+  if (pts.some(function(p){ return p.noData; })){ out.why = 'nodata'; return out; }
 
   var vals = pts.map(function(p){ return p.combo; });
   var hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
@@ -13522,6 +13703,7 @@ function renderWeekAhead(matrix){
   matrix.forEach(function(r){
     var ts = tsOf(r.dateTime); if (!isFinite(ts) || ts < startMs || ts >= endMs) return;
     var res; try { res = calcScore(r); } catch(e){ return; }
+    if (res.noData) return;          // no NS data: no point, rather than one plotted as the calmest value
     var b = Math.floor(ts/BIN)*BIN;
     put(bE, b, posOf(res.entry.raw, edgesE), ts);
     put(bS, b, posOf(res.swim.raw,  edgesS), ts);
@@ -13815,7 +13997,7 @@ function renderTimeline(matrix, wxMatrix) {
       html += `<tr onclick="jumpToSlider(${matIdx})" title="${row.dateTime}">
         <td>${hour}</td>
         <td><span class="tl-score ${entry.cls}">${entry.label}</span></td>
-        <td style="font-size:10px;white-space:nowrap">${row.swell1H.toFixed(1)}m ${Math.round(row.swell1P)}s ${bearingName(row.swell1Dir)}</td>
+        <td style="font-size:10px;white-space:nowrap">${result.noData ? '—' : `${row.swell1H.toFixed(1)}m ${Math.round(row.swell1P)}s ${bearingName(row.swell1Dir)}`}</td>
         <td style="font-size:10px">${Math.round(row.windKmh)} ${bearingName(row.windDir)}</td>
         <td>${temp}</td>
         <td>${rain}</td>
@@ -13997,21 +14179,33 @@ async function loadAndRender(forceRefresh = false) {
   hideErrorBanner();
   try {
     // Check WW cache
-    const wwCache = loadCache(WW_CACHE_KEY);
+    const wwCache = loadWwCache();
     let wwData = null, matrix = null;
+    let wwAt = 0;                   // when the WW rows about to be rendered were fetched
 
-    // If we have ANY cached data, render it immediately so the page isn't blank
-    // while we attempt a live fetch in the background
-    if (wwCacheUsable(wwCache)) {
+    // ── Paint the saved forecast straight away ────────────────────────────────
+    // So the page isn't blank while the live fetch runs, and so a dead connection
+    // still gets a forecast (CLAUDE.md §9). This never actually ran from June to
+    // 30 Sep 2026 (see loadWwCache). Three conditions:
+    //  - FIRST paint only. The offline retry below comes back through here every
+    //    15 s, and painting again would snap the slider back to now each time.
+    //  - Only when a fetch follows. A fresh save is rendered by the main path below
+    //    at once, with no network wait, so painting it here too is wasted work.
+    //  - Not older than SAVED_FORECAST_MAX_MS.
+    // The saved NS feed goes in BEFORE the paint, as in the main path: without it
+    // every hour reaches calcScore with no NS data and is drawn grey.
+    if (!_forecastRendered && wwCacheUsable(wwCache)
+        && (forceRefresh || !cacheIsFresh(wwCache, WW_CACHE_TTL))
+        && (Date.now() - wwCache.fetchedAt) < SAVED_FORECAST_MAX_MS) {
       try {
-        _matrix    = wwCache.matrix;
-        _sliderIdx = 0;
-        _selectedDay = null; // will be set by renderDayPicker
-        // Find closest entry to now in cached matrix
+        _matrix = wwCache.matrix.filter(r => r && r.dateTime);
+        _fcAsOf = { ww: wwCache.fetchedAt, ns: 0 };
+        const ns = NS_FEED_ENABLED ? mergeSavedNs(_matrix, null) : null;
+        if (ns) { _matrix = ns.rows; appendNsOutlook(ns.nsMap); _fcAsOf.ns = ns.at; }
+        // Find closest entry to now in the saved matrix
         const now = Date.now();
         let bestIdx = 0, minDiff = Infinity;
         _matrix.forEach((row, i) => {
-          if (!row || !row.dateTime) return;
           const diff = Math.abs(new Date(row.dateTime.replace(' ','T')).getTime() - now);
           if (diff < minDiff) { minDiff = diff; bestIdx = i; }
         });
@@ -14020,16 +14214,18 @@ async function loadAndRender(forceRefresh = false) {
         renderSnapshot(_matrix[_sliderIdx], null);
         renderSlider(_matrix);
         renderTimeline(_matrix, {});
+        if (ns) renderLongRange(_matrix);
         const ago = Math.round((now - wwCache.fetchedAt) / 60000);
-        setStatus(cacheIsFresh(wwCache, WW_CACHE_TTL)
-          ? `Cached ${ago} min ago · ${FEED_LABEL}`
-          : `Loading… (showing ${ago} min old data)`);
-      } catch(e2) { /* silent — live fetch will overwrite */ }
+        setStatus(`Loading… (showing ${ago} min old data)`);
+        diag('saved forecast painted — WW ' + ago + ' min old, ' +
+             (ns ? 'NS ' + Math.round((now - ns.at) / 60000) + ' min old' : 'no usable NS'));
+      } catch(e2) { diag('saved paint error (isolated): ' + e2.message); }
     }
 
     if (!forceRefresh && cacheIsFresh(wwCache, WW_CACHE_TTL) && wwCacheUsable(wwCache)) {
       wwData  = wwCache.data;
       matrix  = wwCache.matrix || [];
+      wwAt    = wwCache.fetchedAt;
       diag('using fresh cache (' + matrix.length + ' rows)');
       const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
       setStatus(`Cached ${ago} min ago · ${FEED_LABEL}`);
@@ -14051,7 +14247,8 @@ async function loadAndRender(forceRefresh = false) {
           wwData  = parseWillyWeather(j);
           matrix  = buildHourlyMatrix(j);
           if (!matrix.length) throw new Error('WW returned empty forecast');
-          saveCache(WW_CACHE_KEY, { data: wwData, matrix });
+          saveCache(WW_CACHE_KEY, { data: wwData, matrix });   // read back by loadWwCache
+          wwAt = Date.now();
           diag('WW ok — ' + matrix.length + ' rows');
           setStatus('');
           setSrc('ww', 'ok');
@@ -14073,9 +14270,39 @@ async function loadAndRender(forceRefresh = false) {
       if (!wwData) throw lastErr;
     }
 
-    // ── Render immediately with WW data — metrics visible right away ─────────
+    // ── Render immediately — metrics visible right away ───────────────────────
     // Drop any rows missing a timestamp so a single bad row can't poison indexing.
     _matrix = (matrix || []).filter(r => r && r.dateTime);
+    _fcAsOf = { ww: wwAt, ns: 0 };
+
+    // ── NS overlay from the saved feed, BEFORE the first paint ────────────────
+    // The live NS fetch (below) hits the slow NSW nearshore Worker and takes ~10-15s
+    // cold, so the saved feed is applied now and the live fetch refreshes it in the
+    // background (usually identical data → no visible change). On a normal open the
+    // save is seconds old: nuovoPreflight() has just fetched the feed and saved it.
+    // When the preflight could not, this is the saved feed it decided to go ahead on,
+    // shown with its age (renderSavedForecastNote) rather than a page of grey.
+    // This ran AFTER the first renderSnapshot until 30 Sep 2026. That render scored
+    // the raw WillyWeather matrix with every NS slot still a zero placeholder; the
+    // overlay re-rendered in the same task, so it was never painted, but it was the
+    // render the (since retired) calibration logger recorded, and calcScore now fails
+    // closed on rows like that. Merging first gives the first paint data.
+    let nsCacheApplied = false;
+    if (NS_FEED_ENABLED) {
+      try {
+        const ns = mergeSavedNs(_matrix, wwData);
+        if (ns) {
+          _matrix = ns.rows;
+          wwData  = ns.snap;
+          appendNsOutlook(ns.nsMap);                                   // far days (8-10) on warm/standalone launches, not only after the live fetch
+          _fcAsOf.ns = ns.at;
+          nsCacheApplied = true;
+          diag('NS cache applied — ' + ns.hours + ' hours, ' +
+               Math.round((Date.now() - ns.at) / 60000) + ' min old (live refresh pending)');
+        }
+      } catch (nscErr) { diag('NS cache apply error (isolated): ' + nscErr.message); }
+    }
+
     if (_matrix.length > 0) {
       const now = Date.now();
       let bestIdx = 0, minDiff = Infinity;
@@ -14101,32 +14328,8 @@ async function loadAndRender(forceRefresh = false) {
     }
     renderSlider(_matrix);
     renderTimeline(_matrix, {});
+    if (nsCacheApplied) renderLongRange(_matrix);                    // repaint the day 6-10 outlook strip with the appended far days
     hideErrorBanner();
-
-    // ── Instant NS overlay from cache ─────────────────────────────────────────
-    // The live NS fetch (below) hits the slow NSW nearshore Worker and takes
-    // ~10-15s cold, so on every open the swell/wave numbers used to "pop" late.
-    // If we have a recent cached NS response, apply it NOW so repeat visits show
-    // the nearshore overlay immediately; the live fetch then refreshes it in the
-    // background (usually identical data → no visible change).
-    if (NS_FEED_ENABLED) {
-      try {
-        const nsCache = loadCache(NS_CACHE_KEY);
-        if (cacheIsFresh(nsCache, NS_CACHE_TTL) && nsCache.data) {
-          const nsMapC = parseNearshore(nsCache.data);
-          if (nsMapC && Object.keys(nsMapC).length) {
-            _matrix = mergeNearshoreMatrix(_matrix, nsMapC);
-            wwData  = mergeNearshoreSnapshot(wwData, nsMapC);
-            appendNsOutlook(nsMapC);                                   // far days (8-10) on warm/standalone launches, not only after the live fetch
-            const reH = _matrix[_sliderIdx] || wwData || null;
-            if (reH) renderSnapshot(reH, null);
-            renderTimeline(_matrix, {});
-            renderLongRange(_matrix);                                  // repaint the day 6-10 outlook strip with the appended far days
-            diag('NS cache applied — ' + Object.keys(nsMapC).length + ' hours (live refresh pending)');
-          }
-        }
-      } catch (nscErr) { diag('NS cache apply error (isolated): ' + nscErr.message); }
-    }
 
     // ── Fetch secondary data in parallel with 8s timeout each ─────────────────
     // Isolated in its own try/catch: a failure here must NOT abandon the
@@ -14158,6 +14361,7 @@ async function loadAndRender(forceRefresh = false) {
             _matrix = mergeNearshoreMatrix(_matrix, nsMap);
             wwData  = mergeNearshoreSnapshot(wwData, nsMap);
             const nAdded = appendNsOutlook(nsMap);
+            _fcAsOf.ns = Date.now();
             if (nAdded) diag('NS-only outlook appended — ' + nAdded + ' swell-only hours');
                         setSrc('ns', nsRes.value._stale ? 'warn' : 'ok');  // Worker tags served last-known-good
             diag('NS feed merged — ' + Object.keys(nsMap).length + ' hours');
@@ -14251,18 +14455,33 @@ async function loadAndRender(forceRefresh = false) {
     }
 
     // Always attempt the summary banner, even if secondary data didn't arrive —
-    // generateBannerSummary has a built-in "weather unavailable" fallback.
+    // generateBannerSummary has a built-in "weather unavailable" fallback. A baseline
+    // written offline from the saved forecast (_bannerSaved) is rewritten once, here:
+    // _bannerGenerated has to drop too, since generateBannerSummaryLocal returns
+    // straight away while it is set.
+    if (_bannerSaved) { _bannerSaved = false; _bannerGenerated = false; }
     if (!_bannerGenerated) generateBannerSummary();
 
   } catch(e) {
     console.error('Load failed:', e);
-    const wwCache = loadCache(WW_CACHE_KEY);
-    diag('LOAD FAILED: ' + (e.name || '') + ' ' + (e.message || '') + (wwCache?.matrix?.length ? ' (cache shown)' : ' (no cache)'));
-    if (wwCache?.data && wwCache?.matrix?.length) {
-      // Already rendered stale cache above — just update status, no red banner
-      const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
-      setStatus(`Showing cached data (${ago} min old) · retrying…`);
+    diag('LOAD FAILED: ' + (e.name || '') + ' ' + (e.message || '') + (_forecastRendered ? ' (forecast on screen)' : ' (nothing on screen)'));
+    if (_forecastRendered) {
+      // A forecast is already on screen: the saved one painted above, or an earlier
+      // load's. Keep it, date it, and retry quietly. No red banner over a page that is
+      // showing a forecast.
+      const at = forecastAsOf();
+      const ago = at ? Math.round((Date.now() - at) / 60000) : null;
+      setStatus('Showing saved forecast' + (ago != null ? ` (${ago} min old)` : '') + ' · retrying…');
       hideErrorBanner();
+      renderSavedForecastNote();
+      // Without this the Oracle sits on its skeletons for as long as the connection is
+      // down. Written ONCE from what is on screen (the local baseline; the Worker call
+      // fails with the connection) and flagged, so the first load that gets through
+      // rewrites it. On a red morning it is also what carries siteCheck (CLAUDE.md §1).
+      if (!_bannerGenerated && !_bannerSaved) {
+        _bannerSaved = true;
+        generateBannerSummary().catch(bsErr => diag('saved-forecast banner error: ' + bsErr.message));
+      }
       // Silent auto-retry after 15 seconds
       setTimeout(() => loadAndRender(false), 15000);
     } else {
@@ -14283,7 +14502,7 @@ async function loadAndRender(forceRefresh = false) {
 // HARD REFRESH + PULL-TO-REFRESH
 // =============================================================================
 function hardRefresh() {
-  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2','swim_nsdisp_config_v1'].forEach(k => {
+  ['swim_ww_cache','swim_ww_cache_v2','swim_ww_cache_v3','swim_ww_cache_v4','swim_ww_cache_v5','swim_om_cache_v1','swim_om_cache_v2','swim_om_cache_v3','swim_omwx_cache_v1','swim_omwx_cache_v2','swim_omwx_cache_v3','swim_config_cache_v1','swim_config_cache_v2','swim_config_cache_v3','swim_config_cache_v4','swim_config_cache_v5','swim_config_cache_v6','swim_config_cache_v7','swim_config_cache_v8','swim_bw_cache_v1','swim_gem_config_v1','swim_gem_config_v2','swim_nsdisp_config_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch(e) {}
   });
   window.location.reload(true);
@@ -16408,12 +16627,10 @@ async function nuovoPreflight() {
   if (!SITE.nsDisp) {
     try {
       const c = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
-      if (c && c.table && c.table.length === NS_DISP_ROWS) {
-        SITE.nsDisp = c.table;
-        SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : (c.nsDispFold !== false);
-        SITE.blDispFold = (c.blDispFold !== false);
-        if (c.blDisp) SITE.blDisp = c.blDisp;
-        diag('NS disp: preflight last-resort stale cache (' + c.table.length + ' rows)');
+      if (c && c.table && c.table.length === NS_DISP_ROWS
+          && (!c.blDisp || c.blDisp.length === NS_DISP_ROWS)) {
+        applySavedNsDisp(c);   // the whole saved config, not the table alone
+        diag('NS disp: preflight last-resort stale cache (' + c.table.length + ' rows, ss_wave_sens=' + SITE.ssWaveSens + ')');
       }
     } catch (e) {}
   }
@@ -16430,7 +16647,11 @@ async function nuovoPreflight() {
   if (!ns) {
     try {
       const c = loadCache(NS_CACHE_KEY);
-      if (c && c.data && parseNearshore(c.data)) { ns = c.data; diag('NS feed: preflight last-resort cached feed'); }
+      // Same age limit as the paint that will use it (mergeSavedNs): a feed older than
+      // SAVED_FORECAST_MAX_MS is not shown, so it must not stand in for a live one here
+      // either. Past it, vecchio's own WillyWeather forecast is the better answer.
+      if (c && c.data && c.fetchedAt && (Date.now() - c.fetchedAt) < SAVED_FORECAST_MAX_MS
+          && parseNearshore(c.data)) { ns = c.data; diag('NS feed: preflight last-resort cached feed'); }
     } catch (e) {}
   }
   if (!ns) { failoverToVecchio('ns_feed_unavailable'); return false; }
@@ -16895,6 +17116,9 @@ function runCalibration() {
 // CONDITIONS BANNER — AI-generated summary
 // =============================================================================
 let _bannerGenerated = false;
+// True while the banner on screen was written from a saved forecast because no load
+// had got through yet (loadAndRender's catch). The first load that succeeds rewrites it.
+let _bannerSaved = false;
 
 // ── THE VERDICT, DERIVED ONCE ───────────────────────────────────────────────
 // safetyLevel + siteCheck used to be computed inline inside _bannerFacts. The
@@ -17328,9 +17552,11 @@ function waterQualityLine() {
 
 function forecastStaleLine() {
   try {
-    const c = loadCache(WW_CACHE_KEY);
-    if (!c || !c.fetchedAt || cacheIsFresh(c, WW_CACHE_TTL)) return '';
-    const ageMin = (Date.now() - c.fetchedAt) / 60000;
+    // The forecast ON SCREEN, not the save on disk: a stale nearshore feed under a
+    // fresh WillyWeather fetch is still a stale forecast (forecastAsOf takes the older).
+    const at = forecastAsOf();
+    if (!at || (Date.now() - at) < WW_CACHE_TTL) return '';
+    const ageMin = (Date.now() - at) / 60000;
     const h = Math.floor(ageMin / 60);
     const label = ageMin < 90 ? Math.round(ageMin) + ' min' : (h + (h === 1 ? ' hour' : ' hours'));
     return ' <span style="color:var(--yellow)">(This read is based on forecast data from about ' + label + ' ago — pull down to refresh.)</span>';
@@ -17785,7 +18011,12 @@ function summaryConflict(text, facts) {
 // Worker summariser and re-skin the two prose lines only if it comes back clean.
 async function generateBannerSummary() {
   await generateBannerSummaryLocal();
-  if (!_bannerFacts) return;
+  // No call → nothing for the summariser to phrase. The Worker caches its answer per
+  // hour for EVERY device, so a no-data draft must never reach it, and nor must one
+  // written from a saved forecast the app could not update (forecastAsOf older than
+  // WW_CACHE_TTL): the local baseline stands in, dated by forecastStaleLine.
+  const _asOf = forecastAsOf();
+  if (!_bannerFacts || _bannerFacts.noData || (_asOf && Date.now() - _asOf >= WW_CACHE_TTL)) return;
   try {
     const n = new Date();
     const pad = x => String(x).padStart(2, '0');
@@ -17913,6 +18144,9 @@ async function generateBannerSummaryLocal() {
   // would put the sentence and the rail on different mornings. Null on the dominant-
   // label fallback: with no single row to point at, there is no place to name.
   const domLocus = snapRes ? snapRes.water.locus : null;
+  // No NS data at the reference hour → no call. Read off the same calcScore result as
+  // the three labels above, so the prose and the rails cannot disagree about it.
+  const _noCall = !!(snapRes && snapRes.noData);
 
   // THE VERDICT, ONCE, AND EARLY. This used to be declared a few hundred lines down,
   // just above the water icon, which put it out of reach of the local baseline prose
@@ -17920,7 +18154,12 @@ async function generateBannerSummaryLocal() {
   // read _sv's. Hoisted here, where every consumer in this function can reach it, so
   // the offline sentence and the summarised one come from the same derivation. Depends
   // on nothing but the four labels above.
-  const _sv = swimVerdict(domEntry, domSwim, domSurge, domLocus);
+  // 'unknown' on a no-call hour, with nothing to check and nothing setting it.
+  // Anything encouragement-shaped has to test for 'good', never for "not dangerous"
+  // (the getting-out line below already does).
+  const _sv = _noCall
+    ? { safetyLevel: 'unknown', roughLevel: 'unknown', roughSetBy: [], setBy: [], siteCheck: null, lineCheck: null }
+    : swimVerdict(domEntry, domSwim, domSurge, domLocus);
 
   // Entry/swim/surge classes for the worst in period (for colors)
   const clsOrder = ['green','amber','yellow','red'];
@@ -18228,6 +18467,11 @@ async function generateBannerSummaryLocal() {
 
     waterText = parts.join('');
   }
+  // A no-call hour ran the prose above on '—' labels, so it is replaced wholesale.
+  // No advice either way: there is nothing to base any on.
+  if (_noCall) {
+    waterText = 'The nearshore forecast has not loaded, so there is no call on the water yet. Check conditions on site.';
+  }
 
   // Re-word "today" in the prose to match the forecast period
   if (timeCtx === 'tomorrow') {
@@ -18331,7 +18575,8 @@ async function generateBannerSummaryLocal() {
   // Water icon — was a verbatim copy of the safetyLevel expression, now reads it.
   document.getElementById('banner-water-icon').textContent =
     _sv.safetyLevel === 'dangerous' ? '⚠️' :
-    _sv.safetyLevel === 'caution'   ? '🏄' : '🏊';
+    _sv.safetyLevel === 'caution'   ? '🏄' :
+    _sv.safetyLevel === 'unknown'   ? '❔' : '🏊';   // no call: a question mark, not the swimmer
 
   // Oceanside = the true out-the-back / OFFSHORE swell, read from the stashed
   // WillyWeather snapshot `_ww` \u2014 the SAME source the "Oceanside" row on the swell
@@ -18371,7 +18616,10 @@ async function generateBannerSummaryLocal() {
   _bannerFacts = {
     timeCtx: timeCtx,
     dayPhrase: dayPhrase,
-    verdict: { entry: domEntry, swim: domSwim, surge: domSurge },
+    verdict: _noCall ? null : { entry: domEntry, swim: domSwim, surge: domSurge },
+    // True when the reference hour has no NS data. generateBannerSummary does not send
+    // facts like these to the Worker at all, and the tab ribbon says "No call".
+    noData: _noCall,
     // safetyLevel and siteCheck both come from swimVerdict() — the single
     // derivation shared with the answer line above the rails. They used to be
     // inlined here; two copies of this rule is exactly what CLAUDE.md §1 forbids.
@@ -18432,7 +18680,7 @@ async function generateBannerSummaryLocal() {
       oceanSwellH: Number(oceanSwellH.toFixed(1)),
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
-      rampBreakH: Number(rampBreakH.toFixed(1)),
+      rampBreakH: _noCall ? null : Number(rampBreakH.toFixed(1)),   // modelled off the NS swell: none on a no-call hour
       swellTrend: swellTrend,
       shelteredContrast: shelteredContrast
     }
@@ -18495,7 +18743,9 @@ async function generateBannerSummaryLocal() {
   // Mark as generated only now that the banner text has actually been written.
   // (Previously set near the top, so any mid-function throw left this true and
   //  permanently blocked re-generation — leaving the skeletons up until reload.)
-  _bannerGenerated = true;
+  // Not on a no-call hour, so the next load that does bring NS data can write the
+  // real summary over this one.
+  if (!_noCall) _bannerGenerated = true;
 
   // In-the-bay section: latest community diver report
   fetchLatestSighting().then(applySightingToBanner);
@@ -20100,6 +20350,9 @@ function metricBreakdownHTML(key) {
        font-family:'Inter',sans-serif;font-size:11px;line-height:1.5;">
        <div style="font-weight:700;color:var(--deep);letter-spacing:0.5px;margin-bottom:4px;">CURRENT SLOT — COMPONENTS</div>
        ${inner}</div>`;
+
+  // No NS data: no components, and the placeholder zeros would read as a measured flat sea.
+  if (r.noData) return wrap('<div style="color:var(--dim);">No nearshore forecast for this hour, so there is nothing to break down.</div>');
 
   if (key === 'entry') {
     const we = (dm.windEntry != null) ? dm.windEntry : ((dm.windSea || 0) + dm.windWave);
@@ -22182,6 +22435,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       /* the LIVE score — same call the metric rails make, so the pictures and
          labels here always agree with what the app is showing */
       try { liveRes = calcScore(cur); } catch (e) {}
+      if (liveRes && liveRes.noData) liveRes = null;   /* no NS data: no metric tile, not three calm pictures */
     }
 
     /* ---- anomalies */
