@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bluebottle Stranding Forecast</title>
+<meta name="description" content="Technical brief: the wind-drift bluebottle (Physalia) stranding forecast for Cabbage Tree Bay, Manly. Model, seasonality, data, validation and limitations.">
+<meta name="author" content="Marco Bordieri">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Bluebottle stranding forecast: technical brief">
+<meta property="og:description" content="How Swim Manly forecasts bluebottle strandings at Cabbage Tree Bay: an onshore-wind model with a seasonal abundance term, fitted on iNaturalist sightings.">
+<meta property="og:url" content="https://app.viz.net.au/Manly-Swim/bluebottle-model.html">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* Same look as enso.html and guide.html: a light reference page. This one is a
+     technical brief for researchers, reached by direct link (not from the app). */
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8794;
+    --sun:#e0982f; --ocean:#0a7ea4;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66); --card-soft:rgba(255,255,255,.60); --card-faint:rgba(255,255,255,.50);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--cream);
+    background-image:
+      radial-gradient(120% 55% at 50% 0, #ffffff 0, rgba(255,255,255,0) 60%),
+      linear-gradient(180deg, var(--cream2) 0%, var(--cream2) 100%);
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:'Newsreader',Georgia,serif; font-weight:400;
+    font-size:19px; line-height:1.62;
+    padding:0 0 64px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:0 20px}
+  h1,h2,h3,h4{font-family:'Bricolage Grotesque',system-ui,sans-serif}
+  .eyebrow,.fine,.app-link,.spec-k,.fig-cap,th{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13.5px; letter-spacing:.22em; text-transform:uppercase; color:var(--sun); margin-bottom:8px}
+
+  header{padding:calc(18px + env(safe-area-inset-top, 0px)) 0 8px}
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:14px; margin-bottom:16px}
+  .topbar-name{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:17px; letter-spacing:-.01em; color:var(--ink)}
+  .app-link{
+    display:inline-flex; align-items:center; gap:7px; flex:0 0 auto;
+    font-size:12.5px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--dim); text-decoration:none; white-space:nowrap;
+    min-height:44px; padding:0 2px 0 14px; margin:-11px 0;
+  }
+  .app-link:hover,.app-link:focus-visible{color:var(--sun)}
+
+  .hero-card{
+    background:linear-gradient(180deg, rgba(255,255,255,.78), rgba(255,255,255,.52));
+    border:1px solid var(--border); border-radius:22px;
+    padding:28px 24px 30px; text-align:center;
+    box-shadow:0 4px 20px rgba(6,78,110,.07);
+  }
+  h1{font-weight:800; font-size:clamp(34px,9vw,52px); line-height:1; letter-spacing:-.02em; color:var(--ink); margin:4px 0 16px}
+  .lede{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:700; font-size:clamp(19px,4.6vw,23px); line-height:1.3; letter-spacing:-.01em; color:var(--ink); margin:0 auto; max-width:24em}
+  .swell-bg{display:block; width:100%; height:24px; margin:14px 0 0}
+
+  .byline{display:flex; align-items:center; justify-content:center; gap:12px; margin:22px 0 0}
+  .byline-photo{
+    width:52px; height:52px; min-width:52px; max-width:52px; min-height:52px; max-height:52px; flex:0 0 52px;
+    border-radius:50%; border:2px solid #fff; box-shadow:0 2px 10px rgba(6,78,110,.2);
+    background:url('images/marco2.png') center/cover no-repeat;
+    pointer-events:none; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none;
+  }
+  .byline-text{text-align:left; line-height:1.25}
+  .byline-name{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:17px; color:var(--ink)}
+  .byline-role{font-style:italic; font-size:15px; color:var(--dim)}
+
+  section{margin-top:44px}
+  h2{font-weight:800; font-size:32px; letter-spacing:-.01em; color:var(--ink); line-height:1.05; display:flex; align-items:baseline; gap:11px}
+  h2::before{content:''; flex:0 0 auto; width:10px; height:10px; border-radius:50%; background:var(--sun); transform:translateY(-3px)}
+  h2 + p{margin-top:14px}
+  p{margin:14px 0}
+  b,strong{font-weight:700}
+  a{color:var(--ocean); text-underline-offset:3px}
+  a:hover{color:var(--sun)}
+  ul.plain{margin:14px 0 0 1.1em}
+  ul.plain li{margin:0 0 12px; padding-left:2px}
+  ul.plain li::marker{color:var(--sun)}
+  .intro{font-size:18.5px}
+  .note{border-left:3px solid var(--sun); background:var(--card-soft); border-radius:0 10px 10px 0; padding:14px 16px; margin:18px 0; font-size:17.5px; line-height:1.58}
+  .note p{margin:0 0 10px}
+  .note p:last-child{margin-bottom:0}
+
+  /* The model as a spec: each term on its own row, so the formulas wrap at phone width
+     instead of scrolling sideways. */
+  .spec{background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:6px 18px; margin:18px 0; box-shadow:0 4px 16px rgba(6,78,110,.06)}
+  .spec-row{padding:13px 0; border-bottom:1px dashed var(--border)}
+  .spec-row:last-child{border-bottom:none}
+  .spec-k{font-size:13px; letter-spacing:.06em; color:var(--sun); font-weight:500}
+  .spec-v{font-family:'DM Mono',ui-monospace,monospace; font-size:15px; line-height:1.6; color:var(--ink); margin-top:3px}
+  .spec-v small{display:block; font-family:'Newsreader',Georgia,serif; font-size:15.5px; color:var(--dim); margin-top:4px; line-height:1.45}
+
+  figure{margin:20px 0; background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:14px 12px 12px; box-shadow:0 4px 16px rgba(6,78,110,.06)}
+  figure svg{display:block; width:100%; height:auto}
+  svg text{font-family:'DM Mono',ui-monospace,monospace}
+  .fig-cap{font-size:12.5px; letter-spacing:.02em; line-height:1.55; color:var(--dim); margin:10px 4px 0}
+
+  table{width:100%; border-collapse:collapse; margin:18px 0; background:#fff; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; font-size:17px}
+  th{font-size:12px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); font-weight:500; text-align:left; padding:11px 14px; border-bottom:1px solid var(--border)}
+  td{padding:11px 14px; border-bottom:1px dashed var(--border); vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.num{font-family:'DM Mono',ui-monospace,monospace; font-size:15.5px; white-space:nowrap; text-align:right; color:var(--ink)}
+  th.num{text-align:right}
+
+  ol.src{margin:16px 0 0 1.4em; font-size:16.5px; line-height:1.5}
+  ol.src li{margin-bottom:12px; padding-left:4px}
+  ol.src li::marker{font-family:'DM Mono',monospace; font-size:12.5px; color:var(--sun)}
+  .fine{font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--dim); margin-top:14px; line-height:1.6}
+  footer{margin-top:52px; padding-top:26px; border-top:1px solid var(--border); text-align:center}
+  footer p{font-size:16.5px; margin:8px 0}
+  @media (max-width:420px){
+    body{font-size:18px}
+    .hero-card{padding:22px 18px 24px; border-radius:18px}
+    h2{font-size:28px}
+    .spec{padding:4px 14px}
+    .spec-v{font-size:14.5px}
+    th,td{padding:10px 11px}
+    figure{padding:12px 8px 10px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="topbar">
+      <span class="topbar-name">Swim Manly</span>
+      <a class="app-link" href="./">Open the app &rarr;</a>
+    </div>
+
+    <div class="hero-card">
+      <div class="eyebrow">Technical brief &middot; 1 Oct 2026</div>
+      <h1>Bluebottle stranding forecast</h1>
+      <p class="lede">Cabbage Tree Bay, Manly: how the wind-drift risk band works, what it was fitted on, and where it falls short.</p>
+      <div class="byline">
+        <div class="byline-photo" role="img" aria-label="Marco Bordieri"></div>
+        <div class="byline-text">
+          <div class="byline-name">By Marco Bordieri</div>
+          <div class="byline-role">Bay Diver &amp; Creator</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<svg class="swell-bg" viewBox="0 0 600 26" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0 16 Q75 4 150 16 T300 16 T450 16 T600 16" fill="none" stroke="#0a7ea4" stroke-width="2" opacity=".5"/>
+  <path d="M0 21 Q75 11 150 21 T300 21 T450 21 T600 21" fill="none" stroke="#e0982f" stroke-width="1.6" opacity=".4"/>
+</svg>
+
+<main class="wrap">
+
+<p class="intro">An operational wind-drift risk band, shipped in <a href="./">Swim Manly</a>, a public swim-forecast app for Cabbage Tree Bay. Wind-only, by design. It reports <b>relative risk</b>, never probability. The full derivation and its history are in the <a href="https://github.com/sticasale-maker/Manly-Swim/blob/main/docs/bluebottle-model.md">complete write-up on GitHub</a>.</p>
+
+<section aria-labelledby="h-model">
+  <h2 id="h-model">Model</h2>
+  <p><i>Physalia</i> are wind-drifted surface sailors, so arrival is governed by onshore wind: not swell, not SST. Per hour <i>t</i>:</p>
+
+  <div class="spec" role="group" aria-label="Model specification">
+    <div class="spec-row">
+      <div class="spec-k">onshore(t)</div>
+      <div class="spec-v">= mean over the 3&nbsp;h up to t of max(0,&nbsp;cos(windFrom&nbsp;&minus;&nbsp;82&deg;))&nbsp;&times;&nbsp;speed</div>
+    </div>
+    <div class="spec-row">
+      <div class="spec-k">windPos</div>
+      <div class="spec-v">= piecewise-linear position of onshore on thresholds [4,&nbsp;6,&nbsp;12]&nbsp;km/h
+        <small>&rarr; bands Low / Moderate / High / Extreme, relative risk 0.4 / 1.3 / 2.3 / 3.3&nbsp;&times;</small></div>
+    </div>
+    <div class="spec-row">
+      <div class="spec-k">risk(t)</div>
+      <div class="spec-v">= windPos &times; seasonMult[month]</div>
+    </div>
+  </div>
+
+  <ul class="plain">
+    <li><b>82&deg;</b> is the bay&rsquo;s ENE shoreline aspect. Offshore (cos&nbsp;&lt;&nbsp;0) clamps to 0 by design: an offshore wind does not retrieve animals already inshore.</li>
+    <li><b>3&nbsp;h lag</b> from a sweep of [1, 2, 3, 6, 9, 12, 24, 48]&nbsp;h. Single-feature AUC peaks at 1&ndash;6&nbsp;h (3&nbsp;h nominally sharpest) and collapses beyond ~9&nbsp;h, consistent with a recent-push mechanism.</li>
+    <li>Display grain is the <b>day</b>, rated by its worst 3&nbsp;h window; the chart bins 4-hourly at the max, so short onshore peaks are never smoothed away.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="h-season">
+  <h2 id="h-season">Seasonality</h2>
+  <p>Season enters <b>multiplicatively</b> as an abundance term, not as a cap:</p>
+
+  <figure aria-labelledby="season-cap">
+    <svg viewBox="0 0 340 150" role="img" aria-label="Monthly season multiplier, January to December: 1.0, 1.0, 0.9, 0.6, 0.35, 0.2, 0.15, 0.2, 0.45, 0.75, 0.95, 1.0">
+      <line x1="14" y1="112" x2="330" y2="112" stroke="#0d2b3e" stroke-width="1" opacity=".35"/>
+      <line x1="14" y1="22" x2="330" y2="22" stroke="#0d2b3e" stroke-width="1" stroke-dasharray="3 4" opacity=".25"/>
+      <g fill="#e0982f">
+        <rect x="17.5"  y="22"   width="19" height="90"/>
+        <rect x="43.8"  y="22"   width="19" height="90"/>
+        <rect x="70.2"  y="31"   width="19" height="81"/>
+        <rect x="96.5"  y="58"   width="19" height="54"/>
+        <rect x="122.8" y="80.5" width="19" height="31.5"/>
+        <rect x="149.2" y="94"   width="19" height="18"/>
+        <rect x="175.5" y="98.5" width="19" height="13.5"/>
+        <rect x="201.8" y="94"   width="19" height="18"/>
+        <rect x="228.2" y="71.5" width="19" height="40.5"/>
+        <rect x="254.5" y="44.5" width="19" height="67.5"/>
+        <rect x="280.8" y="26.5" width="19" height="85.5"/>
+        <rect x="307.2" y="22"   width="19" height="90"/>
+      </g>
+      <g font-size="10" fill="#0d2b3e" text-anchor="middle">
+        <text x="27"    y="17">1.0</text><text x="53.3"  y="17">1.0</text><text x="79.7"  y="26">0.9</text>
+        <text x="106"   y="53">0.6</text><text x="132.3" y="75.5">.35</text><text x="158.7" y="89">0.2</text>
+        <text x="185"   y="93.5">.15</text><text x="211.3" y="89">0.2</text><text x="237.7" y="66.5">.45</text>
+        <text x="264"   y="39.5">.75</text><text x="290.3" y="21.5">.95</text><text x="316.7" y="17">1.0</text>
+      </g>
+      <g font-size="11" fill="#5f8794" text-anchor="middle">
+        <text x="27" y="128">J</text><text x="53.3" y="128">F</text><text x="79.7" y="128">M</text><text x="106" y="128">A</text>
+        <text x="132.3" y="128">M</text><text x="158.7" y="128">J</text><text x="185" y="128">J</text><text x="211.3" y="128">A</text>
+        <text x="237.7" y="128">S</text><text x="264" y="128">O</text><text x="290.3" y="128">N</text><text x="316.7" y="128">D</text>
+      </g>
+    </svg>
+    <p class="fig-cap" id="season-cap">seasonMult, January to December: 1.0, 1.0, 0.9, 0.6, 0.35, 0.2, 0.15, 0.2, 0.45, 0.75, 0.95, 1.0</p>
+  </figure>
+
+  <p>Read it as <i>likelihood = wind favourability &times; how many animals are offshore to be blown in</i>. The same strong onshore wind reads Extreme in January and Low in July.</p>
+  <p>The original implementation <b>clipped</b> the wind band to a monthly ceiling, which put windy out-of-season days on a flat plateau. Multiplying gives one continuous likelihood and lets a windy July day ease down smoothly. Wind thresholds and relative risks were unchanged in that switch; only the wind&ndash;season combination changed.</p>
+
+  <div class="note">
+    <p><b>Caveat worth your attention.</b> The envelope&rsquo;s <i>shape</i> is solid: it comes from monthly distinct-stranding-day counts and matches the ~50%-summer, near-zero-winter record in Bourg et&nbsp;al. (2022), so it is not an observation-effort artefact. The magnitudes, though, are an approximate envelope rather than a fit.</p>
+    <p>A related trap: the predecessor cap normalised monthly counts by the maximum, and October (107 distinct stranding-days) against January (68) meant one exceptional month depressed every other month&rsquo;s factor. Mean- or median-normalisation behaves better.</p>
+  </div>
+</section>
+
+<section aria-labelledby="h-data">
+  <h2 id="h-data">Data and design</h2>
+  <ul class="plain">
+    <li><b>Sightings:</b> iNaturalist, genus <i>Physalia</i>, taxon query over a Sydney bounding box (Cronulla to Palm Beach), <i>not</i> the curated project, which holds only ~400 hand-added records. 718 returned, <b>705</b> after dropping <code>geoprivacy&nbsp;=&nbsp;obscured</code> (fuzzed to ~20&nbsp;km). 556 fall in the 2021&ndash;26 hourly wind span, giving <b>443 stranding-days</b> after collapsing same-day, same-beach reports. Local subset: <b>48 records, 36 distinct days, 2011&ndash;2026.</b></li>
+    <li><b>Wind:</b> Open-Meteo ERA5 reanalysis, cross-checked against the ~2&ndash;11&nbsp;km Historical Forecast model. Identical skill: bluebottle drift is synoptic-scale, so wind-field resolution doesn&rsquo;t change the answer.</li>
+    <li><b>Design:</b> matched case&ndash;control, 3 controls per case drawn from typical days at the same beach cluster. This is the load-bearing choice: it controls for observation effort (where people look) and isolates the temporal wind signal. Presence-only data means the output is necessarily <b>relative risk, not calibrated probability</b>; absolute probability needs none-seen data.</li>
+    <li><b>Skill:</b> AUC under <b>year-blocked</b> cross-validation, so temporally autocorrelated events can&rsquo;t leak across folds.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="h-results">
+  <h2 id="h-results">Results</h2>
+  <table>
+    <thead><tr><th scope="col">Model</th><th scope="col" class="num">AUC</th></tr></thead>
+    <tbody>
+      <tr><td>Region, onshore wind alone</td><td class="num">0.82</td></tr>
+      <tr><td>Region, + per-beach aspect and lag sweep</td><td class="num">0.86</td></tr>
+      <tr><td>Cabbage Tree Bay (48 records)</td><td class="num"><b>0.89</b><br><span style="font-size:13px;color:var(--dim)">90% CI 0.82&ndash;0.95</span></td></tr>
+    </tbody>
+  </table>
+  <p>Negative results, all tested and all <b>no improvement</b>: waves, sea temperature, higher-resolution wind fields, per-beach fetch weighting, and an explicit two-stage (E-then-N) drift term. A fetch-by-direction weighting actively lost to the plain 82&deg; cosine (0.84 vs 0.89). The simple onshore band is the parsimonious best, and that is the most transferable finding here.</p>
+  <p>Band multipliers are each band&rsquo;s stranding-day share over the overall share in the matched set. The set is 1&nbsp;:&nbsp;3.7 case:control, not the true base rate, hence &ldquo;&times; a typical day&rdquo; and never a percentage.</p>
+</section>
+
+<section aria-labelledby="h-limits">
+  <h2 id="h-limits">Limitations</h2>
+  <ul class="plain">
+    <li>Relative, not absolute: there is no &ldquo;100%&rdquo;, and even Extreme means elevated likelihood, not certainty.</li>
+    <li>The local sample is small (48 sightings); a wind-decoupled event could sit below detection.</li>
+    <li><b>Surface currents are unmodelled.</b> The EAC and local eddies add non-linearity that wind alone can&rsquo;t capture. This is a wind-drift model, not a transport model.</li>
+    <li>Rip currents, a known beach-scale predictor, can&rsquo;t be fed in: no forecast product exists.</li>
+    <li>The shipped first-band threshold is 4&nbsp;km/h, raised from an empirically placed 2&nbsp;km/h because 2&nbsp;km/h fired the warm band on near-calm days. That is display conservatism layered on the fit, not a re-estimation. Use 2&nbsp;km/h if you&rsquo;re reproducing the quartile placement (25th/50th/75th percentiles of prior-3&nbsp;h onshore on stranding-days &asymp; 1.4 / 7.8 / 13.4&nbsp;km/h).</li>
+  </ul>
+</section>
+
+<section aria-labelledby="h-refs">
+  <h2 id="h-refs">References</h2>
+  <ol class="src">
+    <li>Bourg N., Schaeffer A., Cetina-Heredia P., Lawes J.C., Lee D. (2022). Driving the blue fleet: Temporal variability and drivers behind bluebottle (<i>Physalia physalis</i>) beachings off Sydney, Australia. <i>PLOS ONE</i> 17(3): e0265593. <a href="https://doi.org/10.1371/journal.pone.0265593">doi:10.1371/journal.pone.0265593</a></li>
+    <li>Hewitt D.E., Schaeffer A., Lawes J.C., Kelly S., Poore A.G.B., Roughan M., Ajaz S., Ingleton T.C., Pitt K.A. (2026). Blowin&rsquo; in the wind: Onshore winds drive the occurrence of bluebottles (<i>Physalia</i> spp.) at east Australian beaches. <i>Ocean &amp; Coastal Management</i> 271: 107931. <a href="https://doi.org/10.1016/j.ocecoaman.2025.107931">doi:10.1016/j.ocecoaman.2025.107931</a></li>
+    <li>iNaturalist, genus <i>Physalia</i>, Sydney. <a href="https://www.inaturalist.org">inaturalist.org</a> (per-record attribution and licence terms there).</li>
+    <li>Open-Meteo ERA5 reanalysis and Historical Forecast API. <a href="https://open-meteo.com">open-meteo.com</a></li>
+  </ol>
+</section>
+
+<footer>
+  <p>The model as it runs in <a href="./">Swim Manly</a> on 1 Oct 2026.</p>
+  <p class="fine">Full derivation: <a href="https://github.com/sticasale-maker/Manly-Swim/blob/main/docs/bluebottle-model.md">docs/bluebottle-model.md</a></p>
+</footer>
+
+</main>
+
+<script>
+// PAGE VIEW: anonymous beacon, same contract as enso.html's enso_open and guide.html's
+// guide_open. Same origin as the app, so the same device id. No PII. Never throws.
+(function () {
+  var LOG_URL = 'https://bold-rain-6ded.sticasale.workers.dev/log';
+  function uuid() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  function deviceId() {
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) { id = uuid(); localStorage.setItem('swim_device_id', id); }
+      return id;
+    } catch (e) { return uuid(); }
+  }
+  var REFERRER = '';
+  try { REFERRER = document.referrer || ''; } catch (e) {}
+  var UTM = {};
+  try {
+    var sp = new URLSearchParams(location.search);
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'].forEach(function (k) {
+      var v = sp.get(k); if (v) UTM[k.replace('utm_', '')] = String(v).slice(0, 120);
+    });
+  } catch (e) {}
+  try {
+    var payload = JSON.stringify({
+      events: [{
+        device_id:  deviceId(),
+        session_id: uuid(),
+        event:      'bbmodel_open',
+        props:      {},
+        referrer:   REFERRER,
+        utm:        UTM,
+        app_build:  null,
+        pwa:        false
+      }]
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(LOG_URL, new Blob([payload], { type: 'text/plain' }));
+    } else {
+      fetch(LOG_URL, { method: 'POST', body: payload,
+        headers: { 'Content-Type': 'text/plain' }, keepalive: true }).catch(function () {});
+    }
+  } catch (e) {}
+})();
+</script>
+
+</body>
+</html>
