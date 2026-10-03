@@ -26256,10 +26256,14 @@ else theftLoad();
   });
 
   /* ── frame list ────────────────────────────────────────────────────────────
-     Oldest first, so the scrubber runs left-to-right through time. */
-  var frames = [];
-  (function buildList() {
-    var newest = Math.floor((Date.now() - LAG_MS) / 300000) * 300000;
+     Oldest first, so the scrubber runs left-to-right through time. Built when the
+     card OPENS, from the newest frame BOM has actually published (see begin), and
+     rebuilt when it is reopened later. Until 3 Oct 2026 it was built once, at
+     page load: a card opened half an hour later called a 30-minute-old frame
+     "latest", and its oldest frames had already left BOM's 45-minute window. */
+  var frames = [], NOW_IDX = PAST_N - 1;
+  function buildList(newest) {
+    frames = [];
     for (var i = PAST_N - 1; i >= 0; i--) {
       frames.push({ t: newest - i * 300000, layer: PAST_LAYER, grid: GRIDS.radar, fcst: false });
     }
@@ -26267,8 +26271,8 @@ else theftLoad();
     for (var k = 0; k < FUT_N; k++) {
       frames.push({ t: next + k * 10800000, layer: FUT_LAYER, grid: GRIDS.fcst, fcst: true });
     }
-  })();
-  var NOW_IDX = PAST_N - 1;
+    NOW_IDX = PAST_N - 1;
+  }
 
   function tileUrl(layer, grid, timeIso, col, row) {
     return API + '/timeseries/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0'
@@ -26304,7 +26308,10 @@ else theftLoad();
         img.style.top    = ((C.y + halfH) - (oy - row * span)) / mpp + 'px';
         img.style.width  = size + 'px';
         img.style.height = size + 'px';
-        img.addEventListener('load', function () { okCount++; if (msgEl) msgEl.hidden = true; });
+        // Only radar and forecast tiles count as "the radar loaded". The basemap used
+        // to count too, so a dead radar under a live basemap hid the loading note and
+        // never raised "unavailable": an empty map that reads as no rain (rule 8).
+        if (host !== baseEl) img.addEventListener('load', function () { okCount++; if (msgEl) msgEl.hidden = true; });
         img.addEventListener('error', function () { this.style.display = 'none'; });
         img.src = urlFor(col, row);
         host.appendChild(img);
@@ -26768,44 +26775,104 @@ else theftLoad();
      The card is collapsed on load and nothing is fetched until it is opened:
      this is ~100 small tiles and it must not compete with the numbers a swimmer
      actually opened the app for. */
-  var started = false;
-  function start() {
-    if (started) return;
-    started = true;
+  var started = false, builtAt = 0, mmAt = 0, gen = 0;
+  var REFRESH_MS = 5 * 60000;   // reopened (or back on screen) after this long: rebuild
 
+  /* The newest frame BOM has actually published. A 5-minute frame appears about
+     5 min after its scan (measured 3 Oct 2026), so LAG_MS usually lands on it;
+     but on a slow cycle the newest tiles 404, and "latest" drew as an empty map,
+     which reads as no rain. So one tile over the bay is tried first, stepping
+     back a frame at a time, twice at most. A plain <img> needs no CORS. If none
+     loads, the computed time stands and the "unavailable" note does the talking. */
+  var R_SPAN = 256 * RES;
+  var R_COL = Math.floor((C.x - GRIDS.radar.ox) / R_SPAN);
+  var R_ROW = Math.floor((GRIDS.radar.oy - C.y) / R_SPAN);
+  function probeNewest(cb) {
+    var first = Math.floor((Date.now() - LAG_MS) / 300000) * 300000;
+    (function attempt(t, left) {
+      var im = new Image(), done = false;
+      var timer = setTimeout(function () { finish(false); }, 6000);
+      function finish(ok) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (ok) cb(t);
+        else if (left > 0) attempt(t - 300000, left - 1);
+        else cb(first);
+      }
+      im.onload = function () { finish(true); };
+      im.onerror = function () { finish(false); };
+      im.src = tileUrl(PAST_LAYER, GRIDS.radar, isoZ(t), R_COL, R_ROW);
+    })(first, 2);
+  }
+
+  function setTicks() {
     scrubEl.max = String(frames.length - 1);
-    scrubEl.value = String(NOW_IDX);
     tickEl.style.left = (NOW_IDX / (frames.length - 1) * 100) + '%';
     tickAEl.textContent = '−' + Math.round((frames[NOW_IDX].t - frames[0].t) / 60000) + ' min';
     tickBEl.textContent = '+' + Math.round((frames[frames.length - 1].t - Date.now()) / 3600000) + ' h';
+  }
 
+  // (Re)build the whole card from now. `gen` drops the answer of a probe that a
+  // newer rebuild has overtaken.
+  function begin() {
+    var my = ++gen;
+    builtAt = Date.now();
+    stop();
+    okCount = 0;
+    framesEl.textContent = '';
+    if (msgEl) { msgEl.hidden = false; msgEl.textContent = 'Loading radar…'; }
     buildBase();
-    show(NOW_IDX);
-    loadMm();
+    probeNewest(function (newest) {
+      if (my !== gen) return;
+      buildList(newest);
+      idx = NOW_IDX;
+      scrubEl.value = String(NOW_IDX);
+      setTicks();
+      show(NOW_IDX);
+      // The 3-hourly chart moves slowly; a reopen within half an hour keeps it.
+      if (Date.now() - mmAt > 30 * 60000) { mmAt = Date.now(); loadMm(); }
 
-    // Pre-build the rest in the background so the loop plays without gaps.
-    var q = 0;
-    (function next() {
-      while (q < frames.length && frames[q].el) q++;
-      if (q >= frames.length) return;
-      buildFrame(q++);
-      setTimeout(next, 90);
-    })();
+      // Pre-build the rest in the background so the loop plays without gaps.
+      var q = 0;
+      (function next() {
+        if (my !== gen) return;
+        while (q < frames.length && frames[q].el) q++;
+        if (q >= frames.length) return;
+        buildFrame(q++);
+        setTimeout(next, 90);
+      })();
 
-    // Absent data is grey, never green — and it says so rather than showing an
-    // empty map that reads as "no rain".
-    setTimeout(function () {
-      if (!okCount && msgEl) {
-        msgEl.hidden = false;
-        msgEl.textContent = 'Radar unavailable — no connection to the Bureau.';
-      }
-    }, 12000);
+      // Absent data is grey, never green — and it says so rather than showing an
+      // empty map that reads as "no rain".
+      setTimeout(function () {
+        if (my === gen && !okCount && msgEl) {
+          msgEl.hidden = false;
+          msgEl.textContent = 'Radar unavailable — no connection to the Bureau.';
+        }
+      }, 12000);
+    });
+  }
+
+  function start() {
+    if (started) return;
+    started = true;
+    begin();
   }
 
   headEl.addEventListener('click', function () {
     var open = bodyEl.classList.toggle('radar-open');
     headEl.setAttribute('aria-expanded', open ? 'true' : 'false');
-    if (open) { start(); } else { stop(); }
+    if (open) {
+      if (!started) start();
+      else if (Date.now() - builtAt > REFRESH_MS) begin();
+    } else { stop(); }
+  });
+  // Back to the app with the card still open: same rule, so a phone left on the
+  // radar overnight does not greet the morning with last night's "latest".
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && started && bodyEl.classList.contains('radar-open')
+        && Date.now() - builtAt > REFRESH_MS) begin();
   });
 })();
 </script>
