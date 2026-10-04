@@ -6002,8 +6002,9 @@
     // No NS data at the Oracle's hour: no call, said in grey rather than left on
     // "Forecast loading" (it has loaded; there is just nothing to call).
     if (f && f.noData) {
-      text.textContent = 'No call — no nearshore forecast'; when.textContent = '';
-      ribbon.setAttribute('aria-label', 'No call: no nearshore forecast. Go to Today');
+      text.textContent = f.nsStale ? 'No call — forecast not available' : 'No call — no nearshore forecast';
+      when.textContent = '';
+      ribbon.setAttribute('aria-label', (f.nsStale ? 'No call: forecast not available' : 'No call: no nearshore forecast') + '. Go to Today');
       paintDot();
       return;
     }
@@ -10253,7 +10254,36 @@ function smoothNsSeaPeriod(map) {
   return out;
 }
 
+// A run is judged by its FIRST hour, which is when NSW's run starts. On 5 Oct 2026
+// NSW's tool had been serving the 30 Sep run for four and a half days: every caller,
+// NSW's own website included, got it, and the app scored this morning from a forecast
+// that old (Entry Caution while the camera showed an easy entry). The owner's call:
+// say the forecast is not available rather than score from it. So a run older than
+// NS_RUN_MAX_AGE_MS parses to NO hours: calcScore then fails closed to grey "No call"
+// on every surface, and _nsStaleSince lets the notes say why. The next fresh run
+// clears it by itself. 48 h leaves room for a late publish without ever passing off
+// a days-old run as today's forecast.
+const NS_RUN_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+let _nsStaleSince = 0;      // first hour (ms) of the last run refused as stale; 0 = none
+function nsRunStart(j) {
+  const ws = j && j.payload && j.payload.data && j.payload.data.wave_summary;
+  const t0 = ws && ws.dims && Array.isArray(ws.dims.time) ? ws.dims.time[0] : null;
+  const ms = t0 ? Date.parse(String(t0).replace(' ', 'T') + 'Z') : NaN;   // NSW times are UTC
+  return isFinite(ms) ? ms : 0;
+}
+// "the NSW nearshore wave data it is built on has not been updated since Wed 30 Sept"
+function nsStaleText() {
+  const day = new Date(_nsStaleSince).toLocaleDateString('en-AU',
+    { timeZone: 'Australia/Sydney', weekday: 'short', day: 'numeric', month: 'short' });
+  return 'the NSW nearshore wave data it is built on has not been updated since ' + day;
+}
 function parseNearshore(j) {
+  const start = nsRunStart(j);
+  if (start && Date.now() - start > NS_RUN_MAX_AGE_MS) {
+    _nsStaleSince = start;
+    return {};
+  }
+  if (start) _nsStaleSince = 0;
   return smoothNsSeaPeriod(parseNearshoreRaw(j));
 }
 function parseNearshoreRaw(j) {
@@ -11632,6 +11662,10 @@ function setNsFallbackBanner(isFallback) {
         el.textContent = '\u26A0 NO NEARSHORE FORECAST \u2014 no call on the water for this hour.';
       }
     }
+    // When NSW's run is the reason, the banner says so in the owner's words (5 Oct 2026).
+    if (isFallback && !FORCE_WW && _nsStaleSince) {
+      el.textContent = '⚠ FORECAST NOT AVAILABLE AT THE MOMENT — ' + nsStaleText() + '.';
+    }
     el.style.display = isFallback ? 'block' : 'none';
   } catch (e) {}
 }
@@ -12156,7 +12190,8 @@ function renderAnswerLine(result) {
       const tag = b && b.querySelector('.metric-setby');
       if (tag) tag.remove();
     });
-    alWrite(el, 'none', 'No call' + AL_SPLIT + 'no nearshore forecast for this hour');
+    alWrite(el, 'none', 'No call' + AL_SPLIT + (_nsStaleSince ? 'forecast not available at the moment'
+                                                              : 'no nearshore forecast for this hour'));
     return;
   }
 
@@ -18486,7 +18521,10 @@ async function generateBannerSummaryLocal() {
   // A no-call hour ran the prose above on '—' labels, so it is replaced wholesale.
   // No advice either way: there is nothing to base any on.
   if (_noCall) {
-    waterText = 'The nearshore forecast has not loaded, so there is no call on the water yet. Check conditions on site.';
+    waterText = _nsStaleSince
+      ? 'The NSW nearshore wave data this forecast is built on has not been updated since '
+        + nsStaleText().replace(/^.* since /, '') + ', so there is no forecast at the moment. Check conditions on site.'
+      : 'The nearshore forecast has not loaded, so there is no call on the water yet. Check conditions on site.';
   }
 
   // Re-word "today" in the prose to match the forecast period
@@ -18636,6 +18674,8 @@ async function generateBannerSummaryLocal() {
     // True when the reference hour has no NS data. generateBannerSummary does not send
     // facts like these to the Worker at all, and the tab ribbon says "No call".
     noData: _noCall,
+    // ...and when that is because NSW's run is stale rather than missing (tab ribbon).
+    nsStale: _noCall && !!_nsStaleSince,
     // safetyLevel and siteCheck both come from swimVerdict() — the single
     // derivation shared with the answer line above the rails. They used to be
     // inlined here; two copies of this rule is exactly what CLAUDE.md §1 forbids.
