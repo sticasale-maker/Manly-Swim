@@ -137,6 +137,14 @@ and just as binding:
   call" on the answer line. It is never scored from the WW backup instead, which
   once put a confident 72 red or 3.5 green on the same hour. `?src=ww` still scores
   WW on purpose, and a real NS outage goes to vecchio.html.
+- **One announced exception: the WillyWeather backup** (owner, 5 Oct 2026). When
+  NSW's run is more than 48 h old (`_nsStaleSince`), every forecast hour scores from
+  WW (`wwPath` in `calcScore`) under the owner's brown banner. The switch covers the
+  whole forecast, never a stray row, and logged history keeps its NS scores. WW's
+  3-hourly gap hours stay grey. The NS-modelled heights are hidden (`hasNsWaves`).
+  The Oracle uses its local backup paragraph, because the Worker reads a missing ramp
+  height as "next to nothing reaches the entry". It ends by itself on the first fresh
+  run.
 
 ## 9. Offline-first
 

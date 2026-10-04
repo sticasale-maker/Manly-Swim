@@ -8647,6 +8647,12 @@ function shelteredRampH(h) {
             + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + amp * tg(wwDir));
   return Math.sqrt(Math.max(0, Hs2));
 }
+// Both heights are modelled from NSW's nearshore swell and sea, so a row without them
+// has no height to give. The WillyWeather backup and a no-call hour carry zeros in
+// those slots, and the helpers would print them as "0.0 m at the ramp" beside a verdict
+// scored from something else. Every caller that prints a height asks this first.
+function hasNsWaves(h) { return !!(h && h._nsFeed === true); }
+
 // Bower Lane / in-bay significant height. Mirrors shelteredRampH, but through the
 // BL table and with the components SURGE actually scores (blSwimWater):
 //   swell   — via blDispLookup, tide-scaled
@@ -9453,7 +9459,15 @@ function calcScore(d, modelOverride) {
   // it as the NS score. Absent data is grey, never green (CLAUDE.md §8). WW scoring
   // stays reachable on purpose: an explicit modelOverride (CAL/compare) and ?src=ww
   // (FORCE_WW) still get it. A real NS outage goes to vecchio.html (nuovoPreflight).
-  if (!modelOverride && !FORCE_WW && d._nsFeed !== true) return noNearshoreScore();
+  // And the WILLYWEATHER BACKUP (owner, 5 Oct 2026): while NSW's run is too old to score
+  // from (_nsStaleSince), every forecast hour is scored from WW exactly as ?src=ww scores
+  // it, and the banner says so: the whole forecast, announced, never a stray row. A row
+  // that carries NSW data of its own keeps it. With the run refused, that is only the
+  // logged history behind the time machine, a record of what the app said at the time,
+  // so the backup fills the hours that would be grey and rewrites nothing. wwPath is
+  // that switch.
+  const wwPath = FORCE_WW || (!!_nsStaleSince && d._nsFeed !== true);
+  if (!modelOverride && !wwPath && d._nsFeed !== true) return noNearshoreScore();
   // The NS feed (Worker route) and the NS dispersion table (New NS sheet tab) are
   // separate sources and fail independently. Both are required for the nuovo branch:
   // without the table nsDispLookup() returns a flat 0.5 transmit for every direction
@@ -9461,7 +9475,7 @@ function calcScore(d, modelOverride) {
   // branch's clothes. Missing either → score through VECCHIO (the Gem-Cla50-50 2-D
   // table, i.e. the model index.html runs in production). See the else-branch below.
   const useGem = modelOverride ? (modelOverride === 'gem')
-                               : (!FORCE_WW && GEM_MODEL && d._nsFeed === true && !!SITE.nsDisp);
+                               : (!wwPath && GEM_MODEL && d._nsFeed === true && !!SITE.nsDisp);
   const lk = SITE.lookup;
   // Input source for the WW/gem path. buildHourlyMatrix + the snapshot builder ZERO
   // every row's primary swell/sea slots and stash the real WillyWeather values in
@@ -9475,7 +9489,12 @@ function calcScore(d, modelOverride) {
   // Overlay `_ww` ONLY when this hour is genuinely not NS-fed, or WW is force-selected.
   // A still-NS-fed row that merely lost the dispersion table keeps scoring its NS
   // inputs through VECCHIO exactly as before — that degraded case is NS's own, untouched.
-  const useWWInputs = !modelOverride && d._ww && (FORCE_WW || d._nsFeed !== true);
+  const useWWInputs = !modelOverride && d._ww && (wwPath || d._nsFeed !== true);
+  // On the WW path an hour WillyWeather has no swell for is no call too. WW thins to
+  // 3-hourly on its last two days, and the hours between used to score as a flat sea
+  // (Easy, green): absent data is grey, never green (CLAUDE.md §8). A row with no `_ww`
+  // at all (the NS-only outlook days) still needs its NS data, as above.
+  if (!modelOverride && wwPath && (useWWInputs ? d._ww.swell1H == null : d._nsFeed !== true)) return noNearshoreScore();
   const src = useWWInputs ? Object.assign({}, d, d._ww) : d;
   const { windKmh, windDir, swell1H, swell1Dir, swell1P,
           windWaveH, windWaveDir, windWaveP, tideM } = src;
@@ -10265,6 +10284,11 @@ function smoothNsSeaPeriod(map) {
 // a days-old run as today's forecast.
 const NS_RUN_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 let _nsStaleSince = 0;      // first hour (ms) of the last run refused as stale; 0 = none
+// WILLYWEATHER BACKUP MODE (owner, 5 Oct 2026). A stale run no longer leaves a page of
+// grey: calcScore scores every hour from WillyWeather (its wwPath), the banner says so
+// in the owner's words, and the NS-only heights and the Worker's prose stand down. On
+// whenever the run is stale and WW was not chosen by hand (?src=ww has its own banner).
+function wwBackupOn() { return !FORCE_WW && !!_nsStaleSince; }
 function nsRunStart(j) {
   const ws = j && j.payload && j.payload.data && j.payload.data.wave_summary;
   const t0 = ws && ws.dims && Array.isArray(ws.dims.time) ? ws.dims.time[0] : null;
@@ -11662,13 +11686,17 @@ function setNsFallbackBanner(isFallback) {
         el.textContent = '\u26A0 NO NEARSHORE FORECAST \u2014 no call on the water for this hour.';
       }
     }
-    // When NSW's run is the reason, the banner says so in the owner's words (5 Oct 2026).
-    if (isFallback && !FORCE_WW && _nsStaleSince) {
-      // Owner's wording, 5 Oct 2026 (third version). The link is the one the owner gave;
-      // the live cam row (#liveCamRow) is on the Bay tab.
+    // The WillyWeather backup: NSW's run is stale, so every hour is scored from WW and
+    // the banner shows on all of them, scored or not, in the owner's words (5 Oct 2026,
+    // chosen with the switch). Brown like the forced swap, because a backup model is on
+    // screen. The link is the one the owner gave; the live cam row (#liveCamRow) is on
+    // the Bay tab.
+    if (isFallback && wwBackupOn()) {
+      el.style.background = '#8a5a1f';
       el.innerHTML = '⚠ Source data from <a href="https://nearshore.waves.nsw.gov.au/home/forecast"'
         + ' target="_blank" rel="noopener" style="color:#fff;text-decoration:underline;">NSW Nearshore Wave Tool</a>'
-        + ' not available, DCCEEW notified, check the live camera in the Bay section';
+        + ' not available, switching to Willyweather backup mode. DCCEEW notified,'
+        + ' check the live camera in the Bay section';
     }
     el.style.display = isFallback ? 'block' : 'none';
   } catch (e) {}
@@ -12194,8 +12222,10 @@ function renderAnswerLine(result) {
       const tag = b && b.querySelector('.metric-setby');
       if (tag) tag.remove();
     });
-    alWrite(el, 'none', 'No call' + AL_SPLIT + (_nsStaleSince ? 'forecast not available at the moment'
-                                                              : 'no nearshore forecast for this hour'));
+    // On the WW path (the backup, or ?src=ww) a no-call hour is one WillyWeather has no
+    // swell for; the banner above already says why NSW is out.
+    alWrite(el, 'none', 'No call' + AL_SPLIT + ((FORCE_WW || _nsStaleSince) ? 'no backup forecast for this hour'
+                                                                           : 'no nearshore forecast for this hour'));
     return;
   }
 
@@ -12333,13 +12363,18 @@ function renderSnapshot(h, wx) {
   // one would have split the pictogram caption from the Oracle silently. Same
   // reason the swell card's own copy was removed (see the note there).
   const _entryBreakH = shelteredRampH(h);
+  // ...and only where NSW's swell is under it (see hasNsWaves). Gates every height this
+  // function prints: the WillyWeather backup scores without one.
+  const _nsWaves = !result.noData && hasNsWaves(h);
   const dm     = result.demerits;
   _lastSnapshot = { h, result };  // for the tap-to-see component breakdown
   // Banner suppressed while WW is the deliberate, announced default (FORCE_WW) — users
   // were told out-of-band, so the "forced WW" strip is redundant noise. Still fires the
   // grey "NO NEARSHORE FORECAST" banner when NS is the default but an hour lacks coverage,
-  // read off the same result the rails use (noData is never set under FORCE_WW).
-  setNsFallbackBanner(!!result.noData);
+  // read off the same result the rails use (under FORCE_WW only a WW gap hour is noData,
+  // and that stays unannounced too). The WillyWeather backup shows its banner on every
+  // hour, scored or not: the whole forecast is the backup's.
+  setNsFallbackBanner(wwBackupOn() || (!!result.noData && !FORCE_WW));
   renderSavedForecastNote();      // the forecast's age, when the app could not update it
   // Only meaningful once the tables have had their chance to load (see
   // _configSettled). The background loader re-renders when it finishes, so a
@@ -12368,9 +12403,10 @@ function renderSnapshot(h, wx) {
              h.windDir, result.swim.raw, (SITE.swimThresholds && SITE.swimThresholds.scaleMax) || 14,
              result.swim.label, result.swim.cls, h.windKmh);
     // Same two functions the pictogram captions, the swell card and the Oracle use.
-    // No NS data → no pins: both heights are modelled from the NS swell this hour lacks.
-    if (window.swellSetHeights) swellSetHeights(result.noData ? null : shelteredRampH(h),
-                                                result.noData ? null : shelteredBayH(h));
+    // No NS data → no pins: both heights are modelled from the NS swell this hour lacks
+    // (a no-call hour, or any hour of the WillyWeather backup).
+    if (window.swellSetHeights) swellSetHeights(_nsWaves ? shelteredRampH(h) : null,
+                                                _nsWaves ? shelteredBayH(h)  : null);
   }
 
   // "REALTIME" on the amber wind arrow, only where the North Head observation
@@ -12558,8 +12594,9 @@ function renderSnapshot(h, wx) {
     // Also formerly an inline copy — now the shared definition, same as the card.
     const bayH  = shelteredBayH(h);
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
-    // No NS data → no readouts: the ramp and bay heights are modelled from the NS swell.
-    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, result.noData ? '' : _entryBreakH.toFixed(1) + ' m at the ramp');
+    // No NS data → no readouts: the ramp and bay heights are modelled from the NS swell
+    // (_nsWaves: off on a no-call hour and throughout the WillyWeather backup).
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _nsWaves ? _entryBreakH.toFixed(1) + ' m at the ramp' : '');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     // Surge's readout follows the LOCUS, because on a point day the bay figure is no
     // longer describing what set the band and printing it would put a reassuring number
@@ -12571,7 +12608,7 @@ function renderSnapshot(h, wx) {
     const surgeCap = result.noData ? ''
       : (result.water && result.water.locus === 'point')
       ? 'surge at the point'
-      : bayH.toFixed(1) + ' m in the bay';
+      : _nsWaves ? bayH.toFixed(1) + ' m in the bay' : '';
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, surgeCap);
     // The call itself, from the labels these three blocks just rendered — so the
     // line is always describing the slot on screen. Isolated: a throw here must
@@ -12706,21 +12743,27 @@ function renderSnapshot(h, wx) {
   (function () {
     const Hm = h.swell1H;                    // raw NS bay-mouth height (node 103218)
     const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+    // Without NSW's swell under this hour (a no-call hour, or the WillyWeather backup)
+    // the bay-entrance row and both sheltered heights are dashes, never the zeros those
+    // slots carry: absent data is never shown as a calm sea (CLAUDE.md §8).
+    const nsW = hasNsWaves(h);
 
     // Row 1 — Oceanside: the WillyWeather offshore swell (outside the bay), with
-    // its own direction + period. Falls back to NS when the _ww snapshot is absent.
+    // its own direction + period. Falls back to NS when the _ww snapshot is absent,
+    // and only where there is NS to fall back to.
     const o = h._ww || {};
+    const oHas = o.swell1H != null || nsW;
     const oH   = (o.swell1H   != null) ? o.swell1H   : Hm;
     const oDir = (o.swell1Dir != null) ? o.swell1Dir : h.swell1Dir;
     const oP   = (o.swell1P   != null) ? o.swell1P   : h.swell1P;
-    set('sSwell1OceanH', oH.toFixed(1));
-    set('sSwell1OceanD', `m · ${bearingName(oDir)} (${Math.round(oDir)}°)`);
-    set('sSwell1OceanP', `${Math.round(oP)}s period`);
+    set('sSwell1OceanH', oHas ? oH.toFixed(1) : '—');
+    set('sSwell1OceanD', oHas ? `m · ${bearingName(oDir)} (${Math.round(oDir)}°)` : '—');
+    set('sSwell1OceanP', oHas ? `${Math.round(oP)}s period` : '—');
     // Section 2 — bay entrance: raw NS nearshore feed (swell partition), its NS
     // direction + period. The sea partition is rendered from h.windWaveH below.
-    set('sSwell1EntryH', Hm.toFixed(1));
-    set('sSwell1EntryD', `m · ${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)`);
-    set('sSwell1EntryP', `${Math.round(h.swell1P)}s period`);
+    set('sSwell1EntryH', nsW ? Hm.toFixed(1) : '—');
+    set('sSwell1EntryD', nsW ? `m · ${bearingName(h.swell1Dir)} (${Math.round(h.swell1Dir)}°)` : '—');
+    set('sSwell1EntryP', nsW ? `${Math.round(h.swell1P)}s period` : '—');
     // Section 3 — sheltered residuals, height only (refracted direction not
     // modelled; period is conserved so it is omitted here per the layout).
     // Bare numbers — the cards carry their own "metres" unit line, same as sections 1-2.
@@ -12736,8 +12779,8 @@ function renderSnapshot(h, wx) {
     // + tide, not swell alone. That is the number a swimmer should be able to hold
     // the verdict to. It reads higher than the old display value — that is the
     // point; the old one was quietly omitting most of what Entry is scoring.
-    set('sSwell1Ramp', shelteredRampH(h).toFixed(1));
-    set('sSwell1Bay',  shelteredBayH(h).toFixed(1));
+    set('sSwell1Ramp', nsW ? shelteredRampH(h).toFixed(1) : '—');
+    set('sSwell1Bay',  nsW ? shelteredBayH(h).toFixed(1)  : '—');
     // Chop — the same steep-face height the Chop classification prints, straight off
     // result.swim.raw so the two can never disagree. That raw is in CENTIMETRES;
     // shown here in metres to match the ramp/Bower cards beside it.
@@ -12746,7 +12789,9 @@ function renderSnapshot(h, wx) {
 
     const rampEl = document.getElementById('sSwell1Ramp');
     const card = rampEl && rampEl.closest ? rampEl.closest('.cond-card') : null;
-    if (card) card.title = `Oceanside ${oH.toFixed(1)} m (WillyWeather) → ${Hm.toFixed(1)} m at the bay entrance (NS), knocked down by the headland to the ramp and Bower Lane.`;
+    if (card) card.title = nsW
+      ? `Oceanside ${oH.toFixed(1)} m (WillyWeather) → ${Hm.toFixed(1)} m at the bay entrance (NS), knocked down by the headland to the ramp and Bower Lane.`
+      : 'No NSW nearshore data for this hour, so no bay-entrance, ramp or Bower Lane height.';
   })();
   document.getElementById('sTide').textContent    = h.tideM.toFixed(2);
 
@@ -14011,7 +14056,8 @@ function initWeekScrubber(E, U, C, t0, t1, opt){
 function updateFvSub(h){
   var el = document.getElementById('fvSub');
   if (!el) return;
-  if (!h || h.swell1H == null) { el.textContent = '\u2014'; return; }
+  // No NSW swell under this hour (the WillyWeather backup): no modelled heights either.
+  if (!h || h.swell1H == null || !hasNsWaves(h)) { el.textContent = '\u2014'; return; }
   // Swell one-liner: residual height reaching the ramp (SS table) and the bay (BL
   // table) — same shelter/dispersion as the swell card. Height = H_mouth * sqrt(transmit).
   var Hm = Number(h.swell1H);
@@ -14048,11 +14094,15 @@ function renderTimeline(matrix, wxMatrix) {
       const temp    = wx?.temp != null ? Math.round(wx.temp) : '—';
       const rain    = wx?.rainProb != null ? Math.round(wx.rainProb)+'%' : '—';
       const matIdx  = matrix.indexOf(row);
+      // The swell this hour was scored from: NSW's, or WillyWeather's offshore figure on
+      // the WW path (the backup, or ?src=ww), where the NS slots are zeros. None on a
+      // no-call hour.
+      const sw      = result.noData ? null : ((FORCE_WW || !hasNsWaves(row)) ? row._ww : row);
 
       html += `<tr onclick="jumpToSlider(${matIdx})" title="${row.dateTime}">
         <td>${hour}</td>
         <td><span class="tl-score ${entry.cls}">${entry.label}</span></td>
-        <td style="font-size:10px;white-space:nowrap">${result.noData ? '—' : `${row.swell1H.toFixed(1)}m ${Math.round(row.swell1P)}s ${bearingName(row.swell1Dir)}`}</td>
+        <td style="font-size:10px;white-space:nowrap">${(sw && sw.swell1H != null) ? `${sw.swell1H.toFixed(1)}m ${Math.round(sw.swell1P)}s ${bearingName(sw.swell1Dir)}` : '—'}</td>
         <td style="font-size:10px">${Math.round(row.windKmh)} ${bearingName(row.windDir)}</td>
         <td>${temp}</td>
         <td>${rain}</td>
@@ -18069,9 +18119,13 @@ async function generateBannerSummary() {
   // No call → nothing for the summariser to phrase. The Worker caches its answer per
   // hour for EVERY device, so a no-data draft must never reach it, and nor must one
   // written from a saved forecast the app could not update (forecastAsOf older than
-  // WW_CACHE_TTL): the local baseline stands in, dated by forecastStaleLine.
+  // WW_CACHE_TTL): the local baseline stands in, dated by forecastStaleLine. Nor in the
+  // WillyWeather backup: the Worker reads an absent rampBreakH as "next to nothing
+  // reaches the entry", and the backup has no ramp height at all, so its prose would
+  // contradict the verdict. The local backup paragraph stands in instead.
   const _asOf = forecastAsOf();
-  if (!_bannerFacts || _bannerFacts.noData || (_asOf && Date.now() - _asOf >= WW_CACHE_TTL)) return;
+  if (!_bannerFacts || _bannerFacts.noData || wwBackupOn()
+      || (_asOf && Date.now() - _asOf >= WW_CACHE_TTL)) return;
   try {
     const n = new Date();
     const pad = x => String(x).padStart(2, '0');
@@ -18522,6 +18576,24 @@ async function generateBannerSummaryLocal() {
 
     waterText = parts.join('');
   }
+  // THE WILLYWEATHER BACKUP. Everything above is written off NSW's swell and sea
+  // (avgS1H, avgBayH, dominantS1Dir), which the backup does not have: those slots are
+  // zeros, so the prose would describe a calm the backup is not forecasting, beside a
+  // Caution rail. It says what it has instead: the three rails as they read, and the
+  // swell WillyWeather forecasts offshore, the one height prose may always give
+  // (CLAUDE.md §2). siteCheck and lineCheck are kept, verbatim and in the same form as
+  // above: on a red morning this paragraph is what carries them (CLAUDE.md §1).
+  if (!_noCall && wwBackupOn()) {
+    const bk = ['From the WillyWeather backup: Entry ' + domEntry + ', Surge ' + domSurge + ', Chop ' + domSwim + '.'];
+    const off = rows.map(r => r._ww).filter(o => o && o.swell1H != null);
+    if (off.length) {
+      bk.push('Offshore, WillyWeather has ' + avg(off.map(o => o.swell1H)).toFixed(1)
+        + ' m of swell from the ' + bearingName(off[Math.floor(off.length / 2)].swell1Dir) + '.');
+    }
+    if (_sv.siteCheck) bk.push(_sv.siteCheck.charAt(0).toUpperCase() + _sv.siteCheck.slice(1) + '.');
+    if (_sv.lineCheck) bk.push(_sv.lineCheck.charAt(0).toUpperCase() + _sv.lineCheck.slice(1) + '.');
+    waterText = bk.join(' ');
+  }
   // A no-call hour ran the prose above on '—' labels, so it is replaced wholesale.
   // No advice either way: there is nothing to base any on.
   if (_noCall) {
@@ -18740,7 +18812,7 @@ async function generateBannerSummaryLocal() {
       oceanSwellH: Number(oceanSwellH.toFixed(1)),
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
-      rampBreakH: _noCall ? null : Number(rampBreakH.toFixed(1)),   // modelled off the NS swell: none on a no-call hour
+      rampBreakH: (_noCall || wwBackupOn()) ? null : Number(rampBreakH.toFixed(1)),   // modelled off the NS swell: none on a no-call hour or in the WW backup
       swellTrend: swellTrend,
       shelteredContrast: shelteredContrast
     }
@@ -21956,7 +22028,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   function swellWindTile(cur, liveRes) {
     var src = document.getElementById('swellCanvas');
     if (!src || !src.width || !src.height) return '';
-    var swLine = compassOf(cur.swell1Dir || 0) + ' swell · ' + Math.round(cur.swell1P || 0) + 's';
+    // NSW's swell where this hour has it, else WillyWeather's (the backup's own input;
+    // the NS slots are zeros there and would read as a north swell).
+    var sw = hasNsWaves(cur) ? cur : (cur._ww || {});
+    var swLine = (sw.swell1Dir != null)
+      ? compassOf(sw.swell1Dir || 0) + ' swell · ' + Math.round(sw.swell1P || 0) + 's'
+      : 'Swell —';
     var wdLine = compassOf(cur.windDir || 0) + ' wind · ' + Math.round(cur.windKmh || 0) + ' km/h';
     var chop = liveRes && liveRes.swim ? liveRes.swim : null;
     return '<div class="ssd-tile ssd-wide"><div class="ssd-cap">🗺️ Real-time swell &amp; wind</div>' +
@@ -22617,8 +22694,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       // and a second heading immediately under it just repeats the author.
       h += '<div class="ssd-tile ssd-wide">' +
            '<div class="ssd-metrow ssd-met3">' +
-             metricCell('entry', liveRes.entry, rampHeight(cur).toFixed(1) + ' m') +
-             metricCell('surge', liveRes.water, bayHeight(cur).toFixed(1) + ' m') +
+             // Heights only where NSW's swell is under them (hasNsWaves): none in the
+             // WillyWeather backup, whose verdicts are not scored from one.
+             metricCell('entry', liveRes.entry, hasNsWaves(cur) ? rampHeight(cur).toFixed(1) + ' m' : '') +
+             metricCell('surge', liveRes.water, hasNsWaves(cur) ? bayHeight(cur).toFixed(1) + ' m' : '') +
              metricCell('swim',  liveRes.swim,  _chopRead) +
            '</div>' + camBlock() + '</div>';
     }
