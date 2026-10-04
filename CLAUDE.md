@@ -146,8 +146,9 @@ and just as binding:
   bucket. Its prompt rule 6 names the backup, and its validator rejects any sizing
   of the entry, because there is no ramp figure. The local backup paragraph stands
   in until it answers. Backup mode ends by itself on the first fresh run. The
-  Worker's 04:00 cron emails the owner every morning while the run is more than
-  36 h old, and once when it is fresh again (`src/ns-stale.js`).
+  Worker's hourly cron (`src/ns-stale.js`) learns NSW's publishing cadence. It emails
+  the owner within the hour once a run is overdue, then once a day, then once when a
+  fresh run arrives.
 
 ## 9. Offline-first
 
