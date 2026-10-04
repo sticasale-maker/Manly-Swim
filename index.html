@@ -18109,6 +18109,13 @@ function summaryConflict(text, facts) {
     if (m && Math.abs(parseFloat(m[1]) - w.bayResidualH) > 0.3)
       return 'quotes ' + m[1] + 'm in the bay but bayResidualH=' + w.bayResidualH;
   }
+  // The WillyWeather backup (5 Oct 2026), in step with the Worker's validate.js: the
+  // paragraph must name the backup, and with no ramp figure it must not size the
+  // entry. "Next to nothing reaches" is a claim only a real 0 m ramp figure makes.
+  if (facts.backup && !/\bwilly ?weather\b|\bbackup\b/.test(t))
+    return 'does not say the call comes from the WillyWeather backup';
+  if (typeof w.rampBreakH !== 'number' && /\b(?:next to nothing|almost nothing|virtually nothing|practically nothing|very little|hardly any(?:thing)?|barely any(?:thing)?)\b[^.]{0,40}?\breach(?:es|ing)?\b/.test(t))
+    return 'says how little reaches the entry, but there is no ramp figure';
   return null;
 }
 
@@ -18119,17 +18126,20 @@ async function generateBannerSummary() {
   // No call → nothing for the summariser to phrase. The Worker caches its answer per
   // hour for EVERY device, so a no-data draft must never reach it, and nor must one
   // written from a saved forecast the app could not update (forecastAsOf older than
-  // WW_CACHE_TTL): the local baseline stands in, dated by forecastStaleLine. Nor in the
-  // WillyWeather backup: the Worker reads an absent rampBreakH as "next to nothing
-  // reaches the entry", and the backup has no ramp height at all, so its prose would
-  // contradict the verdict. The local backup paragraph stands in instead.
+  // WW_CACHE_TTL): the local baseline stands in, dated by forecastStaleLine.
   const _asOf = forecastAsOf();
-  if (!_bannerFacts || _bannerFacts.noData || wwBackupOn()
-      || (_asOf && Date.now() - _asOf >= WW_CACHE_TTL)) return;
+  if (!_bannerFacts || _bannerFacts.noData || (_asOf && Date.now() - _asOf >= WW_CACHE_TTL)) return;
   try {
     const n = new Date();
     const pad = x => String(x).padStart(2, '0');
-    const bucket = n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + n.getHours() + ':' + _bannerFacts.timeCtx;
+    // The WillyWeather backup gets its own bucket (":ww"), so the hour's cached summary
+    // is never shared across the switch: an NSW paragraph quoting a ramp height must
+    // not reach a phone in backup mode, nor a backup one a phone whose banner has gone.
+    // The Worker writes it from facts.backup (its prompt rule 6), naming the backup and
+    // giving no entry height. A Worker older than 5 Oct 2026 rejects the suffix with a
+    // 400, and the local backup paragraph simply stays.
+    const bucket = n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + n.getHours() + ':' + _bannerFacts.timeCtx
+      + (_bannerFacts.backup ? ':ww' : '');
     const res = await fetch('https://bold-rain-6ded.sticasale.workers.dev/swim-summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -18582,7 +18592,9 @@ async function generateBannerSummaryLocal() {
   // Caution rail. It says what it has instead: the three rails as they read, and the
   // swell WillyWeather forecasts offshore, the one height prose may always give
   // (CLAUDE.md §2). siteCheck and lineCheck are kept, verbatim and in the same form as
-  // above: on a red morning this paragraph is what carries them (CLAUDE.md §1).
+  // above: on a red morning this paragraph is what carries them (CLAUDE.md §1). The
+  // Worker writes the fuller backup paragraph (facts.backup); this is what shows until
+  // it answers, and whenever it cannot.
   if (!_noCall && wwBackupOn()) {
     const bk = ['From the WillyWeather backup: Entry ' + domEntry + ', Surge ' + domSurge + ', Chop ' + domSwim + '.'];
     const off = rows.map(r => r._ww).filter(o => o && o.swell1H != null);
@@ -18752,6 +18764,11 @@ async function generateBannerSummaryLocal() {
     noData: _noCall,
     // ...and when that is because NSW's run is stale rather than missing (tab ribbon).
     nsStale: _noCall && !!_nsStaleSince,
+    // The WillyWeather backup is on: the verdicts below were scored from WW, and
+    // rampBreakH is null because there is no NSW swell to model one from. Read from
+    // these facts, never re-derived, so the bucket and the facts the Worker writes
+    // from can never disagree about which mode they describe.
+    backup: wwBackupOn(),
     // safetyLevel and siteCheck both come from swimVerdict() — the single
     // derivation shared with the answer line above the rails. They used to be
     // inlined here; two copies of this rule is exactly what CLAUDE.md §1 forbids.
@@ -18812,7 +18829,11 @@ async function generateBannerSummaryLocal() {
       oceanSwellH: Number(oceanSwellH.toFixed(1)),
       oceanSwellDir: oceanSwellDir,
       oceanSwellP: Math.round(oceanSwellP),
-      rampBreakH: (_noCall || wwBackupOn()) ? null : Number(rampBreakH.toFixed(1)),   // modelled off the NS swell: none on a no-call hour or in the WW backup
+      // Modelled off the NS swell, so there is none on a no-call hour or in the WW
+      // backup, and then the key is OMITTED, never null: the Worker's numClamp reads
+      // null as 0, and a 0 is a real ramp figure there ("next to nothing reaches the
+      // entry"), the one thing the backup cannot claim. Absent stays absent.
+      rampBreakH: (_noCall || wwBackupOn()) ? undefined : Number(rampBreakH.toFixed(1)),
       swellTrend: swellTrend,
       shelteredContrast: shelteredContrast
     }

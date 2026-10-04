@@ -142,9 +142,12 @@ and just as binding:
   WW (`wwPath` in `calcScore`) under the owner's brown banner. The switch covers the
   whole forecast, never a stray row, and logged history keeps its NS scores. WW's
   3-hourly gap hours stay grey. The NS-modelled heights are hidden (`hasNsWaves`).
-  The Oracle uses its local backup paragraph, because the Worker reads a missing ramp
-  height as "next to nothing reaches the entry". It ends by itself on the first fresh
-  run.
+  The Worker writes the Oracle from `backup: true` facts, in its own `:ww` cache
+  bucket. Its prompt rule 6 names the backup, and its validator rejects any sizing
+  of the entry, because there is no ramp figure. The local backup paragraph stands
+  in until it answers. Backup mode ends by itself on the first fresh run. The
+  Worker's 04:00 cron emails the owner every morning while the run is more than
+  36 h old, and once when it is fresh again (`src/ns-stale.js`).
 
 ## 9. Offline-first
 
