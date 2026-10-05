@@ -7595,6 +7595,17 @@ const SITE_DEFAULTS = {
   // with NE 20 km/h at high tide) all stay Dangerous.
   wwSwellMult:    0.7,
   wwTideGain:     0.39,
+  // ...and the backup's Entry CURVE (owner's choice, 5 Oct 2026, an hour later). At 16:00
+  // the calibrated backup read Doable 21.5 against the owner's "easy leaning into doable".
+  // WW's inputs had not changed since 15:00, and a flat multiplier low enough to fix it
+  // dragged the big days down a band. So the curve eases small and moderate readings and
+  // leaves everything from the Dangerous line up exactly as it was:
+  //   total x min(1, m + (1 - m) x total / D), with m = wwEntryLowMult and D the live
+  //   caution->dangerous edge (wwEntryCurve). It is monotone and meets the line at D.
+  // On 5 Oct: 16h Doable 21.5 -> 12.3, 06h 11.4 -> Easy 4.8. Synthetic Dangerous days are
+  // unchanged (116, 71, 56, 50). Mid-Caution stays Caution (1.5 m 9 s E 34.8 -> 26.9).
+  // Low Caution becomes Doable (2.0 m 11 s SE at high tide 28 -> 18.8).
+  wwEntryLowMult: 0.25,
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
   // used before the sheet loads, or when a cell is blank. On the NS path the live values
@@ -9478,6 +9489,15 @@ function noNearshoreScore() {
   };
 }
 
+// The WillyWeather backup's Entry curve (SITE_DEFAULTS.wwEntryLowMult): small and moderate
+// readings eased, everything at or above the Dangerous line untouched. calcScore applies
+// it to WW inputs only.
+function wwEntryCurve(x) {
+  const D = (SITE.entryThresholds && SITE.entryThresholds.caution) || 50;
+  const m = (SITE.wwEntryLowMult != null) ? SITE.wwEntryLowMult : 1;
+  return (!(x > 0) || x >= D) ? x : x * (m + (1 - m) * x / D);
+}
+
 function calcScore(d, modelOverride) {
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
@@ -9749,7 +9769,10 @@ function calcScore(d, modelOverride) {
   // Chop at the entry — a capped share of the Chop face, added AFTER the offshore
   // credit (a westerly flattens swell, and chopCm already carries its own lee shelter).
   const entryChop_d = entryChopDemerit(chopCm);
-  const total = totalBase + entryChop_d;
+  const total0 = totalBase + entryChop_d;
+  // The WillyWeather backup's Entry curve, on WW inputs only (see wwEntryCurve). Every
+  // NS-fed hour keeps total0 exactly.
+  const total = useWWInputs ? wwEntryCurve(total0) : total0;
 
   return {
     score: Math.max(0, Math.round(60 - total)),
@@ -9783,6 +9806,9 @@ function calcScore(d, modelOverride) {
       offshore: -Math.round(offshoreCredit * 10) / 10,
       // Chop face added into Entry (SITE.entryChopPts).
       entryChop: Math.round(entryChop_d * 10) / 10,
+      // WillyWeather backup only, so an NS hour's demerits are byte-for-byte unchanged:
+      // which tide gate applied, and what the backup curve took off (negative).
+      ...(useWWInputs ? { ww: true, wwCurve: Math.round((total - total0) * 10) / 10 } : {}),
     },
     // ── Three swimmer metrics ──────────────────────────────────────────────
     // Metric 1: Entry — classified on `total` demerits (LOWER = better), edges from sheet col AK rows 5–8.
@@ -20563,7 +20589,9 @@ function metricBreakdownHTML(key) {
       row('Subtotal (before tide)', f(o)) +
       // tideGate is start 40 -> full 70 since 14 Sep 2026, and tideDir() gates swell1
       // AND the wind-wave. (The note said 70/90 until 27 Sep, a leftover from before.)
-      row('Tide effect', f(dm.tide), `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 40°, full at 70°)`) +
+      row('Tide effect', f(dm.tide), dm.ww
+        ? `(headland, ${f(tideM)} m — WillyWeather backup: swell, from 70°, full at 90°)`
+        : `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 40°, full at 70°)`) +
       // Credit, so it prints negative — an offshore westerly flattens the swell face
       // at the entry. Only shown when it actually bites.
       (Math.abs(dm.offshore || 0) > 0.05
@@ -20579,6 +20607,9 @@ function metricBreakdownHTML(key) {
               chopCapped
                 ? `(${f(chopFace)} cm face — capped at ${f(chopCap)} pts)`
                 : `(${f(chopFace)} cm face — ${chopPts} pts/cm over ${f(chopFloor)} cm)`) : '') +
+      // The backup's curve, so the rows still add up to the total on a backup hour.
+      (dm.ww && Math.abs(dm.wwCurve || 0) > 0.05
+        ? row('Backup curve', f(dm.wwCurve), '(WillyWeather backup: small days eased, nothing at or above Dangerous)') : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Total demerits', f(r.entry.raw)) +
       row('Entry score (60 = best)', r.entry.score + ' · ' + r.entry.label)

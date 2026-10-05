@@ -149,11 +149,16 @@ and just as binding:
   Worker's hourly cron (`src/ns-stale.js`) learns NSW's publishing cadence. It emails
   the owner within the hour once a run is overdue, then once a day, then once when a
   fresh run arrives. The backup's Entry has **its own calibration** (owner's choice,
-  5 Oct 2026, from two camera calls): swell x`wwSwellMult` 0.7, plus the tide it had
-  before the 14 Sep NSW retune (`wwTideGain` 0.39, `tideGateWW` 70-90 deg). Both are
-  read only on WW inputs (`useWWInputs`). Never point the backup back at NSW's tide
-  knobs: the 14 Sep gate and gain were tuned for NSW's bay-mouth sea, not
-  WillyWeather's offshore swell.
+  5 Oct 2026, from three camera calls). It has three parts:
+  - swell x`wwSwellMult` 0.7;
+  - the tide it had before the 14 Sep NSW retune (`wwTideGain` 0.39, `tideGateWW` 70-90
+    deg);
+  - a curve, `wwEntryCurve` (`wwEntryLowMult` 0.25), that eases small and moderate
+    readings and leaves everything at or above the Dangerous edge exactly as it was.
+
+  All three are read only on WW inputs (`useWWInputs`), and NS hours stay
+  byte-identical. Never point the backup back at NSW's tide knobs: the 14 Sep gate and
+  gain were tuned for NSW's bay-mouth sea, not WillyWeather's offshore swell.
 
 ## 9. Offline-first
 
