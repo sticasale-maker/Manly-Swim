@@ -7579,6 +7579,22 @@ const SITE_DEFAULTS = {
   blDispFold:     true,
   tideRef:        0.7,    // neutral tide height (m, WW datum): at or below ref the tide adds nothing; above it high water amplifies. MONOTONE — a rising tide can only ever raise demerits (11 Jul 2026, low-tide credit retired).
   tideHighMult:   1.2,    // ASYMMETRY (28 Aug 2026, Marco): above tideRef the tide bites 20% harder than the same distance below it credits. tideGain still sets the overall scale; this tilts only the high side. 1.0 restores the symmetric behaviour.
+  // WILLYWEATHER BACKUP CALIBRATION (owner's choice, 5 Oct 2026). Read ONLY on WW inputs
+  // (useWWInputs in calcScore), so no NS-fed hour ever sees them. The backup scores
+  // WillyWeather's OFFSHORE swell through the gem table. On 5 Oct, with NSW stale, it read
+  // Caution 38.4 at 15:00 while the camera showed a mid-Doable entry, and Doable 19.9 at
+  // 06:00 against an easy one. Two causes, two knobs:
+  //   wwSwellMult - the backup's swell term x0.7. swellSens itself stays, because the
+  //                 GEM comparison panel reads it.
+  //   wwTideGain  - with tideGateWW (70->90 deg), the tide the backup had BEFORE the 14 Sep
+  //                 NSW retune. That retune widened Entry's gate to 40->70 deg and raised
+  //                 the gain x1.5 for NSW's ENE sea, and the backup inherited both
+  //                 uncalibrated: an E swell on a 1.5 m tide was adding 13.7 points.
+  // Before/after on 5 Oct: 15h Caution 38.4 -> Doable 21.3, 06h Doable 19.9 -> 11.4. The
+  // synthetic big days checked (2.5 m 13 s SE; 1.8 m 9 s E at high tide; 1.5 m 10 s ESE
+  // with NE 20 km/h at high tide) all stay Dangerous.
+  wwSwellMult:    0.7,
+  wwTideGain:     0.39,
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
   // used before the sheet loads, or when a cell is blank. On the NS path the live values
@@ -7967,6 +7983,15 @@ let SITE = {
     const t = Math.max(0, Math.min(1, (dir - start) / span));
     return t * t * (3 - 2 * t);
   },
+  // The WillyWeather backup's Entry tide gate: the 70->90 deg bounds Entry used before
+  // 14 Sep 2026 (see SITE_DEFAULTS.wwTideGain). Same smoothstep, folded the same way.
+  tideGateWW: function(dirDeg) {
+    const a = ((dirDeg % 360) + 360) % 360;
+    const dir = a > 180 ? 360 - a : a;
+    const start = 70, full = 90;
+    const t = Math.max(0, Math.min(1, (dir - start) / (full - start)));
+    return t * t * (3 - 2 * t);
+  },
   // Bower-surge tide gate. Same smoothstep shape as tideGate but with its own
   // bounds: 0 (no tide) below bowerTideGateStart°, smoothstep ramp to 1 by
   // bowerTideGateFull°, then held flat. Direction folded to 0–180°.
@@ -8015,7 +8040,8 @@ let SITE = {
   },
   // Direction-gated, per-source tide demerit. Only swell + wind-wave terms are
   // amplified (each by its own arrival direction); wind chop is never tide-amplified.
-  tideDir: function(tideM, parts, gateName) {
+  // `gain` is optional: only the WillyWeather backup passes one (SITE.wwTideGain).
+  tideDir: function(tideM, parts, gateName, gain) {
     // Tide rides on arriving wave energy, DIRECTION-WEIGHTED per source: each
     // component's demerit is scaled by gate(itsDir) before summing. Entry passes
     // 'tideGate' (swell1 + sea/ww); BL surge passes 'bowerTideGate'.
@@ -8040,7 +8066,7 @@ let SITE = {
     const gate = gateName ? (d => this[gateName](d)) : (() => 1);
     const w = (parts.s1_d || 0) * gate(parts.s1Dir || 0)
             + (parts.ww_d || 0) * gate(parts.wwDir || 0);
-    return this.tideAmp(tideM) * w;
+    return this.tideAmp(tideM, gain) * w;
   },
 
   // THE tide amplitude, signed, and the ONLY place the tide curve is defined.
@@ -8053,10 +8079,11 @@ let SITE = {
   // branches are 0 there) with a kink in the slope, and still monotone —
   // ∂/∂tideM ≥ 0 either side — so a higher tide is never scored better than a
   // lower one, which is the property the bidirectional tide was built on.
-  tideAmp: function (tideM) {
+  // `gain` overrides tideGain for one caller only: the WillyWeather backup's own tide.
+  tideAmp: function (tideM, gain) {
     if (tideM == null || isNaN(tideM)) return 0;   // no tide forecast this far out → no tide effect
     const dT = tideM - (this.tideRef ?? 0.7);
-    const g  = (this.tideGain ?? 0.35) * (dT > 0 ? (this.tideHighMult ?? 1) : 1);
+    const g  = (gain ?? this.tideGain ?? 0.35) * (dT > 0 ? (this.tideHighMult ?? 1) : 1);
     return g * dT;
   },
   get spm() { return 81 / this.periodPower; },
@@ -9600,7 +9627,10 @@ function calcScore(d, modelOverride) {
     // not jump a band just because the feed changed. See SITE.entrySeaSteepLo.
     seaSteepW = entrySeaSteepWeight(seaH, wwP);
     ww_d  = swellPower(seaH, wwP)                  * wwTx * wwSens * seaSteepW;
-    s1_d  = swellPower(swell1H, swell1P)           * s1Tx * SITE.swellSens;
+    // ×wwSwellMult on WW inputs only: the backup's own calibration (SITE_DEFAULTS.wwSwellMult).
+    // NS inputs that land here because the NS table is missing keep the plain swellSens.
+    s1_d  = swellPower(swell1H, swell1P)           * s1Tx * SITE.swellSens
+          * (useWWInputs ? (SITE.wwSwellMult ?? 1) : 1);
     rif_d = 0; // absorbed into gemLookup
     // Activate the Entry wind crossfade (windEntry = ws_d·(1−w) + ww_d·w, w below)
     // ONLY when we actually have a forecast sea: trust the OM sea via the gem arc
@@ -9641,10 +9671,11 @@ function calcScore(d, modelOverride) {
   // starts at >90°, smoothstep ramp to full at 135°, flat beyond. Wind chop is
   // never tide-amplified — only swell + wind-wave, each gated by its own direction.
   // tideDir is signed: tide_d = tideGain × (tideM − tideRef) × w — adds above tideRef, credits below.
-  let tide_d = SITE.tideDir(tideM, {
-    s1_d, s1Dir: swell1Dir,
-    ww_d, wwDir: windWaveDir || windDir,
-  }, 'tideGate');
+  // WW inputs get the backup's own tide, its pre-14-Sep gate and gain (SITE_DEFAULTS.
+  // wwTideGain). Every NS-fed hour keeps 'tideGate' and tideGain exactly as before.
+  let tide_d = useWWInputs
+    ? SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d, wwDir: windWaveDir || windDir }, 'tideGateWW', SITE.wwTideGain)
+    : SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d, wwDir: windWaveDir || windDir }, 'tideGate');
   // WW-PATH TIDE = the OLD one-sided formula (2026-08-03, per user): clamp off the
   // below-neutral CREDIT so on WW tide can only ADD demerits (tideM ≤ tideRef → 0),
   // exactly like the pre-17-Jul `max(0,…)` behaviour. Above tideRef is identical to
