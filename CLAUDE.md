@@ -153,7 +153,7 @@ and just as binding:
   - swell x`wwSwellMult` 0.7;
   - the tide it had before the 14 Sep NSW retune (`wwTideGain` 0.39, `tideGateWW` 70-90
     deg);
-  - a curve, `wwEntryCurve` (`wwEntryLowMult` 0.25), that eases small and moderate
+  - a curve, `wwEntryCurve` (`wwEntryLowMult` 0.79), that eases small and moderate
     readings and leaves everything at or above the Dangerous edge exactly as it was.
 
   Its Surge (`bowerSurgeWater`) was brought back in proportion the same way. The bay
