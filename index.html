@@ -7606,6 +7606,17 @@ const SITE_DEFAULTS = {
   // unchanged (116, 71, 56, 50). Mid-Caution stays Caution (1.5 m 9 s E 34.8 -> 26.9).
   // Low Caution becomes Doable (2.0 m 11 s SE at high tide 28 -> 18.8).
   wwEntryLowMult: 0.25,
+  // ...and SURGE back in proportion (owner's choice, 5 Oct 2026). With Entry eased, the
+  // backup's Surge (bowerSurgeWater, Bower path) read ABOVE Entry in 21 of 42 daylight
+  // hours, where NSW's last week never once had Surge above Entry (49 below, 55 level).
+  // The same curve shape is applied to the BAY surge only, pinned at the live Washy edge
+  // (wwSurgeCurve), so every Washy reading and every point-surge hazard is untouched.
+  // The bands now use NSW's live surgeThresholds instead of the original Bower edges
+  // (10/30/50). That also fixes the rail, whose dot was always placed on the live edges
+  // while the label used the old ones.
+  // On 5 Oct: 16h Drifty 29.4 -> Steady 19.2 (Entry Doable), 06h Drifty 13.8 -> Steady 5.3.
+  // Next 3 days: Surge above Entry 0 of 57 hours.
+  wwSurgeLowMult: 0.15,
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
   // used before the sheet loads, or when a cell is blank. On the NS path the live values
@@ -9410,18 +9421,26 @@ function bowerSurgeWater(d) {
   // term lands in the same units here. A hazard must not disappear because the NS feed
   // fell over and the app quietly failed across to its backup.
   const pt  = pointSurge(d);
-  const raw = Math.max(p.raw, pt);
+  // The BAY stack is eased by the backup's curve (SITE_DEFAULTS.wwSurgeLowMult). The point
+  // is not, so its hazard reads exactly as it did.
+  const bay = wwSurgeCurve(p.raw);
+  const raw = Math.max(bay, pt);
   const v6 = Math.max(0, Math.round(60 - raw));
-  const t  = { steady: 50, drifty: 30, surgy: 10 };   // ORIGINAL score-convention edges (pre-NS); NOT SITE.surgeThresholds
-  const z  = v6 >  t.steady ? ['Steady', 'green']
-           : v6 >  t.drifty ? ['Drifty', 'amber']
-           : v6 >= t.surgy  ? ['Surgy',  'yellow']
-           :                  ['Washy',  'red'];
+  // NSW's live edges since 5 Oct 2026 (owner's choice), ascending on raw demerits exactly as
+  // blSwimWater bands. The label now agrees with the rail dot, which was always placed on
+  // these edges: the original Bower score edges {50,30,10} printed Drifty for a 13.8 whose
+  // dot sat in Steady.
+  const t  = SITE.surgeThresholds;
+  const z  = raw <= t.steady ? ['Steady', 'green']
+           : raw <= t.drifty ? ['Drifty', 'amber']
+           : raw <= t.surgy  ? ['Surgy',  'yellow']
+           :                   ['Washy',  'red'];
   // Envelope mapped to the live water shape so the Surge popup + calibration loggers
   // keep reading .raw / .parts. No wind-wave heave on the Bower path (chop excluded).
-  return { label: z[0], cls: z[1], score: v6, raw: raw, greenEdge: 9.5,
-           locus: (pt > p.raw && pt > ((SITE.surgeThresholds && SITE.surgeThresholds.steady) || 20)) ? 'point' : 'bay',
-           parts: { swell1: p.s1_d + p.s2_d, windWave: 0, tide: p.tide_d, chop: 0, point: pt, raw: raw } };
+  return { label: z[0], cls: z[1], score: v6, raw: raw, greenEdge: t.steady,
+           locus: (pt > bay && pt > t.steady) ? 'point' : 'bay',
+           parts: { swell1: p.s1_d + p.s2_d, windWave: 0, tide: p.tide_d, chop: 0, point: pt,
+                    ww: true, curve: Math.round((bay - p.raw) * 10) / 10, raw: raw } };
 }
 
 // ── Offshore (westerly) flattening credit — the RAW, unbounded-by-energy value ──
@@ -9495,6 +9514,14 @@ function noNearshoreScore() {
 function wwEntryCurve(x) {
   const D = (SITE.entryThresholds && SITE.entryThresholds.caution) || 50;
   const m = (SITE.wwEntryLowMult != null) ? SITE.wwEntryLowMult : 1;
+  return (!(x > 0) || x >= D) ? x : x * (m + (1 - m) * x / D);
+}
+
+// The same shape for the backup's BAY surge (SITE_DEFAULTS.wwSurgeLowMult), pinned at the
+// live Washy edge. Only bowerSurgeWater calls it, and only WW inputs reach that.
+function wwSurgeCurve(x) {
+  const D = (SITE.surgeThresholds && SITE.surgeThresholds.surgy) || 50;
+  const m = (SITE.wwSurgeLowMult != null) ? SITE.wwSurgeLowMult : 1;
   return (!(x > 0) || x >= D) ? x : x * (m + (1 - m) * x / D);
 }
 
@@ -20648,7 +20675,9 @@ function metricBreakdownHTML(key) {
       // bowerTideGate knots are (0,0) (10,10%) (40,20%) (80,100%) — nothing is
       // "exempt below 20°", and it is full at 80°, not 90°. Both figures in the
       // old note were wrong.
-      row('Tide effect', f(w.tide), `(${f(tideM)} m — headland; 10% at 10°, 20% at 40°, full at 80°)`) +
+      row('Tide effect', f(w.tide), w.ww
+        ? `(${f(tideM)} m — WillyWeather backup: the Bower tide on the swell, no direction gate)`
+        : `(${f(tideM)} m — headland; 10% at 10°, 20% at 40°, full at 80°)`) +
       ((w.wall || 0) > 0.0005 ? row('Wall reflection', f(w.wall), '(high tide: waves reach the wall and bounce back into the bay)') : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       // TWO COLUMNS SINCE 12 Sep 2026. Everything above is the BAY, scored at Bower
@@ -20657,6 +20686,9 @@ function metricBreakdownHTML(key) {
       // point day — the exact defect the heave row was added to fix, and the reason the
       // point could not simply be folded into the swell row.
       row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0) + (w.wall || 0))) +
+      // The backup's curve on the bay (never the point), so a backup hour still adds up.
+      (w.ww && Math.abs(w.curve || 0) > 0.05
+        ? row('Backup curve', f(w.curve), '(WillyWeather backup: the bay eased, nothing at or above Washy)') : '') +
       row('At the point', f(w.point || 0), '(long-period swell surging over the shelf — scored at the point, not in the bay)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw), `(the worse of the two — ${r.water.locus === 'point' ? 'the point' : 'the bay'})`) +

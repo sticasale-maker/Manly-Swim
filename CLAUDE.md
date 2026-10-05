@@ -156,7 +156,12 @@ and just as binding:
   - a curve, `wwEntryCurve` (`wwEntryLowMult` 0.25), that eases small and moderate
     readings and leaves everything at or above the Dangerous edge exactly as it was.
 
-  All three are read only on WW inputs (`useWWInputs`), and NS hours stay
+  Its Surge (`bowerSurgeWater`) was brought back in proportion the same way. The bay
+  stack goes through `wwSurgeCurve` (`wwSurgeLowMult` 0.15, pinned at the live Washy
+  edge), the point is untouched, and the bands use NSW's live `surgeThresholds`. That
+  matches NSW, where Surge never sits above Entry.
+
+  All of it is read only on WW inputs (`useWWInputs`), and NS hours stay
   byte-identical. Never point the backup back at NSW's tide knobs: the 14 Sep gate and
   gain were tuned for NSW's bay-mouth sea, not WillyWeather's offshore swell.
 
