@@ -8581,7 +8581,9 @@ async function loadGemConfig(force) {
 async function retryGemTable() {
   const badge = document.getElementById('gem-badge');
   if (badge) { badge.textContent = 'LOADING…'; badge.style.background = 'var(--dim)'; badge.style.cursor = 'default'; badge.onclick = null; }
-  localStorage.removeItem(NS_DISP_CONFIG_KEY);
+  // No cache bust: force already goes upstream, and a success overwrites the saved
+  // copy. Deleting it first meant a retry during a sheet outage threw away the last good
+  // table, and the next launch failed over to vecchio (6 Oct 2026).
   await loadNsDispConfig(true);
   if (SITE.nsDisp) {
     if (badge) badge.style.display = 'none';
@@ -8956,11 +8958,29 @@ async function loadNsDispConfig(force) {
         'Fill those rows and the full 36-row lookup switches on by itself.');
     } else {
       diag('NS disp: parse returned null — check New NS tab (expected ' + NS_DISP_ROWS + ' dir rows × 16 period cols from row 11)');
+      keepLastGoodNsDisp('sheet unparseable');
     }
   } catch(e) {
     diag('NS disp: FAIL — ' + (e.message || e));
-    console.warn('NS disp config: sheet unavailable, NS path will use 0.5 fallback transmit.', e.message);
+    keepLastGoodNsDisp('sheet unavailable');
+    if (!SITE.nsDisp) console.warn('NS disp config: sheet unavailable and no saved copy, NS path will use 0.5 fallback transmit.', e.message);
   }
+}
+// KEEP THE LAST GOOD COPY (owner, 6 Oct 2026). The table is config, and it changes
+// rarely, so a saved copy of any age beats no table. Without one the app shows TABLE
+// NOT LOADED, and the next launch fails over to vecchio. Used when the sheet cannot be
+// reached or parsed: on 6 Oct the GEM and New NS tabs returned 401 for an hour after the
+// sheet was restricted. A table already in use is never replaced by an older one, and
+// the saved copy keeps its fetchedAt, so every launch still tries the sheet first.
+function keepLastGoodNsDisp(why) {
+  if (SITE.nsDisp) return;
+  try {
+    const c = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
+    if (c && c.table && c.table.length === NS_DISP_ROWS && (!c.blDisp || c.blDisp.length === NS_DISP_ROWS)) {
+      applySavedNsDisp(c);
+      diag('NS disp: ' + why + ' — using the last good copy (saved ' + new Date(c.fetchedAt).toISOString().slice(0, 16) + 'Z)');
+    }
+  } catch (e) {}
 }
 
 // =============================================================================
@@ -16726,8 +16746,8 @@ function buildTunePanel() {
                                                       // repainted sliders can't disagree with the
                                                       // (now-empty) override store, and nothing
                                                       // re-clobbers on the next applyTuneOverrides.
-      localStorage.removeItem(NS_DISP_CONFIG_KEY);   // bust local cache
-      await loadNsDispConfig(true);                  // force upstream re-pull
+      await loadNsDispConfig(true);                  // force upstream re-pull; the saved copy stays
+                                                     // until a fresh one replaces it (no cache bust)
       // LOCAL knobs: coded default < live, same precedence as boot.
       TUNE_LIVE_KEYS.forEach(k => tuneSet(k, SITE_DEFAULTS[k]));
       const live = await refreshLiveTune();          // fresh from the Worker; null = kept the cache
