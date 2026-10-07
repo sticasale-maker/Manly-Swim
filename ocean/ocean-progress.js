@@ -336,7 +336,7 @@ function chapterHref(slug) {
   return h || (CFG.base || '') + slug + '.html';
 }
 function hrefFor(s, kind) {
-  if (kind !== 'hub' && LOCAL[s.id]) return '#' + s.id;
+  if ((kind !== 'hub' || CFG.single) && LOCAL[s.id]) return '#' + s.id;
   return chapterHref(s.ch).split('#')[0] + '#' + s.id;
 }
 function hubHref() { return CFG.hub || (CFG.base || '') + './'; }
@@ -702,7 +702,7 @@ function shownSave() {
 function collectUnits() {
   var seen = {};
   views.forEach(function (v) {
-    if (v.kind === 'hub') return;
+    if (v.kind === 'hub' && !CFG.single) return;
     v.list.forEach(function (s) {
       if (!LOCAL[s.id] || seen[s.id]) return;
       seen[s.id] = 1;
@@ -1270,7 +1270,7 @@ function clearIds(ids) {
 
 function addButtons() {
   views.forEach(function (v) {
-    if (v.kind === 'hub') return;
+    if (v.kind === 'hub' && !CFG.single) return;
     v.list.forEach(function (s) {
       var sec = LOCAL[s.id];
       if (!sec || sec.querySelector('.op-btn')) return;
@@ -1434,7 +1434,8 @@ function init() {
   if (!els.length) return;
   els.forEach(function (el) {
     var kind = el.getAttribute('data-op-contents') || 'page';
-    if (kind === 'page') {
+    // single: the one-page build (sea.html), whose hub view holds every chapter's sections
+    if (kind === 'page' || (kind === 'hub' && CFG.single)) {
       SECTIONS.forEach(function (s) {
         var sec = document.getElementById(s.id);
         if (sec && sec.tagName === 'SECTION') LOCAL[s.id] = sec;

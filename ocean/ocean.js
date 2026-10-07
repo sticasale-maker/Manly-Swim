@@ -274,7 +274,7 @@ function heroWave(cv) {
 // their order drifts from this list.
 // PROTOTYPE hrefs: chapters still inside waves.html point at its live anchors, new
 // chapters at the scratch prototypes. In production every href is slug + '.html'.
-var HUB = 'hub.html';                                  // production: './'
+var HUB = 'sea.html';                                  // production: './'
 var APP = 'https://app.viz.net.au/Manly-Swim/';        // production: '../'
 var LIVE = 'https://app.viz.net.au/Manly-Swim/waves.html';
 var THEMES = {
@@ -282,27 +282,27 @@ var THEMES = {
   temp: 'Temperature & colour', tools: 'Tools'
 };
 var CHAPTERS = [
-  { slug: 'waves',          theme: 'waves', min: 4, href: 'chapter-template.html',
+  { slug: 'waves',          theme: 'waves', min: 4, href: '#waves',
     title: 'What a wave is',                 hook: 'When a swell lifts you, why do you end up back where you started?' },
-  { slug: 'swell-and-sets', theme: 'waves', min: 4, href: 'swell-and-sets.html',
+  { slug: 'swell-and-sets', theme: 'waves', min: 4, href: '#swell-and-sets',
     title: 'Swell, sea and sets',            hook: 'Why do the bigger waves come in groups, with flat spells in between?' },
-  { slug: 'into-the-bay',   theme: 'waves', min: 5, href: 'into-the-bay.html',
+  { slug: 'into-the-bay',   theme: 'waves', min: 5, href: '#into-the-bay',
     title: 'How swell gets into the bay',    hook: 'Why can a two-metre south-easterly barely reach the corner, while a one-metre easterly runs straight in?' },
-  { slug: 'point-and-wall', theme: 'waves', min: 4, href: 'point-and-wall.html',
+  { slug: 'point-and-wall', theme: 'waves', min: 4, href: '#point-and-wall',
     title: 'The point and the sea wall',     hook: 'Why does the water slosh harder by the point, and off the sea wall at high tide?' },
-  { slug: 'wind',           theme: 'wind',  min: 4, href: 'fetch.html',
+  { slug: 'wind',           theme: 'wind',  min: 4, href: '#wind',
     title: 'Wind and chop',                  hook: 'Why is it rough today when the forecast said the swell was small?' },
-  { slug: 'currents',       theme: 'sand',  min: 3, href: 'currents.html',
+  { slug: 'currents',       theme: 'sand',  min: 3, href: '#currents',
     title: 'Carried along',                  hook: 'Why do you come out further along the beach than where you went in?' },
-  { slug: 'sand',           theme: 'sand',  min: 5, href: 'sand.html',
+  { slug: 'sand',           theme: 'sand',  min: 5, href: '#sand',
     title: 'Where the sand goes',            hook: 'Where does the sand go after a big swell, and how does it come back?' },
-  { slug: 'tides',          theme: 'tides', min: 5, href: 'tides.html',
+  { slug: 'tides',          theme: 'tides', min: 5, href: '#tides',
     title: 'Tides',                          hook: 'Why are there two high tides a day, and why do they come about 50 minutes later each day?' },
-  { slug: 'sea-level',      theme: 'tides', min: 5, href: 'ssh.html',
+  { slug: 'sea-level',      theme: 'tides', min: 5, href: '#sea-level',
     title: 'The ocean isn’t flat',           hook: 'Why does the sea stand higher in some places than others, and how can anyone measure it from space?' },
-  { slug: 'cold-water',     theme: 'temp',  min: 4, href: 'upwelling.html',
+  { slug: 'cold-water',     theme: 'temp',  min: 4, href: '#cold-water',
     title: 'Cold water, green water',        hook: 'Why can the water turn cold in the middle of summer, and why does it sometimes go green?' },
-  { slug: 'simulator',      theme: 'tools', min: 5, href: 'simulator.html',
+  { slug: 'simulator',      theme: 'tools', min: 5, href: '#simulator',
     title: 'From the forecast to the corner', hook: 'Why doesn’t the app just use the forecast’s swell height? See it in the simulator.' }
 ];
 function chapterIndex(slug) { for (var i = 0; i < CHAPTERS.length; i++) if (CHAPTERS[i].slug === slug) return i; return -1; }

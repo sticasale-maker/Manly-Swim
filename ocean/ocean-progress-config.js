@@ -1,12 +1,12 @@
-// Prototype paths only (proto/). In production (/Manly-Swim/ocean/) every chapter is
-// <slug>.html beside the hub, the kit's default, so this file goes away.
+// One-page build (sea.html, 7 Oct 2026): the hub and every chapter are on one page, so
+// every chapter link is an anchor on it (#<slug>; the page's fold script opens it) and
+// the hub view also gets the read buttons and the hide switch for each section (single).
 window.OCEAN_PROGRESS = {
-  hub: 'hub.html',
+  single: true,
+  hub: '#contents',
   hrefs: {
-    'waves': 'chapter-template.html',
-    'swell-and-sets': 'swell-and-sets.html', 'into-the-bay': 'into-the-bay.html',
-    'point-and-wall': 'point-and-wall.html', 'currents': 'currents.html', 'simulator': 'simulator.html',
-    'wind': 'fetch.html', 'sand': 'sand.html', 'tides': 'tides.html',
-    'sea-level': 'ssh.html', 'cold-water': 'upwelling.html'
+    'waves': '#waves', 'swell-and-sets': '#swell-and-sets', 'into-the-bay': '#into-the-bay',
+    'point-and-wall': '#point-and-wall', 'wind': '#wind', 'currents': '#currents', 'simulator': '#simulator',
+    'sand': '#sand', 'tides': '#tides', 'sea-level': '#sea-level', 'cold-water': '#cold-water', 'words': '#words'
   }
 };
