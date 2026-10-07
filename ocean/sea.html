@@ -479,7 +479,28 @@
   <div class="wrap">
     <div class="topbar">
       <span class="topbar-name">Swim Manly</span>
-      <a class="back-link" href="https://app.viz.net.au/Manly-Swim/">&larr; Back to the app</a>
+      <a class="back-link" id="back-link" href="https://app.viz.net.au/Manly-Swim/">&larr; Back to the app</a>
+      <script>/* Arrived from the VIZ website (viz.net.au links add ?from=viz): the way
+         back is to VIZ, not to the swim app. Kept for the visit, so it holds
+         when the page is reloaded or a chapter link changes the address. */
+      (function () {
+        var viz = false, back = 'https://www.viz.net.au/articles';
+        try {
+          var q = new URLSearchParams(location.search).get('from') === 'viz';
+          var r = document.referrer ? new URL(document.referrer) : null;
+          var site = r && /(^|\.)viz\.net\.au$|^viz-on-web\.pages\.dev$/.test(r.hostname) && !/^app\./.test(r.hostname);
+          viz = q || !!site;
+          if (site && r.pathname.length > 1) back = r.origin + r.pathname;
+        } catch (e) {}
+        try {
+          if (viz) sessionStorage.setItem('sea-back', back);
+          else if (sessionStorage.getItem('sea-back')) { viz = true; back = sessionStorage.getItem('sea-back'); }
+        } catch (e) {}
+        if (!viz) return;
+        var a = document.getElementById('back-link');
+        a.href = back;
+        a.innerHTML = '&larr; Back to VIZ';
+      })();</script>
     </div>
     <div class="hero">
       <div class="eyebrow">The physics of the bay</div>
