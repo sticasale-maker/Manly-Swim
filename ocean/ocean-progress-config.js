@@ -4,8 +4,8 @@ window.OCEAN_PROGRESS = {
   hub: 'hub.html',
   hrefs: {
     'waves': 'chapter-template.html',
-    'swell-and-sets': 'progress/waves-with-progress.html#swell-sea', 'into-the-bay': 'progress/waves-with-progress.html#shoaling',
-    'point-and-wall': 'progress/waves-with-progress.html#point', 'currents': 'progress/waves-with-progress.html#drift', 'simulator': 'progress/waves-with-progress.html#data',
+    'swell-and-sets': 'swell-and-sets.html', 'into-the-bay': 'into-the-bay.html',
+    'point-and-wall': 'point-and-wall.html', 'currents': 'currents.html', 'simulator': 'simulator.html',
     'wind': 'fetch.html', 'sand': 'sand.html', 'tides': 'tides.html',
     'sea-level': 'ssh.html', 'cold-water': 'upwelling.html'
   }

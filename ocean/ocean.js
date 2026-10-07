@@ -284,15 +284,15 @@ var THEMES = {
 var CHAPTERS = [
   { slug: 'waves',          theme: 'waves', min: 4, href: 'chapter-template.html',
     title: 'What a wave is',                 hook: 'When a swell lifts you, why do you end up back where you started?' },
-  { slug: 'swell-and-sets', theme: 'waves', min: 4, href: LIVE + '#swell-sea',
+  { slug: 'swell-and-sets', theme: 'waves', min: 4, href: 'swell-and-sets.html',
     title: 'Swell, sea and sets',            hook: 'Why do the bigger waves come in groups, with flat spells in between?' },
-  { slug: 'into-the-bay',   theme: 'waves', min: 5, href: LIVE + '#shoaling',
+  { slug: 'into-the-bay',   theme: 'waves', min: 5, href: 'into-the-bay.html',
     title: 'How swell gets into the bay',    hook: 'Why can a two-metre south-easterly barely reach the corner, while a one-metre easterly runs straight in?' },
-  { slug: 'point-and-wall', theme: 'waves', min: 4, href: LIVE + '#point',
+  { slug: 'point-and-wall', theme: 'waves', min: 4, href: 'point-and-wall.html',
     title: 'The point and the sea wall',     hook: 'Why does the water slosh harder by the point, and off the sea wall at high tide?' },
   { slug: 'wind',           theme: 'wind',  min: 4, href: 'fetch.html',
     title: 'Wind and chop',                  hook: 'Why is it rough today when the forecast said the swell was small?' },
-  { slug: 'currents',       theme: 'sand',  min: 3, href: LIVE + '#drift',
+  { slug: 'currents',       theme: 'sand',  min: 3, href: 'currents.html',
     title: 'Carried along',                  hook: 'Why do you come out further along the beach than where you went in?' },
   { slug: 'sand',           theme: 'sand',  min: 5, href: 'sand.html',
     title: 'Where the sand goes',            hook: 'Where does the sand go after a big swell, and how does it come back?' },
@@ -302,7 +302,7 @@ var CHAPTERS = [
     title: 'The ocean isn’t flat',           hook: 'Why does the sea stand higher in some places than others, and how can anyone measure it from space?' },
   { slug: 'cold-water',     theme: 'temp',  min: 4, href: 'upwelling.html',
     title: 'Cold water, green water',        hook: 'Why can the water turn cold in the middle of summer, and why does it sometimes go green?' },
-  { slug: 'simulator',      theme: 'tools', min: 5, href: LIVE + '#data',
+  { slug: 'simulator',      theme: 'tools', min: 5, href: 'simulator.html',
     title: 'From the forecast to the corner', hook: 'Why doesn’t the app just use the forecast’s swell height? See it in the simulator.' }
 ];
 function chapterIndex(slug) { for (var i = 0; i < CHAPTERS.length; i++) if (CHAPTERS[i].slug === slug) return i; return -1; }
@@ -398,9 +398,10 @@ function chapter(slug) {
   var c = CHAPTERS[i], N = CHAPTERS.length;
   fill('[data-o="n"]', String(i + 1)); fill('[data-o="of"]', String(N)); fill('[data-o="theme"]', THEMES[c.theme]);
   fill('[data-o="min"]', c.min + ' min read');
+  // hub links first: previous / next carry data-o="hub" as their no-script fallback
+  [].forEach.call(document.querySelectorAll('[data-o="hub"]'), function (a) { a.href = HUB; });
   setLink(document.getElementById('pnPrev'), CHAPTERS[i - 1], 'prev', i);
   setLink(document.getElementById('pnNext'), CHAPTERS[i + 1], 'next', i + 2);
-  [].forEach.call(document.querySelectorAll('[data-o="hub"]'), function (a) { a.href = HUB; });
   [].forEach.call(document.querySelectorAll('[data-o="app"]'), function (a) { a.href = APP; });
   stickyToc();
   log('ocean_open', { ch: slug });
