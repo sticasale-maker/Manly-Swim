@@ -428,6 +428,12 @@ function buildView(el, kind, slug) {
           '<span class="op-ch-c"></span><span class="op-st">' + ICON + '</span></div>' +
           '<ol class="op-list">' + secs.map(function (s) { return rowHtml(s, '', kind); }).join('') + '</ol></li>';
       }).join('') + '</ol>';
+      // Words of the sea: a reference chapter with nothing to tick, but it belongs in the contents
+      if (CFG.hrefs && CFG.hrefs.words) {
+        h += '<div class="op-ch op-ref"><div class="op-ch-h"><span class="op-ch-n" aria-hidden="true">&#9670;</span>' +
+          '<a class="op-ch-t" href="' + esc(chapterHref('words')) + '">Words of the sea</a>' +
+          '<span class="op-ch-c">reference</span></div></div>';
+      }
     } else {
       h += '<ol class="op-list">' + sc.list.map(function (s, i) { return rowHtml(s, pad(i + 1), kind); }).join('') + '</ol>';
     }
