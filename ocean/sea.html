@@ -72,6 +72,12 @@
     background:var(--theme); color:#fff; font-family:'DM Mono',monospace; font-size:14px; font-weight:500}
   .chap-cta svg{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; transition:transform .2s}
   .chap-cta-c{display:none}
+  /* read badge beside "Open chapter": shows ticks while a chapter is folded (owner, 7 Oct 2026) */
+  .chap-read{display:inline-flex; align-items:center; gap:6px; margin-left:10px; font-family:'DM Mono',monospace;
+    font-size:12.5px; color:var(--dim); vertical-align:middle}
+  .chap-read svg{width:16px; height:16px; flex:0 0 16px}
+  .chap-read.is-done{color:var(--deep); font-weight:500}
+  .chap-read[hidden]{display:none}
   .chap.is-open .chap-cta{background:transparent; color:var(--theme); border:1px solid var(--theme)}
   .chap.is-open .chap-cta-o{display:none}
   .chap.is-open .chap-cta-c{display:inline}
@@ -430,6 +436,37 @@
 </style>
 </head>
 <body>
+<script>
+// Read badge beside each chapter's "Open chapter" button, painted from the progress kit's own
+// 'oceanprogress' event (chapters: {slug: {done, total}}), so it always agrees with the contents.
+(function () {
+  'use strict';
+  var TICK = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"/><path d="M4.6 8.3l2.2 2.2 4.6-4.8" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  function badge(sec) {
+    var b = sec.querySelector('.chap-read');
+    if (!b) {
+      var cta = sec.querySelector('.chap-cta');
+      if (!cta || !cta.parentNode) return null;
+      b = document.createElement('span'); b.className = 'chap-read'; b.hidden = true;
+      cta.parentNode.insertBefore(b, cta.nextSibling);
+    }
+    return b;
+  }
+  document.addEventListener('oceanprogress', function (e) {
+    var chs = (e.detail && e.detail.chapters) || {};
+    [].forEach.call(document.querySelectorAll('section.chap[data-slug]'), function (sec) {
+      var c = chs[sec.getAttribute('data-slug')], b = badge(sec);
+      if (!b) return;
+      if (!c || !c.done) { b.hidden = true; return; }
+      b.hidden = false;
+      var all = c.done >= c.total;
+      b.classList.toggle('is-done', all);
+      b.innerHTML = all ? TICK + 'Read' : c.done + ' of ' + c.total + ' read';
+    });
+  });
+})();
+</script>
+
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
   <symbol id="wv" viewBox="0 0 400 140" preserveAspectRatio="none">
     <path d="M0 40 Q25 26 50 40 T100 40 T150 40 T200 40 T250 40 T300 40 T350 40 T400 40" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke" opacity=".6"/>
