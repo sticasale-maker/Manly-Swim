@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Where the sand goes (prototype, chapter 7 "sand")</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<!--
+  PROTOTYPE (7 Oct 2026): "Where the sand goes", the body of the new chapter
+  ocean/sand.html (theme Currents & sand, chapter 7 in structure.json).
+  INTEGRATION: go by the comment fences, never by line numbers.
+   - HTML: paste everything between the "PASTE START: sections" and "PASTE END: sections"
+     comments (sections #sand, #sand-swings, #sources).
+   - JS: paste everything between "PASTE START: NEW MODULE" and "PASTE END: NEW MODULE" (the
+     sand() IIFE, from its banner to its closing "})();"). Do NOT paste the helpers above it
+     (REDUCED, runCanvas: in the chapter they come from ocean.js), nor the outer IIFE wrapper.
+   - CSS: of the NEW CSS block only "section p a" is needed; the copied waves.html rules are
+     already in ocean.css. ".illus img" is for the preview below.
+   - HERO: the <figure id="sand-hero"> above the fence is a PREVIEW, not part of the paste-in.
+     In the chapter, its image goes into the hero .ill-hero slot as img/sand.webp (from
+     img/sand-calm-vs-storm-crop.webp, 1376x440), with the same alt text and its caption kept
+     under it (the grey rock under the sand is the artist's, not a survey). The canvas carries
+     the physics.
+  The CSS below is copied verbatim from waves.html (only the rules these sections use), plus a
+  short, marked NEW CSS block. The sand budget is checked in node: test_sand.js (next to this
+  file). Updated 7 Oct 2026 after a second review: storm profile shows more rock and a deeper
+  trough, labels are tied to what they name, and plain-words fixes in the prose.
+-->
+<style>
+  /* ── copied VERBATIM from waves.html (only the rules these sections use) ── */
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8795; --faint:#8fb0bb;
+    --sun:#e0982f; --ocean:#0a7ea4; --deep:#0b4f6c;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66);
+    --radius:14px;
+    /* chart series — validated (dataviz validate_palette, light, surface #fbf6ec): all pass */
+    --s7:#c2780f; --s10:#0a7ea4; --s13:#5b4bb0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--cream);
+    background-image:radial-gradient(120% 55% at 50% 0,#fff 0,rgba(255,255,255,0) 60%),linear-gradient(180deg,var(--cream2),var(--cream2));
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:'Newsreader',Georgia,serif; font-weight:400;
+    font-size:19px; line-height:1.62;
+    padding:0 0 64px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:0 18px}
+  h1,h2,h3{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink)}
+  .eyebrow,.mono,.back-link,.fig-cap,.ctl label,.out-k,.src li{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:6px}
+  section{margin-top:44px; scroll-margin-top:16px}
+  h2{font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  p{margin:0 0 14px}
+  strong{font-weight:500; color:var(--ink)}
+  .num{font-family:'DM Mono',monospace; font-size:.86em; color:var(--deep); white-space:nowrap}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0}
+  .rule{border-left:3px solid var(--sun); padding:2px 0 2px 14px; margin:18px 0; font-style:italic; color:var(--ink)}
+  .fig{margin:16px 0}
+  .fig-cap{font-size:12.5px; line-height:1.5; color:var(--dim); margin-top:8px}
+  canvas{display:block; width:100%; border-radius:12px}
+  .seg{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px}
+  .seg button{font-family:'DM Mono',monospace; font-size:12.5px; border:1px solid var(--border); background:#fff;
+    color:var(--deep); border-radius:999px; padding:7px 12px; cursor:pointer; min-height:36px}
+  .seg button[aria-pressed=true]{background:var(--deep); color:#fff; border-color:var(--deep)}
+  .src{list-style:none; font-size:12.5px; line-height:1.55}
+  .src li{margin:0 0 8px; word-break:break-word}
+  .src a{color:var(--deep)}
+
+  /* ── NEW CSS for this chapter (two rules) ── */
+  /* PREVIEW ONLY, do not paste: the hero illustration (in the chapter, ocean.css styles the .ill-hero slot) */
+  .illus img{display:block; width:100%; height:auto; border-radius:12px; border:1px solid var(--border)}
+  /* links inside the prose (to other chapters and to enso.html); waves.html has none to style */
+  section p a{color:var(--deep); text-underline-offset:2px}
+</style>
+<link rel="stylesheet" href="ocean-progress.css">
+</head>
+<body>
+<main class="wrap">
+
+<!-- HERO PREVIEW, not part of the paste-in: in the chapter this image fills the hero .ill-hero slot (as img/sand.webp), caption kept under it -->
+<figure class="fig illus" id="sand-hero">
+  <img src="img/sand-calm-vs-storm-crop.jpg" width="1376" height="440" decoding="async"
+    alt="Two paintings of a beach in front of a stone sea wall. Left, calm: a wide, high beach against the wall and quiet water. Right, after a storm: big breaking waves, a small sand cliff left by the wall with rocks showing below it, and the sand moved out into a bank under the waves.">
+  <figcaption class="fig-cap">Calm weeks (left) and after a storm (right): most of the sand has moved out to a bar under the waves. Illustration, not to scale. The grey rock under the sand is the artist&rsquo;s, not a survey.</figcaption>
+</figure>
+
+<!-- PASTE START: sections (sand, sand-swings, sources), down to PASTE END -->
+<section id="sand">
+  <div class="eyebrow">Part 1</div>
+  <h2>Where does the sand go?</h2>
+  <p>After a big swell, the beach at South Steyne can be lower and narrower, with rock showing where there was sand. Usually, weeks or months later, most of it is back. Most of it doesn&rsquo;t go far: storm waves move it a short way out to sea, and calmer swell can bring it back.</p>
+  <p><strong>In a storm</strong> the waves are short, steep and close together. Each one throws water up the beach, and that water has to get back out to sea. It goes back along the bottom, as a current called the <strong>undertow</strong>, and drags sand with it. A short way out the undertow slows and drops the sand, which piles up into a long underwater hill: a <strong>sandbar</strong>.</p>
+  <div class="fig card">
+    <canvas id="sandCv" role="img" aria-label="Side view of the beach in front of the South Steyne sea wall in a storm. Short, steep waves break on a sandbar that has built up offshore. Along the bottom, the undertow drags sand from the beach out to the bar. The beach has dropped, a small sand cliff has been cut, and rock at the foot of the wall shows. Not to scale."></canvas>
+    <div class="seg" role="group" aria-label="When">
+      <button type="button" data-sand="calm" aria-pressed="false">Calm</button>
+      <button type="button" data-sand="storm" aria-pressed="true">Storm</button>
+      <button type="button" data-sand="back" aria-pressed="false">Coming back</button>
+    </div>
+    <div class="fig-cap" id="sandCap" aria-live="polite">Storm: the undertow drags sand out to a bar, and the waves then break on the bar.</div>
+  </div>
+  <p>Once the bar has grown, the big waves break out on it instead of on the beach, and less of their energy reaches the sand. The beach gives up some sand to build its own shock absorber. It shields the sand, not swimmers: as storm bars move further out, rip currents get bigger.</p>
+  <p>The best measurements come from just up the coast. A survey of the June 2016 storm stopped just north of Manly, but at Narrabeen it found the sand again offshore, <span class="num">2.5 to 9 m</span> down: the same amount the beach had lost. Storm bars there have sat a couple of hundred metres out. Off Manly, big seas build a second, outer sandbar.</p>
+  <p>It&rsquo;s the waves that move the sand. A high tide lets them reach further up the beach, right to the wall, so a storm on a big high tide does more. The June 2016 storm came on a run of big winter high tides.</p>
+  <p>A beach with sand dunes behind it can draw on them in a storm: the dunes give up sand to the beach. South Steyne has a sea wall and promenade behind it instead, so there&rsquo;s no spare sand behind the beach, and the level in front of the wall drops. Rock has been placed along the foot of much of Manly&rsquo;s sea wall, and when the sand drops far enough, rock can show. We found no record (October 2026) of which rock shows at the South Steyne end: the wall&rsquo;s, the corner&rsquo;s natural sandstone, or both.</p>
+  <p>Some guides say waves <a href="progress/waves-with-progress.html#bounce">bouncing off a sea wall</a> scour the sand away. That&rsquo;s argued over: a major review found the bounce may matter little, and we found no measurement of it at Manly (October 2026).</p>
+  <p><strong>After the storm</strong>, long, low swell carries the sand back. Under each crest, the water near the bottom gives a short, strong shove towards the beach. Under the trough it slides back out, more slowly. So the sand goes in more than it comes back: the bar creeps in a little with every wave and joins the beach, and the waves build the top of the beach back up. It&rsquo;s a cousin of the drift that makes <a href="progress/waves-with-progress.html#drift">floating things creep along</a> with the waves.</p>
+  <p>Lower down the beach this takes weeks to months. At Narrabeen, in ten years of daily camera pictures studied in 2017, the shoreline came back about <span class="num">20 cm</span> a day on average, and <span class="num">3 to 4</span> times faster once the bar had joined the beach. Steeper waves slow it down. A really big storm takes longer: after June 2016, Narrabeen took about a year to largely recover.</p>
+  <p>None of this is guaranteed. Another storm can set it back. At Narrabeen, researchers found that in the normally sheltered south corner, after a storm from an unusual direction like June 2016, the everyday waves there are too small to bring the sand straight back. South Steyne is a sheltered corner too, though this hasn&rsquo;t been measured there.</p>
+  <p>Round the corner, Fairy Bower&rsquo;s little beach inside Cabbage Tree Bay comes and goes: a survey of NSW beaches describes it as &ldquo;not always present&rdquo;.</p>
+  <p>Manly&rsquo;s own record comes from satellites: a rough reading, made for this page, of the public CoastSat pictures from 1987 to 1 January 2026. Each picture is good only to <span class="num">10 to 15 m</span>. One picture can&rsquo;t show a change smaller than that, but averaging hundreds of them can. In the June 2016 storm, waves badly damaged the Marine Parade walkway between South Steyne and Shelly. In the first clear pictures after the storm, in July, Manly&rsquo;s shoreline was up to about <span class="num">20 m</span> further back than usual, and back near usual by mid-August.</p>
+  <p class="rule">Most of the sand isn&rsquo;t gone. A storm moves it out to a bar a short way offshore, and long, low swell usually walks it back in, over weeks to months, unless the next storm gets there first.</p>
+</section>
+
+<section id="sand-swings">
+  <div class="eyebrow">Part 2</div>
+  <h2>The beach also swings: end to end, and over the years</h2>
+  <p>Manly Beach is boxed in by headlands, so little of its sand leaves. Most of it moves out and back, and some moves along the beach, end to end. On beaches like this on the NSW coast, swell from the south nudges sand towards the north end, and swell from the east or north-east nudges it back south. At Manly the beach swings like a gate on a hinge near South Steyne: the north end moves several metres, the South Steyne end hardly at all.</p>
+  <p>The satellite pictures show the swing almost every year. In <span class="num">35 of 39</span> years, the north end was narrower in autumn than in spring, compared with South Steyne. The swing is several metres on average, less than a bus length, and most of it is the north end moving. On this measure the South Steyne end barely moves, too little to separate from the satellites&rsquo; noise. In the stormy, wet start to 2022, too, the north end and the middle of the beach narrowed far more than South Steyne.</p>
+  <p>Over the years, the whole beach moves in and out with the Pacific. La Ni&ntilde;a years bring more easterly swell and more storms; El Ni&ntilde;o years, smaller swell from further south. In 38 years of satellite pictures of the Pacific&rsquo;s coasts, about three in four stretches of south-east Australian beach grew wider in El Ni&ntilde;o years, and about half eroded in La Ni&ntilde;a years. Manly does the same: on average the whole beach sits several metres further out in El Ni&ntilde;o months than in La Ni&ntilde;a months. It moves in and out more than it swings end to end.</p>
+  <p>That&rsquo;s a nudge to the odds, not a forecast. One of Manly&rsquo;s narrowest spells in the satellite record, in mid-2009, came just as an El Ni&ntilde;o was starting, and one big storm (an east coast low) can strip a beach in any year. The record ends on 1 January 2026, before the <a href="../enso.html">2026 El Ni&ntilde;o</a>.</p>
+  <p>Over the whole record, 1987 to 2025, Manly shows no long-term loss of sand that the satellites can measure, though people have helped at times: North Steyne was topped up with sand after the June 2007 storm. And satellites aren&rsquo;t the only eyes on it. In May 2017, South Steyne got the world&rsquo;s first CoastSnap stand: a phone cradle that lets anyone photograph the beach from the same spot, for researchers at UNSW.</p>
+  <p class="rule">Most of Manly&rsquo;s sand stays between the headlands. It moves out and back with storms and swell, end to end with the seasons, and in and out with the Pacific over the years.</p>
+</section>
+
+<div class="op-proto-view" style="max-width:720px;margin:28px auto;padding:0 16px"><p style="margin:0 0 8px"><a href="hub.html">&larr; All chapters (hub prototype)</a></p><div data-op-contents="chapter" data-op-chapter="sand"></div></div>
+<section id="sources">
+  <div class="eyebrow">Sources</div>
+  <h2 style="font-size:24px">Further reading</h2>
+  <ul class="src">
+    <li><a href="https://www.nature.com/articles/s41598-017-05792-1.pdf">Harley et al. 2017 &mdash; Extreme coastal erosion enhanced by anomalous extratropical storm wave direction</a> (<i>Scientific Reports</i> 7: 6033): the June 2016 storm survey, sand found 2.5&ndash;9 m down at Narrabeen, big winter tides, stranded storm sand in sheltered corners (Collaroy, Narrabeen&rsquo;s south end), the survey&rsquo;s southern limit just north of Manly.</li>
+    <li><a href="https://www.nature.com/articles/s43247-022-00437-2.pdf">Harley et al. 2022 &mdash; Single extreme storm sequence can offset decades of shoreline retreat</a> (<i>Communications Earth &amp; Environment</i> 3: 112): storm bars about 200 m out at Narrabeen; the storm largely undone about a year later.</li>
+    <li><a href="https://mdpi-res.com/d_attachment/water/water-09-00121/article_deploy/water-09-00121.pdf">Mortlock, Goodwin, McAneney &amp; Roche 2017 &mdash; The June 2016 Australian East Coast Low</a> (<i>Water</i> 9: 121): storm sand stays in the embayment.</li>
+    <li><a href="https://doi.org/10.1016/j.margeo.2017.01.005">Phillips, Harley, Turner, Splinter &amp; Cox 2017 &mdash; Shoreline recovery on wave-dominated sandy coastlines</a> (<i>Marine Geology</i> 385): 82 storms at Narrabeen, about 0.2 m a day, 3&ndash;4 times faster once the bar attaches, slower under steeper waves.</li>
+    <li><a href="https://wetlandinfo.des.qld.gov.au/resources/static/pdf/management/understanding-coastal-erosion-on-beaches-nesp.pdf">Kennedy, McInnes &amp; Ierodiaconou &mdash; Understanding coastal erosion on beaches</a> (NESP Earth Systems and Climate Change Hub), pp.&nbsp;7&ndash;8: the bar as the beach&rsquo;s brake; rips grow as bars move out.</li>
+    <li><a href="https://theconversation.com/beloved-beaches-were-washed-offshore-by-cyclone-alfred-but-most-of-this-sand-will-return-251599">Leon 2025 &mdash; Beloved beaches were washed offshore by Cyclone Alfred, but most of this sand will return</a> (<i>The Conversation</i>, 11 Mar 2025): months for the beach, years for dunes, and recovery is not guaranteed.</li>
+    <li><a href="https://journals.flvc.org/jcr/article/download/80231/77483/89853">Kraus &amp; McDougal 1996 &mdash; The effects of seawalls on the beach: an updated literature review</a> (<i>Journal of Coastal Research</i> 12(3)): reflection may not be a significant cause of beach change; walls can block the back beach from rebuilding.</li>
+    <li><a href="https://yoursay.northernbeaches.nsw.gov.au/download_file/view/11663/2991">Rhelm for Northern Beaches Council &mdash; Open Coast and Lagoons Coastal Management Program, Scoping Study</a> (2025/26), pp.&nbsp;16, 36&ndash;37, 47: Manly backed by sea walls and a promenade; rock protection along the toe of much of the wall; little sand leaves these headland-bound beaches; Fairy Bower&rsquo;s beach &ldquo;not always present&rdquo; (p.&nbsp;16, citing Short 2007).</li>
+    <li><a href="https://beachsafe.org.au/beach/nsw/manly/manly/queenscliff-north-steyne-manly">Surf Life Saving Australia, Beachsafe &mdash; Queenscliff, North Steyne, Manly</a> (A. D. Short&rsquo;s beach description): a second bar off Manly in big seas.</li>
+    <li><a href="https://en.wikipedia.org/wiki/Shelly_Beach_(Manly)">Wikipedia &mdash; Shelly Beach (Manly)</a>, citing the <i>Daily Telegraph</i>, 6 Jun 2016: damage to the Marine Parade walkway.</li>
+    <li><a href="https://cdm21063.contentdm.oclc.org/digital/collection/p21063coll3/id/1063">Harley, Turner, Short &amp; Ranasinghe 2011 &mdash; A reevaluation of coastal embayment rotation</a> (<i>JGR</i> 116, F04033): southerly swell moves sand north, easterly swell moves it south; the seasonal swing at Narrabeen.</li>
+    <li><a href="https://doi.org/10.1002/joc.1962">Harley, Turner, Short &amp; Ranasinghe 2010 &mdash; Interannual variability and controls of the Sydney wave climate</a> (<i>International Journal of Climatology</i> 30): La Ni&ntilde;a storms longer, stronger and more easterly.</li>
+    <li><a href="https://eartharxiv.org/repository/object/6134/download/11959/">Vos, Harley, Turner et al. 2023 &mdash; Pacific shoreline erosion and accretion patterns controlled by ENSO</a> (<i>Nature Geoscience</i> 16): 75% of south-east Australian stretches accrete in El Ni&ntilde;o, 48% erode in La Ni&ntilde;a.</li>
+    <li><a href="http://coastsat.space/">CoastSat (K. Vos, UNSW Water Research Laboratory)</a>, Manly site aus0210, tide-corrected Landsat shorelines 1987 to 1 Jan 2026, 10&ndash;15 m per picture. The Manly figures here (June 2016, early 2022, the yearly swing, El Ni&ntilde;o and La Ni&ntilde;a averages, mid-2009, no long-term loss) are our own rough reading of the public data, recomputed twice from the raw files; not a published or peer-reviewed study. Each is an average over many pictures.</li>
+    <li><a href="https://manlyobserver.com.au/queensie-beach-are-we-ever-gonna-see-your-face-again/"><i>Manly Observer</i>, 18 Apr 2022 &mdash; Queensie beach, are we ever gonna see your face again?</a>: the storms, rain and lagoon floods of the 2021&ndash;22 La Ni&ntilde;a summer at the north end.</li>
+    <li><a href="https://researchdata.edu.au/photographic-documentation-impacts-june-2007/3982244">Photographic documentation of a 1-in-30-year storm at Manly, 8 Jun 2007</a> (AODN): North Steyne topped up with sand after the storm.</li>
+    <li><a href="https://www.unsw.edu.au/news/2024/07/capturing-change-with-coastsnap">UNSW &mdash; Capturing change with CoastSnap</a> (Jul 2024) and <a href="https://www.environment.nsw.gov.au/coastsnap">NSW Government &mdash; CoastSnap</a>: the first CoastSnap cradle, at Manly (South Steyne), May 2017.</li>
+  </ul>
+</section>
+<!-- PASTE END: sections -->
+
+</main>
+
+<script>
+(function () {
+'use strict';
+// ── waves.html shared helpers, copied VERBATIM (in the chapter they come from ocean.js: do not paste) ──
+var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ── Shared canvas runner (every animation below uses it) ────────────────────
+// Sizes a canvas for the device pixel ratio at a fixed CSS height, runs
+// draw(ctx, W, H, t) every frame while the canvas is on screen (t in seconds), pauses
+// off screen, and under prefers-reduced-motion draws one still frame (t = 0).
+// Returns { redraw } — call it after a control changes so a paused or still canvas
+// shows the new setting.
+function runCanvas(cv, height, draw) {
+  var ctx = cv.getContext('2d'), visible = false, raf = 0, t0 = performance.now(), W = 0;
+  function size() {
+    var dpr = window.devicePixelRatio || 1;
+    W = cv.clientWidth || 300;
+    cv.style.height = height + 'px';
+    cv.width = Math.round(W * dpr); cv.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function now() { return REDUCED ? 0 : (performance.now() - t0) / 1000; }
+  function frame() { draw(ctx, W, height, now()); if (!REDUCED && visible) raf = requestAnimationFrame(frame); }
+  function redraw() { if (REDUCED || !visible) draw(ctx, W, height, now()); }
+  size();
+  window.addEventListener('resize', function () { size(); redraw(); });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      var v = es[0].isIntersecting; if (v === visible) return;
+      visible = v; cancelAnimationFrame(raf);
+      if (visible && !REDUCED) raf = requestAnimationFrame(frame); else redraw();
+    }).observe(cv);
+  } else { visible = true; if (!REDUCED) raf = requestAnimationFrame(frame); }
+  draw(ctx, W, height, 0);
+  // A still frame drawn before DM Mono arrives would keep the fallback font for good
+  // (reduced motion, or a figure still off screen), so draw again once the fonts land.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { redraw(); });
+  return { redraw: redraw };
+}
+
+// ══ PASTE START: NEW MODULE (paste from this line down to PASTE END into the sand chapter's script) ══
+
+// ── Where the sand goes: the beach in front of the South Steyne wall, side on ──────
+// A cross-section from the sea wall (left) out past the surf zone (right), in three states:
+//  calm   long, low swell breaks close in; a wide, high beach buries the rock placed along
+//         the wall's foot; grains rock to and fro on the beach face with a small net
+//         shoreward creep.
+//  storm  short, steep waves; the backwash returns along the bottom as the undertow and
+//         carries grains seaward, where they settle into a bar. Waves now break on the bar
+//         (whitewater on its seaward side) and only reformed, smaller bores reach the
+//         beach. The beach has dropped, a small scarp ("sand cliff") is cut, and the rock at
+//         the wall's foot shows. The undertow is drawn in the LOWER water, where it carries
+//         the sand, while the crests above still travel shoreward (Harley 2017; NESP guide
+//         pp.7-8). As the bar grows (calm -> storm tween) the break point moves out to it.
+//  back   long, low swell again: near-bed water gets a short, strong shove shoreward under
+//         each crest and a longer, weaker pull back under the trough (wave skewness), so
+//         grains step shoreward in pulses, the bar creeps in towards the beach, and the top
+//         of the beach starts to build (Phillips 2017; Harley 2022). Storm -> back is the
+//         slowest tween, so the bar is seen to crawl. Calm is the end of that story: the bar
+//         has joined the beach and the beach is wide and high again.
+// What is modelled, crudely: wave height marches in from the right edge with Green's-law
+// shoaling (H ~ d^-1/4) and is capped at GAMMA x depth, which is what makes waves break on
+// the bar in a storm and close to the beach in calm swell; the drawn wavelength shortens
+// with sqrt(depth). Everything else is SCHEMATIC: the profiles (control points below, one
+// smooth curve through them plus a Gaussian bar), all heights (exaggerated far beyond the
+// distances, which are squeezed), the drawn periods, the grain speeds, the swash, the rock
+// and the wall. Nothing is a measurement and nothing prints a height (CLAUDE.md §2). The
+// rock is "rock placed along the wall's foot", which is documented for much of Manly's
+// wall; which rock shows at the South Steyne entry is NOT documented, so the label says
+// only "rock". There is no swimmer: this is about the sand, not about going in.
+// The sand is CONSERVED (the chapter's main message): measured against calm, the sand the storm
+// bar and the rebuilt beach gain matches what the beach loses, within 20% (storm 0.98, back 0.97), and
+// all three profiles share their control points from s = 0.74 out, the bars' tails fading to
+// under 1 px by s = 0.8: nothing changes beyond the depth where storms move sand.
+// Sand budget tested in node: test_sand.js.
+// Under reduced motion: one still frame of the chosen state, grains frozen along their path.
+(function sand() {
+  var cv = document.getElementById('sandCv'); if (!cv) return;
+  var cap = document.getElementById('sandCap');
+  var btns = [].slice.call(document.querySelectorAll('[data-sand]'));
+  var HC = 290, Y0 = 132, WALLTOP = Y0 - 66;               // canvas height; still water; promenade (CSS px)
+  var GAMMA = 0.75, DREF = 100;                              // drawn breaker index (H <= GAMMA x depth); depth at the right edge (px)
+  var FONT = '500 12px "DM Mono", monospace', INK = '#0d2b3e', DEEPC = '#0b4f6c', LANDC = '#8a7a55';
+  var LANDINK = '#5c4a22';                                   // land labels (LANDC is too faint on sand for text; strokes only)
+  var GRAIN = '#6e4f1d';
+  // Profiles: z (px above still water, + up) at s (0 = wall face, 1 = right edge); the same
+  // ten roles in every state, so they tween point by point: 0 wall foot, 1-2 top of the beach
+  // (or the remnant and the scarp top), 3 scarp foot / top of the face, 4 near the waterline,
+  // 5-6 surf zone, 7-9 seabed, the same in every state (nothing changes out there).
+  // bar: a Gaussian bump, c (centre, s), h (px), w (width, s), with a trough on its shore
+  // side tf x h deep (a runnel while the bar creeps in). The bar is wide rather than the
+  // trough deep, so the sand the beach loses is the sand the bar holds (test_sand.js).
+  // Waves: H0 (px at the right edge), L0 (drawn wavelength there, px), T (drawn
+  // period, s; real swell periods are far longer than this squeezed picture suggests).
+  var STATES = {
+    calm:  { s: [0, 0.18, 0.28, 0.31, 0.40, 0.48, 0.60, 0.74, 0.88, 1], z: [20, 19.5, 18, 15, 0, -30, -52, -60, -80, -100],
+             bar: { c: 0.44, h: 0, w: 0.05, tf: 0.15 }, H0: 8, L0: 130, T: 2.8, storm: 0, chip: 'between storms',
+             cap: 'Calm weeks: long, low swell nudges sand up the beach, which stays wide and high.',
+             aria: 'Side view of the beach in front of the South Steyne sea wall in calm weeks. Long, low swell breaks close to the beach and nudges sand up it. The beach is wide and high, and the rock placed along the foot of the wall is buried under the sand. Not to scale.' },
+    storm: { s: [0, 0.12, 0.24, 0.26, 0.30, 0.38, 0.52, 0.74, 0.88, 1], z: [5, 4.8, 4.5, -2, -8, -15, -24, -60, -80, -100],
+             bar: { c: 0.62, h: 24, w: 0.11, tf: 0.1 }, H0: 18, L0: 70, T: 1.5, storm: 1, chip: 'storm: hours to days',
+             cap: 'Storm: the undertow drags sand out to a bar, and the waves then break on the bar.',
+             aria: 'Side view of the beach in front of the South Steyne sea wall in a storm. Short, steep waves break on a sandbar that has built up offshore. Along the bottom, the undertow drags sand from the beach out to the bar. The beach has dropped, a small sand cliff has been cut, and rock at the foot of the wall shows. Not to scale.' },
+    back:  { s: [0, 0.12, 0.22, 0.27, 0.33, 0.40, 0.52, 0.74, 0.88, 1], z: [11.5, 14.5, 15, 12, 0, -17, -32, -60, -80, -100],
+             bar: { c: 0.50, h: 22, w: 0.07, tf: 0.25 }, H0: 9, L0: 135, T: 3.0, storm: 0, chip: 'after: weeks to months',
+             cap: 'After: long, low swell walks the bar back in; the beach usually rebuilds over weeks to months.',
+             aria: 'Side view of the beach in front of the South Steyne sea wall after the storm. Long, low swell nudges the sand back in: the bar creeps towards the beach to join it, and the top of the beach starts to build up again over the rock. This usually takes weeks to months. Not to scale.' }
+  };
+  // rock placed along the wall's foot: [px out from the wall, z of centre, rx, ry]; the tops
+  // stay under the calm beach (z 20), two or three show whole above the storm one (z 5) and
+  // about one peeks out of the beach coming back (z 11.5)
+  var ROCKS = [[5, 13, 8, 6.5], [17, 10, 8, 6.5], [29, 7, 8, 6], [5, 0, 8, 6.5], [22, -3, 8, 6], [11, -10, 8, 6.5],
+               [33, -9, 7, 6], [23, -15, 8, 6.5], [6, -19, 7.5, 6]];
+  var st = 'storm', A = null, B = null, tw0 = 0, dur = 2.2, lastT = 0, theta = 0, spawnAcc = 0;
+  var zA = null, H = null, phi = null, eta = null, brk = null, D = null;  // per pixel: bed, wave height, phase, surface, broken, height lost
+  var grains = [], rocks = null;
+
+  // ── state, tweened ──
+  function snap(k) { var o = STATES[k]; return { key: k, s: o.s.slice(), z: o.z.slice(), c: o.bar.c, h: o.bar.h, w: o.bar.w, tf: o.bar.tf, H0: o.H0, L0: o.L0, T: o.T, storm: o.storm }; }
+  function ease(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+  function mix(a, b, e) { return a + (b - a) * e; }
+  function view() {
+    var e = REDUCED ? 1 : ease(Math.min(1, (performance.now() - tw0) / (dur * 1000))), s = [], z = [], i;
+    for (i = 0; i < B.s.length; i++) { s.push(mix(A.s[i], B.s[i], e)); z.push(mix(A.z[i], B.z[i], e)); }
+    return { e: e, s: s, z: z, c: mix(A.c, B.c, e), h: mix(A.h, B.h, e), w: mix(A.w, B.w, e), tf: mix(A.tf, B.tf, e),
+             H0: mix(A.H0, B.H0, e), L0: mix(A.L0, B.L0, e), T: mix(A.T, B.T, e), storm: mix(A.storm, B.storm, e) };
+  }
+
+  // ── a smooth curve through the control points (monotone cubic: no overshoot, so the
+  //    scarp stays a step and the top of the beach stays flat) ──
+  function mono(xs, ys) {
+    var n = xs.length, d = [], m = [], i, a, b, h, k;
+    for (i = 0; i < n - 1; i++) d.push((ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]));
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for (i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    for (i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+      a = m[i] / d[i]; b = m[i + 1] / d[i]; h = a * a + b * b;
+      if (h > 9) { k = 3 / Math.sqrt(h); m[i] = k * a * d[i]; m[i + 1] = k * b * d[i]; }
+    }
+    return function (x) {
+      var j = 0, dx, t, t2, t3;
+      if (x <= xs[0]) return ys[0];
+      if (x >= xs[n - 1]) return ys[n - 1];
+      while (x > xs[j + 1]) j++;
+      dx = xs[j + 1] - xs[j]; t = (x - xs[j]) / dx; t2 = t * t; t3 = t2 * t;
+      return (2 * t3 - 3 * t2 + 1) * ys[j] + (t3 - 2 * t2 + t) * dx * m[j] + (-2 * t3 + 3 * t2) * ys[j + 1] + (t3 - t2) * dx * m[j + 1];
+    };
+  }
+
+  // ── words: caption and canvas label ──
+  function words() {
+    if (cap) cap.textContent = STATES[st].cap;
+    cv.setAttribute('aria-label', STATES[st].aria);
+  }
+
+  // ── drawing helpers (text with the cream halo, as in the other figures) ──
+  function text(ctx, s, x, y, align, col, a) {
+    if (!(a > 0.02)) return;
+    ctx.globalAlpha = Math.min(1, a); ctx.font = FONT; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = 'rgba(251,246,236,.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y);
+    ctx.fillStyle = col || INK; ctx.fillText(s, x, y);
+    ctx.globalAlpha = 1;
+  }
+  function rrect(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function tag(ctx, s, x, y, col, a) {                       // left-aligned label on a soft cream tag
+    if (!(a > 0.02)) return;
+    ctx.font = FONT; var w = ctx.measureText(s).width;
+    ctx.globalAlpha = Math.min(1, a); ctx.fillStyle = 'rgba(251,246,236,.9)'; rrect(ctx, x - 5, y - 14, w + 10, 19, 9.5); ctx.fill();
+    ctx.strokeStyle = 'rgba(13,43,62,.14)'; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+    text(ctx, s, x, y, 'left', col, a);
+  }
+  function rand0(seed) { var r = seed; return function () { r = (r * 1103515245 + 12345) % 2147483648; return r / 2147483648; }; }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function frac(x) { return x - Math.floor(x); }
+  // a bore: a gentle back and a steep front on the shore (left) side; mean zero, range -1..1
+  function saw(q) {
+    var r = 0.14, u;
+    if (q < 1 - r) return 1 - 2 * q / (1 - r);
+    u = (q - (1 - r)) / r; return -1 + 2 * u * u * (3 - 2 * u);
+  }
+
+  // ── geometry for this frame ──
+  function geom(W) { var xw = Math.round(Math.max(30, W * 0.09)); return { xw: xw, L: W - xw }; }
+  function zAt(x) { return zA[clamp(Math.round(x), 0, zA.length - 1)]; }
+  function bedY(x) { return Y0 - zAt(x); }
+  // the bed at s: the smooth curve f, plus the bar (centre c, height h, width w) and the
+  // trough on its shore side (tf x h deep); pure, so test_sand.js can weigh the sand
+  function bedZ(f, c, h, w, tf, s) { var u = (s - c) / w, ut = (s - (c - 2.2 * w)) / w; return f(s) + h * Math.exp(-u * u) - tf * h * Math.exp(-ut * ut); }
+  function build(W, v, g) {
+    var n = Math.ceil(W) + 1, f = mono(v.s, v.z), x;
+    if (!zA || zA.length !== n) { zA = new Float32Array(n); H = new Float32Array(n); phi = new Float32Array(n); eta = new Float32Array(n); brk = new Float32Array(n); D = new Float32Array(n); }
+    for (x = 0; x < n; x++) zA[x] = bedZ(f, v.c, v.h, v.w, v.tf, clamp((x - g.xw) / g.L, 0, 1));
+    return n;
+  }
+  function shore(n, g) { for (var x = g.xw; x < n; x++) if (zA[x] < 0) return x; return n - 1; }   // first wet pixel
+
+  // waves: height marched in from the right edge (shoaling, then capped by the depth), phase
+  // integrated with a wavelength that shortens in shallow water, travelling left (to shore)
+  function waves(n, v) {
+    var x, d, dp, Hn, cap2, lam, p, q, h2 = 0.25 + 0.15 * v.storm;
+    H[n - 1] = v.H0; brk[n - 1] = 0; phi[n - 1] = 0; D[n - 1] = 0;
+    for (x = n - 2; x >= 0; x--) {
+      d = -zA[x]; dp = Math.max(0.3, -zA[x + 1]);
+      lam = v.L0 * clamp(Math.sqrt(Math.max(1, d) / DREF), 0.3, 1);
+      phi[x] = phi[x + 1] - 2 * Math.PI / lam;
+      D[x] = 0;
+      if (d <= 0.3) { H[x] = 0; brk[x] = brk[x + 1]; continue; }
+      Hn = H[x + 1] * (d < dp ? Math.pow(dp / d, 0.25) : 1);
+      cap2 = GAMMA * d;
+      if (Hn > cap2) { D[x] = Hn - cap2; Hn = cap2; brk[x] = Math.min(1, brk[x + 1] + 0.09); }
+      else brk[x] = brk[x + 1] > 0 ? Math.min(1, brk[x + 1] + 0.09) : 0;
+      H[x] = Hn;
+    }
+    for (x = 0; x < n; x++) {
+      p = phi[x] + theta; q = frac(p / (2 * Math.PI));
+      eta[x] = 0.5 * H[x] * ((1 - brk[x]) * (Math.cos(p) + h2 * Math.cos(2 * p)) + brk[x] * saw(q));
+    }
+  }
+
+  // ── the grains: where they come from and go to, by state ──
+  function paths(g, xs, n) {
+    var xb = g.xw + B.c * g.L, wb = B.w * g.L;
+    if (B.key === 'storm') return { a: xs + 2, b: xs + 0.5 * (xb - xs), sink: xb - 0.4 * wb, dir: 1, lift: [2, 7], rate: 22 };
+    if (B.key === 'back') return { a: xb - 0.5 * wb, b: Math.min(n - 2, xb + 0.15 * g.L), sink: xs + 3, dir: -1, lift: [1.5, 4.5], rate: 18 };
+    return { a: xs + 2, b: xs + 0.1 * g.L, sink: xs - 2, dir: -1, lift: [1.5, 3.5], rate: 9, life: 2.8 };
+  }
+  var grand = rand0(70160605);
+  function grainV(x, mode, vs) {
+    var c = Math.cos(phi[clamp(Math.round(x), 0, phi.length - 1)] + theta);
+    if (mode === 'storm') return vs * (16 + 30 * Math.max(0, -c));                       // undertow: steady, stronger under troughs
+    if (mode === 'back') return vs * (-(5 + 30 * Math.max(0, c)) + 8 * Math.max(0, -c));  // short strong shove in, weak pull back
+    return vs * (-(2 + 18 * Math.max(0, c)) + 12 * Math.max(0, -c));                      // to and fro, a little net creep in
+  }
+  function stepGrains(dt, P, g) {
+    var vs = g.L / 292, i, gr;
+    spawnAcc = Math.min(2, spawnAcc + dt * P.rate);
+    while (spawnAcc >= 1 && grains.length < 90) {
+      spawnAcc -= 1;
+      grains.push({ x: P.a + (P.b - P.a) * grand(), lift: P.lift[0] + (P.lift[1] - P.lift[0]) * grand(), age: 0, die: -1, mode: B.key });
+    }
+    for (i = grains.length - 1; i >= 0; i--) {
+      gr = grains[i]; gr.age += dt;
+      if (gr.mode !== B.key && gr.die < 0) gr.die = 0;                                  // state changed: let them settle
+      if (gr.die < 0) {
+        gr.x += dt * grainV(gr.x, gr.mode, vs);
+        if ((P.dir > 0 && gr.x >= P.sink) || (P.dir < 0 && gr.x <= P.sink) || (P.life && gr.age > P.life)) gr.die = 0;
+      } else gr.die += dt;
+      if (gr.die > 0.6 || gr.x < g.xw || gr.x > zA.length - 2) grains.splice(i, 1);
+    }
+  }
+  function stillGrains(P) {                                   // reduced motion: frozen, evenly along the path
+    var out = [], m = B.key === 'calm' ? 6 : 13, i, x0 = P.dir > 0 ? P.a : P.b;
+    for (i = 0; i < m; i++) out.push({ x: x0 + (P.sink - x0) * (i + 0.5) / m, lift: P.lift[0] + (i % 3) * (P.lift[1] - P.lift[0]) / 2, age: 1, die: -1 });
+    return out;
+  }
+  function drawGrains(ctx, list) {
+    var i, gr, a, d;
+    ctx.fillStyle = GRAIN;
+    for (i = 0; i < list.length; i++) {
+      gr = list[i];
+      a = Math.min(1, gr.age / 0.25) * (gr.die < 0 ? 1 : Math.max(0, 1 - gr.die / 0.6));
+      if (!(a > 0.02)) continue;
+      d = -zAt(gr.x);
+      ctx.globalAlpha = 0.95 * a;
+      ctx.beginPath(); ctx.arc(gr.x, bedY(gr.x) - Math.min(gr.lift, Math.max(0.8, d * 0.6)), 1.8, 0, 2 * Math.PI); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ── the wall, the rock at its foot, the sand ──
+  function rockShapes() {
+    if (rocks) return rocks;
+    var rnd = rand0(19870522), out = [], i, j, r, a, k, pts;
+    for (i = 0; i < ROCKS.length; i++) {
+      r = ROCKS[i]; pts = [];
+      for (j = 0; j < 11; j++) { a = j / 11 * 2 * Math.PI; k = 0.86 + 0.24 * rnd(); pts.push([Math.cos(a) * r[2] * k, Math.sin(a) * r[3] * k]); }
+      out.push({ dx: r[0], z: r[1], pts: pts });
+    }
+    return (rocks = out);
+  }
+  function rockPath(ctx, g, rk) {
+    var cx = g.xw + rk.dx, cy = Y0 - rk.z, p = rk.pts, j, a, b;
+    ctx.beginPath(); ctx.moveTo(cx + (p[0][0] + p[p.length - 1][0]) / 2, cy + (p[0][1] + p[p.length - 1][1]) / 2);
+    for (j = 0; j < p.length; j++) {
+      a = p[j]; b = p[(j + 1) % p.length];
+      ctx.quadraticCurveTo(cx + a[0], cy + a[1], cx + (a[0] + b[0]) / 2, cy + (a[1] + b[1]) / 2);
+    }
+    ctx.closePath();
+  }
+  function drawRocks(ctx, g, ghost) {
+    var rs = rockShapes(), i;
+    for (i = 0; i < rs.length; i++) {
+      rockPath(ctx, g, rs[i]);
+      if (ghost) { ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(110,96,72,.5)'; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); }
+      else {
+        ctx.fillStyle = '#b5a68a'; ctx.fill(); ctx.strokeStyle = '#7d705a'; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.2)';                   // a little light on top
+        ctx.beginPath(); ctx.ellipse(g.xw + rs[i].dx - 1.5, Y0 - rs[i].z - 2.5, 4, 2, -0.3, 0, 2 * Math.PI); ctx.fill();
+      }
+    }
+  }
+  function sandPath(ctx, g, n) {
+    ctx.beginPath(); ctx.moveTo(g.xw, HC + 2);
+    for (var x = g.xw; x < n; x++) ctx.lineTo(x, Y0 - zA[x]);
+    ctx.lineTo(n, HC + 2); ctx.closePath();
+  }
+  function wall(ctx, g, H2) {
+    var xw = g.xw, y, x, row = 0;
+    ctx.fillStyle = '#dcc79c'; ctx.fillRect(0, WALLTOP, xw, H2 - WALLTOP);
+    ctx.strokeStyle = 'rgba(122,100,62,.38)'; ctx.lineWidth = 1;
+    for (y = WALLTOP + 10; y < H2; y += 10, row++) {               // sandstone courses
+      ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(xw, y + 0.5); ctx.stroke();
+      for (x = (row % 2) ? 7 : 15; x < xw - 2; x += 16) { ctx.beginPath(); ctx.moveTo(x + 0.5, y - 10); ctx.lineTo(x + 0.5, y); ctx.stroke(); }
+    }
+    ctx.strokeStyle = '#a8916a'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(xw, WALLTOP); ctx.lineTo(xw, H2); ctx.stroke();
+    ctx.fillStyle = '#c9b184'; ctx.fillRect(0, WALLTOP - 3, xw + 3, 4);  // the promenade's edge
+    ctx.strokeStyle = '#8f7d5a'; ctx.lineWidth = 1.2;                    // railing
+    ctx.beginPath(); ctx.moveTo(0, WALLTOP - 12); ctx.lineTo(xw - 1, WALLTOP - 12); ctx.moveTo(0, WALLTOP - 7.5); ctx.lineTo(xw - 1, WALLTOP - 7.5);
+    for (x = 3; x < xw; x += 8) { ctx.moveTo(x, WALLTOP - 3); ctx.lineTo(x, WALLTOP - 12); }
+    ctx.stroke();
+  }
+
+  // ── the water: surface, swash and whitewater ──
+  function water(ctx, W, n, xs) {
+    var x;
+    var gw = ctx.createLinearGradient(0, Y0 - 20, 0, Y0 + DREF);
+    gw.addColorStop(0, '#cfe9f2'); gw.addColorStop(1, '#7fbcd2');
+    ctx.beginPath(); ctx.moveTo(xs, HC);
+    for (x = xs; x < n; x++) ctx.lineTo(x, Math.min(Y0 - eta[x], bedY(x)));
+    ctx.lineTo(W, HC); ctx.closePath(); ctx.fillStyle = gw; ctx.fill();
+  }
+  function swash(ctx, n, xs, g) {                             // the thin sheet a wave runs up the beach, then back
+    var Hs = 0, x, tip = xs, q0, run, rr, zlim, yy;
+    for (x = xs; x < Math.min(n, xs + 24); x++) Hs = Math.max(Hs, H[x]);
+    q0 = frac((phi[Math.min(n - 1, xs + 2)] + theta) / (2 * Math.PI)); run = q0 < 0.7 ? Math.sin(Math.PI * q0 / 0.7) : 0;
+    rr = Math.min(xs - g.xw - 2, (4 + 2.4 * Hs) * run); zlim = 1.2 * Hs + 1.5;
+    if (!(rr > 1.5)) return;
+    for (x = xs; x >= xs - rr; x--) { if (zA[x] > zlim) break; tip = x; }
+    function top(x2) { return bedY(x2) - (0.6 + 2.6 * (x2 - tip) / Math.max(1, xs - tip)); }
+    ctx.beginPath(); ctx.moveTo(xs + 1, bedY(xs + 1));
+    for (x = xs; x >= tip; x--) ctx.lineTo(x, top(x));
+    for (x = tip; x <= xs + 1; x++) ctx.lineTo(x, bedY(x));
+    ctx.closePath(); ctx.fillStyle = 'rgba(214,236,244,.95)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.2; ctx.beginPath();
+    for (x = xs; x >= tip; x--) { yy = top(x); if (x === xs) ctx.moveTo(x, yy); else ctx.lineTo(x, yy); }
+    ctx.stroke();
+  }
+  function surface(ctx, n, xs) {
+    var x, ys, q, on = false, b, r, f;
+    ctx.strokeStyle = 'rgba(11,79,108,.6)'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.beginPath();
+    for (x = xs; x < n; x++) {
+      ys = Y0 - eta[x];
+      if (ys < bedY(x) - 0.5) { if (on) ctx.lineTo(x, ys); else { ctx.moveTo(x, ys); on = true; } } else on = false;
+    }
+    ctx.stroke();
+    // whitewater: a white roller down each breaking front, foam trailing on the back of the bore,
+    // and a little spray where a wave first breaks
+    for (x = xs; x < n; x++) {
+      b = brk[x]; if ((b < 0.15 && D[x] < 0.1) || H[x] < 0.8) continue;
+      ys = Y0 - eta[x]; if (ys >= bedY(x) - 0.5) continue;
+      q = frac((phi[x] + theta) / (2 * Math.PI));
+      if (q > 0.8 || q < 0.07) {                                 // the roller: overlapping white discs down the front
+        f = Math.min(1, D[x] * 2);                               // 1 where the wave is losing height fastest
+        r = Math.min(1 + 0.22 * H[x] * b + 3.5 * f, 0.5 * (bedY(x) - ys) + 1.5);
+        ctx.fillStyle = 'rgba(255,255,255,' + (0.9 * Math.max(b, f)).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(x, ys + r - 1.5, r, 0, 2 * Math.PI); ctx.fill();
+        if (f > 0.2 && q < 0.07 && x % 2 === 0) {               // spray off the top
+          ctx.beginPath(); ctx.arc(x + 1, ys - 2 - (x % 5) * 1.3 * f, 1 + 0.8 * f, 0, 2 * Math.PI); ctx.fill();
+        }
+      } else if (q < 0.45 && x % 2 === 0) {                      // foam trailing on the back of the bore
+        ctx.fillStyle = 'rgba(255,255,255,' + (0.55 * b * (1 - q / 0.45)).toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(x, ys + 1, 1.3 + 0.06 * H[x], 0, 2 * Math.PI); ctx.fill();
+      }
+    }
+  }
+
+  // ── an arrow in the lower water, head at xb ──
+  function bedArrow(ctx, xa, xb, off, a) {
+    if (!(a > 0.02)) return;
+    var step = xa < xb ? 2 : -2, x, pts = [], d, i, p1, p0, ang;
+    for (x = xa; step > 0 ? x <= xb : x >= xb; x += step) {
+      d = -zAt(x);
+      pts.push([x, bedY(x) - Math.min(off, Math.max(1.5, d * 0.55))]);
+    }
+    if (pts.length < 3) return;
+    ctx.globalAlpha = a; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    [['rgba(251,246,236,.75)', 4.5], [INK, 1.8]].forEach(function (sty) {
+      ctx.strokeStyle = sty[0]; ctx.lineWidth = sty[1]; ctx.beginPath();
+      for (i = 0; i < pts.length - 1; i++) { if (i) ctx.lineTo(pts[i][0], pts[i][1]); else ctx.moveTo(pts[i][0], pts[i][1]); }
+      ctx.stroke();
+    });
+    p1 = pts[pts.length - 1]; p0 = pts[pts.length - 3]; ang = Math.atan2(p1[1] - p0[1], p1[0] - p0[0]);
+    ctx.fillStyle = INK; ctx.beginPath();
+    ctx.moveTo(p1[0] + Math.cos(ang) * 2, p1[1] + Math.sin(ang) * 2);
+    ctx.lineTo(p1[0] - Math.cos(ang - 0.5) * 8, p1[1] - Math.sin(ang - 0.5) * 8);
+    ctx.lineTo(p1[0] - Math.cos(ang + 0.5) * 8, p1[1] - Math.sin(ang + 0.5) * 8);
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // ── labels for one state (positions from this frame's geometry) ──
+  function labels(ctx, key, g, xs, W, a) {
+    if (!(a > 0.02)) return;
+    var o = STATES[key], xb = g.xw + o.bar.c * g.L, wb = o.bar.w * g.L, xa, xe, xsc;
+    ctx.font = FONT;
+    function centred(s, x, y, col) { var tw = ctx.measureText(s).width; text(ctx, s, clamp(x, g.xw + 4 + tw / 2, W - 6 - tw / 2), y, 'center', col, a); }
+    function under(x0, x1) { var m = 0; for (var x = Math.min(x0, x1); x <= Math.max(x0, x1); x += 2) m = Math.max(m, bedY(x)); return m; }
+    // an arrow's two-line caption, just under the sand below it, tied to the arrow's middle by a
+    // short leader so it can't be read as naming the sand it sits on
+    function pair(l1, l2, x0, x1, off) {
+      var xm = (x0 + x1) / 2, y = under(x0, x1) + 20, ym = bedY(xm) - Math.min(off, Math.max(1.5, -zAt(xm) * 0.55));
+      ctx.globalAlpha = a; ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.lineCap = 'round'; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(xm, ym + 4); ctx.lineTo(xm, y - 12); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      centred(l1, xm, y, INK); centred(l2, xm, y + 15, INK);
+    }
+    tag(ctx, o.chip, 10, 22, INK, a);
+    if (key === 'calm') {
+      centred('wide, high beach', g.xw + 0.16 * g.L, Y0 - 32, LANDINK);
+      text(ctx, 'rock, buried', g.xw + 4, Y0 + 30, 'left', LANDINK, a);
+      text(ctx, 'long, low swell', W - 8, Y0 - 56, 'right', DEEPC, a);
+      xa = xs + 0.17 * g.L; xe = xs + 0.03 * g.L;
+      bedArrow(ctx, xa, xe, 10, a); pair('swell nudges sand', 'up the beach', xe, xa, 10);
+    } else if (key === 'storm') {
+      centred('storm waves break', xb + 0.03 * g.L, Y0 - 62, DEEPC);
+      centred('on the sandbar', xb + 0.03 * g.L, Y0 - 48, DEEPC);
+      text(ctx, 'rock shows', g.xw + 3, Y0 - 29, 'left', INK, a);
+      // 'sand cliff' just up and to the right of the scarp's top, over the shallow water inside
+      // the bar, with a short leader down to the scarp face (not over the rock)
+      xsc = g.xw + 0.5 * (o.s[2] + o.s[3]) * g.L;                     // the middle of the scarp face
+      text(ctx, 'sand cliff', xsc + 9, Y0 - 16, 'left', LANDINK, a);
+      ctx.globalAlpha = a; ctx.strokeStyle = LANDINK; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(xsc + 7, Y0 - 19); ctx.lineTo(xsc + 1, Y0 - 0.5 * (o.z[2] + o.z[3]) - 1); ctx.stroke(); ctx.globalAlpha = 1;
+      xa = xs + 0.05 * g.L; xe = xb - 1.2 * wb;
+      bedArrow(ctx, xa, xe, 12, a); pair('undertow drags sand', 'out to a sandbar', xa, xe, 12);
+    } else {
+      centred('beach builds back up', g.xw + 0.13 * g.L, Y0 - 26, LANDINK);
+      text(ctx, 'long, low swell', W - 8, Y0 - 56, 'right', DEEPC, a);
+      xa = xb + 0.16 * g.L; xe = xs + 0.03 * g.L;
+      bedArrow(ctx, xa, xe, 10, a); pair('the bar creeps in', 'towards the beach', xe, xa, 10);
+    }
+  }
+
+  function draw(ctx, W, H2, t) {
+    var v = view(), g = geom(W), n = build(W, v, g), x;
+    var dt = Math.max(0, Math.min(0.1, t - lastT)); lastT = t;
+    theta += dt * 2 * Math.PI / v.T;
+    waves(n, v);
+    var xs = shore(n, g), P = paths(g, xs, n);
+    if (!REDUCED) stepGrains(dt, P, g);
+    ctx.clearRect(0, 0, W, H2);
+    // sky, greyer in a storm: painted over the whole height, because wave troughs dip below
+    // still water and the water fills only from its surface down (no pale gap at Y0)
+    var gs = ctx.createLinearGradient(0, 0, 0, Y0);
+    gs.addColorStop(0, 'rgba(255,255,255,0)'); gs.addColorStop(1, 'rgba(207,233,242,.45)');
+    ctx.fillStyle = gs; ctx.fillRect(0, 0, W, HC);
+    if (v.storm > 0.01) { ctx.fillStyle = 'rgba(95,135,149,' + (0.16 * v.storm).toFixed(3) + ')'; ctx.fillRect(0, 0, W, HC); }
+
+    water(ctx, W, n, xs);                                      // the sand, drawn next, hides what is under the bed
+    drawRocks(ctx, g, false);                                  // rock, then the sand over it, then its buried part dashed
+    sandPath(ctx, g, n);
+    var gsand = ctx.createLinearGradient(0, Y0 - 30, 0, HC);
+    gsand.addColorStop(0, '#eedfb4'); gsand.addColorStop(1, '#d6bf8c');
+    ctx.fillStyle = gsand; ctx.fill();
+    ctx.save(); sandPath(ctx, g, n); ctx.clip(); drawRocks(ctx, g, true); ctx.restore();
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+    ctx.beginPath(); for (x = g.xw; x < n; x++) { if (x === g.xw) ctx.moveTo(x, Y0 - zA[x]); else ctx.lineTo(x, Y0 - zA[x]); } ctx.stroke();
+    swash(ctx, n, xs, g);
+    surface(ctx, n, xs);
+    drawGrains(ctx, REDUCED ? stillGrains(P) : grains);
+    wall(ctx, g, H2);
+
+    // labels: the old state's fade out, then the new state's fade in
+    var same = A.key === B.key, la = same ? 0 : Math.max(0, 1 - 2 * v.e), lb = same ? 1 : Math.max(0, 2 * v.e - 1);
+    text(ctx, 'South Steyne sea wall', 6, WALLTOP - 17, 'left', INK, 1);
+    text(ctx, 'not to scale', W - 8, HC - 9, 'right', LANDINK, 1);
+    if (!same) labels(ctx, A.key, g, xs, W, la);
+    labels(ctx, B.key, g, xs, W, lb);
+  }
+
+  A = B = snap(st);                                          // runCanvas draws at once: give it a state first
+  var rc = runCanvas(cv, HC, draw);
+  function set(k) {
+    var nb = snap(k), v;
+    if (!B || REDUCED) A = nb;
+    else {
+      v = view();
+      A = { key: v.e < 0.5 ? A.key : B.key, s: v.s, z: v.z, c: v.c, h: v.h, w: v.w, tf: v.tf, H0: v.H0, L0: v.L0, T: v.T, storm: v.storm };
+    }
+    dur = (B && B.key === 'storm' && k === 'back') ? 3.4 : 2.2;
+    B = nb; tw0 = performance.now(); st = k;
+    btns.forEach(function (o) { o.setAttribute('aria-pressed', o.getAttribute('data-sand') === k ? 'true' : 'false'); });
+    words(); rc.redraw();
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () { set(b.getAttribute('data-sand')); }); });
+  set(st);
+})();
+// ══ PASTE END: NEW MODULE ══
+})();
+</script>
+<script src="ocean-progress-config.js"></script>
+<script src="ocean-progress.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,223 @@
+/* ocean-progress.css: styles for ocean-progress.js (read buttons, contents with progress,
+   the next-section teaser, the slim contents bar, the "Hide what I've read" switch).
+   PROTOTYPE 7 Oct 2026.
+   Uses the page's tokens (waves.html :root) with the same values as fallbacks, so it
+   also works on a page without them. Everything is prefixed op-. Calm on purpose:
+   ticks and a count, no badges, no celebration. Small text uses --op-mute (5.3:1 on
+   cream, 4.9:1 on cream2): the page's --dim is 3.6:1, so it is kept for the empty
+   tick ring only. The sun orange is only ever a stripe, never text and never a focus
+   ring (2.2:1). Sentences are set at 15-16 px in Newsreader; DM Mono is kept for
+   numbers and short labels, at 14 px or more on anything you tap. */
+
+:root{--op-mute:#476b78}
+.op-vh{position:absolute!important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0 0 0 0); white-space:nowrap; border:0}
+.op-panel [hidden],.op-mini [hidden],.op-done [hidden],.op-empty[hidden],.op-gone[hidden]{display:none!important}
+
+/* ── tick icon: an empty ring, then a filled ring with a tick (shape, not only colour) ── */
+.op-ico{display:block; width:22px; height:22px; flex:0 0 22px}
+.op-ico circle{fill:none; stroke:var(--dim,#5f8795); stroke-width:1.5}
+.op-ico path{fill:none; stroke:#fff; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; opacity:0}
+.op-btn[aria-pressed="true"] .op-ico circle,.op-row.is-read .op-ico circle,.op-ch.is-read > .op-ch-h .op-ico circle,
+.op-is-read .op-tk .op-ico circle{fill:var(--ocean,#0a7ea4); stroke:var(--ocean,#0a7ea4)}
+.op-btn[aria-pressed="true"] .op-ico path,.op-row.is-read .op-ico path,.op-ch.is-read > .op-ch-h .op-ico path,
+.op-is-read .op-tk .op-ico path{opacity:1}
+
+/* ── the "I've read this" button at the end of each section ── */
+.op-done{display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin:26px 0 0; padding-top:18px;
+  border-top:1px dashed var(--border,rgba(13,43,62,.13))}
+.op-btn{display:inline-flex; align-items:center; gap:10px; min-height:48px; padding:10px 20px 10px 13px;
+  border-radius:999px; border:1.5px solid var(--border,rgba(13,43,62,.13)); background:#fff; color:var(--deep,#0b4f6c);
+  font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:16px; line-height:1.2;
+  cursor:pointer; -webkit-tap-highlight-color:transparent; box-shadow:0 1px 3px rgba(13,43,62,.06);
+  transition:background-color .15s ease,border-color .15s ease}
+.op-btn:hover{border-color:var(--ocean,#0a7ea4)}
+.op-btn[aria-pressed="true"]{background:rgba(10,126,164,.09); border-color:rgba(10,126,164,.42); color:var(--ink,#0d2b3e); box-shadow:none}
+.op-btn .op-ico{width:24px; height:24px; flex-basis:24px}
+/* The focus ring: deep blue, 8.3:1 on cream, 7.7:1 on cream2, 8.9:1 on white (the sun
+   orange it replaces was 2.1 to 2.4:1, under the 3:1 a focus indicator needs). It is drawn on
+   :focus, so Safari before 15.4, which has no :focus-visible, still shows it; a browser
+   that knows :focus-visible then drops it for mouse and touch focus (in an older one the
+   :not(:focus-visible) rule is invalid and ignored as a whole, which is the point). */
+.op-btn:focus,.op-next:focus,.op-row a:focus,.op-ch-t:focus,.op-link:focus,.op-all-link:focus,
+.op-mini-btn:focus,.op-seg-b:focus,.op-pill:focus,.op-empty:focus{outline:3px solid var(--deep,#0b4f6c); outline-offset:2px}
+.op-btn:focus:not(:focus-visible),.op-next:focus:not(:focus-visible),.op-row a:focus:not(:focus-visible),
+.op-ch-t:focus:not(:focus-visible),.op-link:focus:not(:focus-visible),.op-all-link:focus:not(:focus-visible),
+.op-mini-btn:focus:not(:focus-visible),.op-seg-b:focus:not(:focus-visible),.op-pill:focus:not(:focus-visible),
+.op-empty:focus:not(:focus-visible){outline:none}
+.op-done-note{font-family:'Newsreader',Georgia,serif; font-style:italic; font-size:15.5px; line-height:1.4; color:var(--op-mute)}
+/* ticked while hiding: it waits, with Undo, before it folds away */
+.op-pend{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 12px}
+.op-pend-t{font-family:'Newsreader',Georgia,serif; font-style:italic; font-size:16px; line-height:1.4; color:var(--op-mute)}
+
+/* ── the contents panel ── */
+.op-panel{margin:22px 0 4px; text-align:left; background:var(--card,rgba(255,255,255,.66)); border:1px solid var(--border,rgba(13,43,62,.13));
+  border-radius:var(--radius,14px); padding:16px 16px 10px; box-shadow:0 4px 20px rgba(6,78,110,.05)}
+.op-top{display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap}
+.op-h{margin:0; font-family:'DM Mono',ui-monospace,monospace; font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--op-mute)}
+.op-count{margin:0; font-family:'DM Mono',ui-monospace,monospace; font-weight:500; font-size:14px; color:var(--deep,#0b4f6c)}
+.op-meter{height:8px; border-radius:4px; background:rgba(13,43,62,.09); margin:10px 0 14px; overflow:hidden}
+.op-meter i{display:block; height:100%; width:0; background:var(--ocean,#0a7ea4); border-radius:4px; transition:width .35s ease}
+
+/* the teaser: one question, and where it is answered */
+.op-next{display:block; margin:0 0 12px; padding:12px 14px 13px; background:#fff; border:1px solid var(--border,rgba(13,43,62,.13));
+  border-left:4px solid var(--sun,#e0982f); border-radius:12px; text-decoration:none; color:var(--ink,#0d2b3e);
+  -webkit-tap-highlight-color:transparent}
+a.op-next:hover{border-color:rgba(10,126,164,.45); border-left-color:var(--sun,#e0982f)}
+.op-next-k{display:block; font-family:'DM Mono',ui-monospace,monospace; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#9a5b06}
+.op-next-q{display:block; margin:3px 0 6px; font-family:'Newsreader',Georgia,serif; font-style:italic; font-size:19px; line-height:1.35; color:var(--ink,#0d2b3e)}
+.op-next-t{display:inline-block; margin-top:3px; font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:15.5px; line-height:1.3; color:var(--ocean,#0a7ea4)}
+.op-next-q + .op-next-t{margin-top:0}
+a.op-next:hover .op-next-t{text-decoration:underline; text-underline-offset:3px}
+.op-next.is-done{border-left-color:var(--ocean,#0a7ea4)}
+.op-next.is-done .op-next-q{font-style:normal; font-size:18px; margin:0}
+.op-next.is-done .op-reset{margin-top:8px}
+
+/* the switch: [Show everything] [Hide what I've read], waves.html's .seg look, and one
+   line under it saying what is hidden right now */
+.op-hide{margin:0 0 12px}
+.op-seg{display:grid; grid-template-columns:1fr 1.23fr; gap:6px}
+.op-seg-b{min-width:0; min-height:44px; padding:7px 8px; border-radius:999px; border:1.5px solid var(--border,rgba(13,43,62,.13));
+  background:#fff; color:var(--deep,#0b4f6c); font-family:'DM Mono',ui-monospace,monospace; font-size:14.5px; line-height:1.25;
+  text-align:center; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  transition:background-color .15s ease,border-color .15s ease,color .15s ease}
+.op-seg-b:hover{border-color:var(--ocean,#0a7ea4)}
+.op-seg-b[aria-pressed="true"]{background:var(--deep,#0b4f6c); border-color:var(--deep,#0b4f6c); color:#fff}
+.op-hide-st{margin:8px 2px 0; font-family:'Newsreader',Georgia,serif; font-size:16px; line-height:1.4; color:var(--op-mute)}
+.op-chapter .op-hide{margin:10px 0 4px}
+
+/* the list: one row per section */
+.op-list{list-style:none; margin:0; padding:0}
+.op-panel > .op-list{border-top:1px solid var(--border,rgba(13,43,62,.13))}
+.op-row a{display:flex; align-items:center; gap:12px; min-height:46px; padding:7px 8px; text-decoration:none;
+  color:var(--ink,#0d2b3e); border-bottom:1px solid var(--border,rgba(13,43,62,.13)); -webkit-tap-highlight-color:transparent}
+.op-row:last-child a{border-bottom:0}
+.op-row a:hover .op-t{text-decoration:underline; text-underline-offset:3px; text-decoration-color:rgba(10,126,164,.5)}
+.op-n{flex:0 0 auto; min-width:22px; font-family:'DM Mono',ui-monospace,monospace; font-size:12.5px; color:var(--op-mute)}
+.op-t{flex:1 1 auto; min-width:0; font-family:'Newsreader',Georgia,serif; font-weight:500; font-size:17.5px; line-height:1.3}
+.op-st{flex:0 0 auto; display:flex; position:relative}
+.op-tag{flex:0 0 auto; font-family:'DM Mono',ui-monospace,monospace; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--deep,#0b4f6c); background:#fff; border:1px solid rgba(10,126,164,.4); border-radius:999px; padding:2px 8px}
+.op-row.is-next a{background:rgba(10,126,164,.07); border-radius:10px}
+.op-row a[aria-current]{box-shadow:inset 3px 0 0 var(--ocean,#0a7ea4)}
+.op-row.is-read .op-t{color:var(--text,#14333f)}
+
+/* the footer: where ticks live, and Clear ticks */
+.op-foot{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 14px;
+  border-top:1px solid var(--border,rgba(13,43,62,.13)); margin-top:2px; padding-top:6px}
+.op-note{margin:0; padding:6px 0; font-family:'Newsreader',Georgia,serif; font-size:15px; line-height:1.45; color:var(--op-mute)}
+.op-note.is-warn{color:#9a5b06}
+.op-reset{display:block}
+.op-reset.is-asking{flex:1 1 100%}
+.op-ask{padding:4px 0 8px}
+.op-ask-q{margin:0 0 6px; font-family:'Newsreader',Georgia,serif; font-size:17px; line-height:1.35; color:var(--ink,#0d2b3e)}
+.op-ask-btns{display:flex; flex-wrap:wrap; gap:8px 10px}
+.op-pill{display:inline-flex; align-items:center; min-height:44px; padding:0 16px; border-radius:999px; cursor:pointer;
+  border:1.5px solid var(--border,rgba(13,43,62,.13)); background:#fff; color:var(--deep,#0b4f6c);
+  font-family:'DM Mono',ui-monospace,monospace; font-size:14px; letter-spacing:.02em; -webkit-tap-highlight-color:transparent}
+.op-pill:hover{border-color:var(--ocean,#0a7ea4)}
+.op-pill-strong{border-color:var(--deep,#0b4f6c); color:var(--ink,#0d2b3e); font-weight:500}
+.op-link{display:inline-flex; align-items:center; min-height:44px; padding:0 8px; margin:0 -8px; border:0; background:none; cursor:pointer;
+  font-family:'DM Mono',ui-monospace,monospace; font-size:14px; letter-spacing:.02em; color:var(--deep,#0b4f6c);
+  text-decoration:underline; text-underline-offset:3px; text-decoration-color:rgba(11,79,108,.35)}
+.op-link:hover{text-decoration-color:currentColor}
+
+/* ── hub: chapters, each with its own x/y, sections under them ── */
+.op-chs{list-style:none; margin:0; padding:0; border-top:1px solid var(--border,rgba(13,43,62,.13))}
+.op-ch{border-bottom:1px solid var(--border,rgba(13,43,62,.13)); padding:2px 0 6px}
+.op-ch:last-child{border-bottom:0}
+.op-ch-h{display:flex; align-items:center; gap:12px; min-height:48px; padding:4px 8px}
+.op-ch-n{flex:0 0 auto; min-width:22px; font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:800; font-size:19px; color:var(--deep,#0b4f6c)}
+.op-ch-t{flex:1 1 auto; min-width:0; font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:17.5px; line-height:1.25;
+  color:var(--ink,#0d2b3e); text-decoration:none; padding:6px 0}
+a.op-ch-t:hover{text-decoration:underline; text-underline-offset:3px; text-decoration-color:rgba(10,126,164,.5)}
+.op-ch-c{flex:0 0 auto; font-family:'DM Mono',ui-monospace,monospace; font-size:13px; color:var(--deep,#0b4f6c)}
+.op-ch .op-list{margin:0 0 0 34px}
+.op-ch .op-row a{min-height:44px; padding:6px 8px; border-bottom:0}
+.op-ch .op-t{font-size:16.5px}
+.op-ch.is-soon .op-ch-n,.op-ch.is-soon .op-ch-t{color:var(--op-mute)}
+.op-soon{flex:0 0 auto; font-family:'DM Mono',ui-monospace,monospace; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--op-mute); border:1px dashed var(--faint,#8fb0bb); border-radius:999px; padding:2px 8px}
+
+/* ── chapter page: the compact version ── */
+.op-chapter > .op-list{border-top:1px solid var(--border,rgba(13,43,62,.13)); margin-top:8px}
+.op-all{margin:10px 0 12px}
+.op-all .op-meter{margin:0 0 6px; height:6px}
+.op-all-line{margin:0; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:0 12px;
+  font-family:'DM Mono',ui-monospace,monospace; font-size:13px; color:var(--deep,#0b4f6c)}
+.op-all-link{display:inline-block; padding:12px 0; line-height:20px; color:var(--deep,#0b4f6c); text-underline-offset:3px}
+.op-chapter .op-note{padding-top:0}
+
+/* ── the slim contents bar (long pages), shown once the panel has scrolled away ── */
+.op-mini{position:fixed; left:0; right:0; top:0; z-index:60; visibility:hidden; transform:translateY(-110%);
+  transition:transform .22s ease,visibility 0s linear .22s}
+.op-mini.is-on{visibility:visible; transform:none; transition:transform .22s ease}
+.op-mini-in{display:block; position:relative; background:rgba(251,246,236,.95); -webkit-backdrop-filter:saturate(1.2) blur(8px);
+  backdrop-filter:saturate(1.2) blur(8px); border-bottom:1px solid var(--border,rgba(13,43,62,.13));
+  box-shadow:0 2px 14px rgba(13,43,62,.08); padding-top:env(safe-area-inset-top,0px)}
+.op-mini-btn{display:flex; align-items:center; gap:10px; width:100%; max-width:640px; margin:0 auto; min-height:48px; padding:6px 18px;
+  border:0; background:transparent; cursor:pointer; color:var(--ink,#0d2b3e); text-align:left; -webkit-tap-highlight-color:transparent}
+.op-mini-btn:focus{outline-offset:-3px}
+.op-mini-where{flex:1 1 auto; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; font-size:15.5px}
+.op-mini-n{font-family:'DM Mono',ui-monospace,monospace; font-weight:400; font-size:12.5px; color:var(--op-mute); margin-right:8px}
+.op-mini-count{flex:0 0 auto; white-space:nowrap; font-family:'DM Mono',ui-monospace,monospace; font-size:12.5px; color:var(--deep,#0b4f6c)}
+.op-chev{width:18px; height:18px; flex:0 0 18px; transition:transform .2s ease}
+.op-chev path{fill:none; stroke:var(--deep,#0b4f6c); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+.op-mini-btn[aria-expanded="true"] .op-chev{transform:rotate(180deg)}
+.op-mini-bar{height:3px; background:rgba(13,43,62,.08)}
+.op-mini-bar i{display:block; height:100%; width:0; background:var(--ocean,#0a7ea4); transition:width .35s ease}
+.op-mini-panel{position:absolute; left:0; right:0; top:100%}
+.op-mini-scroll{max-width:640px; margin:0 auto; max-height:calc(100vh - 72px);
+  max-height:calc(100vh - 72px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  max-height:calc(100dvh - 72px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px)); overflow:auto;
+  -webkit-overflow-scrolling:touch; overscroll-behavior:contain; background:var(--cream,#fbf6ec);
+  border:1px solid var(--border,rgba(13,43,62,.13)); border-top:0; border-radius:0 0 16px 16px;
+  box-shadow:0 14px 30px rgba(13,43,62,.16); padding:12px 14px 6px}
+@media (max-width:640px){ .op-mini-scroll{border-left:0; border-right:0} }
+.op-mini .op-next{margin-bottom:8px}
+.op-mini .op-next-q{font-size:17.5px}
+.op-mini .op-row a{min-height:44px}
+.op-mini .op-hide{margin-bottom:8px}
+html.op-has-mini{scroll-padding-top:60px; scroll-padding-top:calc(60px + env(safe-area-inset-top,0px))}
+
+/* ── opt-in ticks on a page's own links ([data-op-ticks]) ── */
+/* position:relative keeps its visually hidden text inside the chip: without it that text is
+   placed against the sticky bar and escapes the chips' own sideways scroller, and the
+   whole page gains a sideways scroll once a chip far to the right is ticked */
+.op-tk{display:none; position:relative; margin-left:6px; vertical-align:middle}
+.op-tk .op-ico{width:16px; height:16px; flex-basis:16px}
+.op-is-read .op-tk{display:inline-block}
+
+/* ── hiding what's been read ── */
+@media screen{ .op-hid{display:none!important} }
+.op-fading{opacity:0!important; transition:opacity .2s ease}
+.op-spacer{height:0; overflow:hidden; transition:height .34s ease}
+html.op-noanchor,html.op-noanchor body{overflow-anchor:none}
+/* nothing left here: one calm line where the sections were */
+.op-empty{margin:40px 0 0; padding:16px 16px 14px; text-align:left; background:var(--card,rgba(255,255,255,.66));
+  border:1px solid var(--border,rgba(13,43,62,.13)); border-left:4px solid var(--ocean,#0a7ea4); border-radius:var(--radius,14px)}
+.op-empty-q{margin:0 0 10px; font-family:'Newsreader',Georgia,serif; font-size:19px; line-height:1.4; color:var(--ink,#0d2b3e)}
+.op-empty .op-next{margin:14px 0 0}
+/* a sign where read things were hidden: a dashed outline, like a folded-away card */
+.op-gone{margin:26px 0 0; padding:8px 14px; border:1.5px dashed rgba(13,43,62,.22); border-radius:var(--radius,14px); text-align:left}
+.op-gone-q{margin:0; display:flex; flex-wrap:wrap; align-items:center; gap:0 14px;
+  font-family:'Newsreader',Georgia,serif; font-size:16px; line-height:1.4; color:var(--op-mute)}
+.op-gone .op-link{margin:0 -8px; color:var(--deep,#0b4f6c)}
+.op-gone-group{margin:12px 0 0; grid-column:1/-1}
+.op-arrive{animation:op-in .3s ease}
+@keyframes op-in{from{opacity:0}to{opacity:1}}
+
+@media (prefers-reduced-motion:reduce){
+  .op-mini,.op-mini.is-on,.op-meter i,.op-mini-bar i,.op-btn,.op-chev,.op-seg-b,.op-fading,.op-spacer{transition:none}
+  .op-arrive{animation:none}
+}
+@media (forced-colors:active){
+  .op-ico circle{stroke:CanvasText}
+  .op-btn[aria-pressed="true"] .op-ico circle,.op-row.is-read .op-ico circle,.op-ch.is-read > .op-ch-h .op-ico circle{fill:Highlight; stroke:Highlight}
+  .op-ico path{stroke:Canvas}
+  .op-meter i,.op-mini-bar i{background:Highlight}
+  .op-seg-b[aria-pressed="true"]{forced-color-adjust:none; background:Highlight; color:HighlightText; border-color:Highlight}
+}
+/* print the whole explainer, whatever the switch says */
+@media print{ .op-mini,.op-done,.op-foot,.op-hide,.op-empty,.op-gone{display:none!important} }

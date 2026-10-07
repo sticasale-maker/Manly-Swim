@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swim Manly — Carried along by the wind (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* tokens and rules copied from waves.html */
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8795; --faint:#8fb0bb;
+    --sun:#e0982f; --ocean:#0a7ea4; --deep:#0b4f6c;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--cream); color:var(--text); font-family:'Newsreader',Georgia,serif; font-size:19px; line-height:1.62; padding:0 0 64px}
+  .wrap{max-width:640px; margin:0 auto; padding:0 18px}
+  h2{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink); font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  .eyebrow,.fig-cap{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:6px}
+  section{margin-top:44px}
+  p{margin:0 0 14px}
+  strong{font-weight:500; color:var(--ink)}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0}
+  .fig{margin:16px 0}
+  .fig-cap{font-size:12.5px; line-height:1.5; color:var(--dim); margin-top:8px}
+
+  /* ── new: painted map with code-drawn labels on top (same pattern as the bay hero) ── */
+  .mapfig{position:relative; width:100%; aspect-ratio:1376 / 768; border-radius:12px; overflow:hidden; background:#9fcbd6}
+  .mapfig img,.mapfig canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
+  .mapfig .tag{position:absolute; left:8px; bottom:6px; font-family:'DM Mono',monospace; font-size:10.5px; letter-spacing:.06em;
+    color:var(--ink); background:rgba(251,246,236,.82); border-radius:6px; padding:1px 6px}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<section id="drift-opener">
+  <div class="eyebrow">Carried along</div>
+  <h2>A north-easter drags the top of the bay towards the corner</h2>
+  <p>Wind pushes the top layer of the water along with it. Anything floating goes too, so on a north-easterly day loose weed and foam end up against the wall at the South Steyne corner.</p>
+  <div class="fig card">
+    <div class="mapfig" id="driftFig">
+      <img src="img/wind-drift.webp" width="1280" height="714" alt="" loading="lazy">
+      <canvas id="driftLabels" role="img" aria-label="Painted map of Cabbage Tree Bay from above, north at the top, on a north-easterly day: wind lines, foam streaks and floating weed all run from the north-east towards the South Steyne corner, where weed and foam collect against the wall."></canvas>
+      <span class="tag">Illustration</span>
+    </div>
+    <div class="fig-cap">The wind drags the surface at roughly 3% of its own speed: a 20&nbsp;km/h north-easter moves the top of the water about 10&nbsp;m a minute. Not to scale.</div>
+  </div>
+</section>
+
+</main>
+<script>
+(function () {
+'use strict';
+
+// ── Wind-drift opener: a painted map (Gemini illustration, north up, 1376 x 768 'map px') with the
+// wind arrow and place labels drawn by code, so they stay sharp and the right size on any screen.
+// The arrow points the way the wind BLOWS (from the north-east towards the south-west); the painting's
+// wind lines, foam streaks and weed already run that way, the arrow just names it. The 3% figure in
+// the caption is waves.html section 09's own.
+var fig = document.getElementById('driftFig'), cv = document.getElementById('driftLabels');
+if (!fig || !cv) return;
+var MW = 1376, MH = 768;
+var ARROW = [[1305, 50], [1150, 205]];            // tail, head (map px), open sea
+var CORNER = { x: 268, y: 492 };                   // the South Steyne corner, where the drift collects
+var ctx = cv.getContext('2d'), Wc = 0, Hc = 0;
+
+function text(s, x, y, align, col, px) {
+  ctx.font = '500 ' + px + 'px "DM Mono", monospace'; ctx.textAlign = align || 'left';
+  ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(251,246,236,.9)'; ctx.lineWidth = 3; ctx.strokeText(s, x, y);
+  ctx.fillStyle = col || '#0d2b3e'; ctx.fillText(s, x, y);
+}
+function arrow(tx, ty, hx, hy, w, hs) {
+  var ux = hx - tx, uy = hy - ty, ul = Math.sqrt(ux * ux + uy * uy); ux /= ul; uy /= ul;
+  ctx.strokeStyle = '#e0982f'; ctx.fillStyle = '#e0982f'; ctx.lineWidth = w; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx - ux * hs, hy - uy * hs); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx + ux * hs * 0.6, hy + uy * hs * 0.6);
+  ctx.lineTo(hx - ux * hs - uy * hs * 0.8, hy - uy * hs + ux * hs * 0.8);
+  ctx.lineTo(hx - ux * hs + uy * hs * 0.8, hy - uy * hs - ux * hs * 0.8); ctx.closePath(); ctx.fill();
+}
+function draw() {
+  var dpr = window.devicePixelRatio || 1;
+  Wc = fig.clientWidth || 320; Hc = Wc * MH / MW;
+  cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, Wc, Hc);
+  var s = Wc / MW, small = Wc < 420, px = small ? 11 : 12;
+
+  arrow(ARROW[0][0] * s, ARROW[0][1] * s, ARROW[1][0] * s, ARROW[1][1] * s, small ? 2.5 : 3, small ? 7 : 9);
+  text('north-easterly wind', Wc - 8, ARROW[1][1] * s + 18, 'right', '#0d2b3e', px);
+
+  // the corner where the drift collects: a small ring, its label just out on the water
+  ctx.strokeStyle = '#e0982f'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(CORNER.x * s + 60 * s, CORNER.y * s + 70 * s, Math.max(10, 70 * s), 0, 2 * Math.PI); ctx.stroke();
+  text('drift collects here', CORNER.x * s + 60 * s + Math.max(10, 70 * s) + 6, CORNER.y * s + 70 * s - Math.max(10, 70 * s) - 4, 'left', '#0d2b3e', px);
+  text('South Steyne', 6, CORNER.y * s - (Wc < 360 ? 26 : 14), 'left', '#0d2b3e', px);
+  text('Shelly', 1010 * s, 650 * s, 'center', '#3d4a2a', px);
+  text('N ↑', 10, 18, 'left', '#5f8795', px);
+}
+draw();
+window.addEventListener('resize', draw);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Cold water, green water (prototype, cold-water chapter)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<!--
+  PROTOTYPE (7 Oct 2026): two new sections for the "Cold water, green water" chapter
+  (ocean/cold-water.html in the hub plan). The paste-in is the two sections with the ids
+  "upwelling" and "green-water", plus the sources list to merge. The CSS below is copied
+  verbatim from waves.html, plus a few new rules in the marked block (link colour inside the
+  prose, the compact .box that holds the colour list, and the collapsed "In the app" box).
+  HELD BACK: the pointer to the app's Offshore chlorophyll card sits in an HTML comment inside the
+  "In the app" box until the owner rules on rewording that card (see the comment there).
+  In the script, the first part is waves.html's own helpers (in the chapter world they come
+  from ocean.js: do not paste them twice) and upwelling() after the NEW MODULE banner is the
+  one new module.
+
+  EVIDENCE RULE: every number in the prose and captions comes from a research claim in
+  results/upwelling.json that no verifier marked wrong or unsupported, with the verifiers'
+  corrections applied (claim ids are listed in the hand-off). C28 is NOT used (one verifier
+  marked it wrong). The figure prints no temperatures and no depths.
+-->
+<style>
+  /* ── copied VERBATIM from waves.html (only the rules these sections use) ── */
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8795; --faint:#8fb0bb;
+    --sun:#e0982f; --ocean:#0a7ea4; --deep:#0b4f6c;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66);
+    --radius:14px;
+    /* chart series — validated (dataviz validate_palette, light, surface #fbf6ec): all pass */
+    --s7:#c2780f; --s10:#0a7ea4; --s13:#5b4bb0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--cream);
+    background-image:radial-gradient(120% 55% at 50% 0,#fff 0,rgba(255,255,255,0) 60%),linear-gradient(180deg,var(--cream2),var(--cream2));
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:'Newsreader',Georgia,serif; font-weight:400;
+    font-size:19px; line-height:1.62;
+    padding:0 0 64px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:0 18px}
+  h1,h2,h3{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink)}
+  .eyebrow,.mono,.back-link,.fig-cap,.ctl label,.out-k,.src li{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:6px}
+  section{margin-top:44px; scroll-margin-top:16px}
+  h2{font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  p{margin:0 0 14px}
+  strong{font-weight:500; color:var(--ink)}
+  .num{font-family:'DM Mono',monospace; font-size:.86em; color:var(--deep); white-space:nowrap}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0}
+  .rule{border-left:3px solid var(--sun); padding:2px 0 2px 14px; margin:18px 0; font-style:italic; color:var(--ink)}
+  .fig{margin:16px 0}
+  .fig-cap{font-size:12.5px; line-height:1.5; color:var(--dim); margin-top:8px}
+  canvas{display:block; width:100%; border-radius:12px}
+  .seg{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px}
+  .seg button{font-family:'DM Mono',monospace; font-size:12.5px; border:1px solid var(--border); background:#fff;
+    color:var(--deep); border-radius:999px; padding:7px 12px; cursor:pointer; min-height:36px}
+  .seg button[aria-pressed=true]{background:var(--deep); color:#fff; border-color:var(--deep)}
+  .src{list-style:none; font-size:12.5px; line-height:1.55}
+  .src li{margin:0 0 8px; word-break:break-word}
+  .src a{color:var(--deep)}
+
+  /* ── NEW CSS for these sections ── */
+  section p a,section li a{color:var(--deep)}               /* links inside the prose (waves.html has none yet) */
+  .box{padding:14px 16px 4px}                                /* a compact reference box: colours, and the app */
+  .box .eyebrow{margin:2px 0 6px}
+  .box p,.box li{font-size:16.5px; line-height:1.5}
+  .box p{margin-bottom:12px}
+  .box ul{margin:0 0 12px 20px}
+  .box li{margin-bottom:6px}
+  details.box summary{cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px; min-height:36px; margin:0} /* the collapsed "In the app" box */
+  details.box summary::-webkit-details-marker{display:none}
+  details.box summary::before{content:'+'; font-size:16px; letter-spacing:0; color:var(--deep)}
+  details.box[open] summary::before{content:'\2212'}
+  details.box[open] summary{margin-bottom:6px}
+  details.box:not([open]){padding-bottom:10px}
+</style>
+<link rel="stylesheet" href="ocean-progress.css">
+</head>
+<body>
+<main class="wrap">
+
+<section id="upwelling">
+  <div class="eyebrow">13</div>
+  <h2>Why a run of north-easters can turn the water cold</h2>
+  <p>After a few days of strong north-easters in summer, the water at South Steyne can turn cold. That seems backwards: the north-easter blows in towards the beach. Instead the warm top layer can move <strong>out to sea</strong>, and cold water from below comes up to take its place. This is called <strong>upwelling</strong>.</p>
+  <p>In summer the sea is layered: a sun-warmed top layer floats on colder, heavier water. The figure is a slice through the sea off South Steyne, looking north, with the beach on the left.</p>
+  <div class="fig card">
+    <canvas id="upwCv" role="img" aria-label="Slice through the sea off South Steyne, looking north: the beach on the left, the open sea on the right. After a day or two of strong north-easters, the warm top layer moves out to sea, and cold water from below creeps in along the seabed and rises at the beach, so the boundary between warm and cold water tilts up towards the shore. The north-easter blows mostly along the coast, towards the viewer, marked by a circle with a dot. A thermometer dipped in the water by the swimmer has dropped towards cold. A small map from above shows the wind blowing towards the south-west, mostly along the coast, and the warm layer as a whole moving to its left, out to sea. Not to scale."></canvas>
+    <div class="seg" role="group" aria-label="What the wind has been doing">
+      <button type="button" data-upw="ne" aria-pressed="true">North-easter</button>
+      <button type="button" data-upw="green" aria-pressed="false">Days after a north-easter</button>
+      <button type="button" data-upw="s" aria-pressed="false">Southerly</button>
+    </div>
+    <div class="fig-cap" id="upwCap" aria-live="polite">A day or two of strong north-easters, blowing along the coast towards you: warm water moves out to sea, cold water rises from below. Not to scale.</div>
+  </div>
+  <p>Why out to sea? Because the Earth spins: moving water bends to the side, and in the Southern Hemisphere it bends to the <strong>left</strong> of where the wind is going. The very surface bends only a little, so it still drifts nearly downwind (see <a href="waves.html#drift">Carried along</a>). Deeper down it bends more, and the warm layer as a whole, tens of metres deep, moves at <strong>right angles</strong> to the wind.</p>
+  <p>Our coast runs roughly north-north-east. A north-easter blows towards the south-west, mostly along the coast, and left of that is south-east: out to sea. So the warm layer slides away, and cold water creeps in along the bottom and rises at the beach. The small map in the figure shows it from above.</p>
+  <p>All this happens out over the open sea floor. Cabbage Tree Bay is far shallower, and we found no measurement of how much of the cold gets inside it.</p>
+  <p>So what counts is how hard the wind pushes <strong>along</strong> the coast:</p>
+  <ul style="margin:0 0 14px 22px">
+    <li><strong>North to north-east:</strong> the strongest push towards cold water.</li>
+    <li><strong>South to south-west:</strong> the strongest push the other way.</li>
+    <li><strong>East, west, south-east, north-west:</strong> mostly across the coast, a weak push.</li>
+  </ul>
+  <p>Strength and time matter as much as direction: twice the wind speed gives about four times the push. Satellite winds show strong upwelling winds (about <span class="num">30 km/h</span> along the coast) off Sydney on only <span class="num">3 to 5</span> days a month from late November to March, and most runs last <span class="num">2 to 4</span> days. Even then the cold doesn&rsquo;t always come: instruments on the seabed off Bondi found the water cooled by three-quarters of a degree or more on only about a third of those days.</p>
+  <p>When it does come, it shows a day or two after the north-easter sets in (off Bondi, two days later was the closest match), and it often ends with a southerly change or when the wind drops.</p>
+  <p>It can be quick. In December 2010 Sydney&rsquo;s water dropped from <span class="num">22 &deg;C</span> to <span class="num">17 &deg;C</span> between a Wednesday and the Friday, with northerly winds blamed. On 6 December 2024, after a spell of north-easters, sea fog formed off Manly and Dee Why over a band of <span class="num">17 to 19 &deg;C</span> water that satellite maps had shown along the coast four days earlier.</p>
+  <p>The cold isn&rsquo;t a current from Antarctica: it is the sea&rsquo;s own deeper water from tens of metres down, so it reaches the seabed before the surface.</p>
+  <p>A warm swirl of the <strong>East Australian Current</strong> close to the coast can hide the cold, as one did at Sydney in December 2023.</p>
+  <p>A <strong>southerly</strong> does the reverse. It blows towards the north, and left of that is west, into the coast. The warm layer piles up against it and is pushed down, and the cold water goes back out. This is <strong>downwelling</strong>, the more common of the two off Sydney, most of all from May to July. It doesn&rsquo;t heat the water, though, and a cold southerly can even cool the very top.</p>
+  <p class="rule">Down here the sea turns left of the wind. A strong north-easter that lasts a few days can send the warm top layer out to sea and bring cold water up from below. A southerly does the reverse: it holds the warm top layer against the coast.</p>
+</section>
+
+<section id="green-water">
+  <div class="eyebrow">14</div>
+  <h2>Why cold water can turn green a few days later</h2>
+  <p>Water from deep down is cold, and it is also rich in nutrients: food for <strong>plankton</strong>, the tiny plants that drift in the sea. In the sunlight they multiply and tint the water green: the more of them, the greener it gets and the less you can see. Press <em>Days after a north-easter</em> in the figure above.</p>
+  <p>It takes days, not hours. Freshly upwelled water can arrive cold and still clear; the green follows once the water settles. In eastern Bass Strait in February 2013, the water was coldest on the 17th and the bloom showed on satellite pictures by the 21st. Elsewhere, a bloom like this builds and fades within about a week; some green can linger. We found no measurement of the lag at Sydney.</p>
+  <p>The biggest regular green-up off Sydney comes in spring, not summer: in most years a short-lived bloom of <strong>diatoms</strong>, one common kind of plankton, runs along the NSW coast, with more than <span class="num">10 times</span> the usual plankton.</p>
+  <p>Sometimes a pink-red tinge follows. <strong>Sea sparkle</strong> (<em>Noctiluca</em>) eats other plankton, diatoms above all, so it peaks with or after a diatom bloom; its slicks are often old cells carried down the coast. A state list of blooms records it at Shelly Beach, Fairy Bower and Manly between 2000 and 2008.</p>
+  <p>Not every red plume follows upwelling: on 1 December 2021 a reddish plume ran from Manly past Shelly Beach and into Cabbage Tree Bay after a fortnight of heavy rain. The species wasn&rsquo;t confirmed.</p>
+  <div class="card box">
+    <div class="eyebrow">Reading the colour</div>
+    <p>Typical patterns, not sure signs:</p>
+    <ul>
+      <li><strong>Green over a wide area:</strong> plankton. After north-easters it often comes with cold water; the spring bloom can come without it.</li>
+      <li><strong>Brown, with debris, near drains and lagoon mouths after rain:</strong> runoff, which <a href="https://www.beachwatch.nsw.gov.au/" rel="noopener">Beachwatch</a> forecasts; the app&rsquo;s Pollution tile opens that forecast.</li>
+      <li><strong>Milky or sandy after a big swell:</strong> sand and silt stirred off the bottom. At Terrigal it began once waves passed about <span class="num">1.5 m</span> at the Sydney wave buoy, and the finest particles stayed up for as long as a week.</li>
+      <li><strong>Pink, red or rusty patches:</strong> often sea sparkle. <strong>Brownish clumps like sawdust, or a slick like oil:</strong> often sea sawdust (<em>Trichodesmium</em>), which rides in on the warm, nutrient-poor current. <a href="https://www.waternsw.com.au/water-services/water-quality/algae-alerts" rel="noopener">WaterNSW&rsquo;s algae alerts map</a> lists the current alerts across NSW.</li>
+    </ul>
+    <p>Algae are sometimes mistaken for sewage or oil.</p>
+  </div>
+  <details class="card box">
+    <summary class="eyebrow">In the app, and El Ni&ntilde;o</summary>
+    <p>The <em>Sea</em> tile on the Today tab shows one morning&rsquo;s reading from the swimmers. If the cold reaches where it is taken, you may notice it lower than the day before. When that reading is out of date, it shows a figure marked <em>satellite</em> instead: a fair guide to the general level, not a measurement in the bay.</p>
+    <!-- HELD BACK until the owner rules on rewording the app's Offshore chlorophyll card (index.html,
+         about lines 4583-4606), whose text says the East Australian Current drives the cold water up,
+         that upwelling runs 5 to 10 days and that blooms last 4 to 8 weeks: all on the research's
+         do-not-say list. Publishing this pointer beside that card would contradict it side by side.
+         Proposed card wording: wind brings the cold water up and the current lifts it along the bottom;
+         wind events last 2 to 4 days; a bloom builds and fades within about a week, and some green can linger.
+    <p>The <em>Offshore chlorophyll</em> card on the Bay tab shows the open sea: the bay is a single pixel there, and the dark-red fringe along the whole coast is a quirk of the method. After a run of north-easters, look for yellow to orange spreading out beyond that fringe in pictures from a few days in a row (<em>Play last few days</em>). Cloud often hides the coast, and after heavy rain, high readings near river mouths can be sediment.</p>
+    -->
+    <p>A satellite study found El Ni&ntilde;o tends to strengthen upwelling along NSW, moderately: a tendency, not a forecast. More on the <a href="enso.html">El Ni&ntilde;o page</a>.</p>
+  </details>
+  <p class="rule">Cold first, then green a few days later. Brown after rain and milky after a big swell have other causes.</p>
+</section>
+
+<div class="op-proto-view" style="max-width:720px;margin:28px auto;padding:0 16px"><p style="margin:0 0 8px"><a href="hub.html">&larr; All chapters (hub prototype)</a></p><div data-op-contents="chapter" data-op-chapter="cold-water"></div></div>
+<section id="sources">
+  <div class="eyebrow">Sources</div>
+  <h2 style="font-size:24px">Further reading</h2>
+  <ul class="src">
+    <li><a href="https://unswscience.substack.com/p/shark-frenzy-empties-popular-byron">Kerry C., UNSW Coastal and Regional Oceanography &mdash; Shark frenzy empties popular Byron Bay beach (upwelling winds explained)</a>, UNSW Science, 12 Dec 2025</li>
+    <li><a href="https://ndownloader.figshare.com/files/40659032">Rossi V. et al. (2014) &mdash; Seasonality of sporadic physical processes driving temperature and nutrient high-frequency variability in the coastal ocean off southeast Australia</a>, JGR Oceans 119</li>
+    <li><a href="https://unsw.edu.au/content/dam/pdfs/campus/2024-05-oceanography/Schaeffer_et_al-2017-Geophysical_Research_Letters.pdf">Schaeffer A. &amp; Roughan M. (2017) &mdash; Sub-surface intensification of marine heatwaves off southeastern Australia</a>, GRL</li>
+    <li><a href="https://unsw.edu.au/content/dam/pdfs/campus/2024-05-oceanography/2019JC015227.pdf">Kerry C. &amp; Roughan M. (2020) &mdash; Downstream evolution of the East Australian Current system</a>, JGR Oceans</li>
+    <li><a href="https://nora.nerc.ac.uk/id/eprint/528665/1/The_East_Australian_Current.pdf">Ridgway K. &amp; Hill K. (2009) &mdash; The East Australian Current</a>, Marine Climate Change Report Card</li>
+    <li><a href="https://en.wikipedia.org/wiki/Ekman_transport">Ekman transport</a> (Wikipedia); <a href="https://oceanservice.noaa.gov/education/tutorial_currents/04currents4.html">NOAA &mdash; Ekman spiral</a>; <a href="https://oceanmotion.org/html/background/upwelling-and-downwelling.htm">Ocean Motion &mdash; Upwelling and downwelling</a></li>
+    <li><a href="https://www.swellnet.com/news/swellnet-analysis/2019/01/03/analysis-cold-water-and-green-seas">Swellnet &mdash; Analysis: Cold water and green seas</a>, 3 Jan 2019</li>
+    <li><a href="https://investsmart.com.au/investment-news/just-when-you-felt-it-was-safe/22022">SMH via InvestSMART &mdash; Just when you felt it was safe...</a>, 12 Dec 2010</li>
+    <li><a href="https://eldersweather.com.au/news/coastal-upwelling-shrouds-sydney-coast-with-sea-fog/1890175">Weatherzone via Elders Weather &mdash; Coastal upwelling shrouds Sydney coast with sea fog</a>, 6 Dec 2024</li>
+    <li><a href="https://www.weatherzone.com/au/news/travelling-north-to-meet-the-cold-waters/1681883">Weatherzone &mdash; Travelling north to meet the cold waters</a>, 16 Dec 2023</li>
+    <li><a href="https://open.uct.ac.za/items/5e85e0e4-92d8-456d-ad22-ac5914b2de21">Brown P.C. (1986) &mdash; The development and decline of phytoplankton blooms in the southern Benguela upwelling region</a>, PhD thesis, University of Cape Town</li>
+    <li><a href="https://www.cmar.csiro.au/remotesensing/oceancurrent/news.htm">CSIRO/IMOS OceanCurrent news archive</a> (strong upwelling in eastern Bass Strait, Feb 2013)</li>
+    <li><a href="https://connectsci.au/mf/article-lookup/doi/10.1071/MF9930325">Hallegraeff G.M. &amp; Jeffrey S.W. (1993) &mdash; Annually recurrent diatom blooms in spring along the New South Wales coast of Australia</a></li>
+    <li>Dela-Cruz J. et al. (2002) <a href="https://doi.org/10.3354/meps236075">Temporal abundance patterns of the red tide dinoflagellate Noctiluca scintillans along the southeast coast of Australia</a>, MEPS 236; and (2003) <a href="https://doi.org/10.4319/lo.2003.48.2.0656">Population growth and transport of Noctiluca scintillans in the coastal waters off Sydney</a>, Limnol. Oceanogr. 48</li>
+    <li><a href="https://openjournals.library.sydney.edu.au/LIN/article/view/5044">Ajani P. et al. (2011) &mdash; Microalgal blooms in the coastal waters of New South Wales, Australia</a>, Proc. Linn. Soc. NSW 133</li>
+    <li><a href="https://manlyobserver.com.au/sea-ing-red-whats-that-funny-coloured-plume-in-the-water/">Manly Observer &mdash; Sea-ing red: what's that funny coloured plume in the water</a>, 1 Dec 2021</li>
+    <li><a href="https://science.nasa.gov/earth/earth-observatory/a-bloom-of-nitrogen-fixing-bacteria-145610">NASA Earth Observatory &mdash; A bloom of nitrogen-fixing bacteria</a>, 1 Sep 2019; <a href="https://www.illawarramercury.com.au/story/5936774/thirroul-pool-closed-due-to-water-quality-concerns/">Illawarra Mercury</a>, 5 Mar 2019</li>
+    <li>NSW Beachwatch &mdash; <a href="https://www2.environment.nsw.gov.au/sites/default/files/state-of-beaches-2018-2019-sydney-190313.pdf">State of the Beaches 2018&ndash;19, Sydney</a> and <a href="https://www.environment.nsw.gov.au/sites/default/files/state-of-the-beaches-2022-23-hunter-region-230277.pdf">2022&ndash;23, Hunter</a></li>
+    <li><a href="https://www.waternsw.com.au/water-services/water-quality/algae-alerts">WaterNSW &mdash; Algae Alerts NSW map</a> (alerts from the Regional Algal Coordinating Committees; opened 7 Oct 2026)</li>
+    <li><a href="https://www.environment.nsw.gov.au/sites/default/files/towards-safer-swimming-terrigal-region-turbidity-and-discolouration-200413.pdf">Scanes P. (2020) &mdash; Understanding turbidity and discolouration in Terrigal Bay</a>, NSW DPIE</li>
+    <li><a href="https://ecat.ga.gov.au/geonetwork/srv/api/records/46029d31-2630-4c24-b672-8b56296d3bae">Huang Z. &amp; Wang X.H. (2019) &mdash; Mapping the upwelling systems of the Australian south-eastern coast using 14-year MODIS data</a>, Remote Sensing of Environment 227</li>
+  </ul>
+</section>
+
+</main>
+
+<script>
+(function () {
+'use strict';
+// ── waves.html shared helpers, copied VERBATIM (already on the page / in ocean.js: do not paste twice) ──
+var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function ang(a, b) { return ((a - b + 540) % 360) - 180; }
+
+// ── Shared canvas runner (every animation below uses it) ────────────────────
+// Sizes a canvas for the device pixel ratio at a fixed CSS height, runs
+// draw(ctx, W, H, t) every frame while the canvas is on screen (t in seconds), pauses
+// off screen, and under prefers-reduced-motion draws one still frame (t = 0).
+// Returns { redraw } — call it after a control changes so a paused or still canvas
+// shows the new setting.
+function runCanvas(cv, height, draw) {
+  var ctx = cv.getContext('2d'), visible = false, raf = 0, t0 = performance.now(), W = 0;
+  function size() {
+    var dpr = window.devicePixelRatio || 1;
+    W = cv.clientWidth || 300;
+    cv.style.height = height + 'px';
+    cv.width = Math.round(W * dpr); cv.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function now() { return REDUCED ? 0 : (performance.now() - t0) / 1000; }
+  function frame() { draw(ctx, W, height, now()); if (!REDUCED && visible) raf = requestAnimationFrame(frame); }
+  function redraw() { if (REDUCED || !visible) draw(ctx, W, height, now()); }
+  size();
+  window.addEventListener('resize', function () { size(); redraw(); });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      var v = es[0].isIntersecting; if (v === visible) return;
+      visible = v; cancelAnimationFrame(raf);
+      if (visible && !REDUCED) raf = requestAnimationFrame(frame); else redraw();
+    }).observe(cv);
+  } else { visible = true; if (!REDUCED) raf = requestAnimationFrame(frame); }
+  draw(ctx, W, height, 0);
+  // A still frame drawn before DM Mono arrives would keep the fallback font for good
+  // (reduced motion, or a figure still off screen), so draw again once the fonts land.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { redraw(); });
+  return { redraw: redraw };
+}
+
+// ══ NEW MODULE: paste this block into the cold-water chapter's script ══
+
+// ── Cold water, green water: upwelling and downwelling, side on (section 13) ──────
+// A slice through the sea off South Steyne, LOOKING NORTH: west (the beach, the promenade,
+// its Norfolk pines and buildings) on the left, the shelf on the right. The water is
+// coloured by temperature: a light, sun-warmed top layer over darker cold water, with the
+// boundary between them drawn dashed. Three states, tweened:
+//   north-easter  The wind blows towards 225 deg. In the Southern Hemisphere wind-driven water
+//                 turns LEFT of where the wind is going: the very surface only a little (it still
+//                 drifts nearly downwind, as in Carried along), the warm layer as a whole by a
+//                 right angle, towards 135 deg: offshore. The warm layer moves out (right), cold
+//                 water creeps in along the bottom (left) and rises at the coast, so the boundary
+//                 tilts up to the shore, meets the seabed first and then the surface by the
+//                 swimmer. Drawn as it is after a day or two of strong north-easters (the lag the
+//                 Bondi mooring measured), not the moment the wind starts.
+//   days after    The wind has eased (fainter arrows, slower flow), the cold water is still by
+//   the NE'ly     the beach, and plankton specks multiply in its sunlit top on its nutrients,
+//                 tinting it green and veiling what is behind them: you see less. This state
+//                 always comes AFTER the north-easter: pressed from the southerly, the tween runs
+//                 southerly -> north-easter -> days after, never straight from a southerly.
+//   southerly     The wind blows towards 0 deg; left of that is 270 deg, into the coast. The
+//                 warm layer is pushed in (left) and down, the cold water goes back out along the
+//                 bottom, and the boundary tilts DOWN to the shore. On leaving the green state the
+//                 plankton fade where they are rather than being wiped away by the warm water:
+//                 no source promises clearer water after a southerly (swell, runoff, warm-current
+//                 blooms).
+// Between the north-easter and the southerly the old flows fade out over the first half of the
+// tween and the new ones in over the second, so water is never drawn going both ways at once
+// (mid-tween the inset's wind blows across the coast, where the across-shore push is ~zero).
+// The wind itself is in the slice too: under the state's name, the usual end-on symbol, since
+// these winds blow mostly ALONG the coast, i.e. through this north-looking slice, and so cannot be
+// drawn as a left-right arrow. North-easter: a circle with a dot, "blows towards you". Southerly:
+// a circle with a cross, "blows away from you". It fades out with the state's name, and the
+// "days after" state has none (the wind has eased; the inset keeps a faint arrow).
+// The thermometer is dipped in the water beside the swimmer and labelled "water", so it cannot
+// be read as the air temperature (the north-easter is the warm, humid summer wind). It is
+// relative only: "cold" in both upwelling states; in the southerly about 70% of the way up,
+// "warmer than during the north-easter", never pinned to the top tick, because a southerly holds
+// the warm layer in rather than heating it (a cold southerly can even cool the very top).
+// The inset is the same thing from above, north up: the coast at 25 deg east of north (the
+// coastline angle of the Sydney wind index, Schaeffer & Roughan 2017), the wind arrow, and the
+// warm layer as a whole at 90 deg to its left; that arrow eases with the flow, and the two
+// labels hide while the wind turns (they would otherwise be pushed onto the arrows). The arrows are the verified geometry; the
+// band along the coast (dark blue cold, then green) is schematic.
+// SCHEMATIC, NOT MODELLED: every shape and speed. The figure prints no temperature and no
+// depth (a relative thermometer only), distances are squeezed and depths hugely exaggerated,
+// the cold band's width and the boundary's tilt are drawn, not computed, and the shelf here
+// is far shallower than the deep-ocean eddy numbers in the research (none are drawn).
+// Under reduced motion one still frame per state: arrows still, plankton fully grown.
+(function upwelling() {
+  var cv = document.getElementById('upwCv'); if (!cv) return;
+  var cap = document.getElementById('upwCap');
+  var btns = [].slice.call(document.querySelectorAll('[data-upw]'));
+  var HC = 300, Y0 = 122, BOT = 292;                     // canvas height; sea surface; seabed at the right edge (CSS px)
+  var TOP = 58, DEEP = 118;                              // warm layer offshore; how far a southerly pushes the boundary down at the coast (px)
+  var TWEEN = 1.4, GROW = 2.6;                           // s: between states; plankton multiplying "days after the north-easter"
+  var TILT = 25 * Math.PI / 180;                          // coast heading, east of north (the Sydney wind index's coastline)
+  var FONT = '500 12px "DM Mono", monospace', INK = '#0d2b3e', DEEPC = '#0b4f6c', DIM = '#5f8795', LANDC = '#8a7a55';
+  var WATERC = '#c2780f', MERC = '#c8553d', PLANK = '#3f7a2c';
+  // per state: arrows (up = the upwelling pair, dn = the downwelling pair), chevron speed,
+  // wind (towards, deg) and its strength in the inset, plankton, the cold band in the inset,
+  // the thermometer (1 = the swimmer is in the cold water), words
+  var STATES = {
+    ne:    { up: 1,    dn: 0, speed: 1,    wind: 225, windA: 1,    green: 0, coldBand: 1,   cold: 1,
+             label: 'north-easter', mark: 'dot', markText: 'blows towards you', markShort: 'towards you',
+             cap: 'A day or two of strong north-easters, blowing along the coast towards you: warm water moves out to sea, cold water rises from below. Not to scale.',
+             aria: 'After a day or two of strong north-easters, the warm top layer moves out to sea, and cold water from below creeps in along the seabed and rises at the beach, so the boundary between warm and cold water tilts up towards the shore. The north-easter blows mostly along the coast, towards the viewer, marked by a circle with a dot. A thermometer dipped in the water by the swimmer has dropped towards cold. A small map from above shows the wind blowing towards the south-west, mostly along the coast, and the warm layer as a whole moving to its left, out to sea.' },
+    green: { up: 0.45, dn: 0, speed: 0.22, wind: 225, windA: 0.35, green: 1, coldBand: 0.5, cold: 1,
+             label: 'days after the north-easter', mark: null, markText: '', markShort: '',
+             cap: 'A few days after the north-easter: plankton multiply on the cold water’s nutrients in the sun and turn it green. You see less. Not to scale.',
+             aria: 'A few days after the north-easter, the wind has eased. The cold water is still by the beach, and in the sunlight the plankton feeding on its nutrients have multiplied, tinting the water green. The swimmer can see less far than before. The thermometer in the water still reads cold. From above, a green band hugs the coast.' },
+    s:     { up: 0,    dn: 1, speed: 1,    wind: 0,   windA: 1,    green: 0, coldBand: 0,   cold: 0.3,
+             label: 'southerly', mark: 'cross', markText: 'blows away from you', markShort: 'away from you',
+             cap: 'Southerly, blowing away from you: warm water is held against the coast, cold water goes back out. It doesn’t heat the water. Not to scale.',
+             aria: 'A southerly is blowing, mostly along the coast and away from the viewer, marked by a circle with a cross. The warm top layer is held against the coast and pushed down, and the cold water is pushed back out along the bottom, so the boundary tilts down towards the shore. The thermometer dipped in the water by the swimmer reads warmer than during the north-easter. From above, the wind blows towards the north and the warm layer as a whole moves to its left, into the coast. It doesn’t heat the water.' }
+  };
+  var key = 'ne', A = 'ne', B = 'ne', queue = null, tw0 = 0, lastT = 0, phUp = 0, phDn = 0, g0 = 0, gTo = 0;
+  var eta = null, dep = null, bd = null, GEO = null;      // per-pixel surface ripple, seabed depth, boundary depth; this frame's geometry
+
+  // ── state, tweened ──
+  function ease(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+  function mix(a, b, e) { return a + (b - a) * e; }
+  function sstep(a, b, x) { var u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); }
+  function prog() { return REDUCED ? 1 : Math.min(1, (performance.now() - tw0) / (TWEEN * 1000)); }
+  function cross(a, b, e) { return e < 0.5 ? a * (1 - 2 * e) : b * (2 * e - 1); }   // old out by half-way, then new in
+  function step() {                                       // second leg of southerly -> north-easter -> days after
+    if (queue && prog() >= 1) { A = B; B = queue; queue = null; g0 = 0; gTo = 1; tw0 = performance.now(); }
+  }
+  function greenNow() {                                   // plankton: multiply days after the north-easter, fade on leaving
+    if (gTo) return REDUCED ? 1 : g0 + (1 - g0) * Math.min(1, (performance.now() - tw0) / (GROW * 1000));
+    return g0 * (1 - ease(prog()));
+  }
+
+  // ── geometry (CSS px) for a canvas W wide ──
+  function geom(W) {
+    var narrow = W < 360, xSh = narrow ? 58 : Math.round(Math.min(112, 0.19 * W));
+    return { W: W, narrow: narrow, xSh: xSh, span: W - xSh, xs: xSh + (narrow ? 18 : 24), r: narrow ? 8 : 10 };
+  }
+  var SHELF = 0.35, SHELF_N = 1 - Math.exp(-1 / SHELF);
+  function depthAt(g, x) {                                // seabed below the still surface: steep off the beach, then the flatter shelf
+    var dx = x - g.xSh; if (dx <= 0) return 0;
+    return 24 * sstep(0, 40, dx) + (BOT - Y0 - 24) * (1 - Math.exp(-Math.min(1, dx / g.span) / SHELF)) / SHELF_N;
+  }
+  function bndAt(k, g, x) {                               // warm/cold boundary below the surface (px; < 0 = the cold reaches the top)
+    if (k === 's') return TOP + DEEP * (1 - sstep(g.xSh + 0.05 * g.span, g.xSh + 0.85 * g.span, x));
+    var b = -16 + (TOP + 16) * sstep(g.xSh - 10, g.xSh + 0.78 * g.span, x);
+    return k === 'green' ? b + (TOP - b) * 0.12 : b;
+  }
+
+  // ── words: caption and canvas label ──
+  function words() {
+    var s = STATES[key];
+    if (cap) cap.textContent = s.cap;
+    cv.setAttribute('aria-label', 'Slice through the sea off South Steyne, looking north: the beach on the left, the open sea on the right. ' + s.aria + ' Not to scale.');
+  }
+
+  // ── drawing helpers ──
+  function text(ctx, s, x, y, align, col, a) {
+    if (!(a > 0.02)) return;
+    ctx.globalAlpha = Math.min(1, a); ctx.font = FONT; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.strokeStyle = 'rgba(251,246,236,.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y);
+    ctx.fillStyle = col || INK; ctx.fillText(s, x, y);
+    ctx.globalAlpha = 1;
+  }
+  function tag(ctx, s, cx, y, col, a) {                   // centred label on a soft cream tag
+    if (a === undefined) a = 1; if (!(a > 0.02)) return;
+    ctx.font = FONT; var w = ctx.measureText(s).width;
+    ctx.globalAlpha = Math.min(1, a); ctx.fillStyle = 'rgba(251,246,236,.88)';
+    rrect(ctx, cx - w / 2 - 5, y - 14, w + 10, 19, 9.5); ctx.fill(); ctx.globalAlpha = 1;
+    text(ctx, s, cx, y, 'center', col, a);
+  }
+  function wrap(ctx, s, maxW) {                           // split a label into lines no wider than maxW
+    ctx.font = FONT; var ws = s.split(' '), out = [], cur = '', i, t;
+    for (i = 0; i < ws.length; i++) {
+      t = cur ? cur + ' ' + ws[i] : ws[i];
+      if (cur && ctx.measureText(t).width > maxW) { out.push(cur); cur = ws[i]; } else cur = t;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  function stateLabel(ctx, st, maxW, a) {                 // the state, top left, wrapped clear of the inset,
+    var ls = wrap(ctx, st.label, maxW), i;                //   with its wind marker and "blows towards / away from you"
+    for (i = 0; i < ls.length; i++) text(ctx, ls[i], 8, 18 + 14 * i, 'left', INK, a);
+    if (!st.mark || !(a > 0.02)) return;
+    ctx.font = FONT;
+    var last = ls.length - 1;
+    windMark(ctx, 8 + ctx.measureText(ls[last]).width + 13, 18 + 14 * last - 4, st.mark, a);
+    var mt = ctx.measureText(st.markText).width <= maxW ? st.markText : st.markShort;   // short form on a narrow phone
+    text(ctx, mt, 8, 18 + 14 * (last + 1) + 3, 'left', INK, a);
+  }
+  // the wind seen end-on, the usual drawing convention: a circle with a dot is wind coming towards
+  // you (the arrow's point), a circle with a cross is wind going away (its tail feathers)
+  function windMark(ctx, x, y, kind, a) {
+    var r = 6.5, d = r * 0.58;
+    ctx.globalAlpha = Math.min(1, a);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.fillStyle = 'rgba(251,246,236,.95)'; ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.stroke();
+    if (kind === 'dot') { ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(x, y, 2.1, 0, 2 * Math.PI); ctx.fill(); }
+    else { ctx.lineWidth = 1.4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - d, y - d); ctx.lineTo(x + d, y + d); ctx.moveTo(x + d, y - d); ctx.lineTo(x - d, y + d); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+  function rrect(ctx, x, y, w, h, r) {
+    ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function rand0(seed) { var r = seed; return function () { r = (r * 1103515245 + 12345) % 2147483648; return r / 2147483648; }; }
+  function arrow(ctx, x1, y1, x2, y2, col, lw, head, a) { // a plain arrow from (x1, y1) to (x2, y2)
+    if (!(a > 0.02)) return;
+    var dx = x2 - x1, dy = y2 - y1, L = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / L, uy = dy / L;
+    ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - ux * head * 0.6, y2 - uy * head * 0.6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - ux * head - uy * head * 0.55, y2 - uy * head + ux * head * 0.55);
+    ctx.lineTo(x2 - ux * head + uy * head * 0.55, y2 - uy * head - ux * head * 0.55); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // a wide, pale flow band along pts with chevrons marching towards its arrowhead
+  function flow(ctx, pts, a, ph) {
+    if (!(a > 0.02) || pts.length < 2) return;
+    for (var k = 0; k < pts.length; k++) {
+      var dk = depthAt(GEO, pts[k][0]);
+      if (dk > 0) pts[k][1] = Math.max(Y0 + Math.min(12, dk / 2), Math.min(Y0 + dk - 9, pts[k][1]));
+    }
+    var L = [0], i, tot, n = pts.length;
+    for (i = 1; i < n; i++) { var ddx = pts[i][0] - pts[i - 1][0], ddy = pts[i][1] - pts[i - 1][1]; L.push(L[i - 1] + Math.sqrt(ddx * ddx + ddy * ddy)); }
+    tot = L[n - 1];
+    function at(s) {                                      // point and unit tangent at arc length s
+      for (var j = 1; j < n; j++) if (L[j] >= s || j === n - 1) {
+        var f = (s - L[j - 1]) / ((L[j] - L[j - 1]) || 1), tx = pts[j][0] - pts[j - 1][0], ty = pts[j][1] - pts[j - 1][1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
+        return { x: pts[j - 1][0] + tx * f, y: pts[j - 1][1] + ty * f, ux: tx / tl, uy: ty / tl };
+      }
+    }
+    ctx.save(); ctx.globalAlpha = a; ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (i = 1; i < n - 1; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    var e = at(tot - 9); ctx.lineTo(e.x, e.y);
+    ctx.strokeStyle = 'rgba(13,43,62,.16)'; ctx.lineWidth = 15; ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 12; ctx.stroke();
+    var p = at(tot), ux = p.ux, uy = p.uy, hx = p.x, hy = p.y;          // arrowhead
+    ctx.beginPath(); ctx.moveTo(hx + ux * 3, hy + uy * 3);
+    ctx.lineTo(hx - ux * 11 - uy * 11, hy - uy * 11 + ux * 11); ctx.lineTo(hx - ux * 11 + uy * 11, hy - uy * 11 - ux * 11); ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.fill(); ctx.strokeStyle = 'rgba(13,43,62,.4)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    for (var s = ((ph % 15) + 15) % 15 + 4; s < tot - 12; s += 15) {
+      var q = at(s), fa = Math.min(1, (s - 2) / 12, (tot - 12 - s) / 10);
+      if (fa <= 0) continue;
+      ctx.strokeStyle = 'rgba(13,43,62,' + (0.6 * fa).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.moveTo(q.x - q.ux * 3 - q.uy * 3.6, q.y - q.uy * 3 + q.ux * 3.6); ctx.lineTo(q.x + q.ux * 1.6, q.y + q.uy * 1.6);
+      ctx.lineTo(q.x - q.ux * 3 + q.uy * 3.6, q.y - q.uy * 3 - q.ux * 3.6); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // the flow paths: along the top layer, and the loop along the bottom and up (or down) by the coast
+  function curve(pts, x0, y0, cx, cy, x1, y1) { for (var i = 1; i <= 10; i++) { var u = i / 10, m = 1 - u; pts.push([m * m * x0 + 2 * m * u * cx + u * u * x1, m * m * y0 + 2 * m * u * cy + u * u * y1]); } }
+  function bottomRun(g, xa, xb, step) {                   // just above the seabed, from xa to xb
+    var pts = [], x;
+    for (x = xa; step < 0 ? x >= xb : x <= xb; x += step) pts.push([x, Y0 + depthAt(g, x) - 17]);
+    return pts;
+  }
+  function pathsUp(g) {
+    var x1 = g.xSh + 0.36 * g.span, bot = bottomRun(g, g.W + 6, x1, -6), l = bot[bot.length - 1];
+    curve(bot, l[0], l[1], g.xSh + 0.22 * g.span, l[1] - 2, g.xSh + 0.21 * g.span, Y0 + 26);
+    return { top: [[g.xSh + 0.36 * g.span, Y0 + 15], [g.W - 12, Y0 + 15]], low: bot };
+  }
+  function pathsDown(g) {
+    var x0 = g.xSh + 0.21 * g.span, x1 = g.xSh + 0.36 * g.span, low = [[x0, Y0 + 24]], y1 = Y0 + depthAt(g, x1) - 17;
+    curve(low, x0, Y0 + 24, g.xSh + 0.22 * g.span, y1 + 2, x1, y1);
+    low = low.concat(bottomRun(g, x1 + 6, g.W - 12, 6));
+    return { top: [[g.W + 4, Y0 + 15], [g.xSh + 0.3 * g.span, Y0 + 15]], low: low };
+  }
+
+  // ── the land: the beach, the promenade, its Norfolk pines and the buildings behind ──
+  function pine(ctx, x, y, h) {                           // a Norfolk Island pine: trunk and flat tiers
+    ctx.strokeStyle = '#7b6a4c'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - h); ctx.stroke();
+    ctx.strokeStyle = '#7d8c5c'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    for (var i = 0; i < 6; i++) {
+      var yy = y - h * (0.3 + 0.12 * i), w = h * 0.2 * (1 - i / 6.5);
+      ctx.beginPath(); ctx.moveTo(x - w, yy + 1.5); ctx.lineTo(x, yy - 1); ctx.lineTo(x + w, yy + 1.5); ctx.stroke();
+    }
+  }
+  function block(ctx, x, y, w, h) {                       // a building with windows
+    ctx.fillStyle = '#e6dac0'; ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1;
+    ctx.fillRect(x, y - h, w, h); ctx.strokeRect(x + 0.5, y - h + 0.5, w - 1, h - 1);
+    ctx.fillStyle = '#cdbf9f';
+    for (var wy = y - h + 6; wy < y - 6; wy += 9) for (var wx = x + 4; wx < x + w - 5; wx += 7) ctx.fillRect(wx, wy, 3, 4);
+  }
+  function beachUp(dx) { return dx < 36 ? dx * 0.42 : 15; }   // sand rising from the waterline to the promenade (px above the sea)
+  function land(ctx, g, H) {
+    var x, dx, rnd = rand0(4021);
+    // the ground in section: under the beach and under the sea floor, down to the bottom edge
+    ctx.beginPath(); ctx.moveTo(-2, H + 2); ctx.lineTo(-2, Y0 - 15);
+    for (dx = g.xSh + 2; dx >= 0; dx -= 2) ctx.lineTo(g.xSh - dx, Y0 - beachUp(dx));
+    for (x = g.xSh; x <= g.W + 2; x += 3) ctx.lineTo(x, Y0 + depthAt(g, x));
+    ctx.lineTo(g.W + 2, H + 2); ctx.closePath();
+    var gg = ctx.createLinearGradient(0, Y0 - 20, 0, H);
+    gg.addColorStop(0, '#ecdcb2'); gg.addColorStop(1, '#d9c597');
+    ctx.fillStyle = gg; ctx.fill();
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,135,90,.28)'; ctx.lineWidth = 1;          // sandstone bedding under the sand
+    for (var k = 0; k < 3; k++) {
+      ctx.beginPath();
+      for (x = -2; x <= g.W + 2; x += 6) {
+        var yy = Y0 + 40 + 26 * k + 3 * Math.sin(x * 0.03 + k * 2.1), top = Y0 + depthAt(g, x) + 8;
+        if (x === -2) ctx.moveTo(x, Math.max(yy, top)); else ctx.lineTo(x, Math.max(yy, top));
+      }
+      ctx.stroke();
+    }
+    // the promenade railing, buildings behind it, pines along it
+    var prom = Y0 - 15, back = 44;
+    ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(g.xSh - 36, prom - 5); ctx.lineTo(-2, prom - 5); ctx.stroke();
+    for (dx = back; dx < g.xSh + 40;) {
+      var w = 22 + Math.round(rnd() * 14), h = 30 + Math.round(rnd() * 26);
+      block(ctx, g.xSh - dx - w, prom, w, h); dx += w + 3;
+    }
+    for (dx = 42; dx < g.xSh + 10; dx += 58 + rnd() * 30) pine(ctx, g.xSh - dx, prom, 50 + rnd() * 12);
+  }
+
+  // ── the swimmer: a head in a swim cap, facing out to sea, riding the water ──
+  function swimmer(ctx, g, wl) {
+    var x = g.xs, r = g.r, cy = wl - r * 0.72;
+    ctx.save(); ctx.translate(x, 0); ctx.scale(-1, 1);    // drawn facing left, mirrored to face the sea
+    ctx.save(); ctx.beginPath(); ctx.rect(-4 * r, wl, 8 * r, 3 * r); ctx.clip();
+    ctx.fillStyle = 'rgba(11,79,108,.22)'; ctx.beginPath(); ctx.ellipse(r * 1.2, wl + r * 0.8, r * 2.1, r * 0.55, 0, 0, 2 * Math.PI); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(-r - 2, cy - r - 2, 2 * r + 4, wl - cy + r + 2); ctx.clip();
+    ctx.beginPath(); ctx.arc(0, cy, r, 0, 2 * Math.PI); ctx.fillStyle = '#efc7a2'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0, cy, r, Math.PI + 0.3, 2 * Math.PI + 0.35); ctx.closePath(); ctx.fillStyle = '#e0982f'; ctx.fill();   // swim cap
+    ctx.strokeStyle = 'rgba(13,43,62,.75)'; ctx.lineWidth = 1.2;                                                              // goggle strap and lens
+    ctx.beginPath(); ctx.moveTo(-r * 0.5, cy + r * 0.12); ctx.lineTo(r * 0.98, cy + r * 0.02); ctx.stroke();
+    ctx.fillStyle = INK; ctx.beginPath(); ctx.ellipse(-r * 0.66, cy + r * 0.14, r * 0.3, r * 0.22, 0, 0, 2 * Math.PI); ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';                                   // two splashes, not a ring
+    ctx.beginPath(); ctx.ellipse(0, wl, r + 4, 2.6, 0, 0.6 * Math.PI, 0.95 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(0, wl, r + 4, 2.6, 0, 0.05 * Math.PI, 0.4 * Math.PI); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── the thermometer: dipped in the water beside the swimmer, its stem standing out of it, and
+  // marked "water" so nobody reads it as the air temperature. Relative only, no numbers ──
+  function thermo(ctx, x, top, wl, cold) {
+    var bulb = wl + 6, yW = top + 9, yC = Y0 - 14, yM = mix(yW, yC, cold), br = 6;
+    function shape() { rrect(ctx, x - 3.5, top - 3, 7, bulb - top + 3, 3.5); ctx.moveTo(x + br, bulb); ctx.arc(x, bulb, br, 0, 2 * Math.PI); }
+    ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.strokeStyle = 'rgba(13,43,62,.55)'; ctx.lineWidth = 1.2;
+    rrect(ctx, x - 3.5, top - 3, 7, bulb - top, 3.5); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, bulb, br, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = MERC; ctx.beginPath(); ctx.arc(x, bulb, br - 2, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillRect(x - 1.6, yM, 3.2, bulb - yM);
+    ctx.save(); shape(); ctx.clip();                      // the part under the surface, seen through the water
+    ctx.fillStyle = 'rgba(120,175,205,.42)'; ctx.fillRect(x - br - 2, wl, 2 * br + 4, br * 3); ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.3; ctx.lineCap = 'round';   // the waterline round the stem
+    ctx.beginPath(); ctx.ellipse(x, wl, 7, 1.8, 0, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
+    ctx.strokeStyle = 'rgba(13,43,62,.6)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x + 4, yW); ctx.lineTo(x + 8, yW); ctx.moveTo(x + 4, yC); ctx.lineTo(x + 8, yC); ctx.stroke();
+    text(ctx, 'warm', x + 11, yW + 4, 'left', INK, 1);
+    text(ctx, 'cold', x + 11, yC + 4, 'left', INK, 1);
+    text(ctx, 'water', x, top - 8, 'center', INK, 1);
+  }
+
+  // ── the inset: the same thing from above, north up ──
+  // The pivot P sits out on the shelf; the coast runs through P - off·n at 25 deg east of north.
+  // The wind arrow ends at P; the warm layer as a whole leaves P at a right angle to its left,
+  // fainter and shorter as the flow eases (o.flow). Each label sits beside the middle of its
+  // arrow, on the side away from the other arrow, and is pushed off the land.
+  function inset(ctx, x0, y0, w, h, o) {
+    var ax = Math.sin(TILT), ay = -Math.cos(TILT), nx = Math.cos(TILT), ny = Math.sin(TILT);   // along the coast (north-ish), offshore
+    var px = x0 + 0.6 * w, py = y0 + 0.44 * h, off = 0.34 * w, cx = px - nx * off, cy = py - ny * off, L = 2 * (w + h);
+    ctx.save(); rrect(ctx, x0, y0, w, h, 8); ctx.clip();
+    var g = ctx.createLinearGradient(x0, y0 + h, x0 + w, y0);
+    g.addColorStop(0, '#cfe9f2'); g.addColorStop(1, '#8cc4d8');
+    ctx.fillStyle = g; ctx.fillRect(x0, y0, w, h);
+    function band(col, a, d, lw) {                        // a strip of water along the coast
+      if (!(a > 0.02)) return;
+      ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = lw;
+      ctx.beginPath(); ctx.moveTo(cx + nx * d + ax * L, cy + ny * d + ay * L); ctx.lineTo(cx + nx * d - ax * L, cy + ny * d - ay * L); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    band('#2f6990', 0.7 * o.coldBand, 6, 10);
+    band('#5d9a3e', 0.8 * o.green, 6, 11);
+    ctx.beginPath();                                      // the land, west of the coast
+    ctx.moveTo(cx + ax * L, cy + ay * L); ctx.lineTo(cx - ax * L, cy - ay * L);
+    ctx.lineTo(cx - ax * L - nx * L, cy - ay * L - ny * L); ctx.lineTo(cx + ax * L - nx * L, cy + ay * L - ny * L); ctx.closePath();
+    ctx.fillStyle = '#efe4c6'; ctx.fill(); ctx.strokeStyle = '#b9a77c'; ctx.lineWidth = 1.2; ctx.stroke();
+    arrow(ctx, x0 + 9, y0 + 25, x0 + 9, y0 + 8, INK, 1.3, 5.5, 0.8);                     // north, in the land's corner
+    text(ctx, 'N', x0 + 15, y0 + 20, 'left', INK, 0.9);
+    // the wind (dark), and the warm layer as a whole at a right angle to its LEFT (orange)
+    var wr = o.wind * Math.PI / 180, ux = Math.sin(wr), uy = -Math.cos(wr), Lw = 0.3 * w;
+    var tr = (o.wind - 90) * Math.PI / 180, vx = Math.sin(tr), vy = -Math.cos(tr), dn = vx * nx + vy * ny;
+    var Lv = (dn < -0.05 ? Math.min(0.3 * w, off / -dn - 7) : 0.3 * w) * (0.55 + 0.45 * o.flow);   // into the coast: stop short of it
+    var fa = Math.max(0.35, o.flow);                      // the layer eases with the wind
+    arrow(ctx, px - ux * Lw, py - uy * Lw, px - ux * 2, py - uy * 2, INK, 1.8, 7, o.windA);
+    arrow(ctx, px + vx * 3, py + vy * 3, px + vx * Lv, py + vy * Lv, WATERC, 3, 8, fa);
+    ctx.restore();
+    rrect(ctx, x0 + 0.5, y0 + 0.5, w - 1, h - 1, 8); ctx.strokeStyle = 'rgba(13,43,62,.25)'; ctx.lineWidth = 1; ctx.stroke();
+    function coastX(y) { return cx + ax * (y - cy) / ay; }   // where the coast crosses height y
+    function side(mx, my, dx, dy, awayX, awayY, ls, col, a, gap) {   // lines ls beside the arrow middle (mx, my), away from (awayX, awayY), gap px off the coast
+      var qx = -dy, qy = dx, i, tw = 0, LH = 13, hh = ls.length * LH / 2;
+      if (qx * awayX + qy * awayY > 0) { qx = -qx; qy = -qy; }
+      ctx.font = FONT; for (i = 0; i < ls.length; i++) tw = Math.max(tw, ctx.measureText(ls[i]).width);
+      var d = 6 + Math.abs(qx) * tw / 2 + Math.abs(qy) * hh;
+      var ly = Math.max(y0 + 3 + hh, Math.min(y0 + h - 2 - hh, my + qy * d));          // centre of the block
+      var lx = Math.max(mx + qx * d, coastX(ly - hh) + gap + tw / 2, x0 + 4 + tw / 2);   // off the land
+      lx = Math.min(x0 + w - 4 - tw / 2, lx);
+      for (i = 0; i < ls.length; i++) text(ctx, ls[i], lx, ly - hh + 10 + LH * i, 'center', col, a);
+    }
+    side(px - ux * Lw / 2, py - uy * Lw / 2, ux, uy, vx, vy, ['wind'], INK, Math.max(0.5, o.windA) * o.labelA, 3);
+    side(px + vx * Lv / 2, py + vy * Lv / 2, vx, vy, -ux, -uy, o.narrow ? ['warm', 'layer'] : ['warm layer'], '#8a4f06', Math.max(0.5, fa) * o.labelA, 14);   // clear of the coastal band
+  }
+
+  // green: in the upwelled cold water's sunlit top, densest by the shore, the plankton tint the
+  // water and veil what is behind them (drawn after the flows): you see less through it. The
+  // bloom sits in the cold water of its own state, held fixed, so on leaving it the green fades
+  // where it is (with gr) instead of being wiped away as the warm water comes back in.
+  function green(ctx, g, n, t, gr) {
+    if (!(gr > 0.01)) return;
+    var x0 = g.xSh, i, x, gx1 = Math.min(n - 1, Math.round(x0 + 0.6 * g.span)), DOWN = 84;
+    function gb(xx) { return Math.max(-6, bndAt('green', g, xx)); }
+    ctx.save();                                           // only below that boundary (the cold, nutrient-rich water)
+    ctx.beginPath(); ctx.moveTo(x0 - 2, Y0 + gb(x0));
+    for (x = x0; x <= gx1; x += 2) ctx.lineTo(x, Y0 + gb(x));
+    ctx.lineTo(gx1, Y0 + DOWN); ctx.lineTo(x0 - 2, Y0 + DOWN); ctx.closePath(); ctx.clip();
+    for (i = 0; i < 10; i++) {
+      var f = 1 - i / 10, gt = ctx.createLinearGradient(x0, 0, gx1, 0);
+      gt.addColorStop(0, 'rgba(104,160,56,' + (0.84 * gr * f).toFixed(3) + ')'); gt.addColorStop(1, 'rgba(104,160,56,0)');
+      ctx.fillStyle = gt; ctx.fillRect(x0 - 2, Y0 - 6 + i * 9, gx1 - x0 + 2, 9);
+    }
+    ctx.restore();
+    var np = Math.round(PL.length * gr);
+    for (i = 0; i < np; i++) {
+      var pk = PL[i], px = x0 + 5 + Math.pow(pk.fx, 1.6) * 0.56 * g.span + 1.6 * Math.sin(0.5 * t + pk.ph);
+      var xi = Math.min(n - 1, Math.max(0, Math.round(px))), pd = Math.min(DOWN - 10, dep[xi] - 5);
+      if (pd < 4) continue;
+      var py = Y0 + 4 + pk.fy * pd + 1.2 * Math.sin(0.7 * t + 2 * pk.ph);
+      if (py < Y0 + gb(xi) + 2) continue;                 // not in the warm top layer
+      ctx.fillStyle = PLANK; ctx.globalAlpha = 0.85 * Math.min(1, gr * 1.5);
+      if (pk.chain) { for (var c = -1; c <= 1; c++) { ctx.beginPath(); ctx.arc(px + c * 2.4 * Math.cos(pk.a), py + c * 2.4 * Math.sin(pk.a), 1.15, 0, 2 * Math.PI); ctx.fill(); } }
+      else { ctx.beginPath(); ctx.arc(px, py, pk.s, 0, 2 * Math.PI); ctx.fill(); }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function draw(ctx, W, H, t) {
+    step();
+    var g = GEO = geom(W), e = ease(prog()), sa = STATES[A], sb = STATES[B], x, i, n = Math.ceil(W) + 1;
+    var dt = Math.max(0, Math.min(0.1, t - lastT)); lastT = t;
+    var la = A === B ? 0 : Math.max(0, 1 - 2 * e), lb = A === B ? 1 : Math.max(0, 2 * e - 1);   // labels: out, then in
+    var flip = A !== B && (sa.up > 0) !== (sb.up > 0);    // reversing: never draw water going both ways at once
+    var up = flip ? cross(sa.up, sb.up, e) : mix(sa.up, sb.up, e), dn = flip ? cross(sa.dn, sb.dn, e) : mix(sa.dn, sb.dn, e);
+    var spd = mix(sa.speed, sb.speed, e), gr = greenNow();
+    phUp += dt * 20 * spd; phDn += dt * 20 * spd;
+    ctx.clearRect(0, 0, W, H);
+    // sky
+    var sky = ctx.createLinearGradient(0, 0, 0, Y0);
+    sky.addColorStop(0, 'rgba(255,255,255,0)'); sky.addColorStop(1, 'rgba(207,233,242,.5)');
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, Y0 + 2);
+
+    // per-pixel surface, seabed and boundary (tweened between the two states)
+    if (!eta || eta.length !== n) { eta = new Float32Array(n); dep = new Float32Array(n); bd = new Float32Array(n); }
+    for (x = 0; x < n; x++) {
+      eta[x] = 1.1 * Math.sin(0.08 * x - 1.5 * t) + 0.5 * Math.sin(0.19 * x + 1.1 * t + 0.7);
+      dep[x] = depthAt(g, x);
+      bd[x] = mix(bndAt(A, g, x), bndAt(B, g, x), e);
+    }
+    var x0 = g.xSh;
+    function waterPath() {
+      ctx.beginPath(); ctx.moveTo(x0, Y0 - eta[x0]);
+      for (x = x0 + 1; x < n; x++) ctx.lineTo(x, Y0 - eta[x]);
+      ctx.lineTo(W + 2, Y0 + dep[n - 1]);
+      for (x = n - 1; x >= x0; x -= 2) ctx.lineTo(x, Y0 + dep[x]);
+      ctx.closePath();
+    }
+    // the warm top layer, lit from above
+    var gw = ctx.createLinearGradient(0, Y0 - 4, 0, Y0 + TOP + 20);
+    gw.addColorStop(0, '#e2f2f1'); gw.addColorStop(1, '#a9d6e4');
+    waterPath(); ctx.fillStyle = gw; ctx.fill();
+    ctx.save(); waterPath(); ctx.clip();
+    // the cold water below the boundary
+    var gc = ctx.createLinearGradient(0, Y0, 0, BOT);
+    gc.addColorStop(0, '#4f88b0'); gc.addColorStop(1, '#255a80');
+    ctx.beginPath(); ctx.moveTo(x0 - 2, Y0 + Math.max(-6, bd[x0]));
+    for (x = x0; x < n; x += 2) ctx.lineTo(x, Y0 + Math.max(-6, bd[x]));
+    ctx.lineTo(W + 2, Y0 + Math.max(-6, bd[n - 1])); ctx.lineTo(W + 2, H + 2); ctx.lineTo(x0 - 2, H + 2); ctx.closePath();
+    ctx.fillStyle = gc; ctx.fill();
+    // a soft edge, and the boundary drawn dashed where it runs through the water
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(120,175,205,.45)'; ctx.lineWidth = 7;
+    ctx.beginPath(); for (x = x0; x < n; x += 2) { if (x === x0) ctx.moveTo(x, Y0 + bd[x]); else ctx.lineTo(x, Y0 + bd[x]); } ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); for (x = x0; x < n; x += 2) { if (x === x0) ctx.moveTo(x, Y0 + bd[x]); else ctx.lineTo(x, Y0 + bd[x]); } ctx.stroke();
+    ctx.setLineDash([]);
+
+    // the flows: out along the top and in along the bottom (upwelling), or the reverse
+    var pu = pathsUp(g), pdn = pathsDown(g);
+    flow(ctx, pu.low, up, phUp); flow(ctx, pu.top, up, phUp);
+    flow(ctx, pdn.top, dn, phDn); flow(ctx, pdn.low, dn, phDn);
+
+    // green, drawn over the flows and the seabed so it veils them: you see less through it
+    green(ctx, g, n, t, gr);
+    ctx.restore();                                        // end of the water clip
+    var wl = Y0 - eta[g.xs];
+
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.2; ctx.beginPath();     // the sea surface
+    for (x = x0; x < n; x++) { if (x === x0) ctx.moveTo(x, Y0 - eta[x]); else ctx.lineTo(x, Y0 - eta[x]); }
+    ctx.stroke();
+    land(ctx, g, H);
+    swimmer(ctx, g, wl);
+
+    // labels in the water and the ground
+    ctx.font = FONT;
+    text(ctx, 'warm top layer', W - 10, Y0 + 38, 'right', DEEPC, 1);
+    text(ctx, 'cold water', W - 10, Y0 + TOP + 46, 'right', INK, 1);
+    text(ctx, 'South Steyne', 6, Y0 + (g.narrow ? 96 : 70), 'left', LANDC, 1);
+
+    // the plankton's label, on a tag in the green below the boundary, fading with the specks
+    tag(ctx, g.narrow ? 'plankton' : 'plankton multiply', g.xSh + (g.narrow ? 0.5 : 0.45) * g.span, Y0 + 74, '#2f5e1f', Math.min(1, gr * 1.5));
+
+    // the thermometer dipped in the water by the swimmer: which water is around them (cold in
+    // both upwelling states, where the boundary reaches the surface there), tweened with the picture
+    var cold = mix(sa.cold, sb.cold, e), xT = Math.round(g.xs + (g.narrow ? 23 : 30));
+    thermo(ctx, xT, Y0 - 62, Y0 - eta[xT], cold);
+
+    // the state, top left (wrapped clear of the inset), and the inset from above, top right
+    var iw = g.narrow ? (W < 280 ? 94 : 100) : 128, ih = Math.round(iw * (g.narrow ? 0.92 : 0.86)), ix = W - iw - 6, iy = 6;
+    stateLabel(ctx, sa, ix - 16, la);
+    stateLabel(ctx, sb, ix - 16, lb);
+    var ow = ang(sb.wind, sa.wind);                      // while the wind turns, its labels hide (out by a quarter, back from three-quarters)
+    inset(ctx, ix, iy, iw, ih, { wind: sa.wind + ow * e, windA: mix(sa.windA, sb.windA, e), coldBand: mix(sa.coldBand, sb.coldBand, e),
+      green: gr, flow: mix(sa.speed, sb.speed, e), narrow: g.narrow, labelA: A === B || !ow ? 1 : Math.max(0, 2 * Math.abs(1 - 2 * e) - 1) });
+    var fw = ctx.measureText('from above').width;
+    if (g.narrow) tag(ctx, 'from above', ix + iw / 2, iy + ih + 16, DIM);
+    else tag(ctx, 'from above', ix - 10 - fw / 2, iy + ih / 2 + 4, DIM);
+  }
+
+  // plankton specks: seeded positions, a few drawn as little three-cell chains (diatoms)
+  var PL = [];
+  (function () { var rnd = rand0(20261008); for (var i = 0; i < 150; i++) PL.push({ fx: rnd(), fy: rnd(), ph: rnd() * 6.28, s: 0.9 + rnd() * 0.9, chain: rnd() < 0.3, a: rnd() * 3.14 }); })();
+
+  var rc = runCanvas(cv, HC, draw);
+  function set(k) {
+    if (!STATES[k]) return;
+    var g = greenNow(), from = prog() < 0.5 && A !== B ? A : B;
+    queue = null;
+    if (REDUCED) { A = B = k; }
+    else if (k === 'green' && from === 's') { A = 's'; B = 'ne'; queue = 'green'; }   // via the north-easter
+    else { A = from; B = k; }
+    g0 = REDUCED ? (k === 'green' ? 1 : 0) : g; gTo = k === 'green' && !queue ? 1 : 0;
+    tw0 = performance.now(); key = k;
+    btns.forEach(function (o) { o.setAttribute('aria-pressed', o.getAttribute('data-upw') === k ? 'true' : 'false'); });
+    words(); rc.redraw();
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () { set(b.getAttribute('data-upw')); }); });
+  set('ne');
+})();
+})();
+</script>
+<script src="ocean-progress-config.js"></script>
+<script src="ocean-progress.js" defer></script>
+</body>
+</html>

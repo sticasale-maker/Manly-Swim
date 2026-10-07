@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tides (prototype, chapter 8)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<!--
+  PROTOTYPE (7 Oct 2026, revised after review): the two sections of the new chapter 8, "Tides"
+  (structure.json slug "tides"): Part 1 <section id="tides"> (why two highs a day, why 50 minutes
+  later, why some tides are bigger; figure tideCv) and Part 2 <section id="manly-tide"> (what the
+  tide does at Manly, with an example fortnight; figure fortCv). Everything between <main> and
+  </main> is the paste-in. The CSS below is copied verbatim from waves.html plus one small NEW
+  block (the illustration and prose links).
+  SCRIPT. The first part is waves.html's own helpers (REDUCED, runCanvas); everything after the NEW
+  MODULES banner is new. In the chapter page (ocean/tides.html) the helpers come from ocean.js, and
+  the new modules go inside chapter-template.html's own wrapper:
+      <script src="ocean.js?v=…"></script>
+      <script>
+      (function (O) {
+      'use strict';
+      if (!O) return;
+      var REDUCED = O.REDUCED, runCanvas = O.runCanvas;
+      … everything after the NEW MODULES banner …
+      O.chapter('tides');
+      })(window.OCEAN);
+      </script>
+  Each module has a "pure maths" block checked by proto/test_tides.js (node test_tides.js), which
+  reads the blocks out of this file.
+  The illustration is inlined as a 21 KB WebP data URI so this file stands alone; in the chapter it
+  becomes img/tides.webp. Links: sea-level.html#manly is the sea-level chapter (proto/ssh.html,
+  section "manly"), which takes the weather detail; the 1974 record (2.40 m, tide plus storm, T27) stays
+  in Part 2 after the 1857 sentence. NOTE for whoever integrates sea-level: ssh.html's "lifts Sydney's
+  sea about 1 m twice a day" clashes with this chapter's "the Moon doesn't lift the sea"; reword it
+  to "raises and lowers Sydney's sea by about 1 m twice a day";
+  waves.html#bounce becomes point-and-wall.html#bounce after the split.
+  Every number in the prose comes from scratchpad/results/tides.json, using only claims no
+  verifier marked wrong or unsupported, in their corrected wording.
+-->
+<style>
+  /* ── copied VERBATIM from waves.html (only the rules these sections use) ── */
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8795; --faint:#8fb0bb;
+    --sun:#e0982f; --ocean:#0a7ea4; --deep:#0b4f6c;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66);
+    --radius:14px;
+    /* chart series — validated (dataviz validate_palette, light, surface #fbf6ec): all pass */
+    --s7:#c2780f; --s10:#0a7ea4; --s13:#5b4bb0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--cream);
+    background-image:radial-gradient(120% 55% at 50% 0,#fff 0,rgba(255,255,255,0) 60%),linear-gradient(180deg,var(--cream2),var(--cream2));
+    background-attachment:fixed;
+    color:var(--text);
+    font-family:'Newsreader',Georgia,serif; font-weight:400;
+    font-size:19px; line-height:1.62;
+    padding:0 0 64px;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:0 18px}
+  h1,h2,h3{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink)}
+  .eyebrow,.mono,.back-link,.fig-cap,.ctl label,.out-k,.src li{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:6px}
+  section{margin-top:44px; scroll-margin-top:16px}
+  h2{font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  p{margin:0 0 14px}
+  strong{font-weight:500; color:var(--ink)}
+  .num{font-family:'DM Mono',monospace; font-size:.86em; color:var(--deep); white-space:nowrap}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0}
+  .rule{border-left:3px solid var(--sun); padding:2px 0 2px 14px; margin:18px 0; font-style:italic; color:var(--ink)}
+  .fig{margin:16px 0}
+  .fig-cap{font-size:12.5px; line-height:1.5; color:var(--dim); margin-top:8px}
+  canvas{display:block; width:100%; border-radius:12px}
+  .seg{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px}
+  .seg button{font-family:'DM Mono',monospace; font-size:12.5px; border:1px solid var(--border); background:#fff;
+    color:var(--deep); border-radius:999px; padding:7px 12px; cursor:pointer; min-height:36px}
+  .seg button[aria-pressed=true]{background:var(--deep); color:#fff; border-color:var(--deep)}
+  .src{list-style:none; font-size:12.5px; line-height:1.55}
+  .src li{margin:0 0 8px; word-break:break-word}
+  .src a{color:var(--deep)}
+
+  /* ── NEW CSS for the tides chapter ── */
+  /* the painted illustration above figure 1 (width/height attributes stop the layout jumping) */
+  .ill-img{display:block; width:100%; height:auto; border-radius:var(--radius); border:1px solid var(--border); background:#fbf5e6}
+  /* a link inside the prose (waves.html has none yet) */
+  section p a{color:var(--deep); text-underline-offset:2px}
+</style>
+<link rel="stylesheet" href="ocean-progress.css">
+</head>
+<body>
+<main class="wrap">
+
+<section id="tides">
+  <div class="eyebrow">Part 1</div>
+  <h2>Why there are two high tides a day</h2>
+  <p>The Moon pulls on the whole Earth, but not evenly. Its pull weakens with distance, so the side of the Earth facing the Moon is pulled a little more than the middle, and the middle a little more than the far side.</p>
+  <p>The Earth and the Moon are falling around each other (that's what orbiting means), so only the <strong>differences</strong> count. And the differences <strong>stretch</strong> the Earth along the line to the Moon, like dough pulled harder at the front than at the back.</p>
+  <p>The stretch is tiny: about a ten-millionth of the Earth's own gravity. It could never lift the sea straight up. But sideways nothing holds the water back, so that small nudge, working across thousands of kilometres, slides the ocean into <strong>two humps</strong>: one facing the Moon and one on the far side.</p>
+  <div class="fig">
+    <img class="ill-img" src="data:image/webp;base64,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" width="1200" height="670" alt="Painted illustration: the Earth seen from above a pole, wrapped in a layer of ocean that is stretched into two equal humps, one pointing at the Moon on the right and one on the far side. The layer is thinnest at the top and bottom. Not to scale.">
+    <div class="fig-cap">The ocean stretched into two humps, seen from above a pole. Not to scale: the real humps are far too small to draw.</div>
+  </div>
+  <p>The Earth turns under the two humps once a day, so Manly passes through both: <strong>two high tides and two low tides</strong>. The spin doesn't make the humps. It just carries us through them.</p>
+  <p>Meanwhile the Moon moves on along its orbit, the same way the Earth turns, so each day Manly has to turn about 50 minutes more to catch it up: the tide comes, on average, about <strong>50 minutes later each day</strong>.</p>
+  <div class="fig card">
+    <canvas id="tideCv" role="img" aria-label="Diagram seen from above the South Pole, not to scale: the Earth wrapped in an ocean layer stretched into two humps, one towards the Moon and one on the far side. Small arrows show the stretch sliding water sideways into the humps. A curved arrow shows the Earth turning clockwise, once a day. A marker for Manly turns with it through both humps, a purple bar shows the water over Manly, and a curve below draws that ideal tide over the day. The curve goes high, low, high, low and high again after 24 hours 50 minutes: about 50 minutes more than a full day, because the Moon has moved on along its orbit. In the real ocean, Sydney’s high tide comes about 8 and a half hours after the Moon is highest or lowest."></canvas>
+    <div class="seg" role="group" aria-label="Where the Sun is">
+      <button type="button" data-tide="moon" aria-pressed="true">Moon only</button>
+      <button type="button" data-tide="spring" aria-pressed="false">Full or new moon</button>
+      <button type="button" data-tide="neap" aria-pressed="false">Half moon</button>
+    </div>
+    <div class="fig-cap" id="tideCap" aria-live="polite">Manly turns through both humps: two highs, two lows. The Moon moves on, so the next day&rsquo;s high comes about 50 minutes later. In the real ocean, Sydney&rsquo;s high comes about 8&frac12; hours later (see below).</div>
+  </div>
+  <p>The Sun stretches the ocean too. It pulls on the Earth about 179 times harder than the Moon does, yet stretches it less than half as much (<span class="num">46%</span>), because it is about 390 times further away, and the stretch fades with distance much faster than the pull does.</p>
+  <p>At new moon and full moon the Sun and Moon line up with the Earth. Their stretches add (a stretch works both ways, so it doesn't matter which side the Sun is on): higher highs <em>and</em> lower lows. These are <strong>spring tides</strong>, nothing to do with the season. At half moon the Sun stretches at right angles to the Moon and partly cancels it: <strong>neap tides</strong>, with lower highs and higher lows. Spring tides come about every two weeks.</p>
+  <p>The two humps are where the story starts, not what the real ocean does. Continents are in the way, and the ocean is too shallow for a tide wave to race round the world with the Moon: it would need about <span class="num">1,600 km/h</span>, but in water 4 km deep a wave travels about <span class="num">700 km/h</span>. So each ocean sloshes in its own giant pattern, and that pattern, not where the Moon is, sets when high tide reaches each beach.</p>
+  <p>At Sydney, high tide comes about <span class="num">8&frac12; hours</span> after the Moon is highest in the sky, or lowest, under our feet. (From here the Moon is never straight overhead.)</p>
+  <p class="rule">The Moon doesn't lift the sea. It stretches it, and Manly turns through the stretch twice a day.</p>
+</section>
+
+<section id="manly-tide">
+  <div class="eyebrow">Part 2</div>
+  <h2>What the tide does at Manly</h2>
+  <p>There's no tide gauge in Cabbage Tree Bay. The longest record nearby is at Fort Denison, the little fort on an island in Sydney Harbour, where sea level has been measured since 1857. The highest water measured there, <span class="num">2.40 m</span> in May 1974, was a big tide with a storm on top.</p>
+  <p>The official 2023&ndash;24 tide tables list The Spit and Pittwater as NIL: no difference from Fort Denison's times within the table's quarter-hour steps. So Manly's tides come at about Fort Denison's times. The heights should be close too, but we could find no published check.</p>
+  <p>At the South Steyne ramp, and round the bay past Fairy Bower to Shelly Beach, the tide changes the depth over the sand, rocks and reef: by about a metre on a typical day, and by up to about <span class="num">2 m</span> on the biggest. A wave breaks when its height reaches roughly three-quarters of the depth, so at low tide the same swell breaks further out, over shallows and rocks that high tide covers.</p>
+  <p>Along Marine Parade, high tide lets the waves reach the sandstone sea wall, and they bounce back. At low tide they spend their energy on the sand and rocks first: see <a href="https://app.viz.net.au/Manly-Swim/waves.html#bounce">Bouncing back</a>.</p>
+  <p>Our own analysis of 19 years of hourly Fort Denison readings (2003 to 2021) splits the tide into regular parts. The biggest, the Moon's twice-a-day part, swings the sea about half a metre either side of average. Next come a once-a-day part and the Sun's twice-a-day part, each about a quarter to a third the size of the Moon's, then smaller ones.</p>
+  <p>Almost every day has two highs, and the once-a-day parts make them <strong>different heights</strong>: typically by about <span class="num">30 cm</span>, and by up to about <span class="num">70 cm</span>, because the Moon and Sun spend part of the time north or south of the equator.</p>
+  <p>By the theory in Part 1, the Sun should add almost half as much as the Moon; here it adds only about a quarter, because the ocean sloshes differently to the Sun's 12-hour beat than to the Moon's 12 hours 25 minutes. So spring tides rise and fall about <span class="num">1.25 m</span> and neaps about <span class="num">0.75 m</span>: less than twice as much. And mainly because the Sun's part nudges each high earlier or later, the day-to-day delay is usually 35 to 70 minutes, not exactly 50.</p>
+  <div class="fig card">
+    <canvas id="fortCv" role="img" aria-label="Chart of an example two weeks of tide at Manly, worked out from Fort Denison records, with no dates. The water rises and falls twice a day, with big swings around day 4 (spring tides) and small ones around day 13 (neap tides). Heights are on the tide-table scale, whose 0 is not the sea floor."></canvas>
+    <div class="seg" role="group" aria-label="What to show">
+      <button type="button" data-fort="two" aria-pressed="true">Two weeks</button>
+      <button type="button" data-fort="spring" aria-pressed="false">Close-up: spring tides</button>
+      <button type="button" data-fort="neap" aria-pressed="false">Close-up: neap tides</button>
+    </div>
+    <div class="fig-cap" id="fortCap" aria-live="polite">Fort Denison&rsquo;s tide for an example fortnight, no dates: big swings around day 4 (spring tides), small ones around day 13 (neap tides). Not a forecast.</div>
+  </div>
+  <p>The curve adds up 14 regular parts from our analysis, each at its 2003&ndash;2021 average strength, on that period's average sea level (in 2021 to 2025 the yearly average sat about 5 to 10 cm higher). It's an example, not a forecast: for real dates, use a tide table.</p>
+  <p>The tide table's 0 m is not the sea floor, nor the average sea level, which sits about a metre above it: it's about the lowest the predicted tide gets in ordinary weather. Weather moves the real sea too, higher or lower than the table says (more in <a href="sea-level.html#manly">The ocean isn&rsquo;t flat</a>).</p>
+  <p>The year's biggest tides, which people call king tides, come when a spring tide lines up with the Moon at its closest, and are worked out years ahead. Sydney's biggest highs come on winter evenings and summer mornings (which season wins changes from year to year), its lowest lows on summer afternoons and before dawn in winter and early spring.</p>
+  <p>Filling and emptying Cabbage Tree Bay moves water only millimetres a second. We could find no measurements of currents in the bay, and the ones swimmers notice are mostly driven by waves and wind.</p>
+  <p class="rule">The tide doesn't change the swell. It changes how deep the water is where the swell arrives.</p>
+</section>
+
+<ul class="src">
+  <li><a href="https://butikov.itmo.ru/Planets/Tides.pdf">Butikov &mdash; A dynamical picture of the oceanic tides (Am. J. Phys. 70, 2002)</a></li>
+  <li><a href="https://arxiv.org/abs/1506.04085v1">Matsuda, Isaka &amp; Boffin &mdash; Confusion around the tidal force and the centrifugal force (2015)</a></li>
+  <li><a href="https://profmattstrassler.com/2023/10/27/what-really-causes-our-twice-daily-ocean-tides/">Strassler &mdash; What really causes our twice-daily ocean tides (2023)</a></li>
+  <li><a href="https://thenauticalalmanac.com/2019_Bowditch-_American_Practical_Navigator/Volume-_1/11-%20Part%209-%20Oceanography/Chapter%2035-%20Tides%20And%20Tidal%20Currents.pdf">Bowditch &mdash; American Practical Navigator, ch. 35: Tides and tidal currents (2019)</a></li>
+  <li><a href="https://oceanservice.noaa.gov/education/tutorial_tides/tides05_lunarday.html">NOAA &mdash; Tides tutorial: the lunar day</a></li>
+  <li><a href="https://geo.libretexts.org/Courses/American_Meteorological_Society/Introduction_to_Ocean_Sciences_(Segar)/10%3A_Tides/10.10%3A_Chapter_Summary">Segar &mdash; Introduction to Ocean Sciences, ch. 10: Tides</a></li>
+  <li><a href="https://media.bom.gov.au/social/blog/1603/explainer-king-tides/">Bureau of Meteorology &mdash; Explainer: king tides (2018, updated 2021)</a></li>
+  <li><a href="https://www.nsw.gov.au/sites/default/files/2023-06/nsw_tides_2023%E2%80%932024.pdf">Transport for NSW &mdash; NSW Tides 2023&ndash;2024 (Bureau of Meteorology predictions; time differences along the coast)</a></li>
+  <li><a href="https://www.portauthoritynsw.com.au/around-ports/sydney-harbour/see-and-do/history-tides-sydney-harbour">Port Authority of NSW &mdash; History of tides in Sydney Harbour</a></li>
+  <li><a href="https://johnmenadue.com/bruce-thom-king-tides-and-extreme-events">Bruce Thom &mdash; King tides and extreme events (Fort Denison records)</a></li>
+  <li><a href="https://oceanservice.noaa.gov/education/tutorial_tides/tides08_othereffects.html">NOAA &mdash; Tides tutorial: other effects (weather)</a></li>
+  <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.5%3A_Wave_breaking">Bosboom &amp; Stive &mdash; Coastal Dynamics: wave breaking</a></li>
+  <li><a href="https://en.wikipedia.org/wiki/Cabbage_Tree_Bay_Aquatic_Reserve">Wikipedia &mdash; Cabbage Tree Bay Aquatic Reserve (its area, for the bay-filling estimate)</a></li>
+  <li>Data: <a href="https://uhslc.soest.hawaii.edu/data/csv/rqds/pacific/hourly/h333a.csv">University of Hawaii Sea Level Center, Fort Denison (station 333), hourly sea level</a>, from Sydney Ports / Port Authority of NSW. The tide parts, ranges, day-to-day delays and the example fortnight are our own analysis of 2003&ndash;2021.</li>
+</ul>
+
+<div class="op-proto-view" style="max-width:720px;margin:28px auto;padding:0 16px"><p style="margin:0 0 8px"><a href="hub.html">&larr; All chapters (hub prototype)</a></p><div data-op-contents="chapter" data-op-chapter="tides"></div></div>
+</main>
+
+<script>
+(function () {
+'use strict';
+// ── waves.html shared helpers, copied VERBATIM (in a chapter page they come from ocean.js) ──
+var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ── Shared canvas runner (every animation below uses it) ────────────────────
+// Sizes a canvas for the device pixel ratio at a fixed CSS height, runs
+// draw(ctx, W, H, t) every frame while the canvas is on screen (t in seconds), pauses
+// off screen, and under prefers-reduced-motion draws one still frame (t = 0).
+// Returns { redraw } — call it after a control changes so a paused or still canvas
+// shows the new setting.
+function runCanvas(cv, height, draw) {
+  var ctx = cv.getContext('2d'), visible = false, raf = 0, t0 = performance.now(), W = 0;
+  function size() {
+    var dpr = window.devicePixelRatio || 1;
+    W = cv.clientWidth || 300;
+    cv.style.height = height + 'px';
+    cv.width = Math.round(W * dpr); cv.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function now() { return REDUCED ? 0 : (performance.now() - t0) / 1000; }
+  function frame() { draw(ctx, W, height, now()); if (!REDUCED && visible) raf = requestAnimationFrame(frame); }
+  function redraw() { if (REDUCED || !visible) draw(ctx, W, height, now()); }
+  size();
+  window.addEventListener('resize', function () { size(); redraw(); });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (es) {
+      var v = es[0].isIntersecting; if (v === visible) return;
+      visible = v; cancelAnimationFrame(raf);
+      if (visible && !REDUCED) raf = requestAnimationFrame(frame); else redraw();
+    }).observe(cv);
+  } else { visible = true; if (!REDUCED) raf = requestAnimationFrame(frame); }
+  draw(ctx, W, height, 0);
+  // A still frame drawn before DM Mono arrives would keep the fallback font for good
+  // (reduced motion, or a figure still off screen), so draw again once the fonts land.
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { redraw(); });
+  return { redraw: redraw };
+}
+
+// ══ NEW MODULES: the tides chapter (paste after the chapter prelude) ══════════════
+
+// ── small drawing helpers shared by the two tide figures ──
+var T_FONT = '500 12px "DM Mono", monospace', T_INK = '#0d2b3e', T_DEEP = '#0b4f6c', T_DIM = '#5f8795';
+var T_SUN = '#e0982f', T_MANLY = '#5b4bb0', D2R = Math.PI / 180;      // T_MANLY = --s13: Manly's marker, water bar and dot
+function tEase(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+function tMix(a, b, e) { return a + (b - a) * e; }
+function tText(ctx, s, x, y, align, col, a) {             // a label with the cream halo
+  if (!(a > 0.02)) return;
+  ctx.globalAlpha = Math.min(1, a); ctx.font = T_FONT; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = 'rgba(251,246,236,.9)'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeText(s, x, y);
+  ctx.fillStyle = col || T_INK; ctx.fillText(s, x, y);
+  ctx.globalAlpha = 1;
+}
+function tRrect(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function tTag(ctx, s, x, y, align, col, a) {              // a label on a soft cream tag
+  if (!(a > 0.02)) return;
+  ctx.font = T_FONT;
+  var w = ctx.measureText(s).width, x0 = align === 'right' ? x - w : (align === 'center' ? x - w / 2 : x);
+  ctx.globalAlpha = Math.min(1, a); ctx.fillStyle = 'rgba(251,246,236,.92)';
+  tRrect(ctx, x0 - 5, y - 13, w + 10, 18, 9); ctx.fill(); ctx.globalAlpha = 1;
+  tText(ctx, s, x, y, align, col, a);
+}
+function tWidth(ctx, s) { ctx.font = T_FONT; return ctx.measureText(s).width; }
+function tArrow(ctx, x0, y0, x1, y1, col, a, lw) {        // a straight arrow from (x0, y0) to (x1, y1)
+  var dx = x1 - x0, dy = y1 - y0, L = Math.sqrt(dx * dx + dy * dy); if (L < 1) return;
+  var ux = dx / L, uy = dy / L, hl = Math.min(5, L * 0.55);
+  ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw || 1.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - ux * hl * 0.7, y1 - uy * hl * 0.7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - ux * hl - uy * hl * 0.6, y1 - uy * hl + ux * hl * 0.6);
+  ctx.lineTo(x1 - ux * hl + uy * hl * 0.6, y1 - uy * hl - ux * hl * 0.6); ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+function tGap(ctx, x0, x1, y, r1, col, a) {               // a 2 px double-headed arrow from a line at x0 to a dot (radius r1) at x1;
+  if (!(a > 0.02)) return;                                // a gap too narrow for heads between gets them outside, pointing in
+  var s = x1 >= x0 ? 1 : -1, e1 = x1 - s * r1, m = (x0 + e1) / 2;
+  if (Math.abs(e1 - x0) >= 16) { tArrow(ctx, m, y, x0, y, col, a, 2); tArrow(ctx, m, y, e1, y, col, a, 2); return; }
+  tArrow(ctx, x0 - s * 11, y, x0, y, col, a, 2); tArrow(ctx, x1 + s * (r1 + 11), y, x1 + s * r1, y, col, a, 2);
+  ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'butt';
+  ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.globalAlpha = 1;
+}
+
+// ── Why two tides a day: the Moon's stretch, seen from above the South Pole (Part 1) ──────
+// PHYSICS. The Moon pulls the near side of the Earth a little more than the middle, and the
+// middle a little more than the far side. The Earth and the Moon fall around each other (round a
+// shared balance point inside the Earth), so only those DIFFERENCES act on the ocean, and they
+// stretch it along the Earth-Moon line. The stretching part is about a ten-millionth of g: useless
+// for lifting water, but its SIDEWAYS part (the tractive force) slides the ocean towards the points
+// under and opposite the Moon. The drawing is the classic equilibrium tide: round the Earth the
+// ocean surface follows
+//     h(θ) = cos 2(θ − θMoon) + s · cos 2(θ − θSun)        (units of the Moon's tide)
+// with θ the angle round the Earth seen from above the pole and s = 0.46 the Sun's stretch as a
+// share of the Moon's (Bowditch; Segar). The arrows are its sideways push, ∝ dh/dθ: nothing under
+// or opposite the Moon, or at right angles to it; strongest in between. No centrifugal force
+// anywhere: the far hump is there because the far side is pulled LESS than the middle.
+// FRAME. Seen from above the SOUTH Pole (Manly is at 34° S), with the Sun's direction held still.
+// The Earth turns clockwise once in 24 h (the thin arrow under the globe, "turns once a day"); the
+// Moon creeps clockwise round its orbit once a synodic month (29.53 d); so Manly faces the Moon
+// again after 24 h ÷ (1 − 1/29.53) = 24.84 h, i.e. 24 h 50 min: the 50 minutes. The purple bar is
+// the water over Manly (keyed bottom left) and the curve plots it in time. The Moon's day of
+// travel is centred on screen right (6.3° above it to 6.3° below), which keeps its label clear of
+// the spin arrow's. The Moon is drawn as its face looks from the Earth, lit on the Sun's side: all
+// lit at full moon, half lit at half moon, plain with no Sun (seen from above the pole a full moon
+// would be half dark, which reads as the wrong phase).
+// SCHEMATIC, NOT MODELLED: nothing is to scale; the humps are hugely exaggerated; Manly is drawn
+// on the rim (at 34° S it really sits inside the disc in this view); the Sun is off the edge, far
+// away. The spring and neap states use the THEORETICAL 0.46 (at Sydney the Sun's twice-a-day part
+// is only ~0.25 of the Moon's: Part 2). Real oceans don't hold neat humps, so the curve is tagged
+// IDEAL: it peaks when Manly faces the Moon, while Sydney's real high comes ~8½ h after the Moon is
+// highest or lowest (the Moon-only caption and the prose say so). Under reduced motion: one still
+// frame at the end of a full lunar day: the curve complete, Manly back under the Moon, the Moon's
+// day of travel traced.
+(function twoTides() {
+  var cv = document.getElementById('tideCv'); if (!cv) return;
+  var cap = document.getElementById('tideCap');
+  var btns = [].slice.call(document.querySelectorAll('[data-tide]'));
+
+  // --- pure maths (tested in node: test_tides.js) ---
+  var SYN = 29.530589, LDAY = 24 / (1 - 1 / SYN);         // synodic month (d); lunar day (h) = 24.84
+  var WE = 360 / 24, WM = 360 / (SYN * 24);               // deg per hour, clockwise, the Sun's direction held still
+  var SUN_S = 0.46;                                       // the Sun's stretch as a share of the Moon's (theory)
+  var DAY_S = 9, HOLD_S = 3.6, FADE_S = 0.5;              // seconds: one lunar day; hold at its end; fade
+  // The ocean surface (units of the Moon's tide) th degrees round the Earth, with the Moon at thm and the
+  // Suns in V = { sA, dA, sB, dB } (each one's stretch and direction); and its sideways push (+ = clockwise).
+  function surf(th, thm, V) {
+    return Math.cos(2 * (th - thm) * D2R) + V.sA * Math.cos(2 * (th - V.dA) * D2R) + V.sB * Math.cos(2 * (th - V.dB) * D2R);
+  }
+  function push(th, thm, V) {
+    return -(Math.sin(2 * (th - thm) * D2R) + V.sA * Math.sin(2 * (th - V.dA) * D2R) + V.sB * Math.sin(2 * (th - V.dB) * D2R));
+  }
+  // The day's clock, u seconds into a loop: h, the hours of lunar day drawn so far; a, the fade at the loop's end.
+  function clock(u) {
+    var cyc = DAY_S + HOLD_S + FADE_S; u = ((u % cyc) + cyc) % cyc;
+    return { h: Math.min(LDAY, u / DAY_S * LDAY), a: u > DAY_S + HOLD_S ? Math.max(0, 1 - (u - DAY_S - HOLD_S) / FADE_S) : 1 };
+  }
+  // --- end pure maths ---
+
+  var HC = 300, EP = 196, CY = 82, YC = 256, SC = 17.5, YAX = 286;   // canvas height; Earth panel bottom; Earth's centre; curve mean line; px per Moon tide; time axis (CSS px)
+  var HRS = 26, TWEEN = 0.9, SPIN = [70, 112];            // hours on the time axis; state tween (s); the spin arrow's ends (deg clockwise from screen right)
+  var TH0 = -WM * LDAY / 2;                               // the Moon's day of travel is centred on screen right: it starts 6.3° above and ends 6.3° below
+  var STATES = {                                          // s: Sun's stretch; sd: Sun's direction (deg clockwise from screen right)
+    moon:   { s: 0,     sd: 180, moon: 'Moon' },
+    spring: { s: SUN_S, sd: 180, moon: 'full moon' },
+    neap:   { s: SUN_S, sd: 270, moon: 'half moon' }
+  };
+  var st = 'moon', A = null, B = null, tw0 = 0, loop0 = 0, restart = true, V = null, GEO = null;
+
+  // ── state, tweened: the old Sun's stretch fades out as the new one fades in ──
+  function snap(k) { return { key: k, s: STATES[k].s, sd: STATES[k].sd }; }
+  function view() {
+    var e = REDUCED ? 1 : tEase(Math.min(1, (performance.now() - tw0) / (TWEEN * 1000)));
+    var sA = A.key === B.key ? 0 : A.s * (1 - e), sB = A.key === B.key ? B.s : B.s * e;
+    return { e: e, sA: sA, dA: A.sd, sB: sB, dB: B.sd, sun: (sA + sB) / SUN_S };
+  }
+  function clockNow(t) {                                  // the clock on screen: held at the day's end under reduced motion
+    if (REDUCED) return { h: LDAY, a: 1 };
+    if (restart) { loop0 = t; restart = false; }
+    return clock(t - loop0);
+  }
+  function geo(W) {
+    if (GEO && GEO.W === W) return GEO;
+    var R = Math.max(34, Math.min(40, W * 0.15)), top = -9, th, thm, k;
+    var cx = Math.round(Math.max(1.9 * R + 28, W * 0.4)), mxx = Math.min(W - 16, cx + 240);
+    var g = { W: W, R: R, base: 0.46 * R, amp: 0.3 * R, cx: cx, cy: CY, rho: mxx - cx, mr: W < 360 ? 8 : 10 };
+    // the spin arrow rides just clear of the water all along its length, in any state at any time of the day
+    var ALL = [{ sA: 0, dA: 0, sB: 0, dB: 0 }, { sA: 0, dA: 0, sB: SUN_S, dB: 180 }, { sA: 0, dA: 0, sB: SUN_S, dB: 270 }];
+    for (th = SPIN[0]; th <= SPIN[1]; th += 2) for (thm = TH0; thm <= TH0 + WM * LDAY + 1e-6; thm += WM * LDAY / 4)
+      for (k = 0; k < 3; k++) top = Math.max(top, surf(th, thm, ALL[k]));
+    g.rs = R + g.base + g.amp * top + 6;
+    return (GEO = g);
+  }
+
+  // ── words: caption and canvas label ──
+  function words() {
+    var s;
+    if (st === 'moon') s = 'Manly turns through both humps: two highs, two lows. The Moon moves on, so the next day’s high comes about 50 minutes later. In the real ocean, Sydney’s high comes about 8½ hours later (see below).';
+    else if (st === 'spring') s = 'Full moon: the Sun is on the far side, but a stretch works both ways, so the two stretches add: higher highs, lower lows (spring tides). At new moon they add too.';
+    else s = 'Half moon: the Sun stretches at right angles to the Moon and partly cancels it: lower highs, higher lows (neap tides).';
+    if (cap) cap.textContent = s;
+    var base = 'Diagram seen from above the South Pole, not to scale: the Earth wrapped in an ocean layer stretched into two humps, one towards the Moon and one on the far side. ' +
+      'Small arrows show the stretch sliding water sideways into the humps. A curved arrow shows the Earth turning clockwise, once a day. A marker for Manly turns with it through both humps, ' +
+      'a purple bar shows the water over Manly, and a curve below draws that ideal tide over the day. ';
+    if (st === 'moon') base += 'The curve goes high, low, high, low and high again after 24 hours 50 minutes: about 50 minutes more than a full day, because the Moon has moved on along its orbit. ' +
+      'In the real ocean, Sydney’s high tide comes about 8 and a half hours after the Moon is highest or lowest.';
+    else if (st === 'spring') base += 'The Sun is off to the left, on the far side of the Earth from the Moon, which is full: its whole face is lit. The Sun’s stretch adds to the Moon’s: taller humps, ' +
+      'thinner sides, and a curve that swings higher and lower than the dashed Moon-only curve. These are spring tides.';
+    else base += 'The Sun is off the top, at right angles to the Moon, which is half lit. The Sun’s stretch partly cancels the Moon’s: smaller humps, and a curve that swings less than the dashed Moon-only curve. These are neap tides.';
+    cv.setAttribute('aria-label', base);
+  }
+
+  // ── pieces ──
+  function edgePoint(W, cx, cy, deg) {                    // where a ray from the Earth leaves the Earth panel
+    var dx = Math.cos(deg * D2R), dy = Math.sin(deg * D2R), k = 1e9;
+    if (dx < -1e-6) k = Math.min(k, -cx / dx);
+    if (dx > 1e-6) k = Math.min(k, (W - cx) / dx);
+    if (dy < -1e-6) k = Math.min(k, -cy / dy);
+    if (dy > 1e-6) k = Math.min(k, (EP - cy) / dy);
+    return { x: cx + dx * k, y: cy + dy * k };
+  }
+  function sunGlyph(ctx, p, a) {                          // the Sun, far off the edge: a disc and rays
+    if (!(a > 0.02)) return;
+    ctx.globalAlpha = a; ctx.strokeStyle = T_SUN; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    for (var i = 0; i < 12; i++) {
+      var q = (i * 30 + 15) * D2R;
+      ctx.beginPath(); ctx.moveTo(p.x + Math.cos(q) * 16, p.y + Math.sin(q) * 16); ctx.lineTo(p.x + Math.cos(q) * 21, p.y + Math.sin(q) * 21); ctx.stroke();
+    }
+    var g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 13);
+    g.addColorStop(0, '#fff1cf'); g.addColorStop(1, '#f0b152');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(p.x, p.y, 13, 0, 2 * Math.PI); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  function sunLabel(ctx, p, a) {
+    if (p.x < 1) tText(ctx, 'Sun', 4, p.y - 26, 'left', '#9a5b08', a);        // on the left edge: above it
+    else if (p.y < 1) tText(ctx, 'Sun', p.x + 26, 15, 'left', '#9a5b08', a);   // on the top edge: beside it
+  }
+  function moonFace(ctx, x, y, r, thm, sd, a) {           // the Moon's face as seen from the Earth, lit on the Sun's side
+    if (!(a > 0.02)) return;
+    var dd = (sd - thm) * D2R, cE = Math.cos(dd), u = (thm + (Math.sin(dd) < 0 ? -90 : 90)) * D2R;
+    var ux = Math.cos(u), uy = Math.sin(u), i, ph;
+    function edge(from, to) {                             // the terminator, a half-ellipse r·|cos E| wide (E: the Sun-Earth-Moon angle)
+      for (i = 0; i <= 16; i++) {
+        ph = (from + (to - from) * i / 16) * D2R;
+        ctx.lineTo(x + r * (cE * Math.cos(ph) * ux - Math.sin(ph) * uy), y + r * (cE * Math.cos(ph) * uy + Math.sin(ph) * ux));
+      }
+    }
+    ctx.globalAlpha = a;
+    ctx.beginPath(); ctx.arc(x, y, r, u - Math.PI / 2, u + Math.PI / 2); edge(90, -90); ctx.closePath();
+    ctx.fillStyle = '#fff3c4'; ctx.fill();                // lit: the Sun's half of the rim, closed by the terminator
+    ctx.beginPath(); ctx.arc(x, y, r, u + Math.PI / 2, u + 1.5 * Math.PI); edge(-90, 90); ctx.closePath();
+    ctx.fillStyle = '#8d969c'; ctx.fill();                // dark: the other half, closed by the terminator
+    ctx.globalAlpha = 1;
+  }
+  function spinArc(ctx, g) {                              // the Earth's spin: a thin clockwise arrow under the globe, just clear of the water
+    var a0 = SPIN[0] * D2R, a1 = SPIN[1] * D2R, ex = g.cx + g.rs * Math.cos(a1), ey = g.cy + g.rs * Math.sin(a1);
+    var tx = -Math.sin(a1), ty = Math.cos(a1), hl = 6, hw = 3.4;
+    ctx.globalAlpha = 0.8; ctx.strokeStyle = T_INK; ctx.fillStyle = T_INK; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(g.cx, g.cy, g.rs, a0, a1 - hl / g.rs); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(ex - tx * hl - ty * hw, ey - ty * hl + tx * hw);
+    ctx.lineTo(ex - tx * hl + ty * hw, ey - ty * hl - tx * hw); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  function draw(ctx, W, H, t) {
+    V = view();
+    var c = clockNow(t), h = c.h, g = geo(W), cx = g.cx, cy = g.cy, R = g.R, i, k, th, r, x, y;
+    var thm = TH0 + WM * h, phi = TH0 + WE * h;           // the Moon and Manly, degrees clockwise from screen right
+    var same = A.key === B.key, la = same ? 0 : Math.max(0, 1 - 2 * V.e), lb = same ? 1 : Math.max(0, 2 * V.e - 1);
+    var aSunA = V.sA / SUN_S, aSunB = V.sB / SUN_S;
+    ctx.clearRect(0, 0, W, H);
+
+    // ── Earth panel ──
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, EP); ctx.clip();
+    // the Sun(s), far off the edge
+    var pA = edgePoint(W, cx, cy, V.dA), pB = edgePoint(W, cx, cy, V.dB);
+    sunGlyph(ctx, pA, aSunA); sunGlyph(ctx, pB, aSunB);
+    // the Moon's orbit (dotted), and how far it has gone today
+    var rho = g.rho;
+    ctx.setLineDash([2, 5]); ctx.strokeStyle = 'rgba(95,135,149,.55)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(cx, cy, rho, (TH0 - 24) * D2R, TH0 * D2R); ctx.stroke(); ctx.setLineDash([]);
+    if (thm - TH0 > 0.5) {
+      ctx.globalAlpha = c.a; ctx.strokeStyle = T_DIM; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(cx, cy, rho, TH0 * D2R, thm * D2R); ctx.stroke();
+      ctx.setLineDash([2, 3]); ctx.strokeStyle = 'rgba(95,135,149,.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(cx + rho * Math.cos(TH0 * D2R), cy + rho * Math.sin(TH0 * D2R), g.mr, 0, 2 * Math.PI); ctx.stroke(); ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+    // the ocean layer: the stretched surface, all the way round
+    ctx.beginPath();
+    for (k = 0; k <= 180; k++) {
+      th = k * 2; r = R + g.base + g.amp * surf(th, thm, V);
+      x = cx + r * Math.cos(th * D2R); y = cy + r * Math.sin(th * D2R);
+      if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.closePath();
+    var wg = ctx.createRadialGradient(cx, cy, R, cx, cy, R + g.base + g.amp * 1.5);
+    wg.addColorStop(0, '#86c0d4'); wg.addColorStop(1, '#d4ecf3');
+    ctx.fillStyle = wg; ctx.fill(); ctx.strokeStyle = 'rgba(11,79,108,.6)'; ctx.lineWidth = 1.4; ctx.stroke();
+    // the globe, a polar cap, and soft painted swirls that turn with it
+    var gg = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.25, R * 0.1, cx, cy, R);
+    gg.addColorStop(0, '#74b3bd'); gg.addColorStop(0.6, '#3f8a9b'); gg.addColorStop(1, '#2b6880');
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.fill();
+    ctx.lineCap = 'round';
+    [[0.78, 10, 80, 'rgba(120,172,118,.5)', 5], [0.55, 150, 75, 'rgba(120,172,118,.42)', 4.5], [0.7, 245, 60, 'rgba(206,232,238,.35)', 4],
+     [0.42, 300, 70, 'rgba(120,172,118,.38)', 4]].forEach(function (s) {
+      ctx.strokeStyle = s[3]; ctx.lineWidth = s[4];
+      ctx.beginPath(); ctx.arc(cx, cy, R * s[0], (phi + s[1]) * D2R, (phi + s[1] + s[2]) * D2R); ctx.stroke();
+    });
+    var pc = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.3);
+    pc.addColorStop(0, 'rgba(255,255,255,.95)'); pc.addColorStop(0.55, 'rgba(255,255,255,.7)'); pc.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = pc; ctx.beginPath(); ctx.arc(cx, cy, R * 0.3, 0, 2 * Math.PI); ctx.fill();
+    ctx.strokeStyle = 'rgba(13,43,62,.55)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 2 * Math.PI); ctx.stroke();
+    // the Earth's spin, clockwise in this view
+    spinArc(ctx, g);
+    // the stretch's sideways push, fixed to the Moon and Sun, not to the turning Earth
+    for (k = 1; k < 16; k++) {
+      if (k % 4 === 0) continue;
+      th = thm + k * 22.5;
+      var p = push(th, thm, V), m = Math.abs(p); if (m < 0.06) continue;
+      var thick = g.base + g.amp * surf(th, thm, V), rr = R + Math.max(3, thick * 0.45), L = 3 + 6.5 * m, dir = p > 0 ? 1 : -1;
+      var px = cx + rr * Math.cos(th * D2R), py = cy + rr * Math.sin(th * D2R), tx = -Math.sin(th * D2R) * dir, ty = Math.cos(th * D2R) * dir;
+      tArrow(ctx, px - tx * L / 2, py - ty * L / 2, px + tx * L / 2, py + ty * L / 2, T_DEEP, 0.9, 1.4);
+    }
+    // Manly: a hand from the pole, the marker on the rim, and the water over it (the tide)
+    var cp = Math.cos(phi * D2R), sp = Math.sin(phi * D2R), rw = R + g.base + g.amp * surf(phi, thm, V);
+    ctx.strokeStyle = 'rgba(91,75,176,.55)'; ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx + cp * R * 0.32, cy + sp * R * 0.32); ctx.lineTo(cx + cp * (R - 5), cy + sp * (R - 5)); ctx.stroke();
+    ctx.strokeStyle = T_MANLY; ctx.lineWidth = 3.6; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(cx + cp * (R + 2), cy + sp * (R + 2)); ctx.lineTo(cx + cp * (rw - 1), cy + sp * (rw - 1)); ctx.stroke();
+    ctx.fillStyle = T_MANLY; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(cx + cp * R, cy + sp * R, 4.2, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    // the Moon, its face as seen from the Earth
+    var mx = cx + rho * Math.cos(thm * D2R), my = cy + rho * Math.sin(thm * D2R);
+    ctx.fillStyle = '#e6e4dc'; ctx.beginPath(); ctx.arc(mx, my, g.mr, 0, 2 * Math.PI); ctx.fill();
+    moonFace(ctx, mx, my, g.mr, thm, V.dA, aSunA); moonFace(ctx, mx, my, g.mr, thm, V.dB, aSunB);
+    ctx.strokeStyle = 'rgba(13,43,62,.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(mx, my, g.mr, 0, 2 * Math.PI); ctx.stroke();
+    // labels, and the key: Manly top left; its water, and how to read the picture, bottom left
+    ctx.fillStyle = T_MANLY; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(12, 14, 4.2, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    tText(ctx, 'Manly', 21, 18, 'left', T_INK, 1);
+    [[STATES[A.key].moon, la], [STATES[B.key].moon, lb]].forEach(function (o) {
+      var w = tWidth(ctx, o[0]);
+      tText(ctx, o[0], Math.min(W - 4 - w / 2, mx), my + g.mr + 16, 'center', T_INK, o[1]);
+    });
+    sunLabel(ctx, pA, aSunA); sunLabel(ctx, pB, aSunB);
+    var sw = tWidth(ctx, 'turns once a day');
+    tText(ctx, 'turns once a day', Math.min(cx + g.rs * Math.cos(SPIN[0] * D2R) + 7, W - 6 - sw), cy + g.rs * Math.sin(SPIN[0] * D2R) + 5, 'left', T_INK, 1);
+    ctx.strokeStyle = T_MANLY; ctx.lineWidth = 3.6; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(12, EP - 33); ctx.lineTo(12, EP - 44); ctx.stroke();
+    tText(ctx, 'water over Manly', 21, EP - 34, 'left', T_INK, 1);
+    tText(ctx, 'seen from above the South Pole', 8, EP - 20, 'left', T_DIM, 1);
+    tText(ctx, 'ideal humps, not to scale', 8, EP - 6, 'left', T_DIM, 1);
+    ctx.restore();
+
+    // ── the ideal tide at Manly, as the Earth turns ──
+    var xL = 10, xR = W - 10;
+    function X(hr) { return xL + hr / HRS * (xR - xL); }
+    function val(hr) { return surf(TH0 + WE * hr, TH0 + WM * hr, V); }
+    ctx.strokeStyle = 'rgba(13,43,62,.12)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, EP + 0.5); ctx.lineTo(W, EP + 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(xL, YC + 0.5); ctx.lineTo(xR, YC + 0.5); ctx.stroke();       // the average level
+    tTag(ctx, 'ideal tide at Manly', 8, EP + 14, 'left', T_INK, 1);
+    if (V.sun > 0.02) {                                   // legend for the Moon-only reference, its dash kept clear of the tag
+      var lw = tWidth(ctx, 'Moon alone'), lx = W - 8 - lw, d0 = Math.max(lx - 22, 8 + tWidth(ctx, 'ideal tide at Manly') + 9);
+      ctx.globalAlpha = Math.min(1, V.sun); ctx.setLineDash([4, 3]); ctx.strokeStyle = T_DIM; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(d0, EP + 10); ctx.lineTo(lx - 5, EP + 10); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      tText(ctx, 'Moon alone', W - 8, EP + 14, 'right', T_DIM, V.sun);
+    }
+    // time axis
+    ctx.strokeStyle = 'rgba(13,43,62,.35)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(xL, YAX + 0.5); ctx.lineTo(xR, YAX + 0.5); ctx.stroke();
+    [0, 6, 12, 18, 24].forEach(function (hr) {
+      var xx = Math.round(X(hr)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(xx, YAX); ctx.lineTo(xx, YAX + 4); ctx.stroke();
+      tText(ctx, hr === 24 ? '24 h' : String(hr), hr === 0 ? xx - 1 : xx, 298, hr === 0 ? 'left' : 'center', T_DIM, 1);
+    });
+    // the Moon-only curve, dashed, for comparison
+    if (V.sun > 0.02) {
+      ctx.globalAlpha = Math.min(1, V.sun) * 0.9; ctx.setLineDash([4, 3]); ctx.strokeStyle = T_DIM; ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      for (x = xL; x <= X(LDAY) + 0.5; x++) { var hr0 = (x - xL) / (xR - xL) * HRS; y = YC - SC * Math.cos(2 * (WE - WM) * hr0 * D2R); if (x === xL) ctx.moveTo(x, y); else ctx.lineTo(x, y); }
+      ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    // the tide so far, drawn as the Earth turns
+    var n = Math.max(2, Math.ceil(h / 0.05)), hs = [], vs = [];
+    for (i = 0; i <= n; i++) { hs.push(h * i / n); vs.push(val(h * i / n)); }
+    ctx.globalAlpha = c.a; ctx.strokeStyle = T_DEEP; ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (i = 0; i <= n; i++) { if (i) ctx.lineTo(X(hs[i]), YC - SC * vs[i]); else ctx.moveTo(X(hs[i]), YC - SC * vs[i]); }
+    ctx.stroke(); ctx.globalAlpha = 1;
+    // name the first low and the middle high once the curve has drawn them (not a turn hugging either end)
+    var hi = -1, lo = -1;
+    for (i = 1; i < n; i++) {
+      if (hs[i] < 3 || hs[i] > LDAY - 3) continue;
+      if (vs[i] > vs[i - 1] && vs[i] >= vs[i + 1] && (hi < 0 || Math.abs(hs[i] - LDAY / 2) < Math.abs(hs[hi] - LDAY / 2))) hi = i;
+      if (vs[i] < vs[i - 1] && vs[i] <= vs[i + 1] && lo < 0) lo = i;
+    }
+    function clear(s, hr) {                               // a baseline just above both curves across the label's width
+      var w = tWidth(ctx, s) / 2 + 3, top = 1e9, x0, q;
+      for (x0 = X(hr) - w; x0 <= X(hr) + w; x0 += 1) {
+        q = (x0 - xL) / (xR - xL) * HRS;
+        if (q <= h) top = Math.min(top, YC - SC * val(q));
+        if (V.sun > 0.02 && q <= LDAY) top = Math.min(top, YC - SC * Math.cos(2 * (WE - WM) * q * D2R));
+      }
+      return top - 5;
+    }
+    if (hi > 0) tText(ctx, 'high', X(hs[hi]), clear('high', hs[hi]), 'center', T_DEEP, c.a);
+    if (lo > 0) tText(ctx, 'low', X(hs[lo]), clear('low', hs[lo]), 'center', T_DEEP, c.a);
+    // a full day is 24 h, but Manly meets the Moon again 50 minutes later
+    var a50 = (1 - Math.min(1, V.sun)) * c.a;
+    if (h >= LDAY - 1e-6 && a50 > 0.02) {
+      var x24 = Math.round(X(24)) + 0.5, xL5 = X(LDAY), yP = YC - SC * val(LDAY);
+      ctx.globalAlpha = a50; ctx.setLineDash([3, 3]); ctx.strokeStyle = T_DIM; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x24, yP - 9); ctx.lineTo(x24, YAX); ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = T_INK; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x24, yP - 4); ctx.lineTo(xL5, yP - 4); ctx.stroke();
+      ctx.globalAlpha = 1;
+      tText(ctx, '+50 min', W - 4, yP - 10, 'right', T_INK, a50);
+    }
+    // where Manly's tide is now
+    var yv = YC - SC * vs[n];
+    ctx.globalAlpha = c.a; ctx.fillStyle = T_MANLY; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(X(h), yv, 4.2, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+
+  A = B = snap(st);                                       // runCanvas draws at once: give it a state first
+  var rc = runCanvas(cv, HC, draw);
+  function set(k) {
+    var nb = snap(k);
+    if (REDUCED) A = nb;
+    else { var v = view(); A = v.e < 0.5 ? A : B; }       // an interrupted tween restarts from its nearer end
+    B = nb; tw0 = performance.now(); st = k; restart = true;
+    btns.forEach(function (o) { o.setAttribute('aria-pressed', o.getAttribute('data-tide') === k ? 'true' : 'false'); });
+    words(); rc.redraw();
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () { set(b.getAttribute('data-tide')); }); });
+  set(st);
+})();
+
+// ── An example fortnight at Manly: Fort Denison's tide, added back up from its parts (Part 2) ──
+// The curve is   h(t) = Z0 + Σ Aᵢ · cos(ωᵢ t + φᵢ)   (t in hours, h in metres)
+// over the 14 regular parts (constituents) of this project's own harmonic analysis of 19 years of
+// hourly Fort Denison readings (2003-2021, UHSLC station 333): M2, the Moon twice a day, 0.50 m;
+// K1 and O1, once a day; S2, the Sun twice a day; and so on. The amplitudes are the 2003-2021
+// averages (nodal factors set to 1; the mid-2020s K1 ×1.11 and O1 ×1.17 would make the two daily
+// highs more lopsided than in an average year). Z0 = 0.994 m is the 2003-2021 average sea level on
+// the Fort Denison gauge zero (≈ Lowest Astronomical Tide, the tide-table zero). The phases are the
+// research's set for 1 Jan 2026 00:00 AEST (synth_2026.json) moved on by speed × 21,216 h (884
+// days): that first fortnight held some of the biggest tides of the 19-year cycle, this one sits in
+// the middle of the range. Checked against the 2026-2044 prediction: its top high, 1.86 m, is the
+// median fortnight's (1.87 m); spring day 4, mean range 1.23 m, and neap day 13, 0.68 m, close to
+// the prose's typical 1.25 m and 0.75 m; lows down to 0.30 m; close-up delays 45 and 55 min, both
+// windows inside the 14 days; its two daily highs differ by 0.39 m at the median (80th percentile
+// of fortnights: on the lopsided side, within the prose's "up to about 70 cm"). It matches no real
+// date: the page shows NO dates or clock times and labels it an EXAMPLE, never a forecast
+// (do_not_say 19, 20).
+// Carried in the prose, not the chart: weather moves the real level; the 2021-25 yearly average
+// sat ~5-10 cm above Z0; Manly takes Fort Denison's times within the official table's quarter-hour
+// steps, and no published check of the heights was found.
+// Drawn: the curve over a 14-day window, or a 1.5-day close-up around the spring or the neap,
+// tweened between buttons, with a dot running along it so the water visibly goes up and down. The
+// water's fill fades out well above 0, which the two-week view notes is the tide-table zero, not
+// the sea floor. The labels are found on the curve itself: the spring and neap, each day's bigger
+// and smaller high (only when they differ by 15 cm or more; otherwise just "a high", as at this
+// neap), and that high's day-to-day delay (rounded to 5 min): a dotted line "a
+// day on", a dot on the next peak and a double-headed arrow between them. A new view's labels fade
+// in once the zoom has stopped (mid-zoom they would pile up). Under reduced motion: no running dot.
+(function fortnight() {
+  var cv = document.getElementById('fortCv'); if (!cv) return;
+  var cap = document.getElementById('fortCap');
+  var btns = [].slice.call(document.querySelectorAll('[data-fort]'));
+
+  // --- pure maths (tested in node: test_tides.js) ---
+  var EVEN = 0.15;                                        // m: below this the close-up just says "a high", not bigger/smaller
+  var Z0 = 0.994, STEP = 0.1, DAYS = 14, SHIFT_H = 21216; // average level (m); hours per sample; days drawn; phases moved on (h: 884 days)
+  var PARTS = [                                           // [name, amplitude m (2003-2021 average), speed deg/h, phase deg at the research's t = 0]
+    ['M2', 0.5007, 28.9841042, 188.5], ['K1', 0.1480, 15.0410686, 253.1], ['S2', 0.1238, 30.0, 99.0],
+    ['N2', 0.1121, 28.4397295, 195.7], ['O1', 0.0966, 13.9430356, 332.4], ['P1', 0.0441, 14.9589314, 233.4],
+    ['K2', 0.0372, 30.0821373, 315.9], ['Q1', 0.0230, 13.3986609, 352.9], ['MU2', 0.0209, 27.9682085, 277.8],
+    ['NU2', 0.0208, 28.5125832, 274.2], ['2N2', 0.0203, 27.8953548, 212.2], ['L2', 0.0140, 29.5284789, 10.0],
+    ['J1', 0.0099, 15.5854433, 237.0], ['T2', 0.0075, 29.9589333, 79.9]
+  ];
+  var PH = PARTS.map(function (p) { return ((p[3] + p[2] * SHIFT_H) % 360 + 360) % 360; });   // each phase moved on 884 days
+  function level(t) {                                     // metres on the tide-table zero, t hours into the example
+    var s = Z0;
+    for (var i = 0; i < PARTS.length; i++) s += PARTS[i][1] * Math.cos((PARTS[i][2] * t + PH[i]) * D2R);
+    return s;
+  }
+  function turn(LV, j) {                                  // a turning point of the sampled curve, refined on a parabola
+    var d = LV[j - 1] - 2 * LV[j] + LV[j + 1], o = d ? 0.5 * (LV[j - 1] - LV[j + 1]) / d : 0, tt = (j + o) * STEP;
+    return { t: tt, h: level(tt) };
+  }
+  function between(list, t0, t1) { return list.filter(function (o) { return o.t >= t0 && o.t <= t1; }); }
+  function closeUp(HI, t0) {                              // from just before t0: a bigger high, the smaller one after it,
+    var hs = between(HI, t0 - 30, t0 + 42), j, big = null, small = null, next = null;   // the next day's bigger high, the delay
+    for (j = 0; j < hs.length - 1; j++) if (hs[j].h > hs[j + 1].h) { big = hs[j]; small = hs[j + 1]; break; }
+    if (!big) return null;
+    hs.forEach(function (o) { if (!next || Math.abs(o.t - big.t - 24.84) < Math.abs(next.t - big.t - 24.84)) next = o; });
+    return { big: big, small: small, next: next, mins: Math.round((next.t - big.t - 24) * 12) * 5,
+      even: big.h - small.h < EVEN };                    // the two highs too close in height to call one bigger
+  }
+  // The whole example: the samples, the highs and lows, where the spring and neap labels go, and the two close-ups.
+  // The spring and neap are where the rise and fall (each high to the next low, low to high, averaged over four in
+  // a row) is largest and smallest; each label then sits over the tallest high within half a day.
+  function build() {
+    var N = Math.round(DAYS * 24 / STEP) + 1, LV = new Float32Array(N), HI = [], LO = [], RG = [], SPRING = null, NEAP = null, TP, i;
+    for (i = 0; i < N; i++) LV[i] = level(i * STEP);
+    for (i = 1; i < N - 1; i++) {
+      if (LV[i] > LV[i - 1] && LV[i] >= LV[i + 1]) HI.push(turn(LV, i));
+      if (LV[i] < LV[i - 1] && LV[i] <= LV[i + 1]) LO.push(turn(LV, i));
+    }
+    TP = HI.concat(LO).sort(function (p, q) { return p.t - q.t; });
+    for (i = 0; i + 4 < TP.length; i++) {
+      RG.push({ t: (TP[i].t + TP[i + 4].t) / 2, r: (Math.abs(TP[i + 1].h - TP[i].h) + Math.abs(TP[i + 2].h - TP[i + 1].h) +
+        Math.abs(TP[i + 3].h - TP[i + 2].h) + Math.abs(TP[i + 4].h - TP[i + 3].h)) / 4 });
+    }
+    between(RG, 12, 6 * 24).forEach(function (o) { if (!SPRING || o.r > SPRING.r) SPRING = o; });
+    between(RG, 7 * 24, 13.5 * 24).forEach(function (o) { if (!NEAP || o.r < NEAP.r) NEAP = o; });
+    function mark(o) {
+      if (!o) return null;
+      var top = null; between(HI, o.t - 13, o.t + 13).forEach(function (q) { if (!top || q.h > top.h) top = q; });
+      return { t: o.t, h: top ? top.h : o.h, r: o.r };
+    }
+    SPRING = mark(SPRING); NEAP = mark(NEAP);
+    return { N: N, LV: LV, HI: HI, LO: LO, SPRING: SPRING, NEAP: NEAP,
+      CU: { spring: SPRING && closeUp(HI, SPRING.t), neap: NEAP && closeUp(HI, NEAP.t) } };
+  }
+  // --- end pure maths ---
+
+  var HC = 260, YMAX = 2.2, TWEEN = 1.1;                  // canvas height (CSS px); top of the scale (m); s
+  var SWEEP = { two: 18, spring: 10, neap: 10 };          // seconds for the dot to cross each view
+  var F = build(), N = F.N, LV = F.LV, SPRING = F.SPRING, NEAP = F.NEAP, CU = F.CU;
+  if (!SPRING || !NEAP || !CU.spring || !CU.neap) console.warn('tides fortnight: a label target was not found');
+  var VIEWS = { two: [0, DAYS] };                         // days; each close-up runs from just before one bigger high to just after the next
+  ['spring', 'neap'].forEach(function (k) { var c = CU[k]; VIEWS[k] = c ? [c.big.t / 24 - 0.2, c.next.t / 24 + 0.25] : VIEWS.two; });
+  function swing(t0) {                                    // rise and fall over the lunar day starting at t0 (h)
+    var a = Math.floor(t0 / STEP), b = Math.min(N - 1, Math.ceil((t0 + 24.84) / STEP)), mx = -9, mn = 9;
+    for (var j = Math.max(0, a); j <= b; j++) { mx = Math.max(mx, LV[j]); mn = Math.min(mn, LV[j]); }
+    return { mx: mx, mn: mn, r: mx - mn };
+  }
+  function day(t) { return Math.floor(t / 24) + 1; }
+  function m1(x) { return (Math.round(x * 10) / 10).toFixed(1); }
+
+  var st = 'two', A = null, B = null, tw0 = 0, phase = 0, lastT = 0;
+  function snap(k) { return { key: k, a: VIEWS[k][0], b: VIEWS[k][1] }; }
+  function view() {
+    var u = REDUCED ? TWEEN + 1 : (performance.now() - tw0) / 1000, e = tEase(Math.min(1, u / TWEEN));
+    return { e: e, u: u, a: tMix(A.a, B.a, e), b: tMix(A.b, B.b, e) };
+  }
+
+  // ── words: caption and canvas label ──
+  function words() {
+    var s, l;
+    if (st === 'two') {
+      s = 'Fort Denison’s tide for an example fortnight, no dates: big swings around day ' + day(SPRING.t) + ' (spring tides), small ones around day ' + day(NEAP.t) + ' (neap tides). Not a forecast.';
+      l = 'Chart of an example two weeks of tide at Manly, worked out from Fort Denison records, with no dates. The water rises and falls twice a day. Around day ' + day(SPRING.t) +
+        ' the swings are big, with highs of about ' + m1(swing(SPRING.t - 12).mx) + ' m and lows of about ' + m1(swing(SPRING.t - 12).mn) + ' m on the tide-table scale: spring tides. Around day ' +
+        day(NEAP.t) + ' they are small, highs of about ' + m1(swing(NEAP.t - 12).mx) + ' m and lows of about ' + m1(swing(NEAP.t - 12).mn) + ' m: neap tides. ' +
+        'A dashed line marks the average sea level, about 1 m. The scale’s 0 is the tide-table zero, not the sea floor.';
+    } else {
+      var c = CU[st];
+      s = st === 'spring'
+        ? 'Close-up at spring tides: two highs a day, one bigger than the other. The next bigger high comes ' + c.mins + ' minutes after a full day on (dotted line).'
+        : 'Close-up at neap tides: lower highs and higher lows, so the water rises and falls much less. ' +
+          (c.even ? 'The same high comes back ' : 'The next bigger high comes ') + c.mins + ' minutes after a full day on (dotted line).';
+      l = 'Close-up of a day and a half of tide at Manly around the ' + st + ' tides, from the same example fortnight. ' + (c.even
+        ? 'Each day has two highs of about ' + m1(c.big.h) + ' m on the tide-table scale. A dotted line marks a full day after one high, ' +
+          'and an arrow shows the same high coming back ' + c.mins + ' minutes after it.'
+        : 'Each day has two highs: a bigger one of about ' + m1(c.big.h) + ' m and a smaller one of about ' + m1(c.small.h) + ' m on the tide-table scale. ' +
+          'A dotted line marks a full day after the bigger high, and an arrow shows the next day’s bigger high coming ' + c.mins + ' minutes after it.');
+    }
+    if (cap) cap.textContent = s;
+    cv.setAttribute('aria-label', l);
+  }
+
+  function draw(ctx, W, H, t) {
+    var v = view(), dt = Math.max(0, Math.min(0.1, t - lastT)); lastT = t;
+    var xL = 42, xR = W - 10, yT = 34, yB = H - 24, span = v.b - v.a, pxDay = (xR - xL) / span, j, x, y, d;
+    // labels: the old view's go in the first quarter of the zoom, the new view's come once it has stopped (mid-zoom they'd pile up)
+    var same = A.key === B.key, la = same ? 0 : Math.max(0, 1 - 4 * v.e), lb = same ? 1 : Math.max(0, Math.min(1, (v.u - TWEEN) / 0.3));
+    function X(hr) { return xL + (hr / 24 - v.a) / span * (xR - xL); }
+    function Y(m) { return yB - m / YMAX * (yB - yT); }
+    ctx.clearRect(0, 0, W, H);
+    // scale, in metres on the tide-table zero
+    ctx.lineWidth = 1;
+    [0, 0.5, 1, 1.5, 2].forEach(function (m) {
+      y = Math.round(Y(m)) + 0.5;
+      ctx.strokeStyle = m === 0 ? 'rgba(13,43,62,.35)' : 'rgba(13,43,62,.09)';
+      ctx.beginPath(); ctx.moveTo(xL, y); ctx.lineTo(xR, y); ctx.stroke();
+      tText(ctx, m === 2 ? '2.0 m' : (m === 0 ? '0' : m.toFixed(1)), xL - 6, y + 4, 'right', T_DIM, 1);
+    });
+    // day boundaries, and their names
+    for (d = Math.ceil(v.a); d <= Math.floor(v.b); d++) {
+      x = Math.round(X(d * 24)) + 0.5;
+      if (pxDay >= 40) { ctx.strokeStyle = 'rgba(13,43,62,.08)'; ctx.beginPath(); ctx.moveTo(x, yT - 6); ctx.lineTo(x, yB); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(13,43,62,.35)'; ctx.beginPath(); ctx.moveTo(x, yB); ctx.lineTo(x, yB + 4); ctx.stroke();
+    }
+    var every = pxDay >= 30 ? 1 : (pxDay >= 15 ? 2 : 3);
+    for (d = Math.floor(v.a); d < Math.ceil(v.b); d++) {
+      if (d % every) continue;
+      var lab = pxDay >= 60 ? 'day ' + (d + 1) : String(d + 1), lw = tWidth(ctx, lab);
+      var p0 = X(Math.max(d, v.a) * 24), p1 = X(Math.min(d + 1, v.b) * 24), cxl = (p0 + p1) / 2;
+      if (p1 - p0 < Math.min(lw + 6, pxDay * 0.9) || cxl - lw / 2 < xL - 2 || cxl + lw / 2 > xR + 2) continue;   // a cut-off day needs room
+      tText(ctx, lab, cxl, H - 6, 'center', T_DIM, 1);
+    }
+    if (pxDay < 60) tText(ctx, 'day', xL - 6, H - 6, 'right', T_DIM, 1);   // the axis's name, under the scale
+    // the tide: water below the line, fading out well above 0 (the tide-table zero, not a floor), the line on top
+    var i0 = Math.max(0, Math.floor(v.a * 24 / STEP) - 1), i1 = Math.min(N - 1, Math.ceil(v.b * 24 / STEP) + 1);
+    ctx.save(); ctx.beginPath(); ctx.rect(xL, 0, xR - xL, yB); ctx.clip();
+    ctx.beginPath(); ctx.moveTo(X(i0 * STEP), yB);
+    for (j = i0; j <= i1; j++) ctx.lineTo(X(j * STEP), Y(LV[j]));
+    ctx.lineTo(X(i1 * STEP), yB); ctx.closePath();
+    var gw = ctx.createLinearGradient(0, yT, 0, Y(0.15));
+    gw.addColorStop(0, 'rgba(127,188,210,.55)'); gw.addColorStop(0.7, 'rgba(167,210,226,.26)'); gw.addColorStop(1, 'rgba(207,233,242,0)');
+    ctx.fillStyle = gw; ctx.fill();
+    ctx.beginPath();
+    for (j = i0; j <= i1; j++) { if (j === i0) ctx.moveTo(X(j * STEP), Y(LV[j])); else ctx.lineTo(X(j * STEP), Y(LV[j])); }
+    ctx.strokeStyle = T_DEEP; ctx.lineWidth = span > 6 ? 1.2 : 2; ctx.lineJoin = 'round'; ctx.stroke();
+    // the average sea level (2003-2021), dashed
+    y = Math.round(Y(Z0)) + 0.5;
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(13,43,62,.6)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(xL, y); ctx.lineTo(xR, y); ctx.stroke(); ctx.setLineDash([]);
+    // the water going up and down: a dot running along the curve
+    if (!REDUCED) {
+      phase = (phase + dt / SWEEP[B.key]) % 1;
+      var td = (v.a + phase * span) * 24, lv = level(td), xd = X(td), yd = Y(lv);
+      ctx.strokeStyle = 'rgba(91,75,176,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(xd, yB); ctx.lineTo(xd, yd); ctx.stroke();
+      ctx.fillStyle = T_MANLY; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(xd, yd, 4.2, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+
+    // labels, found on the curve (the old view's fade out, then the new view's fade in)
+    function clampX(s, cx0) { var w = tWidth(ctx, s); return Math.max(xL + 2 + w / 2, Math.min(xR - w / 2, cx0)); }
+    function above(s, cx0) {                              // baseline just clear of the curve across the label's width
+      var w = tWidth(ctx, s) + 6, top = 1e9, hr;
+      for (hr = ((cx0 - w / 2 - xL) / (xR - xL) * span + v.a) * 24; X(hr) <= cx0 + w / 2; hr += STEP) top = Math.min(top, Y(level(hr)));
+      return top - 5;
+    }
+    function labels(k, a) {
+      if (!(a > 0.02)) return;
+      if (k === 'two') {
+        var xs = clampX('spring tides', X(SPRING.t)), xn0 = clampX('neap tides', X(NEAP.t));
+        tText(ctx, 'spring tides', xs, above('spring tides', xs), 'center', T_INK, a);
+        tText(ctx, 'neap tides', xn0, above('neap tides', xn0), 'center', T_INK, a);
+        var zl = '0 = tide-table zero, not the sea floor';
+        if (tWidth(ctx, zl) > xR - xL - 10) zl = '0 is not the sea floor';
+        tText(ctx, zl, xR - 4, yB - 5, 'right', T_DIM, a);
+        return;
+      }
+      var c = CU[k], x24 = Math.round(X(c.big.t + 24)) + 0.5, xn = X(c.next.t), yn = Y(c.next.h), mn = '+' + c.mins + ' min';
+      var LB = c.even ? 'a high' : 'bigger high';         // two highs within EVEN of each other: no bigger/smaller
+      var xb = clampX(LB, X(c.big.t)), xsm = clampX('smaller high', X(c.small.t)), xm = clampX(mn, (x24 + xn) / 2);
+      var wb = tWidth(ctx, LB), ws = tWidth(ctx, 'smaller high'), wm = tWidth(ctx, mn), ym = Math.min(above(mn, xm), yn - 12), ys, yb;
+      if (Math.abs(above('smaller high', xsm) - ym) < 14) xsm = Math.min(xsm, xm - wm / 2 - ws / 2 - 8);   // keep clear of the delay's label
+      ys = above('smaller high', xsm); yb = above(LB, xb);
+      if (!c.even && Math.abs(xb - xsm) < (wb + ws) / 2 + 6 && Math.abs(yb - ys) < 14) yb = Math.min(yb, ys) - 14;   // side by side they'd touch: lift one a line
+      tText(ctx, LB, xb, yb, 'center', T_INK, a);
+      if (!c.even) tText(ctx, 'smaller high', xsm, ys, 'center', T_INK, a);
+      // a full day after the bigger high, or "a high" (dotted), and how much later the next one comes
+      ctx.globalAlpha = a; ctx.setLineDash([2, 3]); ctx.strokeStyle = T_INK; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x24, yn - 9); ctx.lineTo(x24, yB); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      tText(ctx, 'a day on', x24 - 5, yB - 6, 'right', T_INK, a);
+      tGap(ctx, x24, xn, yn, 4.6, T_INK, a);
+      ctx.globalAlpha = a; ctx.fillStyle = T_INK; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.arc(xn, yn, 3.2, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); ctx.globalAlpha = 1;
+      tText(ctx, mn, xm, ym, 'center', T_INK, a);
+    }
+    labels(A.key, la); labels(B.key, lb);
+    // what this is, and the key to the dashed line
+    tTag(ctx, 'EXAMPLE · NO DATES', 8, 17, 'left', T_INK, 1);
+    var avg = W < 290 ? 'average' : 'average sea level', aw = tWidth(ctx, avg);
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = 'rgba(13,43,62,.6)'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(W - 8 - aw - 24, 12.5); ctx.lineTo(W - 8 - aw - 6, 12.5); ctx.stroke(); ctx.setLineDash([]);
+    tText(ctx, avg, W - 8, 17, 'right', T_INK, 1);
+  }
+
+  A = B = snap(st);
+  var rc = runCanvas(cv, HC, draw);
+  function set(k) {
+    var nb = snap(k);
+    if (REDUCED) A = nb;
+    else { var v = view(); A = { key: v.e < 0.5 ? A.key : B.key, a: v.a, b: v.b }; }
+    B = nb; tw0 = performance.now(); st = k; phase = 0;
+    btns.forEach(function (o) { o.setAttribute('aria-pressed', o.getAttribute('data-fort') === k ? 'true' : 'false'); });
+    words(); rc.redraw();
+  }
+  btns.forEach(function (b) { b.addEventListener('click', function () { set(b.getAttribute('data-fort')); }); });
+  set(st);
+})();
+})();
+</script>
+<script src="ocean-progress-config.js"></script>
+<script src="ocean-progress.js" defer></script>
+</body>
+</html>

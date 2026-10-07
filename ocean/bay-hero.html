@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swim Manly — How swell gets into the bay (prototype)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&display=swap" rel="stylesheet">
+<style>
+  /* tokens and rules copied from waves.html */
+  :root{
+    --cream:#fbf6ec; --cream2:#f3ede0;
+    --ink:#0d2b3e; --text:#14333f; --dim:#5f8795; --faint:#8fb0bb;
+    --sun:#e0982f; --ocean:#0a7ea4; --deep:#0b4f6c;
+    --border:rgba(13,43,62,.13);
+    --card:rgba(255,255,255,.66);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{background:var(--cream); color:var(--text); font-family:'Newsreader',Georgia,serif; font-size:19px; line-height:1.62; padding:0 0 64px}
+  .wrap{max-width:640px; margin:0 auto; padding:0 18px}
+  h2{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink); font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  .eyebrow,.fig-cap{font-family:'DM Mono',ui-monospace,monospace}
+  .eyebrow{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:6px}
+  section{margin-top:44px}
+  p{margin:0 0 14px}
+  strong{font-weight:500; color:var(--ink)}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin:16px 0}
+  .fig{margin:16px 0}
+  .fig-cap{font-size:12.5px; line-height:1.5; color:var(--dim); margin-top:8px}
+  .rule{border-left:3px solid var(--sun); padding:2px 0 2px 14px; margin:18px 0; font-style:italic; color:var(--ink)}
+  .seg{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 2px}
+  .seg button{font-family:'DM Mono',monospace; font-size:12.5px; border:1px solid var(--border); background:#fff;
+    color:var(--deep); border-radius:999px; padding:7px 12px; cursor:pointer; min-height:36px}
+  .seg button[aria-pressed=true]{background:var(--deep); color:#fff; border-color:var(--deep)}
+
+  /* ── new: painted map with code-drawn swell on top ── */
+  .bayfig{position:relative; width:100%; aspect-ratio:1376 / 768; border-radius:12px; overflow:hidden; background:#cfe4e6}
+  .bayfig img,.bayfig canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
+  .bayfig .tag{position:absolute; left:8px; bottom:6px; font-family:'DM Mono',monospace; font-size:10.5px; letter-spacing:.06em;
+    color:var(--ink); background:rgba(251,246,236,.82); border-radius:6px; padding:1px 6px}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<section id="into-bay">
+  <div class="eyebrow">How swell gets into the bay</div>
+  <h2>Why a south-easterly barely reaches the corner while an easterly runs straight in</h2>
+  <p>Cabbage Tree Bay opens to the north-east, and Shelly headland guards its south-east side. A swell from the east or north-east has open water all the way to the bay mouth. A south-easterly has to swing round the headland to get in.</p>
+  <div class="fig card">
+    <div class="bayfig" id="bayFig">
+      <img src="img/bay-from-above-clean.webp" width="1280" height="714" alt="" loading="lazy">
+      <canvas id="bayCv" role="img" aria-label="Painted map of Cabbage Tree Bay from above, north at the top: Manly Beach on the left, the South Steyne corner, the promenade and ocean pool along the bay's south shore, Shelly Beach and Shelly headland on the right. Swell lines move in from the south-east, bend round Shelly headland and fade inside the bay."></canvas>
+      <span class="tag">Illustration</span>
+    </div>
+    <div class="seg" role="group" aria-label="Swell coming from">
+      <button type="button" data-bay-from="45" aria-pressed="false">From the north-east</button>
+      <button type="button" data-bay-from="90" aria-pressed="false">From the east</button>
+      <button type="button" data-bay-from="135" aria-pressed="true">From the south-east</button>
+    </div>
+    <div class="fig-cap" id="bayCap" aria-live="polite"></div>
+  </div>
+  <p class="rule">The direction next to the swell height matters as much as the height itself.</p>
+</section>
+
+</main>
+<script>
+(function () {
+'use strict';
+var REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// ── Bay hero: a painted map (Gemini illustration, swell removed) with the swell drawn by code ──
+// The picture is north-up, 1376 x 768 'map px'. The swell is a phase field on a fine grid; a crest
+// is where cos(phase − W·t) ≈ 1, drawn as a soft line. Out in open water the crests are straight,
+// square to the direction of travel. Water whose straight path back towards the swell runs into
+// land is in the lee of Shelly headland, and there the crests wrap round the edge the swell grazes
+// as arcs, weakening the further round they go (see build()). That is the wrap a regular sees off
+// the head: refraction over the shallower water near it and diffraction, drawn as one fan. The
+// captions quote the two-year data at the bay mouth (waves.html section 11), not this drawing.
+// Crests are clipped to the sea by a mask made from the painting (bay-water-mask.png), softened so
+// they fade at the shore. Spacing and speed are schematic (a real 10 s swell is ~150 m crest to
+// crest): the figure shows direction, wrap and weakening, nothing more.
+var cv = document.getElementById('bayCv'), fig = document.getElementById('bayFig'), cap = document.getElementById('bayCap');
+if (!cv) return;
+var btns = [].slice.call(document.querySelectorAll('[data-bay-from]'));
+var MW = 1376, MH = 768;                       // map px
+var SST = { x: 272, y: 478 }, TIP = { x: 716, y: 468 };   // South Steyne corner; tip of Shelly headland (fallback edge)
+// where the 'swell from' arrow sits for each direction: tail and head in map px, in open sea
+var ARROW = { 45: [[1320, 70], [1215, 175]], 90: [[1350, 300], [1215, 300]], 135: [[1335, 735], [1225, 625]] };
+var CELL = 2;                                  // grid cell, CSS px
+var LAM = 30, K = 0, W = 0, SIG = 1.7;         // crest spacing and line half-width in CSS px (set in size())
+var ctx = cv.getContext('2d'), off = document.createElement('canvas'), octx = off.getContext('2d');
+var mask = new Image(), maskOk = false;
+mask.onload = function () { maskOk = true; redraw(); };
+mask.src = 'img/bay-water-mask.png';
+var cur = 135, from = 135, to = 135, t0tween = 0, TWEEN = 0.9;
+var Wc = 0, Hc = 0, gw = 0, gh = 0, field = null, fieldKey = '';
+var CAPS = {
+  45: 'From the north-east the swell has open water all the way into the bay; only the water tucked in behind Shelly headland gets a weaker, wrapped copy. Two years of data: about half of its height reaches the bay mouth (many north-east swells here are short, wind-made ones).',
+  90: 'From the east the swell runs more or less straight into the bay mouth, and wraps round the tip of Shelly headland into the water behind it. Two years of data: about two-thirds of its height reaches the bay mouth.',
+  135: 'From the south-east the swell has to wrap round the tip of Shelly headland, fanning into the bay and weakening as it goes. Two years of data: about a third of its height reaches the bay mouth; from the south-south-east, about a fifth.'
+};
+
+// Wrap round Shelly headland (owner, 7 Oct 2026: 'waves wrap around the head'). With the grazed edge
+// as the centre, open water gets straight crests (phase = K * along) and the lee gets arcs
+// (phase = K * r). The two agree along the edge of the shelter, where along = r, so the crests join
+// without a kink. Strength: full in open water, ~0.55 at the edge of the shelter (diffraction's
+// half-amplitude line), weaker further round, but never nothing: the bay always gets a weaker,
+// spread-out copy.
+// Which water is sheltered is decided by the coast itself: a point is in the lee when its straight
+// path back towards the swell runs into land (LAND: 1 bit per 8 x 8 map-px cell, from the painting's
+// water mask). Out in the open the crests stay straight; in the lee they are arcs from the tip.
+var LGW = 172, LGH = 96, LCELL = 8;
+var LAND = (function (b64) {
+  var s = atob(b64), a = new Uint8Array(s.length);
+  for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return a;
+})('/w8AAAAAAAAAAAAAAAAAAAAAAAAA8P8BAAAAAAAAAAAAAAAAAAAAAAAAAP8fAAAAAAAAAAAAAAAAAAAAAAAAAPD/AQAAAAAAAAAAAAAAAAAAAAAAAAD/HwAAAAAAAAAAAAAAAAAAAAAAAADw/wEAAAAAAAAAAAAAAAAAAAAAAAAA/z8AAAAAAAAAAAAAAAAAAAAAAAAA8P8DAAAAAAAAAAAAAAAAAAAAAAAAAP9/AAAAAAAAAAAAAAAAAAAAAAAAAPD/BwAAAAAAAAAAAAAAAAAAAAAAAAD/fwAAAAAAAAAAAAAAAAAAAAAAAADw/wcAAAAAAAAAAAAAAAAAAAAAAAAA//8AAAAAAAAAAAAAAAAAAAAAAAAA8P8PAAAAAAAAAAAAAAAAAAAAAAAAAP//AAAAAAAAAAAAAAAAAAAAAAAAAPD/DwAAAAAAAAAAAAAAAAAAAAAAAAD//wEAAAAAAAAAAAAAAAAAAAAAAADw/x8AAAAAAAAAAAAAAAAAAAAAAAAA//8BAAAAAAAAAAAAAAAAAAAAAAAA8P8fAAAAAAAAAAAAAAAAAAAAAAAAAP//AwAAAAAAAAAAAAAAAAAAAAAAAPD/PwAAAAAAAAAAAAAAAAAAAAAAAAD//wcAAAAAAAAAAAAAAAAAAAAAAADw/38AAAAAAAAAAAAAAAAAAAAAAAAA//8PAAAAAAAAAAAAAAAAAAAAAAAA8P//AAAAAAAAAAAAAAAAAAAAAAAAAP//HwAAAAAAAAAAAAAAAAAAAAAAAPD//wEAAAAAAAAAAAAAAAAAAAAAAAD//x8AAAAAAAAAAAAAAAAAAAAAAADw//8BAAAAAAAAAAAAAAAAAAAAAAAA//8fAAAAAAAAAAAAAAAAAAAAAAAA8P//AwAAAAAAAAAAAAAAAAAAAAAAAP//PwAAAAAAAAAAAAAAAAAAAAAAAPD//wMAAAAAAAAAAAAAAAAAAAAAAAD//38AAAAAAAAAAAAAAAAAAAAAAADw//8PAAAAAAAAAAAAAAAAAAAAAAAA////AQAAAAAAAAAAAAAAAAAAAAAA8P//PwAAAAAAAAAAAAAAAAAAAAAAAP///wMAAAAAAAAAAAAAAAAAAAAAAPD//38AAAAAAAAAAAAAAAAAAAAAAAD///8HAAAAAAAAAAAAAAAAAAAAAADw////AAAAAAAAAAAAAAAAAAAAAAAA////DwAAAAAAAAAAAAAAAAAAAAAA8P///wAAAAAAAAAAAAAAAAAAAAAAAP///x8AAAAAAAAAAAAAAAAAAAAAAPD///8BAAAAAAAAAAAAAAAAAAAAAAD///8/AAAAAAAAAAAAAAAAAAAAAADw////AwAAAAAAAAAAAAAAAAAAAAAA////fwAAAAAAAAAAAAAAAAAAAAAA8P///w8AAAAAAAAAAAAAAAAAAAAAAP////8BAAAAAAAAAAAAAAAAAAAAAPD///8fAAAAAAAAAAAAAAAAAAAAAAD/////AwAAAAAAAAAAAAAAAAAAAADw////PwAAAAAAAAAAAAAAAAAAAAAA/////wMAAAAAAAAAAAAAAAAAAAAA8P///38AAAAAAAAAAAAAAAAAAAAAAP////8fAAAAAAAAfgAAAAAAAAAAAPD/////BwAAAAAA+H8AAAAAAAAAAAD//////wEAAAAAwP8fAAAAAAAAAADw/////z8AAAAAAP7/BwAAAAAAAAAA//////8HAAAAAOD//wAAAAAAAAAA8P//////AQAAAAD+/38AAAAAAAAAAP//////fwAAAADg//8fAAAAAAAAAPD//////x8AAAAA/P//BwAAAAAAAAD///////8PAAAAgP///wEAAAAAAADw////////AwAAAPj//z8AAAAAAAAA////////fwAAAAD///8PAAAAAAAA8P///////wcAAADw////AQAAAAAAAP///////38AAAAA/v//HwAAAAAAAPD///////8PAAAA4P///wMAAAAAAAD/////////AQAAAPz//38AAAAAAADw////////HwAAAID///8PAAAAAAAA/////////wMAAADw////AQAAAAAA8P///////z8AAAAA/v//PwAAAAAAAP////////8DAAAA4P///wcAAAAAAPD///////8/AAAAAP////8AAAAAAAD/////////BxgAAPD///8PAAAAAADw/////////+B/AID/////AQAAAAAA/////////x//BwD8////HwAAAAAA8P//////////fwDg/////wMAAAAAAP///////////w+A/////38AAAAAAPD///////////gA/v////8HAAAAAAD//////////48f+P//////AAAAAADw////////////////////HwAAAAAA/////////////////////wMAAAAA8P///////////////////38AAAAAAP////////////////////8fAAAAAPD/////////////////////BwAAAAD//////////////////////wAAAADw/////////////////////x8AAAAA//////////////////////8DAAAA8P////////////////////9/AAAAAP//////////////////////DwAAAPD//////////////////////wAAAAD//////////////////////x8AAADw//////////////////////8BAAAA');
+function isLand(mx, my) {
+  var i = Math.floor(mx / LCELL), j = Math.floor(my / LCELL);
+  if (i < 0 || j < 0 || i >= LGW || j >= LGH) return false;     // off the picture: open sea
+  var k = j * LGW + i;
+  return (LAND[k >> 3] & (1 << (k & 7))) !== 0;
+}
+function sheltered(mx, my, ux, uy) {                           // march back towards the swell
+  for (var d = 12; d < 2000; d += 6) {
+    var x = mx - ux * d, y = my - uy * d;
+    if (x < 0 || y < 0 || x > MW || y > MH) return false;
+    if (isLand(x, y)) return true;
+  }
+  return false;
+}
+// The edge the swell grazes: the point of Shelly headland furthest out on the open-water side of the
+// direction of travel. Its position moves with the direction (the tip for an easterly, the north-east
+// shoulder for a south-easterly), and the arcs must be centred on it, or the crests in the lee would
+// not meet the straight ones along the edge of the shelter.
+function grazedEdge(ux, uy) {
+  var best = -1e9, ex = TIP.x, ey = TIP.y;
+  for (var j = Math.floor(380 / LCELL); j < LGH; j++) for (var i = Math.floor(600 / LCELL); i < LGW; i++) {
+    var k = j * LGW + i;
+    if (!(LAND[k >> 3] & (1 << (k & 7)))) continue;
+    var x = (i + 0.5) * LCELL, y = (j + 0.5) * LCELL, cr = ux * y - uy * x;
+    if (cr > best) { best = cr; ex = x; ey = y; }                   // furthest to the open-water side (larger cr)
+  }
+  return { x: ex, y: ey };
+}
+function build(fromDeg) {
+  var a0 = (fromDeg + 180) * Math.PI / 180, ux = Math.sin(a0), uy = -Math.cos(a0);
+  var s = Wc / MW, edge = grazedEdge(ux, uy), tx = edge.x * s, ty = edge.y * s;
+  var f = { ph: new Float32Array(gw * gh), amp: new Float32Array(gw * gh) };
+  for (var j = 0; j < gh; j++) for (var i = 0; i < gw; i++) {
+    var xc = (i + 0.5) * CELL, yc = (j + 0.5) * CELL, k = j * gw + i;
+    var dx = xc - tx, dy = yc - ty, along = ux * dx + uy * dy, cr = ux * dy - uy * dx;
+    if (isLand(xc / s, yc / s)) { f.ph[k] = 0; f.amp[k] = 0; continue; }
+    if (!sheltered(xc / s, yc / s, ux, uy)) {
+      // open water: straight crests, a little weaker right at the edge of the lee
+      var edge = Math.abs(Math.atan2(cr, along));
+      f.ph[k] = K * along;
+      f.amp[k] = 1 - 0.45 * Math.exp(-edge / 0.25);
+    } else {
+      // in the lee: crests wrap round the tip as arcs, weaker the further round they go
+      var th = Math.abs(Math.atan2(cr, along));
+      f.ph[k] = K * Math.sqrt(dx * dx + dy * dy);
+      f.amp[k] = 0.16 + 0.39 * Math.exp(-th / 0.8);
+    }
+  }
+  return f;
+}
+
+function size() {
+  var dpr = window.devicePixelRatio || 1;
+  Wc = fig.clientWidth || 320; Hc = Wc * MH / MW;
+  cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  gw = Math.ceil(Wc / CELL); gh = Math.ceil(Hc / CELL);
+  off.width = gw; off.height = gh; fieldKey = '';
+  LAM = Math.max(14, Math.min(34, Wc / 24));   // about 24 crests across, whatever the screen
+  SIG = Wc < 420 ? 1.3 : 1.8;
+  K = 2 * Math.PI / LAM; W = K * LAM * 0.6;    // a crest passes every ~1.7 s (schematic)
+}
+
+function text(s, x, y, align, col, px) {
+  ctx.font = '500 ' + (px || 12) + 'px "DM Mono", monospace'; ctx.textAlign = align || 'left';
+  ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(251,246,236,.9)'; ctx.lineWidth = 3; ctx.strokeText(s, x, y);
+  ctx.fillStyle = col || '#0d2b3e'; ctx.fillText(s, x, y);
+}
+
+function draw(t) {
+  var tw = REDUCED ? 1 : Math.min(1, (performance.now() / 1000 - t0tween) / TWEEN);
+  var dir = from + (to - from) * (tw * tw * (3 - 2 * tw)); cur = dir;
+  var key = Wc + 'x' + Hc + '@' + dir.toFixed(1);
+  if (key !== fieldKey) { field = build(dir); fieldKey = key; }
+  ctx.clearRect(0, 0, Wc, Hc);
+  // crests on the coarse grid, then scaled up smoothly and clipped to the sea
+  // a soft line of half-width SIG px on each crest: exp(kap (cos - 1)) ~ exp(-(dist / SIG)^2)
+  var img = octx.createImageData(gw, gh), d = img.data, n = gw * gh, wt = W * t;
+  var kap = 2 * Math.pow(LAM / (2 * Math.PI * SIG), 2);
+  for (var k = 0; k < n; k++) {
+    var c = Math.cos(field.ph[k] - wt), al = c > 0.2 ? Math.exp(kap * (c - 1)) * field.amp[k] : 0;
+    d[4 * k] = 11; d[4 * k + 1] = 79; d[4 * k + 2] = 108; d[4 * k + 3] = Math.round(230 * al);
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, 0, 0, gw * CELL, gh * CELL);
+  if (maskOk) { ctx.globalCompositeOperation = 'destination-in'; ctx.drawImage(mask, 0, 0, Wc, Hc); }
+  ctx.restore();
+
+  // where it comes from: an arrow at the sea edge, pointing the way the swell travels
+  // where it comes from: an orange arrow in the open sea, pointing the way the swell travels
+  var s = Wc / MW, A = ARROW[to], tx = A[0][0] * s, ty = A[0][1] * s, hx = A[1][0] * s, hy = A[1][1] * s;
+  var ux = hx - tx, uy = hy - ty, ul = Math.sqrt(ux * ux + uy * uy); ux /= ul; uy /= ul;
+  var small = Wc < 420, fpx = small ? 11 : 12, hs = small ? 7 : 9;
+  ctx.strokeStyle = '#e0982f'; ctx.fillStyle = '#e0982f'; ctx.lineWidth = small ? 2.5 : 3; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx - ux * hs, hy - uy * hs); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx + ux * hs * 0.6, hy + uy * hs * 0.6);
+  ctx.lineTo(hx - ux * hs - uy * hs * 0.8, hy - uy * hs + ux * hs * 0.8);
+  ctx.lineTo(hx - ux * hs + uy * hs * 0.8, hy - uy * hs - ux * hs * 0.8); ctx.closePath(); ctx.fill();
+  var lab = 'swell from the ' + { 45: 'north-east', 90: 'east', 135: 'south-east' }[to];
+  var ly = to === 45 ? Math.max(ty, hy) + 18 : Math.min(ty, hy) - 9;
+  text(lab, Wc - 8, ly, 'right', '#0d2b3e', fpx);
+
+  // places
+  ctx.font = '500 ' + fpx + 'px "DM Mono", monospace';
+  var sw = ctx.measureText('South Steyne').width;
+  if (SST.x * s - 6 - sw > 4) text('South Steyne', SST.x * s - 6, SST.y * s - 10, 'right', '#0d2b3e', fpx);
+  else text('South Steyne', 4, SST.y * s + 16, 'left', '#0d2b3e', fpx);
+  text('Shelly', 760 * s, 700 * s, 'center', '#3d4a2a', fpx);
+  if (!small) text('Cabbage Tree Bay', 520 * s, 560 * s, 'center', '#0b4f6c', fpx);
+  text('N ↑', 10, 18, 'left', '#5f8795', fpx);
+}
+
+var raf = 0, visible = false, tStart = performance.now();
+function now() { return REDUCED ? 0 : (performance.now() - tStart) / 1000; }
+function frame() { draw(now()); if (!REDUCED && visible) raf = requestAnimationFrame(frame); }
+function redraw() { if (REDUCED || !visible) draw(now()); }
+size();
+window.addEventListener('resize', function () { size(); redraw(); });
+if ('IntersectionObserver' in window) {
+  new IntersectionObserver(function (es) {
+    var v = es[0].isIntersecting; if (v === visible) return;
+    visible = v; cancelAnimationFrame(raf);
+    if (visible && !REDUCED) raf = requestAnimationFrame(frame); else redraw();
+  }).observe(cv);
+} else { visible = true; if (!REDUCED) raf = requestAnimationFrame(frame); }
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { redraw(); });
+
+function set(d) {
+  from = cur; to = d; t0tween = performance.now() / 1000;
+  btns.forEach(function (b) { b.setAttribute('aria-pressed', +b.getAttribute('data-bay-from') === d ? 'true' : 'false'); });
+  cap.textContent = CAPS[d] + ' Swell lines drawn on the painting; spacing and speed not to scale.';
+  cv.setAttribute('aria-label', 'Painted map of Cabbage Tree Bay from above, north at the top. ' + CAPS[d]);
+  redraw();
+}
+btns.forEach(function (b) { b.addEventListener('click', function () { set(+b.getAttribute('data-bay-from')); }); });
+set(135);
+})();
+</script>
+</body>
+</html>
