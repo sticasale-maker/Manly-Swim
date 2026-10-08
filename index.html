@@ -3210,6 +3210,7 @@
   .src-dot { width:6px; height:6px; border-radius:50%; flex:0 0 auto; background:var(--dim); }
   .src-dot.ok    { background:#1a9e6e; }
   .src-dot.warn  { background:#d4900a; }
+  .src-dot.cached { background:var(--dim); }   /* a recent saved copy, reused on purpose: neutral, not a warning */
   .src-dot.down  { background:#c0392b; }
   .src-dot.idle  { background:var(--dim); opacity:0.45; }
   .page-footer {
@@ -6134,7 +6135,7 @@ const OM_WEATHER_PROXY = 'https://bold-rain-6ded.sticasale.workers.dev/weather';
 // if the rows sat at the top, so it was never read back (see loadWwCache). vecchio.html
 // writes v4 too, from its own matrix builder, so a fresh key keeps the two apart.
 const WW_CACHE_KEY    = 'swim_ww_cache_v5';
-const WW_CACHE_TTL    = 2 * 60 * 60 * 1000;
+const WW_CACHE_TTL    = 30 * 60 * 1000;   // 30 min (owner, 8 Oct 2026; was 2 h): re-opens fetch fresh sooner; the Worker edge still caches, so WillyWeather sees no extra calls
 // The oldest saved forecast the app will still show when it cannot get a fresh one
 // (30 Sep 2026). Two days covers "last opened yesterday, no signal in the car park
 // now"; older than that a saved forecast is too stale to stand in for a live one.
@@ -6260,7 +6261,7 @@ function renderSourceStrip() {
     txt.textContent = label;
     item.appendChild(dot);
     item.appendChild(txt);
-    const state = { ok: 'live', warn: 'cached', down: 'unavailable', idle: 'loading' }[st];
+    const state = { ok: 'live', cached: 'saved copy (recent)', warn: 'needs attention', down: 'unavailable', idle: 'loading' }[st];
     item.title = name + ': ' + state;
     item.setAttribute('aria-label', name + ': ' + state);
     host.appendChild(item);
@@ -14462,7 +14463,7 @@ async function loadAndRender(forceRefresh = false) {
       diag('using fresh cache (' + matrix.length + ' rows)');
       const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
       setStatus(`Cached ${ago} min ago · ${FEED_LABEL}`);
-      setSrc('ww', 'warn');   // served from the WW cache, not fetched this load
+      setSrc('ww', 'cached'); // served from the WW cache, not fetched this load: routine, so neutral
       document.getElementById('lastUpdated').textContent =
         'Data from ' + new Date(wwCache.fetchedAt).toLocaleString('en-AU',{dateStyle:'short',timeStyle:'short'});
     } else {
