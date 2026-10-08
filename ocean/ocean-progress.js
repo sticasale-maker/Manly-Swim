@@ -735,7 +735,7 @@ function groupName(el) {
   if (n) return n;
   if (el.id) $all('a[href="#' + el.id + '"]').forEach(function (x) { if (!a && !el.contains(x)) a = x; });
   if (a && a.textContent.replace(/\s+/g, ' ').trim()) return a.textContent.replace(/\s+/g, ' ').trim();
-  h = el.querySelector('h2,h3');
+  h = el.querySelector('h2,h3,h4');
   return h ? h.textContent.replace(/\s+/g, ' ').trim() : '';
 }
 function wantHidden(u, on, m, chs) {
@@ -910,7 +910,7 @@ function showGone(g) {
   if (first && rendered(first)) {
     var land = Math.max(y0, topLine() + LAND);
     window.scrollBy(0, first.getBoundingClientRect().top - land);
-    var f = first.tagName === 'SECTION' ? first.querySelector('h2,h3') : null;
+    var f = first.tagName === 'SECTION' ? first.querySelector('h2,h3,h4') : null;
     if (!f) { var card = first.hasAttribute('data-op-card') ? first : first.querySelector('[data-op-card]'); f = card && card.querySelector('a[href]'); }
     softFocus(f || first);
   }
@@ -1119,7 +1119,7 @@ function foldAway(u, hadFocus, scrolled, box) {
   function after() {
     if (hadFocus) {
       var em = emptyFor(u.id), n = em || nextVisibleAfter(sec);
-      softFocus(em || (n && (n.querySelector('h2,h3') || n)));
+      softFocus(em || (n && (n.querySelector('h2,h3,h4') || n)));
     }
     say('Hidden: ' + u.title + '.');
   }
@@ -1374,7 +1374,7 @@ function bind() {
           var f = null;
           if (em.v.kind === 'hub') f = document.querySelector('[data-op-cardgroup] h2, [data-op-cardgroup] h3, [data-op-card] h3, [data-op-card] a');
           else em.v.list.forEach(function (s) { var x = LOCAL[s.id]; if (x && (!f || (f.compareDocumentPosition(x) & 2))) f = x; });
-          if (f && f.tagName === 'SECTION') f = f.querySelector('h2,h3') || f;
+          if (f && f.tagName === 'SECTION') f = f.querySelector('h2,h3,h4') || f;
           softFocus(f);
         }
         return;
@@ -1493,6 +1493,7 @@ function init() {
     if (u.type === 'group') u.cards.forEach(function (c) { revealed[c.key] = 1; });
   });
   shownSave();
+  inited = true;
   update();
   onScroll();
   // On a fresh visit to that link, put it back at the top of the screen once the read
@@ -1503,6 +1504,28 @@ function init() {
     raf(land);
     window.addEventListener('load', land);
   }
+}
+// A page that builds parts later (sea.html builds a chapter's body the first time it is
+// opened) calls OceanProgress.adopt() once they are in the page: they get their read
+// buttons, join what the hide switch can hide, and are painted at once. Only sections the
+// views already list (the registry) are taken; returns how many were new.
+var inited = false;
+function adopt() {
+  if (!inited) return 0;                                // init will find them itself
+  var added = [];
+  views.forEach(function (v) {
+    if (v.kind === 'hub' && !CFG.single) return;
+    v.list.forEach(function (s) {
+      if (LOCAL[s.id]) return;
+      var sec = document.getElementById(s.id);
+      if (sec && sec.tagName === 'SECTION') { LOCAL[s.id] = sec; added.push(s); }
+    });
+  });
+  if (!added.length) return 0;
+  addButtons();
+  added.forEach(function (s) { UNITS.push({ key: s.id, el: LOCAL[s.id], type: 'sec', id: s.id, title: s.title }); });
+  update();
+  return added.length;
 }
 function freshVisit() {
   try {
@@ -1526,6 +1549,7 @@ window.OceanProgress = {
   hiding: function () { return hideOn(); },
   setHiding: setHiding,
   reveal: function (id) { var el = document.getElementById(id); return el ? revealFor(el) : false; },
+  adopt: adopt,
   refresh: refresh
 };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

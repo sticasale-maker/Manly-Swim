@@ -13,7 +13,9 @@
   The old pages (hub.html, <chapter>.html) redirect here keeping their hash. Each chapter's
   own CSS is scoped under :where(#ch-<slug>), and its script gets a document whose
   querySelector(All) only sees that chapter (OCEAN_SCOPE), so two chapters' [data-x]
-  buttons never cross.
+  buttons never cross. Since 8 Oct 2026 a chapter's body sits in a <template> and its
+  script in a <script type="text/x-ocean-chapter"> data block until the chapter is first
+  opened (see the fold script), so the first load builds only the headers.
 -->
 <link rel="canonical" href="https://app.viz.net.au/Manly-Swim/ocean/sea.html">
 <meta property="og:type" content="website">
@@ -43,6 +45,8 @@
   .ill-img .ill-tag{position:absolute; left:10px; top:10px; z-index:1}
   .ill-hero.ill-img{aspect-ratio:16/9}
   .ill-inline{position:relative; aspect-ratio:16/9; overflow:hidden; border:1px solid var(--border); border-radius:14px; margin:18px 0}
+  /* code-drawn labels over a painting (ocean-overlays.js) */
+  .ill-img .ov-cv{position:absolute; inset:0; width:100%; height:100%; display:block; pointer-events:none}
   .hub-hero-ill{position:relative; aspect-ratio:16/9; overflow:hidden; border-radius:16px; border:1px solid var(--border); margin:18px 0 6px}
 </style>
 <style>
@@ -100,6 +104,24 @@
     .chap-body{padding:0 28px 24px}
   }
   @media (prefers-reduced-motion: reduce){ .chap-cta svg{transition:none} }
+  /* headings inside a chapter: theme h2 > chapter title h3 > part h4 > sub-heading h5. They keep the
+     look they had as h2/h3 (8 Oct 2026); :where() keeps these as weak as the old element rules, so
+     class rules (.g-letter, .short) still win as before */
+  :where(.chap-body) h4,:where(.chap-body) h5{font-family:'Bricolage Grotesque',system-ui,sans-serif; color:var(--ink)}
+  :where(.chap-body) h4{font-weight:800; font-size:clamp(27px,7vw,36px); line-height:1.05; letter-spacing:-.015em; margin:0 0 12px}
+  :where(.chap-body) h5{font-weight:600; font-size:20px; margin:22px 0 6px}
+  :where(.chap-body) .short h4{font-size:24px; margin-bottom:8px}
+  /* sources: one list at the end of the page, a link to it from each chapter (8 Oct 2026) */
+  .src-link{font-family:'DM Mono',monospace; font-size:14px; margin:28px 0 0}
+  .src-link a{color:var(--deep); display:inline-flex; align-items:center; min-height:44px}
+  .sources-all{margin-top:44px; scroll-margin-top:12px}
+  .src-group{margin:22px 0 0; scroll-margin-top:12px}
+  .src-group h3{font-size:19px; line-height:1.25; margin:0 0 10px; padding-top:14px; border-top:1px solid var(--border)}
+  .src-n{display:block; font-family:'DM Mono',monospace; font-size:12.5px; font-weight:500; letter-spacing:.04em; color:var(--dim); margin-bottom:2px}
+  .src-group .src{margin:0}
+  .src-dup{color:var(--dim)}
+  .src-back{font-family:'DM Mono',monospace; font-size:13.5px; margin:0}
+  .src-back a{color:var(--deep); display:inline-flex; align-items:center; min-height:36px}
 
 </style>
 <style>
@@ -192,6 +214,12 @@
   :where(#ch-circulation) .movers > div{border-left:3px solid var(--border); padding:2px 0 2px 14px; margin:0 0 12px}
   :where(#ch-circulation) .movers dt{font-family:'Bricolage Grotesque',system-ui,sans-serif; font-weight:600; color:var(--ink); font-size:18px; line-height:1.25}
   :where(#ch-circulation) .movers dd{margin:2px 0 0}
+  /* the way to post an observation: Bay Talk in the app (no deep link exists, so the path is named) */
+  :where(#ch-circulation) .baytalk{font-family:'DM Mono',monospace; font-size:14px; line-height:1.5; margin:4px 0 14px}
+  :where(#ch-circulation) .baytalk a{display:inline-flex; align-items:center; min-height:44px; padding:0 16px; border-radius:999px;
+    border:1px solid var(--theme,#0b4f6c); color:var(--deep); text-decoration:none; font-weight:500; margin:0 10px 6px 0}
+  :where(#ch-circulation) .baytalk a:hover,:where(#ch-circulation) .baytalk a:focus-visible{background:#fff}
+  :where(#ch-circulation) .baytalk span{color:var(--dim); white-space:nowrap}
 
 /* ── sand (sand.html) ── */
 
@@ -520,7 +548,7 @@
       <div class="eyebrow">The physics of the bay</div>
       <h1>How the sea works at Cabbage Tree Bay</h1>
       <p class="lede">Waves, wind, tides, sand and cold water, in plain words.</p>
-      <figure class="hub-hero-ill ill-img"><img src="img/into-the-bay.webp" width="1280" height="714" decoding="async" alt="Painted view from above of Cabbage Tree Bay: Manly Beach, the South Steyne corner, the sea wall and ocean pool, Shelly Beach and Shelly headland."><span class="ill-tag">Illustration</span></figure>
+      <figure class="hub-hero-ill ill-img"><img src="img/into-the-bay.webp" width="1280" height="714" decoding="async" alt="Painted view from above of Cabbage Tree Bay: Manly Beach, the South Steyne corner, the sea wall and ocean pool, Shelly Beach and Shelly headland."></figure>
       <p class="why">Twelve short chapters for everyone who swims or snorkels in Cabbage Tree Bay and off South Steyne. Each one takes a question people ask in the water and answers it in three to five minutes, with an animation to play with.</p>
       <canvas id="heroCv" class="hero-cv" aria-hidden="true"></canvas>
     </div>
@@ -605,16 +633,16 @@
   <div class="chaps">
 <section class="chap t-waves" id="ch-waves" data-slug="waves" data-op-card="waves" aria-labelledby="ch-waves-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/waves.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cutaway of a swell passing over open sea, with the water underneath turning in loops that shrink with depth."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/waves.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cutaway of a swell passing over open sea, with the water underneath turning in loops that shrink with depth."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 1</span><span>4 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-waves-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-waves-body">What a wave is</button></h3>
 <p class="chap-hook">When a swell lifts you, why do you end up back where you started?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-waves-body" hidden>
+<div class="chap-body" id="ch-waves-body" hidden><template class="chap-tpl">
 <section id="energy">
   <div class="eyebrow">Part 1</div>
-  <h2>A wave is energy passing through, not water arriving</h2>
+  <h4>A wave is energy passing through, not water arriving</h4>
   <p>When a swell rolls in, the water itself hardly travels. Each bit of water goes round in a loop and comes back to nearly where it started. What moves across the ocean is the <strong>energy</strong>, handed from one loop to the next.</p>
   <p>You know this already. Float out past the ramp on a swell day and you rise, drift forward, sink and drift back. That loop is the wave going through you.</p>
   <div class="fig card">
@@ -628,12 +656,12 @@
   </div>
   <p>In deep water the loops are circles, and they shrink fast as you go down. Half a wavelength below the surface they're about <span class="num">4%</span> of their size at the top, which is why divers can sit still under a big swell.</p>
   <p>In shallow water the seabed gets in the way. The circles are squashed into flat ovals, and near the bottom the water just <strong>slides back and forth</strong>. That sideways slosh is what the app calls <strong>Surge</strong>. Switch the animation to <em>At the ramp</em> to see it.</p>
-  <figure class="ill-inline ill-img"><img src="img/surge.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted underwater view in shallow water: seaweed and sand leaning one way and then the other as the water slides back and forth under a passing swell."><span class="ill-tag">Illustration</span></figure>
+  <figure class="ill-inline ill-img" data-ov="surge"><img src="img/surge.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted underwater view in shallow water: seaweed and sand leaning one way and then the other as the water slides back and forth under a passing swell. An arrow along the water shows the way everything is being pushed, labelled: the water slides this way, then back."></figure>
 </section>
 
 <section id="size">
   <div class="eyebrow">Part 2</div>
-  <h2>Height matters. Period matters more than you'd think.</h2>
+  <h4>Height matters. Period matters more than you'd think.</h4>
   <p>A forecast gives three numbers for a swell: <strong>height</strong>, <strong>period</strong> (seconds between crests) and <strong>direction</strong>. Most people read the height and skip the rest. The figure below lets you set the first two and see what each one changes.</p>
   <div class="facts">
     <div class="fact"><b>&times;4</b><span>A 2 m swell carries four times the energy of a 1 m swell. Energy goes with height squared.</span></div>
@@ -660,7 +688,7 @@
 
 <section id="waves-short" class="short">
   <div class="eyebrow">The short version</div>
-  <h2>Chapter 1 in three lines</h2>
+  <h4>Chapter 1 in three lines</h4>
   <ul>
     <li>A swell carries <strong>energy</strong> across the ocean. The water itself mostly goes round in loops and ends up nearly where it started.</li>
     <li>In shallow water the seabed squashes the loops flat, and near the bottom the water slides back and forth. That slide is what the app calls <strong>Surge</strong>.</li>
@@ -670,30 +698,22 @@
 
 
 
-<section id="waves-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
-    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
-  </ul>
-</section>
+<p class="src-link"><a href="#waves-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="waves">Close this chapter</button><a class="chap-next" href="#swell-and-sets">Next &middot; Chapter 2: Swell, sea and sets &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-waves" id="ch-swell-and-sets" data-slug="swell-and-sets" data-op-card="swell-and-sets" aria-labelledby="ch-swell-and-sets-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/swell-and-sets.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of a distant storm far out at sea sending long, even swell lines across the ocean towards the coast."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/swell-and-sets.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of a distant storm far out at sea sending long, even swell lines across the ocean towards the coast."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 2</span><span>4 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-swell-and-sets-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-swell-and-sets-body">Swell, sea and sets</button></h3>
 <p class="chap-hook">Why do the bigger waves come in groups, with flat spells in between?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-swell-and-sets-body" hidden>
+<div class="chap-body" id="ch-swell-and-sets-body" hidden><template class="chap-tpl">
 <section id="swell-sea">
   <div class="eyebrow">Part 1</div>
-  <h2>Swell and sea are two different things</h2>
+  <h4>Swell and sea are two different things</h4>
   <p><strong>Swell</strong> was made by a storm somewhere else, often days ago and hundreds of kilometres away. By the time it gets here it has sorted itself into long, even lines.</p>
   <p><strong>Sea</strong> (or wind-wave) is made by the wind that's blowing now, nearby. It's short, steep and jumbled, and it stops growing soon after the wind drops. In the water you get both at once, added together.</p>
   <p>The forecast usually gives both, and the app scores them differently. Swell mostly drives <strong>Entry</strong> and <strong>Surge</strong>. The local wind's sea is most of <strong>Chop</strong>, the bumpy surface you feel mid-swim.</p>
@@ -709,7 +729,7 @@
 
 <section id="sets">
   <div class="eyebrow">Part 2</div>
-  <h2>Sets: why waves come in groups</h2>
+  <h4>Sets: why waves come in groups</h4>
   <p>Swell doesn't arrive evenly. A run of bigger waves comes through, the <strong>set</strong>, then smaller ones for a while, the <strong>lull</strong>. A real swell is many waves of slightly different period travelling together. Where their crests line up they add, and where the crests of one meet the troughs of another they cancel.</p>
   <p>The simplest picture is just two swells, of <span class="num">10 s</span> and <span class="num">11 s</span>. They slip out of step and back in every <span class="num">110 s</span> (the two periods multiplied, divided by the gap between them). So a set comes through about every <span class="num">11</span> waves.</p>
   <div class="fig card">
@@ -726,38 +746,24 @@
 
 
 
-<section id="swell-and-sets-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
-    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
-    <li><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
-    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
-    <li><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
-    <li>Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#swell-and-sets-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="swell-and-sets">Close this chapter</button><a class="chap-next" href="#into-the-bay">Next &middot; Chapter 3: How swell gets into the bay &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-waves has-opener" id="ch-into-the-bay" data-slug="into-the-bay" data-op-card="into-the-bay" aria-labelledby="ch-into-the-bay-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/ch3-swell-wrap.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted map of Cabbage Tree Bay from above: swell from the south-east, drawn as crest lines, wraps round Shelly headland and fans into the bay, fading towards South Steyne."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/ch3-swell-wrap.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted map of Cabbage Tree Bay from above: swell from the south-east, drawn as crest lines, wraps round Shelly headland and fans into the bay, fading towards South Steyne."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 3</span><span>5 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-into-the-bay-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-into-the-bay-body">How swell gets into the bay</button></h3>
 <p class="chap-hook">Why can a two-metre south-easterly barely reach the corner, while a one-metre easterly runs straight in?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-into-the-bay-body" hidden>
+<div class="chap-body" id="ch-into-the-bay-body" hidden><template class="chap-tpl">
 <div class="opener" id="into-the-bay-opener">
   <div class="fig card">
     <div class="bayfig" id="bayFig">
       <img src="img/bay-from-above-clean.webp" width="1280" height="714" alt="" loading="lazy">
       <canvas id="bayCv" role="img" aria-label="Painted map of Cabbage Tree Bay from above, north at the top: Manly Beach on the left, the South Steyne corner, the promenade and ocean pool along the bay's south shore, Shelly Beach and Shelly headland on the right. Swell lines move in from the south-east, bend round Shelly headland and fade inside the bay."></canvas>
-      <span class="tag">Illustration</span>
     </div>
     <div class="seg" role="group" aria-label="Swell coming from">
       <button type="button" data-bay-from="45" aria-pressed="false">From the north-east</button>
@@ -770,7 +776,7 @@
 
 <section id="shoaling">
   <div class="eyebrow">Part 1</div>
-  <h2>Feeling the bottom: waves slow, bunch up and stand taller</h2>
+  <h4>Feeling the bottom: waves slow, bunch up and stand taller</h4>
   <p>Once a wave feels the seabed, the bottom drags on it and it slows down. In shallow water the speed depends mainly on depth:</p>
   <div class="facts">
     <div class="fact"><b>9 m/s</b><span>Wave speed in 10 m of water, for an 8 to 12 s swell</span></div>
@@ -790,8 +796,8 @@
 
 <section id="bending">
   <div class="eyebrow">Part 2</div>
-  <h2>Bending round: refraction and diffraction</h2>
-  <h3>Refraction</h3>
+  <h4>Bending round: refraction and diffraction</h4>
+  <h5>Refraction</h5>
   <p>A wave line arriving at an angle hits shallow water at one end first. That end slows down while the other end keeps going, so the whole line <strong>swings round</strong> to face the shore. It's the same thing that makes a straw look bent in a glass of water.</p>
   <div class="fig card">
     <canvas id="refractCv" height="260" aria-label="Animated map: swell lines cross a seabed that gets shallower towards a straight beach on the left. As the water shallows the lines slow down and swing round to face the beach, and three thin arrows tracing the swell's path curve in towards the shore."></canvas>
@@ -806,7 +812,7 @@
     <div class="fig-cap" id="refractCap">The seabed deepens from 1 m at the beach to 40 m a kilometre out; thin lines trace the swell's path, and the animation runs at three times real speed. Out at sea this 7 s swell comes in 55° off straight-in; it is still at 55° at the 40 m edge but down to 29° by the 5 m line, where a 13 s swell would be at 16°.</div>
   </div>
   <p>Cabbage Tree Bay opens to the north-east, with Shelly headland guarding its south-east side. A south-easterly has to swing round that headland to get in. The data shows it. A swell forecast from about <span class="num">157&deg;</span> (SSE) turns up at the bay mouth from around <span class="num">124&deg;</span>. It has bent about <strong>30 degrees</strong>, and lost most of its height doing it.</p>
-  <h3>Diffraction</h3>
+  <h5>Diffraction</h5>
   <p>When a wave passes the end of a headland, some of its energy spills sideways into the sheltered water behind it. That's <strong>diffraction</strong>. The shadow behind a headland is never completely flat: it gets a weaker, spread-out copy of the swell outside.</p>
   <div class="fig card">
     <canvas id="diffractCv" height="260" aria-label="Animated map: swell comes up from the open sea and passes the tip of a headland. Behind the headland the crests bend round in arcs into the sheltered water, weaker the further in they go. A dashed line marks the edge of the shadow."></canvas>
@@ -821,35 +827,22 @@
 
 
 
-<section id="into-the-bay-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
-    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
-    <li><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
-    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
-    <li><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
-    <li>Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#into-the-bay-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="into-the-bay">Close this chapter</button><a class="chap-next" href="#point-and-wall">Next &middot; Chapter 4: The point and the sea wall &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-waves" id="ch-point-and-wall" data-slug="point-and-wall" data-op-card="point-and-wall" aria-labelledby="ch-point-and-wall-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/point-and-wall.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of the sandstone sea wall along Marine Parade at high tide, with a wave bouncing back off it."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img" data-ov="wall"><img src="img/point-and-wall.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of the sandstone sea wall along Marine Parade at high tide, with a wave bouncing back off it. Labels: the orange streak is the reflected wave going back out, and where it crosses the incoming crests, waves bouncing back meet the next ones."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 4</span><span>4 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-point-and-wall-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-point-and-wall-body">The point and the sea wall</button></h3>
 <p class="chap-hook">Why does the water slosh harder by the point, and off the sea wall at high tide?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-point-and-wall-body" hidden>
+<div class="chap-body" id="ch-point-and-wall-body" hidden><template class="chap-tpl">
 <section id="point">
   <div class="eyebrow">Part 1</div>
-  <h2>The point: where the swell gathers</h2>
+  <h4>The point: where the swell gathers</h4>
   <p>A short way along from the South Steyne corner towards Shelly, a rocky point sticks out into the swell. Its rock shelf carries on underwater, so the water in front of the point is shallower than the water either side.</p>
   <p>The swell slows down over the shelf. Either side of it, the same crests are still in deeper water and moving faster, so they swing in towards the point. It's refraction again, working from both sides at once, so the swell&rsquo;s energy <strong>converges</strong> on the point. The point gets more swell, and a stronger back-and-forth, than the bay beside it, even on mornings when the bay is quiet.</p>
   <div class="fig card">
@@ -865,7 +858,7 @@
 
 <section id="bounce">
   <div class="eyebrow">Part 2</div>
-  <h2>Bouncing back: reflection</h2>
+  <h4>Bouncing back: reflection</h4>
   <p>A wave that hits something steep and solid, like a sea wall or a rock shelf, doesn't break. It <strong>bounces back</strong> out to sea. The reflected wave runs into the next one coming in, and the two add together.</p>
   <p>Close to the wall, the water mostly goes up and down. About a quarter of a wavelength out, often around 10 m, the back-and-forth motion of the two waves stacks up, and the slosh can be close to <strong>double</strong> what the incoming swell alone would give.</p>
   <div class="fig card">
@@ -881,44 +874,31 @@
 
 
 
-<section id="point-and-wall-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
-    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
-    <li><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
-    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
-    <li><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
-    <li>Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#point-and-wall-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="point-and-wall">Close this chapter</button><a class="chap-next" href="#wind">Next &middot; Chapter 5: Wind and chop &rarr;</a></div>
-</div>
+</template></div>
 </section>
   </div>
 </section>
 <section class="theme t-wind" id="theme-wind" data-op-cardgroup aria-labelledby="th-wind">
   <div class="theme-head"><span class="theme-bar" aria-hidden="true"></span><div>
       <div class="eyebrow">Theme 2 &middot; Wind</div>
-      <h2 id="th-wind">What the wind does to the water</h2>
+      <h4 id="th-wind">What the wind does to the water</h4>
       <p>Why the wind&rsquo;s direction matters as much as its speed.</p>
     </div></div>
   <div class="chaps">
 <section class="chap t-wind" id="ch-wind" data-slug="wind" data-op-card="wind" aria-labelledby="ch-wind-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/wind.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of a long run of open water with wind ripples growing into chop as the wind crosses it towards the shore."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/wind.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of a long run of open water with wind ripples growing into chop as the wind crosses it towards the shore."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 5</span><span>4 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-wind-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-wind-body">Wind and chop</button></h3>
 <p class="chap-hook">Why is it rough today when the forecast said the swell was small?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-wind-body" hidden>
+<div class="chap-body" id="ch-wind-body" hidden><template class="chap-tpl">
 <section id="wind">
   <div class="eyebrow">10</div>
-  <h2>Wind needs a runway</h2>
+  <h4>Wind needs a runway</h4>
   <p>Wind makes waves by pushing on the water, and it needs a stretch of open water to do it, the way a plane needs a runway. Right where the wind leaves the land, the water is almost flat. The further it blows across open water, the more the ripples grow, into taller, longer waves. That stretch of water is called the <strong>fetch</strong>.</p>
   <p>So the <strong>direction</strong> of the wind matters as much as its strength, because it decides how long the runway is. Pick a direction and watch the ripples grow on their way to you.</p>
   <div class="fig card">
@@ -948,32 +928,31 @@
   <p class="rule">Look at where the wind comes from before how hard it blows. The direction sets the runway, and the runway sets the chop.</p>
 </section>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="wind">Close this chapter</button><a class="chap-next" href="#currents">Next &middot; Chapter 6: Carried along &rarr;</a></div>
-</div>
+</template></div>
 </section>
   </div>
 </section>
 <section class="theme t-sand" id="theme-sand" data-op-cardgroup aria-labelledby="th-sand">
   <div class="theme-head"><span class="theme-bar" aria-hidden="true"></span><div>
       <div class="eyebrow">Theme 3 &middot; Currents &amp; sand</div>
-      <h2 id="th-sand">What moves the water and the sand</h2>
+      <h4 id="th-sand">What moves the water and the sand</h4>
       <p>The slow creep under every wave, the current along the beach, the loop the water can make round the bay, and where the sand goes after a storm.</p>
     </div></div>
   <div class="chaps">
 <section class="chap t-sand has-opener" id="ch-currents" data-slug="currents" data-op-card="currents" aria-labelledby="ch-currents-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/wind-drift.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted map of Cabbage Tree Bay on a north-easterly day: foam and floating weed drifting towards the South Steyne corner."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/wind-drift.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted map of Cabbage Tree Bay on a north-easterly day: foam and floating weed drifting towards the South Steyne corner."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 6</span><span>3 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-currents-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-currents-body">Carried along</button></h3>
 <p class="chap-hook">Why do you come out further along the beach than where you went in?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-currents-body" hidden>
+<div class="chap-body" id="ch-currents-body" hidden><template class="chap-tpl">
 <div class="opener" id="currents-opener">
   <div class="fig card">
     <div class="mapfig" id="driftFig">
       <img src="img/wind-drift.webp" width="1280" height="714" alt="" loading="lazy">
       <canvas id="driftLabels" role="img" aria-label="Painted map of Cabbage Tree Bay from above, north at the top, on a north-easterly day: wind lines, foam streaks and floating weed all run from the north-east towards the South Steyne corner, where weed and foam collect against the wall."></canvas>
-      <span class="tag">Illustration</span>
     </div>
     <div class="fig-cap">The wind drags the surface at roughly 3% of its own speed: a 20&nbsp;km/h north-easter moves the top of the water about 10&nbsp;m a minute. Not to scale.</div>
   </div>
@@ -981,7 +960,7 @@
 
 <section id="drift">
   <div class="eyebrow">Carried along</div>
-  <h2>Carried along: when the water itself travels</h2>
+  <h4>Carried along: when the water itself travels</h4>
   <p>In the first section, each bit of water goes round a loop and comes back to <em>nearly</em> where it started. This is the <em>nearly</em>. Under a crest the water moves forward a little faster than it moves back under the trough. So each loop ends slightly ahead of where it began, and the water creeps along the way the waves are travelling. This is <strong>Stokes drift</strong>.</p>
   <p>For a swell in deep water it is tiny: a 1 m, 10-second swell moves the top of the water about <span class="num">6 mm</span> a second, under 40 cm a minute. It grows with steeper waves and in shallow water. Double the height and the creep is four times faster. A half-metre, 10-second wave in 2 m of water moves the top about <span class="num">4 cm</span> a second, six times faster than that metre-high swell in deep water.</p>
   <div class="fig card">
@@ -999,38 +978,24 @@
 
 
 
-<section id="currents-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
-    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
-    <li><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
-    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
-    <li><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
-    <li>Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#currents-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="currents">Close this chapter</button><a class="chap-next" href="#circulation">Next &middot; Chapter 7: Round the bay &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-sand has-opener" id="ch-circulation" data-slug="circulation" data-op-card="circulation" aria-labelledby="ch-circulation-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/ch7-round.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Illustration: a snorkeller floating over rippled sand, ringed by a slow circle of drifting weed and bubbles."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/ch7-round.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Illustration: a snorkeller floating over rippled sand, ringed by a slow circle of drifting weed and bubbles."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 7</span><span>4 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-circulation-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-circulation-body">Round the bay</button></h3>
 <p class="chap-hook">Ever been carried round in a slow circle in the bay?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-circulation-body" hidden>
+<div class="chap-body" id="ch-circulation-body" hidden><template class="chap-tpl">
 <div class="opener" id="circulation-opener">
   <div class="fig card">
     <div class="loopfig" id="loopFig">
       <img src="img/into-the-bay.webp" width="1280" height="714" alt="" loading="lazy">
       <canvas id="loopCv" role="img" aria-label="Painted map of Cabbage Tree Bay from above, north at the top, with a swell from the east or north-east. A schematic closed eddy of moving streaks goes anticlockwise: down the western, Manly side of the bay, east along the south side below Fairy Bower towards Shelly Beach, north along the sheltered inner side of Shelly headland, then, past the tip, west across the bay mouth and back south into the inflow. Not measured, not to scale."></canvas>
-      <span class="tag">Illustration</span>
     </div>
     <div class="seg" id="loopSeg" role="group" aria-label="What is drawn">
       <button type="button" data-loop="swell" aria-pressed="true">Swell only</button>
@@ -1042,13 +1007,13 @@
 
 <section id="circulation">
   <div class="eyebrow">Round the bay</div>
-  <h2>Round the bay: a loop inside Cabbage Tree Bay</h2>
+  <h4>Round the bay: a loop inside Cabbage Tree Bay</h4>
   <p>A regular noticed it first: on some mornings the water seems to carry you round the bay in a slow circle. This chapter puts together a picture of why that could happen. It fits the physics in the other chapters and what swimmers see, but nobody has measured the water going round. Read it as a reasoned picture, not a finding.</p>
 
-  <h3>Where the swell goes once it is in</h3>
+  <h5>Where the swell goes once it is in</h5>
   <p>With swell from the east or north-east, the main swell comes in through the bay mouth and bends as it feels the bottom (<a href="#bending">chapter 3</a>), turning east towards Shelly Beach. The sand shows it. Waves leave ripple lines on the sandy bottom, lying across the way the water was pushed back and forth, so they run along the wave crests above them. All over the sandy bottom of the bay, those lines sit square to a swell heading for Shelly Beach. Meanwhile the water just inside Shelly headland, the sheltered side of the bay, rarely sees a wave at all.</p>
 
-  <h3>Six ways the water gets moved</h3>
+  <h5>Six ways the water gets moved</h5>
   <dl class="movers">
     <div><dt>Stokes drift</dt><dd>Under every wave the water creeps a little the way the waves travel (<a href="#drift">chapter 6</a>). It is small: about <span class="num">6 mm</span> a second under a 1 m, 10-second swell in deep water, about <span class="num">4 cm</span> a second under a half-metre wave in 2 m of water.</dd></div>
     <div><dt>Wind drift</dt><dd>The wind drags the top layer of water downwind at roughly <span class="num">3%</span> of its own speed. A 20 km/h wind moves the surface about 10 m a minute.</dd></div>
@@ -1058,42 +1023,32 @@
     <div><dt>Where the piled-up water escapes</dt><dd>Water piled up where the waves are big runs, like water anywhere, towards where the sea stands lower: where the waves are small. From there it heads back out to sea. Where that seaward return is squeezed into a narrow lane it can concentrate, like a <strong>rip current</strong>.</dd></div>
   </dl>
 
-  <h3>How they add up to a loop</h3>
+  <h5>How they add up to a loop</h5>
   <p>Put the pieces on the map. The swell bends in and breaks along the south side of the bay, below Fairy Bower, arriving at an angle and heading east. So the current along the shore runs east towards Shelly Beach, and the breaking waves pile water up as it goes. In the Shelly Beach corner the water has nowhere further to go along the shore. Inside Shelly headland the waves are small, so the sea stands lower there and little pushes against it. So the water turns north along the headland side. Once it clears the tip it meets open water, and rather than leaving, the picture here has it curl back west across the bay mouth and south down the Manly side, where it joins the water coming in through the western part of the bay to take the place of what went east. One closed eddy.</p>
   <p class="rule">Seen from above with north at the top, the water goes round the bay anticlockwise in one closed eddy: down the Manly side, east along the south side, north along the headland, and west across the bay mouth back to where it started.</p>
   <p>Where the return is spread across a wide stretch of water it moves slowly. Where it narrows, for instance as it passes the tip of the headland, it would move faster. The figure draws it that way, but it has no real speeds in it: no part of the loop has been measured.</p>
 
-  <h3>A north-easterly wind can break it up</h3>
+  <h5>A north-easterly wind can break it up</h5>
   <p>A north-easterly drags the surface water the other way, towards the South Steyne corner (<a href="#drift">chapter 6</a>). Added to the swell, that would shift the whole eddy towards South Steyne: more water driven down the Manly side into the corner, a shorter, weaker run east along the south side, and a weaker return along the headland. On a north-easterly day the top of the water can also follow the wind instead, so the loop may be hidden or broken up. Like the rest of the loop, this is reasoned, not measured. Switch the figure to <em>Swell + north-easterly wind</em> to see the two together.</p>
 
-  <h3>Not measured: tell us what you notice</h3>
+  <h5>Not measured: tell us what you notice</h5>
   <p>No one has tracked the water round Cabbage Tree Bay with floats or instruments. This picture comes from the physics and from what swimmers have noticed. If you notice the water carrying you round, or not, tell the app what you saw: which swell, which wind, and whether it changed with the tide. A few mornings of notes from regulars would test this picture better than any drawing.</p>
+  <p class="baytalk"><a href="../index.html?src=ocean">Post it in Bay Talk &rarr;</a> <span>In the app: Community &rarr; Bay Talk.</span></p>
 </section>
 
-<section id="circulation-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.4%3A_Cross-shore_balance-wave_set-up_and_set-down">Bosboom &amp; Stive &mdash; Coastal Dynamics: wave set-up and set-down</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.5%3A_Alongshore_balance-longshore_current">Bosboom &amp; Stive &mdash; Coastal Dynamics: the longshore current</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.6%3A_Vertical_structure_of_the_wave-induced_currents">Bosboom &amp; Stive &mdash; Coastal Dynamics: undertow and the vertical structure of wave-driven currents</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.7%3A_3D_effects">Bosboom &amp; Stive &mdash; Coastal Dynamics: circulation cells and rip currents</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
-    <li>Observations: a regular&rsquo;s report of being carried round the bay, and the ripple lines on the sandy bottom, which line up with swell heading for Shelly Beach.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#circulation-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="circulation">Close this chapter</button><a class="chap-next" href="#sand">Next &middot; Chapter 8: Where the sand goes &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-sand" id="ch-sand" data-slug="sand" data-op-card="sand" aria-labelledby="ch-sand-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/sand.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cross-sections of the beach in calm weather and in a storm: in the storm, sand is pulled off the beach into a bar a short way out."><span class="ill-tag">Illustration</span></figure>
+<figure class="ill ill-img"><img src="img/sand.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cross-sections of the beach in calm weather and in a storm: in the storm, sand is pulled off the beach into a bar a short way out."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 8</span><span>5 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-sand-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-sand-body">Where the sand goes</button></h3>
 <p class="chap-hook">After a big storm strips South Steyne down to the rocks, where did the sand actually go, and how does it get back?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-sand-body" hidden>
+<div class="chap-body" id="ch-sand-body" hidden><template class="chap-tpl">
 <!-- HERO PREVIEW, not part of the paste-in: in the chapter this image fills the hero .ill-hero slot (as img/sand.webp), caption kept under it -->
 <figure class="fig illus" id="sand-hero">
   <img src="img/sand-calm-vs-storm-crop.jpg" width="1376" height="440" decoding="async"
@@ -1104,7 +1059,7 @@
 <!-- PASTE START: sections (sand, sand-swings, sources), down to PASTE END -->
 <section id="sand">
   <div class="eyebrow">Part 1</div>
-  <h2>Where does the sand go?</h2>
+  <h4>Where does the sand go?</h4>
   <p>After a big swell, the beach at South Steyne can be lower and narrower, with rock showing where there was sand. Usually, weeks or months later, most of it is back. Most of it doesn&rsquo;t go far: storm waves move it a short way out to sea, and calmer swell can bring it back.</p>
   <p><strong>In a storm</strong> the waves are short, steep and close together. Each one throws water up the beach, and that water has to get back out to sea. It goes back along the bottom, as a current called the <strong>undertow</strong>, and drags sand with it. A short way out the undertow slows and drops the sand, which piles up into a long underwater hill: a <strong>sandbar</strong>.</p>
   <div class="fig card">
@@ -1131,7 +1086,7 @@
 
 <section id="sand-swings">
   <div class="eyebrow">Part 2</div>
-  <h2>The beach also swings: end to end, and over the years</h2>
+  <h4>The beach also swings: end to end, and over the years</h4>
   <p>Manly Beach is boxed in by headlands, so little of its sand leaves. Most of it moves out and back, and some moves along the beach, end to end. On beaches like this on the NSW coast, swell from the south nudges sand towards the north end, and swell from the east or north-east nudges it back south. At Manly the beach swings like a gate on a hinge near South Steyne: the north end moves several metres, the South Steyne end hardly at all.</p>
   <p>The satellite pictures show the swing almost every year. In <span class="num">35 of 39</span> years, the north end was narrower in autumn than in spring, compared with South Steyne. The swing is several metres on average, less than a bus length, and most of it is the north end moving. On this measure the South Steyne end barely moves, too little to separate from the satellites&rsquo; noise. In the stormy, wet start to 2022, too, the north end and the middle of the beach narrowed far more than South Steyne.</p>
   <p>Over the years, the whole beach moves in and out with the Pacific. La Ni&ntilde;a years bring more easterly swell and more storms; El Ni&ntilde;o years, smaller swell from further south. In 38 years of satellite pictures of the Pacific&rsquo;s coasts, about three in four stretches of south-east Australian beach grew wider in El Ni&ntilde;o years, and about half eroded in La Ni&ntilde;a years. Manly does the same: on average the whole beach sits several metres further out in El Ni&ntilde;o months than in La Ni&ntilde;a months. It moves in and out more than it swings end to end.</p>
@@ -1141,54 +1096,32 @@
 </section>
 
 
-<section id="sand-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://www.nature.com/articles/s41598-017-05792-1.pdf">Harley et al. 2017 &mdash; Extreme coastal erosion enhanced by anomalous extratropical storm wave direction</a> (<i>Scientific Reports</i> 7: 6033): the June 2016 storm survey, sand found 2.5&ndash;9 m down at Narrabeen, big winter tides, stranded storm sand in sheltered corners (Collaroy, Narrabeen&rsquo;s south end), the survey&rsquo;s southern limit just north of Manly.</li>
-    <li><a href="https://www.nature.com/articles/s43247-022-00437-2.pdf">Harley et al. 2022 &mdash; Single extreme storm sequence can offset decades of shoreline retreat</a> (<i>Communications Earth &amp; Environment</i> 3: 112): storm bars about 200 m out at Narrabeen; the storm largely undone about a year later.</li>
-    <li><a href="https://mdpi-res.com/d_attachment/water/water-09-00121/article_deploy/water-09-00121.pdf">Mortlock, Goodwin, McAneney &amp; Roche 2017 &mdash; The June 2016 Australian East Coast Low</a> (<i>Water</i> 9: 121): storm sand stays in the embayment.</li>
-    <li><a href="https://doi.org/10.1016/j.margeo.2017.01.005">Phillips, Harley, Turner, Splinter &amp; Cox 2017 &mdash; Shoreline recovery on wave-dominated sandy coastlines</a> (<i>Marine Geology</i> 385): 82 storms at Narrabeen, about 0.2 m a day, 3&ndash;4 times faster once the bar attaches, slower under steeper waves.</li>
-    <li><a href="https://wetlandinfo.des.qld.gov.au/resources/static/pdf/management/understanding-coastal-erosion-on-beaches-nesp.pdf">Kennedy, McInnes &amp; Ierodiaconou &mdash; Understanding coastal erosion on beaches</a> (NESP Earth Systems and Climate Change Hub), pp.&nbsp;7&ndash;8: the bar as the beach&rsquo;s brake; rips grow as bars move out.</li>
-    <li><a href="https://theconversation.com/beloved-beaches-were-washed-offshore-by-cyclone-alfred-but-most-of-this-sand-will-return-251599">Leon 2025 &mdash; Beloved beaches were washed offshore by Cyclone Alfred, but most of this sand will return</a> (<i>The Conversation</i>, 11 Mar 2025): months for the beach, years for dunes, and recovery is not guaranteed.</li>
-    <li><a href="https://journals.flvc.org/jcr/article/download/80231/77483/89853">Kraus &amp; McDougal 1996 &mdash; The effects of seawalls on the beach: an updated literature review</a> (<i>Journal of Coastal Research</i> 12(3)): reflection may not be a significant cause of beach change; walls can block the back beach from rebuilding.</li>
-    <li><a href="https://yoursay.northernbeaches.nsw.gov.au/download_file/view/11663/2991">Rhelm for Northern Beaches Council &mdash; Open Coast and Lagoons Coastal Management Program, Scoping Study</a> (2025/26), pp.&nbsp;16, 36&ndash;37, 47: Manly backed by sea walls and a promenade; rock protection along the toe of much of the wall; little sand leaves these headland-bound beaches; Fairy Bower&rsquo;s beach &ldquo;not always present&rdquo; (p.&nbsp;16, citing Short 2007).</li>
-    <li><a href="https://beachsafe.org.au/beach/nsw/manly/manly/queenscliff-north-steyne-manly">Surf Life Saving Australia, Beachsafe &mdash; Queenscliff, North Steyne, Manly</a> (A. D. Short&rsquo;s beach description): a second bar off Manly in big seas.</li>
-    <li><a href="https://en.wikipedia.org/wiki/Shelly_Beach_(Manly)">Wikipedia &mdash; Shelly Beach (Manly)</a>, citing the <i>Daily Telegraph</i>, 6 Jun 2016: damage to the Marine Parade walkway.</li>
-    <li><a href="https://cdm21063.contentdm.oclc.org/digital/collection/p21063coll3/id/1063">Harley, Turner, Short &amp; Ranasinghe 2011 &mdash; A reevaluation of coastal embayment rotation</a> (<i>JGR</i> 116, F04033): southerly swell moves sand north, easterly swell moves it south; the seasonal swing at Narrabeen.</li>
-    <li><a href="https://doi.org/10.1002/joc.1962">Harley, Turner, Short &amp; Ranasinghe 2010 &mdash; Interannual variability and controls of the Sydney wave climate</a> (<i>International Journal of Climatology</i> 30): La Ni&ntilde;a storms longer, stronger and more easterly.</li>
-    <li><a href="https://eartharxiv.org/repository/object/6134/download/11959/">Vos, Harley, Turner et al. 2023 &mdash; Pacific shoreline erosion and accretion patterns controlled by ENSO</a> (<i>Nature Geoscience</i> 16): 75% of south-east Australian stretches accrete in El Ni&ntilde;o, 48% erode in La Ni&ntilde;a.</li>
-    <li><a href="http://coastsat.space/">CoastSat (K. Vos, UNSW Water Research Laboratory)</a>, Manly site aus0210, tide-corrected Landsat shorelines 1987 to 1 Jan 2026, 10&ndash;15 m per picture. The Manly figures here (June 2016, early 2022, the yearly swing, El Ni&ntilde;o and La Ni&ntilde;a averages, mid-2009, no long-term loss) are our own rough reading of the public data, recomputed twice from the raw files; not a published or peer-reviewed study. Each is an average over many pictures.</li>
-    <li><a href="https://manlyobserver.com.au/queensie-beach-are-we-ever-gonna-see-your-face-again/"><i>Manly Observer</i>, 18 Apr 2022 &mdash; Queensie beach, are we ever gonna see your face again?</a>: the storms, rain and lagoon floods of the 2021&ndash;22 La Ni&ntilde;a summer at the north end.</li>
-    <li><a href="https://researchdata.edu.au/photographic-documentation-impacts-june-2007/3982244">Photographic documentation of a 1-in-30-year storm at Manly, 8 Jun 2007</a> (AODN): North Steyne topped up with sand after the storm.</li>
-    <li><a href="https://www.unsw.edu.au/news/2024/07/capturing-change-with-coastsnap">UNSW &mdash; Capturing change with CoastSnap</a> (Jul 2024) and <a href="https://www.environment.nsw.gov.au/coastsnap">NSW Government &mdash; CoastSnap</a>: the first CoastSnap cradle, at Manly (South Steyne), May 2017.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#sand-sources">Sources for this chapter &rarr;</a></p>
 <!-- PASTE END: sections -->
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="sand">Close this chapter</button><a class="chap-next" href="#tides">Next &middot; Chapter 9: Tides &rarr;</a></div>
-</div>
+</template></div>
 </section>
   </div>
 </section>
 <section class="theme t-tides" id="theme-tides" data-op-cardgroup aria-labelledby="th-tides">
   <div class="theme-head"><span class="theme-bar" aria-hidden="true"></span><div>
       <div class="eyebrow">Theme 4 &middot; Tides &amp; sea level</div>
-      <h2 id="th-tides">Why the sea goes up and down</h2>
+      <h4 id="th-tides">Why the sea goes up and down</h4>
       <p>The Moon and Sun&rsquo;s twice-daily pull, and the slower hills and hollows across the whole ocean.</p>
     </div></div>
   <div class="chaps">
 <section class="chap t-tides" id="ch-tides" data-slug="tides" data-op-card="tides" aria-labelledby="ch-tides-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/tides.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of the Earth with its ocean drawn out into two humps, one facing the Moon and one on the far side. Not to scale."><span class="ill-tag">Illustration &middot; not to scale</span></figure>
+<figure class="ill ill-img"><img src="img/tides.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted view of the Earth with its ocean drawn out into two humps, one facing the Moon and one on the far side. Not to scale."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 9</span><span>5 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-tides-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-tides-body">Tides</button></h3>
 <p class="chap-hook">If the Moon doesn&rsquo;t lift the sea, why does the water at the South Steyne ramp rise and fall twice a day, about 50 minutes later each day?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-tides-body" hidden>
+<div class="chap-body" id="ch-tides-body" hidden><template class="chap-tpl">
 <section id="tides">
   <div class="eyebrow">Part 1</div>
-  <h2>Why there are two high tides a day</h2>
+  <h4>Why there are two high tides a day</h4>
   <p>The Moon pulls on the whole Earth, but not evenly. Its pull weakens with distance, so the side of the Earth facing the Moon is pulled a little more than the middle, and the middle a little more than the far side.</p>
   <p>The Earth and the Moon are falling around each other (that's what orbiting means), so only the <strong>differences</strong> count. And the differences <strong>stretch</strong> the Earth along the line to the Moon, like dough pulled harder at the front than at the back.</p>
   <p>The stretch is tiny: about a ten-millionth of the Earth's own gravity. It could never lift the sea straight up. But sideways nothing holds the water back, so that small nudge, working across thousands of kilometres, slides the ocean into <strong>two humps</strong>: one facing the Moon and one on the far side.</p>
@@ -1216,7 +1149,7 @@
 
 <section id="manly-tide">
   <div class="eyebrow">Part 2</div>
-  <h2>What the tide does at Cabbage Tree Bay</h2>
+  <h4>What the tide does at Cabbage Tree Bay</h4>
   <p>There's no tide gauge in Cabbage Tree Bay. The longest record nearby is at Fort Denison, the little fort on an island in Sydney Harbour, where sea level has been measured since 1857. The highest water measured there, <span class="num">2.40 m</span> in May 1974, was a big tide with a storm on top.</p>
   <p>The official 2023&ndash;24 tide tables list The Spit and Pittwater as NIL: no difference from Fort Denison's times within the table's quarter-hour steps. So Manly's tides come at about Fort Denison's times. The heights should be close too, but we could find no published check.</p>
   <p>At the South Steyne ramp, and round the bay past Fairy Bower to Shelly Beach, the tide changes the depth over the sand, rocks and reef: by about a metre on a typical day, and by up to about <span class="num">2 m</span> on the biggest. A wave breaks when its height reaches roughly three-quarters of the depth, so at low tide the same swell breaks further out, over shallows and rocks that high tide covers.</p>
@@ -1240,37 +1173,22 @@
   <p class="rule">The tide doesn't change the swell. It changes how deep the water is where the swell arrives.</p>
 </section>
 
-<ul class="src">
-  <li><a href="https://butikov.itmo.ru/Planets/Tides.pdf">Butikov &mdash; A dynamical picture of the oceanic tides (Am. J. Phys. 70, 2002)</a></li>
-  <li><a href="https://arxiv.org/abs/1506.04085v1">Matsuda, Isaka &amp; Boffin &mdash; Confusion around the tidal force and the centrifugal force (2015)</a></li>
-  <li><a href="https://profmattstrassler.com/2023/10/27/what-really-causes-our-twice-daily-ocean-tides/">Strassler &mdash; What really causes our twice-daily ocean tides (2023)</a></li>
-  <li><a href="https://thenauticalalmanac.com/2019_Bowditch-_American_Practical_Navigator/Volume-_1/11-%20Part%209-%20Oceanography/Chapter%2035-%20Tides%20And%20Tidal%20Currents.pdf">Bowditch &mdash; American Practical Navigator, ch. 35: Tides and tidal currents (2019)</a></li>
-  <li><a href="https://oceanservice.noaa.gov/education/tutorial_tides/tides05_lunarday.html">NOAA &mdash; Tides tutorial: the lunar day</a></li>
-  <li><a href="https://geo.libretexts.org/Courses/American_Meteorological_Society/Introduction_to_Ocean_Sciences_(Segar)/10%3A_Tides/10.10%3A_Chapter_Summary">Segar &mdash; Introduction to Ocean Sciences, ch. 10: Tides</a></li>
-  <li><a href="https://media.bom.gov.au/social/blog/1603/explainer-king-tides/">Bureau of Meteorology &mdash; Explainer: king tides (2018, updated 2021)</a></li>
-  <li><a href="https://www.nsw.gov.au/sites/default/files/2023-06/nsw_tides_2023%E2%80%932024.pdf">Transport for NSW &mdash; NSW Tides 2023&ndash;2024 (Bureau of Meteorology predictions; time differences along the coast)</a></li>
-  <li><a href="https://www.portauthoritynsw.com.au/around-ports/sydney-harbour/see-and-do/history-tides-sydney-harbour">Port Authority of NSW &mdash; History of tides in Sydney Harbour</a></li>
-  <li><a href="https://johnmenadue.com/bruce-thom-king-tides-and-extreme-events">Bruce Thom &mdash; King tides and extreme events (Fort Denison records)</a></li>
-  <li><a href="https://oceanservice.noaa.gov/education/tutorial_tides/tides08_othereffects.html">NOAA &mdash; Tides tutorial: other effects (weather)</a></li>
-  <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.5%3A_Wave_breaking">Bosboom &amp; Stive &mdash; Coastal Dynamics: wave breaking</a></li>
-  <li><a href="https://en.wikipedia.org/wiki/Cabbage_Tree_Bay_Aquatic_Reserve">Wikipedia &mdash; Cabbage Tree Bay Aquatic Reserve (its area, for the bay-filling estimate)</a></li>
-  <li>Data: <a href="https://uhslc.soest.hawaii.edu/data/csv/rqds/pacific/hourly/h333a.csv">University of Hawaii Sea Level Center, Fort Denison (station 333), hourly sea level</a>, from Sydney Ports / Port Authority of NSW. The tide parts, ranges, day-to-day delays and the example fortnight are our own analysis of 2003&ndash;2021.</li>
-</ul>
+<p class="src-link"><a href="#tides-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="tides">Close this chapter</button><a class="chap-next" href="#sea-level">Next &middot; Chapter 10: The ocean isn&rsquo;t flat &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-tides" id="ch-sea-level" data-slug="sea-level" data-op-card="sea-level" aria-labelledby="ch-sea-level-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/sea-level.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cross-section of the coast and open sea: the sea surface rises into one broad hill over a deep lens of warm water, and a satellite overhead times a radar echo off its top. Height hugely stretched; not to scale."><span class="ill-tag">Illustration &middot; height stretched thousands of times</span></figure>
+<figure class="ill ill-img" data-ov="ssh"><img src="img/sea-level.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cross-section of the coast and open sea: the sea surface rises into one broad hill over a deep lens of warm water, and a satellite overhead times a radar echo off its top. Labels: warm water stands higher; the satellite times a radar echo. Height hugely stretched; not to scale."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 10</span><span>5 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-sea-level-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-sea-level-body">The ocean isn&rsquo;t flat</button></h3>
 <p class="chap-hook">Can a satellite in space see a 25&nbsp;cm hill on the sea, and why can&rsquo;t it see Cabbage Tree Bay?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-sea-level-body" hidden>
+<div class="chap-body" id="ch-sea-level-body" hidden><template class="chap-tpl">
 <section id="hills">
   <div class="eyebrow">Part 1</div>
-  <h2>The sea has hills and dips</h2>
+  <h4>The sea has hills and dips</h4>
   <p>From the Marine Parade wall on a still morning, the sea looks level. It isn&rsquo;t. Out past Shelly headland it rises into gentle hills and sinks into gentle dips, tens of centimetres high and a hundred kilometres or more across. A ship crossing one couldn&rsquo;t measure the tilt, but satellites can find them.</p>
   <p>Three things build these hills. <strong>Warm water</strong> takes up a little more room than cold, so where it goes hundreds of metres deep, the sea above stands higher. A thin warm layer isn&rsquo;t enough. <strong>Big currents</strong> hold the sea higher on one side, because the Earth spins. And under a deep <strong>low</strong>, less air presses on the sea, so it bulges up.</p>
   <p>Pick one below and watch a satellite pass over it. It reads how much higher or lower the sea is, except near the coast, where it can&rsquo;t take a reading at all.</p>
@@ -1290,7 +1208,7 @@
   <p>The <strong>East Australian Current</strong> runs south from the Coral Sea, up to about <span class="num">100 km</span> wide and <span class="num">500 m</span> deep, with the higher sea on its left: out to sea. Much of it turns away from the coast just north of Port Macquarie, so off Manly its eddies do most of the shaping.</p>
   <p>Straight out from Manly, the sea usually stands higher <span class="num">150 to 200 km</span> out than near the coast: about <span class="num">30 cm</span> higher on the long-term average. That&rsquo;s our own reading of Europe&rsquo;s Copernicus satellite maps, not a published figure. Some weeks an eddy steepens the step; some weeks it flattens it, or even turns it round.</p>
   <p><strong>Air pressure</strong> works on the whole sea at once: about <span class="num">1 cm</span> higher for every hectopascal (hPa, same as a millibar) the barometer falls below average, about 1013&nbsp;hPa. On its own that seldom adds more than <span class="num">30 cm</span>, but it usually comes with strong onshore wind, which heaps water against the coast too.</p>
-  <h3>How big is it?</h3>
+  <h5>How big is it?</h5>
   <p>The <a href="#tides">tide</a> is bigger: it raises and lowers Sydney&rsquo;s sea by about <span class="num">1 m</span> twice a day, and about <span class="num">2 m</span> at the biggest tides (our calculation from the 2023&ndash;24 NSW tide tables). But the hills and dips are hundreds of kilometres wide and can last for months.</p>
   <div class="facts">
     <div class="fact"><b>23&ndash;24 cm</b><span>The average eddy&rsquo;s hill, or dip, off south-east Australia. Some reach half a metre or more.</span></div>
@@ -1303,7 +1221,7 @@
 
 <section id="manly">
   <div class="eyebrow">Part 2</div>
-  <h2>Why the hills matter at Cabbage Tree Bay</h2>
+  <h4>Why the hills matter at Cabbage Tree Bay</h4>
   <p><strong>Warm and cold water.</strong> A hill carries its water with it. The current and its warm eddies bring warm, salty water south, and ocean scientists note that eddies can bring warm water to swimmers at Bondi. A cold eddy nearby can steer the current away and keep the coast colder. Which one sits off Sydney changes week to week, and we found no study of Manly itself. And warm on top doesn&rsquo;t always mean a hill: some cold eddies wear a thin lid of warm water.</p>
   <p>Wind joins in too. In December 2025, off northern NSW, a newer satellite called SWOT, which reads closer to the coast, saw the sea sitting low along the shore. At the same time, north-easterly winds, a strong current and a nearby cold eddy together brought cold water up from the bottom (more in <a href="#upwelling">Cold water, green water</a>).</p>
   <p><strong>Storms on big tides.</strong> Low pressure and onshore wind together lift the whole sea: a <strong>storm surge</strong>. It isn&rsquo;t one big wave, but a higher sea with the storm&rsquo;s waves on top. In the June 2016 East Coast Low, a surge of up to <span class="num">34 cm</span> along the NSW coast landed on a big winter &lsquo;king tide&rsquo;. About <span class="num">20 cm</span> of Sydney&rsquo;s peak that day was surge, measured at Fort Denison. The storm damaged the coast along Manly Beach towards Fairy Bower.</p>
@@ -1315,7 +1233,7 @@
 
 <section id="measure">
   <div class="eyebrow">Part 3</div>
-  <h2>How do you measure a hill you can&rsquo;t see?</h2>
+  <h4>How do you measure a hill you can&rsquo;t see?</h4>
   <p><strong>With a ruler on the shore.</strong> A tide gauge at Fort Denison, the little fort on an island in Sydney Harbour, has logged the water level since the 1800s, reliably every hour since 1914. A gauge is a ruler fixed to the land: if the land sinks, the sea seems to rise. So GPS stations sit beside gauges, and the harbour numbers above are &lsquo;relative&rsquo; sea level.</p>
   <p><strong>With radar from space.</strong> A satellite sends a radar pulse down to the sea and times the echo. Where the sea is raised, the trip is a little shorter. Knowing exactly where the satellite is, scientists turn that into the sea&rsquo;s height from the centre of the Earth, whatever the land does. A relay of six satellites has done this since 1992. Each one is checked against the one before, and against instruments moored in Bass Strait.</p>
   <p>There&rsquo;s a catch. Gravity isn&rsquo;t quite the same everywhere, so even a perfectly still sea has bumps of its own, far bigger than the hills in the picture. Straight out from Manly, this &lsquo;level&rsquo; sea drops about <span class="num">6 m</span> over the first 150 km or so (our own check with a gravity model). That&rsquo;s the opposite way to the current&rsquo;s step. Water lying on it feels no push, and it makes up about 99% of the average sea surface&rsquo;s shape, so scientists take it out first. The readings in the picture are typical sizes of what&rsquo;s left.</p>
@@ -1325,59 +1243,31 @@
 </section>
 
 
-<section id="sea-level-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://oceancurrent.aodn.org.au/whatsshown.php">IMOS OceanCurrent &mdash; What&rsquo;s shown</a>: gravity&rsquo;s share of the sea surface (about 99%) and why it is taken out; the satellite&rsquo;s range is shorter where the sea is raised; the spin rule (higher water on the left in the Southern Hemisphere, for features 50 km and up lasting days); about 10 cm per 10 hPa; what &lsquo;adjusted&rsquo; maps remove; sea-level maps leave out wave setup in shallow water near the shore.</li>
-    <li><a href="https://oceancurrent.aodn.org.au/glossary.php">IMOS OceanCurrent &mdash; Glossary</a>: anticlockwise eddies have raised sea level in the centre; satellite heights are measured from the centre of the Earth.</li>
-    <li><a href="https://oceancurrent.aodn.org.au/news.php">IMOS OceanCurrent news</a>: G. Pilo, 28 Apr 2016 (warm-core eddies, about 100 km across, can bring warm water to swimmers at Bondi); D. Griffin, 20 Dec 2024 (cold-core eddy off Sydney: low sea level, clockwise); G. Pilo, 3 Oct 2025 (maps built from about 10 days of passes, features larger than 100 km; SWOT has measured sea level near the coast); D. Griffin &amp; G. Pilo, 17 Dec 2025 (northern NSW cold-water event: north-easterlies, a strong EAC and a cold eddy; SWOT image of low sea level at the coast).</li>
-    <li><a href="https://figshare.utas.edu.au/articles/journal_contribution/An_avenue_of_eddies_quantifying_the_biophysical_properties_of_mesoscale_eddies_in_the_Tasman_Sea/22955702/1">Everett, Baird, Oke &amp; Suthers 2012 &mdash; An avenue of eddies</a> (<i>Geophysical Research Letters</i> 39, L16608): Eddy Avenue, 32&ndash;39&deg;S (about Forster to Bass Strait); 23% and 16% more cyclonic and anticyclonic eddies than the wider Tasman Sea; average amplitudes 23 and 24 cm; rotation about 45&ndash;50 cm/s against 15&ndash;16 cm/s globally (about three times faster).</li>
-    <li><a href="https://www.earthdata.nasa.gov/sites/default/files/imported/NASA_SOP_2013_pedestrians_of_eddy_avenue.pdf">NASA Sensing Our Planet 2013 &mdash; Pedestrians of Eddy Avenue</a>: the name comes from a Sydney street where the researchers waited for the bus; warm eddies turn anticlockwise and cold ones clockwise here; some cold eddies are capped with warm water.</li>
-    <li><a href="https://nora.nerc.ac.uk/id/eprint/528665/1/The_East_Australian_Current.pdf">Ridgway &amp; Hill 2009 &mdash; The East Australian Current</a> (Marine Climate Change Report Card): the current separates from the coast around 31&deg;S (just north of Port Macquarie); eddies 200&ndash;300 km across, often lasting more than a year.</li>
-    <li><a href="https://science.nasa.gov/earth/earth-observatory/east-australian-current-15366/">NASA Earth Observatory &mdash; East Australian Current</a>: up to 100 km wide and 500 m deep.</li>
-    <li><a href="https://www.sciencedaily.com/releases/2008/03/080325100117.htm">CSIRO via ScienceDaily, 26 Mar 2008 &mdash; Giant ocean eddy shadows Sydney</a>: a cold eddy 300 km across, nearly 1 m low at its centre, one turn every 10 days.</li>
-    <li><a href="https://www.jpl.nasa.gov/news/from-satellites-to-sea-jpl-scientists-map-ocean-eddies/">NASA JPL, 13 Sep 2002 &mdash; From satellites to sea</a>: warm eddies stand higher than the water around them, cool eddies lower.</li>
-    <li><a href="https://data.marine.copernicus.eu/product/SEALEVEL_GLO_PHY_L4_NRT_008_046/description">Copernicus Marine Service &mdash; global gridded sea level (SEALEVEL_GLO_PHY_L4_NRT_008_046)</a>: the long-term step of about 30 cm between the coast and 150&ndash;200 km out along 33.8&deg;S (Manly&rsquo;s latitude) is our own reading of this product (its long-term mean, ADT minus SLA, on the 5 and 6 Oct 2026 maps), not a published figure. Twelve monthly snapshots (Nov 2025 to Oct 2026) show the day-to-day step varying with eddies, reversed on three of them. Generated using E.U. Copernicus Marine Service Information.</li>
-    <li><a href="https://geographiclib.sourceforge.io/cgi-bin/GeoidEval?input=-33.8+153">GeographicLib GeoidEval (EGM2008 gravity model)</a>: our own check that gravity&rsquo;s &lsquo;level&rsquo; surface falls from about 22.5 m at Manly (33.8&deg;S 151.3&deg;E) to about 16.1 m at 153&deg;E, about 160 km out.</li>
-    <li>Bureau of Meteorology &mdash; About tide predictions: <a href="https://www.bom.gov.au/australia/tides/about/p3b-barometric.shtml">barometric pressure</a> (about 0.1 m per 10 hPa, seldom more than 0.3 m), <a href="https://www.bom.gov.au/australia/tides/about/p3c-wind.shtml">the effect of wind</a>, <a href="https://www.bom.gov.au/australia/tides/about/p3d-storms.shtml">storm surges</a>; <a href="https://media.bom.gov.au/social/blog/1603/explainer-king-tides">Explainer: king tides</a>.</li>
-    <li><a href="https://www.coastalconference.com/2016/papers2016/Ed-Couriel-Simon-Louis.pdf">Louis, Couriel et al. 2016 &mdash; NSW East Coast Low event, 3&ndash;7 June 2016</a> (Bureau of Meteorology and Manly Hydraulics Laboratory): surge up to 0.34 m on a winter king tide; about 0.20 m of Sydney&rsquo;s peak; damage along Manly Beach towards Fairy Bower.</li>
-    <li><a href="https://www.nsw.gov.au/driving-boating-and-transport/using-waterways-boating-and-transport-information/conditions-weather-and-tides/nsw-tide-tables">NSW tide tables</a> (Bureau of Meteorology predictions for Fort Denison). The tide range on this page is our own calculation from the 2023&ndash;24 tables.</li>
-    <li><a href="https://www.climatechange.environment.nsw.gov.au/sites/default/files/2021-06/Fort%20Denison%20sea%20level%20rise%20study.pdf">Watson &amp; Lord 2008 &mdash; Fort Denison Sea Level Rise Vulnerability Study</a> (NSW DECC): the tide register from 1866, reliable records from 1914; two highs and two lows a day; tide gauges measure the sea against the land; on an exposed open coast, wave setup and wave runup are the biggest part of how high storm water reaches at the shoreline, while the harbour round Fort Denison gets far less wave action than the open coast.</li>
-    <li><a href="https://psmsl.org/data/obtaining/stations/196.php">PSMSL &mdash; Sydney, Fort Denison 2 (station 196)</a>: acoustic gauge since 1996; the yearly means behind our own fits (3.75 &plusmn; 0.41 mm a year for 1993&ndash;2024; relative sea level).</li>
-    <li><a href="https://science.feedback.org/review/photo-meme-of-sydney-harbour-incorrectly-claims-no-sea-level-rise-has-occurred/">Science Feedback, 28 Oct 2019</a>: about 12 cm at Sydney since the end of the 19th century, about 0.8 mm a year through the 20th (T. Frederikse; rates from You et al. 2009).</li>
-    <li><a href="https://researchers.mq.edu.au/en/publications/enso-to-multi-decadal-time-scale-changes-in-east-australian-curre/">Holbrook et al. 2011</a> (<i>Deep-Sea Research II</i> 58): Fort Denison sea level varies over years to decades with the strength of the East Australian Current.</li>
-    <li><a href="https://noaa.gov/node/11181">NOAA &mdash; Effects of ENSO in the Pacific</a>: about 46 cm higher near Indonesia than Peru; the water moves back east when the trade winds weaken in El Ni&ntilde;o.</li>
-    <li><a href="https://www.jpl.nasa.gov/news/nasa-analysis-shows-unexpected-amount-of-sea-level-rise-in-2024/">NASA JPL, 13 Mar 2025 &mdash; Unexpected amount of sea level rise in 2024</a> (about 10 cm since 1993, data to 2024, rate more than doubled); <a href="https://www.bom.gov.au/weather-and-climate/past-weather-and-climate/state-of-the-climate-2024/oceans">Bureau of Meteorology &mdash; State of the Climate 2024: Oceans</a> (warming water expands; satellites limited to beyond 25&ndash;50 km from the coast).</li>
-    <li><a href="https://www.jpl.nasa.gov/news/us-european-mission-launches-to-monitor-the-worlds-oceans/">NASA JPL, 21 Nov 2020 &mdash; Sentinel-6 Michael Freilich launch</a> (the satellite chain since 1992); <a href="https://oceannews.com/news/science-technology/sentinel-6b-launched-to-extend-record-of-sea-level-rise">Ocean News &mdash; Sentinel-6B launched</a> (17 Nov 2025); <a href="https://marine.copernicus.eu/news/sentinel-6b-launch-new-era-measuring-sea-level-space">Copernicus Marine &mdash; Sentinel-6B</a> (flies in formation with Sentinel-6A for cross-checking).</li>
-    <li><a href="https://imos.org.au/facilities/srs/srscalval">IMOS &mdash; Satellite altimetry calibration and validation</a>: instruments moored in Bass Strait under a satellite&rsquo;s path, the only Southern Hemisphere site operating since TOPEX/Poseidon in 1992.</li>
-    <li><a href="https://oceancurrent.aodn.org.au/SNSW/latest.html">IMOS OceanCurrent &mdash; southern NSW, latest map</a> (sea temperature with sea-level contours; each map prints its own dates). Images are &copy; IMOS: see the <a href="https://imos.org.au/terms-of-use">IMOS terms of use</a> before reproducing them.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#sea-level-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="sea-level">Close this chapter</button><a class="chap-next" href="#cold-water">Next &middot; Chapter 11: Cold water, green water &rarr;</a></div>
-</div>
+</template></div>
 </section>
   </div>
 </section>
 <section class="theme t-temp" id="theme-temp" data-op-cardgroup aria-labelledby="th-temp">
   <div class="theme-head"><span class="theme-bar" aria-hidden="true"></span><div>
       <div class="eyebrow">Theme 5 &middot; Temperature &amp; colour</div>
-      <h2 id="th-temp">Why the water changes</h2>
+      <h4 id="th-temp">Why the water changes</h4>
       <p>Where sudden cold water comes from, and what turns the bay green.</p>
     </div></div>
   <div class="chaps">
 <section class="chap t-temp" id="ch-cold-water" data-slug="cold-water" data-op-card="cold-water" aria-labelledby="ch-cold-water-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/cold-water.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cross-section from the beach and sea wall out to sea: a thin warm layer on top thins out towards the shore, and cold deep water tilts up to reach the beach."><span class="ill-tag">Illustration &middot; not to scale</span></figure>
+<figure class="ill ill-img" data-ov="cold"><img src="img/cold-water.webp" width="1280" height="714" loading="lazy" decoding="async" alt="Painted cross-section from the beach and sea wall out to sea: a thin warm layer on top thins out towards the shore, and cold deep water tilts up to reach the beach. Arrows: in the warm layer, surface water drifts out to sea; up the slope, cold water rises to replace it."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 11</span><span>4 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-cold-water-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-cold-water-body">Cold water, green water</button></h3>
 <p class="chap-hook">Why can a warm north-easter leave South Steyne colder, and then greener, a few days later?</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-cold-water-body" hidden>
+<div class="chap-body" id="ch-cold-water-body" hidden><template class="chap-tpl">
 <section id="upwelling">
   <div class="eyebrow">13</div>
-  <h2>Why a run of north-easters can turn the water cold</h2>
+  <h4>Why a run of north-easters can turn the water cold</h4>
   <p>After a few days of strong north-easters in summer, the water at South Steyne can turn cold. That seems backwards: the north-easter blows in towards the beach. Instead the warm top layer can move <strong>out to sea</strong>, and cold water from below comes up to take its place. This is called <strong>upwelling</strong>.</p>
   <p>In summer the sea is layered: a sun-warmed top layer floats on colder, heavier water. The figure is a slice through the sea off South Steyne, looking north, with the beach on the left.</p>
   <div class="fig card">
@@ -1409,7 +1299,7 @@
 
 <section id="green-water">
   <div class="eyebrow">14</div>
-  <h2>Why cold water can turn green a few days later</h2>
+  <h4>Why cold water can turn green a few days later</h4>
   <p>Water from deep down is cold, and it is also rich in nutrients: food for <strong>plankton</strong>, the tiny plants that drift in the sea. In the sunlight they multiply and tint the water green: the more of them, the greener it gets and the less you can see. Press <em>Days after a north-easter</em> in the figure above.</p>
   <p>It takes days, not hours. Freshly upwelled water can arrive cold and still clear; the green follows once the water settles. In eastern Bass Strait in February 2013, the water was coldest on the 17th and the bloom showed on satellite pictures by the 21st. Elsewhere, a bloom like this builds and fades within about a week; some green can linger. We found no measurement of the lag at Sydney.</p>
   <p>The biggest regular green-up off Sydney comes in spring, not summer: in most years a short-lived bloom of <strong>diatoms</strong>, one common kind of plankton, runs along the NSW coast, with more than <span class="num">10 times</span> the usual plankton.</p>
@@ -1443,57 +1333,31 @@
 </section>
 
 
-<section id="cold-water-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://unswscience.substack.com/p/shark-frenzy-empties-popular-byron">Kerry C., UNSW Coastal and Regional Oceanography &mdash; Shark frenzy empties popular Byron Bay beach (upwelling winds explained)</a>, UNSW Science, 12 Dec 2025</li>
-    <li><a href="https://ndownloader.figshare.com/files/40659032">Rossi V. et al. (2014) &mdash; Seasonality of sporadic physical processes driving temperature and nutrient high-frequency variability in the coastal ocean off southeast Australia</a>, JGR Oceans 119</li>
-    <li><a href="https://unsw.edu.au/content/dam/pdfs/campus/2024-05-oceanography/Schaeffer_et_al-2017-Geophysical_Research_Letters.pdf">Schaeffer A. &amp; Roughan M. (2017) &mdash; Sub-surface intensification of marine heatwaves off southeastern Australia</a>, GRL</li>
-    <li><a href="https://unsw.edu.au/content/dam/pdfs/campus/2024-05-oceanography/2019JC015227.pdf">Kerry C. &amp; Roughan M. (2020) &mdash; Downstream evolution of the East Australian Current system</a>, JGR Oceans</li>
-    <li><a href="https://nora.nerc.ac.uk/id/eprint/528665/1/The_East_Australian_Current.pdf">Ridgway K. &amp; Hill K. (2009) &mdash; The East Australian Current</a>, Marine Climate Change Report Card</li>
-    <li><a href="https://en.wikipedia.org/wiki/Ekman_transport">Ekman transport</a> (Wikipedia); <a href="https://oceanservice.noaa.gov/education/tutorial_currents/04currents4.html">NOAA &mdash; Ekman spiral</a>; <a href="https://oceanmotion.org/html/background/upwelling-and-downwelling.htm">Ocean Motion &mdash; Upwelling and downwelling</a></li>
-    <li><a href="https://www.swellnet.com/news/swellnet-analysis/2019/01/03/analysis-cold-water-and-green-seas">Swellnet &mdash; Analysis: Cold water and green seas</a>, 3 Jan 2019</li>
-    <li><a href="https://investsmart.com.au/investment-news/just-when-you-felt-it-was-safe/22022">SMH via InvestSMART &mdash; Just when you felt it was safe...</a>, 12 Dec 2010</li>
-    <li><a href="https://eldersweather.com.au/news/coastal-upwelling-shrouds-sydney-coast-with-sea-fog/1890175">Weatherzone via Elders Weather &mdash; Coastal upwelling shrouds Sydney coast with sea fog</a>, 6 Dec 2024</li>
-    <li><a href="https://www.weatherzone.com/au/news/travelling-north-to-meet-the-cold-waters/1681883">Weatherzone &mdash; Travelling north to meet the cold waters</a>, 16 Dec 2023</li>
-    <li><a href="https://open.uct.ac.za/items/5e85e0e4-92d8-456d-ad22-ac5914b2de21">Brown P.C. (1986) &mdash; The development and decline of phytoplankton blooms in the southern Benguela upwelling region</a>, PhD thesis, University of Cape Town</li>
-    <li><a href="https://www.cmar.csiro.au/remotesensing/oceancurrent/news.htm">CSIRO/IMOS OceanCurrent news archive</a> (strong upwelling in eastern Bass Strait, Feb 2013)</li>
-    <li><a href="https://connectsci.au/mf/article-lookup/doi/10.1071/MF9930325">Hallegraeff G.M. &amp; Jeffrey S.W. (1993) &mdash; Annually recurrent diatom blooms in spring along the New South Wales coast of Australia</a></li>
-    <li>Dela-Cruz J. et al. (2002) <a href="https://doi.org/10.3354/meps236075">Temporal abundance patterns of the red tide dinoflagellate Noctiluca scintillans along the southeast coast of Australia</a>, MEPS 236; and (2003) <a href="https://doi.org/10.4319/lo.2003.48.2.0656">Population growth and transport of Noctiluca scintillans in the coastal waters off Sydney</a>, Limnol. Oceanogr. 48</li>
-    <li><a href="https://openjournals.library.sydney.edu.au/LIN/article/view/5044">Ajani P. et al. (2011) &mdash; Microalgal blooms in the coastal waters of New South Wales, Australia</a>, Proc. Linn. Soc. NSW 133</li>
-    <li><a href="https://manlyobserver.com.au/sea-ing-red-whats-that-funny-coloured-plume-in-the-water/">Manly Observer &mdash; Sea-ing red: what's that funny coloured plume in the water</a>, 1 Dec 2021</li>
-    <li><a href="https://science.nasa.gov/earth/earth-observatory/a-bloom-of-nitrogen-fixing-bacteria-145610">NASA Earth Observatory &mdash; A bloom of nitrogen-fixing bacteria</a>, 1 Sep 2019; <a href="https://www.illawarramercury.com.au/story/5936774/thirroul-pool-closed-due-to-water-quality-concerns/">Illawarra Mercury</a>, 5 Mar 2019</li>
-    <li>NSW Beachwatch &mdash; <a href="https://www2.environment.nsw.gov.au/sites/default/files/state-of-beaches-2018-2019-sydney-190313.pdf">State of the Beaches 2018&ndash;19, Sydney</a> and <a href="https://www.environment.nsw.gov.au/sites/default/files/state-of-the-beaches-2022-23-hunter-region-230277.pdf">2022&ndash;23, Hunter</a></li>
-    <li><a href="https://www.waternsw.com.au/water-services/water-quality/algae-alerts">WaterNSW &mdash; Algae Alerts NSW map</a> (alerts from the Regional Algal Coordinating Committees; opened 7 Oct 2026)</li>
-    <li><a href="https://www.environment.nsw.gov.au/sites/default/files/towards-safer-swimming-terrigal-region-turbidity-and-discolouration-200413.pdf">Scanes P. (2020) &mdash; Understanding turbidity and discolouration in Terrigal Bay</a>, NSW DPIE</li>
-    <li><a href="https://ecat.ga.gov.au/geonetwork/srv/api/records/46029d31-2630-4c24-b672-8b56296d3bae">Huang Z. &amp; Wang X.H. (2019) &mdash; Mapping the upwelling systems of the Australian south-eastern coast using 14-year MODIS data</a>, Remote Sensing of Environment 227</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#cold-water-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="cold-water">Close this chapter</button><a class="chap-next" href="#simulator">Next &middot; Chapter 12: From the forecast to the corner &rarr;</a></div>
-</div>
+</template></div>
 </section>
   </div>
 </section>
 <section class="theme t-tools" id="theme-tools" data-op-cardgroup aria-labelledby="th-tools">
   <div class="theme-head"><span class="theme-bar" aria-hidden="true"></span><div>
       <div class="eyebrow">Theme 6 &middot; Tools</div>
-      <h2 id="th-tools">Try it, look it up</h2>
+      <h4 id="th-tools">Try it, look it up</h4>
       <p>The model behind the app&rsquo;s swell numbers, a simulator to play with, and the words explained.</p>
     </div></div>
   <div class="chaps">
 <section class="chap t-tools" id="ch-simulator" data-slug="simulator" data-op-card="simulator" aria-labelledby="ch-simulator-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/simulator-chart.webp" width="1280" height="696" loading="lazy" decoding="async" alt="The simulator&rsquo;s chart of Cabbage Tree Bay: a forecast swell offshore, bent as it arrives at the bay mouth, towards South Steyne."><span class="ill-tag">The app&rsquo;s chart</span></figure>
+<figure class="ill ill-img"><img src="img/simulator-chart.webp" width="1280" height="696" loading="lazy" decoding="async" alt="The simulator&rsquo;s chart of Cabbage Tree Bay: a forecast swell offshore, bent as it arrives at the bay mouth, towards South Steyne."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Chapter 12</span><span>5 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-simulator-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-simulator-body">From the forecast to the corner</button></h3>
 <p class="chap-hook">Why doesn&rsquo;t the app just use the forecast&rsquo;s swell height? See it in the simulator.</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-simulator-body" hidden>
+<div class="chap-body" id="ch-simulator-body" hidden><template class="chap-tpl">
 <section id="data">
   <div class="eyebrow">Part 1</div>
-  <h2>What two years of data say</h2>
+  <h4>What two years of data say</h4>
   <p>We lined up two sets of numbers hour by hour, from December 2023 to December 2025:</p>
   <ul style="margin:0 0 14px 22px">
     <li>the <strong>offshore swell</strong>, from an ocean wave model about 8 km east of Manly, which is the kind of number a forecast gives you;</li>
@@ -1528,7 +1392,7 @@
 
 <section id="sim">
   <div class="eyebrow">Part 2</div>
-  <h2>Simulator</h2>
+  <h4>Simulator</h4>
   <p>Set a swell and a wind the way a forecast would show them. The simulator runs them through the bay: the fitted formula takes the swell to the bay mouth, the app's own shelter table takes it round the corner to the South Steyne entry, and wave physics turns it into what the water around you does.</p>
 
   <div class="sim">
@@ -1590,32 +1454,19 @@
 
 
 
-<section id="simulator-sources">
-  <div class="eyebrow">Sources</div>
-  <h2 style="font-size:24px">Further reading</h2>
-  <ul class="src">
-    <li><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
-    <li><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
-    <li><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
-    <li><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
-    <li><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
-    <li><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
-    <li>Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
-  </ul>
-</section>
+<p class="src-link"><a href="#simulator-sources">Sources for this chapter &rarr;</a></p>
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="simulator">Close this chapter</button><a class="chap-next" href="#words">Next &middot; Reference: Words of the sea &rarr;</a></div>
-</div>
+</template></div>
 </section>
 <section class="chap t-tools" id="ch-words" data-slug="words" data-ref aria-labelledby="ch-words-t">
 <div class="chap-head">
-<figure class="ill ill-img"><img src="img/words-chalk.webp" width="1024" height="571" loading="lazy" decoding="async" alt="Chalk writing on a concrete step: You cannot direct the wind, but you can adjust your sails, above a small drawn sailing boat."><span class="ill-tag">Photo</span></figure>
+<figure class="ill ill-img"><img src="img/words-chalk.webp" width="1024" height="571" loading="lazy" decoding="async" alt="Chalk writing on a concrete step: You cannot direct the wind, but you can adjust your sails, above a small drawn sailing boat."></figure>
 <div class="chap-text"><div class="ch-meta"><span class="ch-n">Reference</span><span>2 min</span><span class="tick" hidden></span></div>
 <h3 class="chap-title" id="ch-words-t"><button type="button" class="chap-toggle" aria-expanded="false" aria-controls="ch-words-body">Words of the sea</button></h3>
 <p class="chap-hook">Swell, set, period, fetch, surge, upwelling: every word these chapters use, each in a sentence.</p>
 <span class="chap-cta" aria-hidden="true"><span class="chap-cta-o">Open chapter</span><span class="chap-cta-c">Close chapter</span><svg viewBox="0 0 16 16"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></div>
 </div>
-<div class="chap-body" id="ch-words-body" hidden>
+<div class="chap-body" id="ch-words-body" hidden><template class="chap-tpl">
   <div class="g-tools">
     <label class="eyebrow" for="gq" style="display:block;margin:0 0 4px">Find a word</label>
     <input id="gq" class="g-search" type="search" placeholder="Try &lsquo;tide&rsquo; or &lsquo;sand&rsquo;" autocomplete="off" spellcheck="false">
@@ -1624,7 +1475,7 @@
   </div>
 
   <div id="glist">
-<h2 class="g-letter" id="L-B">B</h2>
+<h4 class="g-letter" id="L-B">B</h4>
 <dl class="g-list">
 <div class="g-item" id="bay-mouth" data-letter="B">
   <dt>Bay mouth</dt>
@@ -1643,7 +1494,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-C">C</h2>
+<h4 class="g-letter" id="L-C">C</h4>
 <dl class="g-list">
 <div class="g-item" id="chop" data-letter="C">
   <dt>Chop</dt>
@@ -1654,7 +1505,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-D">D</h2>
+<h4 class="g-letter" id="L-D">D</h4>
 <dl class="g-list">
 <div class="g-item" id="diffraction" data-letter="D">
   <dt>Diffraction</dt>
@@ -1672,7 +1523,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-E">E</h2>
+<h4 class="g-letter" id="L-E">E</h4>
 <dl class="g-list">
 <div class="g-item" id="east-australian-current" data-letter="E">
   <dt>East Australian Current <span class="g-also">(EAC)</span></dt>
@@ -1707,7 +1558,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-F">F</h2>
+<h4 class="g-letter" id="L-F">F</h4>
 <dl class="g-list">
 <div class="g-item" id="fetch" data-letter="F">
   <dt>Fetch</dt>
@@ -1718,7 +1569,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-G">G</h2>
+<h4 class="g-letter" id="L-G">G</h4>
 <dl class="g-list">
 <div class="g-item" id="w-green-water" data-letter="G">
   <dt>Green water <span class="g-also">(plankton bloom)</span></dt>
@@ -1736,7 +1587,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-K">K</h2>
+<h4 class="g-letter" id="L-K">K</h4>
 <dl class="g-list">
 <div class="g-item" id="king-tide" data-letter="K">
   <dt>King tide</dt>
@@ -1747,7 +1598,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-L">L</h2>
+<h4 class="g-letter" id="L-L">L</h4>
 <dl class="g-list">
 <div class="g-item" id="longshore-current" data-letter="L">
   <dt>Longshore current</dt>
@@ -1765,7 +1616,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-N">N</h2>
+<h4 class="g-letter" id="L-N">N</h4>
 <dl class="g-list">
 <div class="g-item" id="neap-tide" data-letter="N">
   <dt>Neap tide</dt>
@@ -1776,7 +1627,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-P">P</h2>
+<h4 class="g-letter" id="L-P">P</h4>
 <dl class="g-list">
 <div class="g-item" id="period" data-letter="P">
   <dt>Period</dt>
@@ -1795,7 +1646,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-R">R</h2>
+<h4 class="g-letter" id="L-R">R</h4>
 <dl class="g-list">
 <div class="g-item" id="reflection" data-letter="R">
   <dt>Reflection</dt>
@@ -1822,7 +1673,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-S">S</h2>
+<h4 class="g-letter" id="L-S">S</h4>
 <dl class="g-list">
 <div class="g-item" id="sand-cliff" data-letter="S">
   <dt>Sand cliff <span class="g-also">(scarp)</span></dt>
@@ -1936,7 +1787,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-T">T</h2>
+<h4 class="g-letter" id="L-T">T</h4>
 <dl class="g-list">
 <div class="g-item" id="tide" data-letter="T">
   <dt>Tide</dt>
@@ -1947,7 +1798,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-U">U</h2>
+<h4 class="g-letter" id="L-U">U</h4>
 <dl class="g-list">
 <div class="g-item" id="undertow" data-letter="U">
   <dt>Undertow</dt>
@@ -1965,7 +1816,7 @@
   </dd>
 </div>
 </dl>
-<h2 class="g-letter" id="L-W">W</h2>
+<h4 class="g-letter" id="L-W">W</h4>
 <dl class="g-list">
 <div class="g-item" id="wavelength" data-letter="W">
   <dt>Wavelength</dt>
@@ -1991,136 +1842,192 @@
   
   
 <div class="chap-end"><button type="button" class="chap-close" data-chap-close="words">Close this chapter</button><a class="chap-next" href="#top">Back to the top &uarr;</a></div>
-</div>
+</template></div>
 </section>
   </div>
 </section>
 </div>
 
 <div class="wrap">
-  <p class="physics-note">This is physics, not a forecast. Nothing here says whether to swim: for today&rsquo;s conditions, use the app. Sources are listed at the end of each chapter.</p>
+<section class="sources-all" id="sources" aria-labelledby="sourcesH">
+  <div class="eyebrow">Further reading</div>
+  <h2 id="sourcesH">Sources</h2>
+  <p>What each chapter draws on, chapter by chapter. A source used by more than one chapter is listed once, under the first chapter that uses it.</p>
+  <div class="src-group" id="waves-sources">
+  <h3><span class="src-n">Chapter 1</span> What a wave is</h3>
+  <ul class="src">
+    <li id="src-1"><a href="http://sillig.free.fr/Courses_WAVES.html">C. Sillig &mdash; Waves course</a> (<a href="http://sillig.free.fr/WAVES/Course_WAVES.pdf">PDF</a>, and <a href="http://sillig.free.fr/GFD/Course_GFD.pdf">geophysical fluid dynamics</a>)</li>
+    <li id="src-2"><a href="https://geo.libretexts.org/Bookshelves/Sedimentology/Introduction_to_Fluid_Motions_and_Sediment_Transport_%28Southard%29/06%3A_Oscillatory_Flow/6.03%3A_Water_Motions_Due_to_Waves">Southard &mdash; Water motions due to waves</a></li>
+    <li id="src-3"><a href="https://learn.weatherstem.com/modules/learn/lessons/155/13.html">WeatherSTEM &mdash; Waves lesson</a></li>
+  </ul>
+  <p class="src-back"><a href="#waves">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="swell-and-sets-sources">
+  <h3><span class="src-n">Chapter 2</span> Swell, sea and sets</h3>
+  <ul class="src">
+    <li id="src-4"><a href="https://app.viz.net.au/Godiving/simulator.html">VIZ &mdash; Dive conditions simulator</a></li>
+    <li id="src-5"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_%28Bosboom_and_Stive%29/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
+    <li id="src-6"><a href="https://www.sciencedirect.com/topics/earth-and-planetary-sciences/shoaling-wave">ScienceDirect &mdash; Shoaling wave</a></li>
+    <li id="src-7"><a href="https://www.surfertoday.com/surfing/what-is-wave-diffraction">Surfertoday &mdash; What is wave diffraction?</a></li>
+    <li id="src-8">Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</li>
+    <li class="src-dup">Also used here, listed earlier: <a href="#src-1">C. Sillig &mdash; Waves course</a>; <a href="#src-2">Southard &mdash; Water motions due to waves</a>; <a href="#src-3">WeatherSTEM &mdash; Waves lesson</a>.</li>
+  </ul>
+  <p class="src-back"><a href="#swell-and-sets">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="into-the-bay-sources">
+  <h3><span class="src-n">Chapter 3</span> How swell gets into the bay</h3>
+  <ul class="src">
+    <li class="src-dup">Also used here, listed earlier: <a href="#src-4">VIZ &mdash; Dive conditions simulator</a>; <a href="#src-1">C. Sillig &mdash; Waves course</a>; <a href="#src-2">Southard &mdash; Water motions due to waves</a>; <a href="#src-5">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a>; <a href="#src-6">ScienceDirect &mdash; Shoaling wave</a>; <a href="#src-3">WeatherSTEM &mdash; Waves lesson</a>; <a href="#src-7">Surfertoday &mdash; What is wave diffraction?</a>; <a href="#src-8">Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</a>.</li>
+  </ul>
+  <p class="src-back"><a href="#into-the-bay">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="point-and-wall-sources">
+  <h3><span class="src-n">Chapter 4</span> The point and the sea wall</h3>
+  <ul class="src">
+    <li class="src-dup">Also used here, listed earlier: <a href="#src-4">VIZ &mdash; Dive conditions simulator</a>; <a href="#src-1">C. Sillig &mdash; Waves course</a>; <a href="#src-2">Southard &mdash; Water motions due to waves</a>; <a href="#src-5">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a>; <a href="#src-6">ScienceDirect &mdash; Shoaling wave</a>; <a href="#src-3">WeatherSTEM &mdash; Waves lesson</a>; <a href="#src-7">Surfertoday &mdash; What is wave diffraction?</a>; <a href="#src-8">Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</a>.</li>
+  </ul>
+  <p class="src-back"><a href="#point-and-wall">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="currents-sources">
+  <h3><span class="src-n">Chapter 6</span> Carried along</h3>
+  <ul class="src">
+    <li class="src-dup">Also used here, listed earlier: <a href="#src-4">VIZ &mdash; Dive conditions simulator</a>; <a href="#src-1">C. Sillig &mdash; Waves course</a>; <a href="#src-2">Southard &mdash; Water motions due to waves</a>; <a href="#src-5">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a>; <a href="#src-6">ScienceDirect &mdash; Shoaling wave</a>; <a href="#src-3">WeatherSTEM &mdash; Waves lesson</a>; <a href="#src-7">Surfertoday &mdash; What is wave diffraction?</a>; <a href="#src-8">Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</a>.</li>
+  </ul>
+  <p class="src-back"><a href="#currents">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="circulation-sources">
+  <h3><span class="src-n">Chapter 7</span> Round the bay</h3>
+  <ul class="src">
+    <li id="src-9"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.4%3A_Cross-shore_balance-wave_set-up_and_set-down">Bosboom &amp; Stive &mdash; Coastal Dynamics: wave set-up and set-down</a></li>
+    <li id="src-10"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.5%3A_Alongshore_balance-longshore_current">Bosboom &amp; Stive &mdash; Coastal Dynamics: the longshore current</a></li>
+    <li id="src-11"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.6%3A_Vertical_structure_of_the_wave-induced_currents">Bosboom &amp; Stive &mdash; Coastal Dynamics: undertow and the vertical structure of wave-driven currents</a></li>
+    <li id="src-12"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.05%3A_Wave-induced_set-up_and_currents/5.5.7%3A_3D_effects">Bosboom &amp; Stive &mdash; Coastal Dynamics: circulation cells and rip currents</a></li>
+    <li id="src-13"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.3%3A_Refraction">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a></li>
+    <li id="src-14">Observations: a regular&rsquo;s report of being carried round the bay, and the ripple lines on the sandy bottom, which line up with swell heading for Shelly Beach.</li>
+  </ul>
+  <p class="src-back"><a href="#circulation">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="sand-sources">
+  <h3><span class="src-n">Chapter 8</span> Where the sand goes</h3>
+  <ul class="src">
+    <li id="src-15"><a href="https://www.nature.com/articles/s41598-017-05792-1.pdf">Harley et al. 2017 &mdash; Extreme coastal erosion enhanced by anomalous extratropical storm wave direction</a> (<i>Scientific Reports</i> 7: 6033): the June 2016 storm survey, sand found 2.5&ndash;9 m down at Narrabeen, big winter tides, stranded storm sand in sheltered corners (Collaroy, Narrabeen&rsquo;s south end), the survey&rsquo;s southern limit just north of Manly.</li>
+    <li id="src-16"><a href="https://www.nature.com/articles/s43247-022-00437-2.pdf">Harley et al. 2022 &mdash; Single extreme storm sequence can offset decades of shoreline retreat</a> (<i>Communications Earth &amp; Environment</i> 3: 112): storm bars about 200 m out at Narrabeen; the storm largely undone about a year later.</li>
+    <li id="src-17"><a href="https://mdpi-res.com/d_attachment/water/water-09-00121/article_deploy/water-09-00121.pdf">Mortlock, Goodwin, McAneney &amp; Roche 2017 &mdash; The June 2016 Australian East Coast Low</a> (<i>Water</i> 9: 121): storm sand stays in the embayment.</li>
+    <li id="src-18"><a href="https://doi.org/10.1016/j.margeo.2017.01.005">Phillips, Harley, Turner, Splinter &amp; Cox 2017 &mdash; Shoreline recovery on wave-dominated sandy coastlines</a> (<i>Marine Geology</i> 385): 82 storms at Narrabeen, about 0.2 m a day, 3&ndash;4 times faster once the bar attaches, slower under steeper waves.</li>
+    <li id="src-19"><a href="https://wetlandinfo.des.qld.gov.au/resources/static/pdf/management/understanding-coastal-erosion-on-beaches-nesp.pdf">Kennedy, McInnes &amp; Ierodiaconou &mdash; Understanding coastal erosion on beaches</a> (NESP Earth Systems and Climate Change Hub), pp.&nbsp;7&ndash;8: the bar as the beach&rsquo;s brake; rips grow as bars move out.</li>
+    <li id="src-20"><a href="https://theconversation.com/beloved-beaches-were-washed-offshore-by-cyclone-alfred-but-most-of-this-sand-will-return-251599">Leon 2025 &mdash; Beloved beaches were washed offshore by Cyclone Alfred, but most of this sand will return</a> (<i>The Conversation</i>, 11 Mar 2025): months for the beach, years for dunes, and recovery is not guaranteed.</li>
+    <li id="src-21"><a href="https://journals.flvc.org/jcr/article/download/80231/77483/89853">Kraus &amp; McDougal 1996 &mdash; The effects of seawalls on the beach: an updated literature review</a> (<i>Journal of Coastal Research</i> 12(3)): reflection may not be a significant cause of beach change; walls can block the back beach from rebuilding.</li>
+    <li id="src-22"><a href="https://yoursay.northernbeaches.nsw.gov.au/download_file/view/11663/2991">Rhelm for Northern Beaches Council &mdash; Open Coast and Lagoons Coastal Management Program, Scoping Study</a> (2025/26), pp.&nbsp;16, 36&ndash;37, 47: Manly backed by sea walls and a promenade; rock protection along the toe of much of the wall; little sand leaves these headland-bound beaches; Fairy Bower&rsquo;s beach &ldquo;not always present&rdquo; (p.&nbsp;16, citing Short 2007).</li>
+    <li id="src-23"><a href="https://beachsafe.org.au/beach/nsw/manly/manly/queenscliff-north-steyne-manly">Surf Life Saving Australia, Beachsafe &mdash; Queenscliff, North Steyne, Manly</a> (A. D. Short&rsquo;s beach description): a second bar off Manly in big seas.</li>
+    <li id="src-24"><a href="https://en.wikipedia.org/wiki/Shelly_Beach_(Manly)">Wikipedia &mdash; Shelly Beach (Manly)</a>, citing the <i>Daily Telegraph</i>, 6 Jun 2016: damage to the Marine Parade walkway.</li>
+    <li id="src-25"><a href="https://cdm21063.contentdm.oclc.org/digital/collection/p21063coll3/id/1063">Harley, Turner, Short &amp; Ranasinghe 2011 &mdash; A reevaluation of coastal embayment rotation</a> (<i>JGR</i> 116, F04033): southerly swell moves sand north, easterly swell moves it south; the seasonal swing at Narrabeen.</li>
+    <li id="src-26"><a href="https://doi.org/10.1002/joc.1962">Harley, Turner, Short &amp; Ranasinghe 2010 &mdash; Interannual variability and controls of the Sydney wave climate</a> (<i>International Journal of Climatology</i> 30): La Ni&ntilde;a storms longer, stronger and more easterly.</li>
+    <li id="src-27"><a href="https://eartharxiv.org/repository/object/6134/download/11959/">Vos, Harley, Turner et al. 2023 &mdash; Pacific shoreline erosion and accretion patterns controlled by ENSO</a> (<i>Nature Geoscience</i> 16): 75% of south-east Australian stretches accrete in El Ni&ntilde;o, 48% erode in La Ni&ntilde;a.</li>
+    <li id="src-28"><a href="http://coastsat.space/">CoastSat (K. Vos, UNSW Water Research Laboratory)</a>, Manly site aus0210, tide-corrected Landsat shorelines 1987 to 1 Jan 2026, 10&ndash;15 m per picture. The Manly figures here (June 2016, early 2022, the yearly swing, El Ni&ntilde;o and La Ni&ntilde;a averages, mid-2009, no long-term loss) are our own rough reading of the public data, recomputed twice from the raw files; not a published or peer-reviewed study. Each is an average over many pictures.</li>
+    <li id="src-29"><a href="https://manlyobserver.com.au/queensie-beach-are-we-ever-gonna-see-your-face-again/"><i>Manly Observer</i>, 18 Apr 2022 &mdash; Queensie beach, are we ever gonna see your face again?</a>: the storms, rain and lagoon floods of the 2021&ndash;22 La Ni&ntilde;a summer at the north end.</li>
+    <li id="src-30"><a href="https://researchdata.edu.au/photographic-documentation-impacts-june-2007/3982244">Photographic documentation of a 1-in-30-year storm at Manly, 8 Jun 2007</a> (AODN): North Steyne topped up with sand after the storm.</li>
+    <li id="src-31"><a href="https://www.unsw.edu.au/news/2024/07/capturing-change-with-coastsnap">UNSW &mdash; Capturing change with CoastSnap</a> (Jul 2024) and <a href="https://www.environment.nsw.gov.au/coastsnap">NSW Government &mdash; CoastSnap</a>: the first CoastSnap cradle, at Manly (South Steyne), May 2017.</li>
+  </ul>
+  <p class="src-back"><a href="#sand">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="tides-sources">
+  <h3><span class="src-n">Chapter 9</span> Tides</h3>
+  <ul class="src">
+    <li id="src-32"><a href="https://butikov.itmo.ru/Planets/Tides.pdf">Butikov &mdash; A dynamical picture of the oceanic tides (Am. J. Phys. 70, 2002)</a></li>
+    <li id="src-33"><a href="https://arxiv.org/abs/1506.04085v1">Matsuda, Isaka &amp; Boffin &mdash; Confusion around the tidal force and the centrifugal force (2015)</a></li>
+    <li id="src-34"><a href="https://profmattstrassler.com/2023/10/27/what-really-causes-our-twice-daily-ocean-tides/">Strassler &mdash; What really causes our twice-daily ocean tides (2023)</a></li>
+    <li id="src-35"><a href="https://thenauticalalmanac.com/2019_Bowditch-_American_Practical_Navigator/Volume-_1/11-%20Part%209-%20Oceanography/Chapter%2035-%20Tides%20And%20Tidal%20Currents.pdf">Bowditch &mdash; American Practical Navigator, ch. 35: Tides and tidal currents (2019)</a></li>
+    <li id="src-36"><a href="https://oceanservice.noaa.gov/education/tutorial_tides/tides05_lunarday.html">NOAA &mdash; Tides tutorial: the lunar day</a></li>
+    <li id="src-37"><a href="https://geo.libretexts.org/Courses/American_Meteorological_Society/Introduction_to_Ocean_Sciences_(Segar)/10%3A_Tides/10.10%3A_Chapter_Summary">Segar &mdash; Introduction to Ocean Sciences, ch. 10: Tides</a></li>
+    <li id="src-38"><a href="https://media.bom.gov.au/social/blog/1603/explainer-king-tides/">Bureau of Meteorology &mdash; Explainer: king tides (2018, updated 2021)</a></li>
+    <li id="src-39"><a href="https://www.nsw.gov.au/sites/default/files/2023-06/nsw_tides_2023%E2%80%932024.pdf">Transport for NSW &mdash; NSW Tides 2023&ndash;2024 (Bureau of Meteorology predictions; time differences along the coast)</a></li>
+    <li id="src-40"><a href="https://www.portauthoritynsw.com.au/around-ports/sydney-harbour/see-and-do/history-tides-sydney-harbour">Port Authority of NSW &mdash; History of tides in Sydney Harbour</a></li>
+    <li id="src-41"><a href="https://johnmenadue.com/bruce-thom-king-tides-and-extreme-events">Bruce Thom &mdash; King tides and extreme events (Fort Denison records)</a></li>
+    <li id="src-42"><a href="https://oceanservice.noaa.gov/education/tutorial_tides/tides08_othereffects.html">NOAA &mdash; Tides tutorial: other effects (weather)</a></li>
+    <li id="src-43"><a href="https://geo.libretexts.org/Bookshelves/Oceanography/Coastal_Dynamics_(Bosboom_and_Stive)/05%3A_Coastal_hydrodynamics/5.02%3A_Wave_transformation/5.2.5%3A_Wave_breaking">Bosboom &amp; Stive &mdash; Coastal Dynamics: wave breaking</a></li>
+    <li id="src-44"><a href="https://en.wikipedia.org/wiki/Cabbage_Tree_Bay_Aquatic_Reserve">Wikipedia &mdash; Cabbage Tree Bay Aquatic Reserve (its area, for the bay-filling estimate)</a></li>
+    <li id="src-45">Data: <a href="https://uhslc.soest.hawaii.edu/data/csv/rqds/pacific/hourly/h333a.csv">University of Hawaii Sea Level Center, Fort Denison (station 333), hourly sea level</a>, from Sydney Ports / Port Authority of NSW. The tide parts, ranges, day-to-day delays and the example fortnight are our own analysis of 2003&ndash;2021.</li>
+  </ul>
+  <p class="src-back"><a href="#tides">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="sea-level-sources">
+  <h3><span class="src-n">Chapter 10</span> The ocean isn&rsquo;t flat</h3>
+  <ul class="src">
+    <li id="src-46"><a href="https://oceancurrent.aodn.org.au/whatsshown.php">IMOS OceanCurrent &mdash; What&rsquo;s shown</a>: gravity&rsquo;s share of the sea surface (about 99%) and why it is taken out; the satellite&rsquo;s range is shorter where the sea is raised; the spin rule (higher water on the left in the Southern Hemisphere, for features 50 km and up lasting days); about 10 cm per 10 hPa; what &lsquo;adjusted&rsquo; maps remove; sea-level maps leave out wave setup in shallow water near the shore.</li>
+    <li id="src-47"><a href="https://oceancurrent.aodn.org.au/glossary.php">IMOS OceanCurrent &mdash; Glossary</a>: anticlockwise eddies have raised sea level in the centre; satellite heights are measured from the centre of the Earth.</li>
+    <li id="src-48"><a href="https://oceancurrent.aodn.org.au/news.php">IMOS OceanCurrent news</a>: G. Pilo, 28 Apr 2016 (warm-core eddies, about 100 km across, can bring warm water to swimmers at Bondi); D. Griffin, 20 Dec 2024 (cold-core eddy off Sydney: low sea level, clockwise); G. Pilo, 3 Oct 2025 (maps built from about 10 days of passes, features larger than 100 km; SWOT has measured sea level near the coast); D. Griffin &amp; G. Pilo, 17 Dec 2025 (northern NSW cold-water event: north-easterlies, a strong EAC and a cold eddy; SWOT image of low sea level at the coast).</li>
+    <li id="src-49"><a href="https://figshare.utas.edu.au/articles/journal_contribution/An_avenue_of_eddies_quantifying_the_biophysical_properties_of_mesoscale_eddies_in_the_Tasman_Sea/22955702/1">Everett, Baird, Oke &amp; Suthers 2012 &mdash; An avenue of eddies</a> (<i>Geophysical Research Letters</i> 39, L16608): Eddy Avenue, 32&ndash;39&deg;S (about Forster to Bass Strait); 23% and 16% more cyclonic and anticyclonic eddies than the wider Tasman Sea; average amplitudes 23 and 24 cm; rotation about 45&ndash;50 cm/s against 15&ndash;16 cm/s globally (about three times faster).</li>
+    <li id="src-50"><a href="https://www.earthdata.nasa.gov/sites/default/files/imported/NASA_SOP_2013_pedestrians_of_eddy_avenue.pdf">NASA Sensing Our Planet 2013 &mdash; Pedestrians of Eddy Avenue</a>: the name comes from a Sydney street where the researchers waited for the bus; warm eddies turn anticlockwise and cold ones clockwise here; some cold eddies are capped with warm water.</li>
+    <li id="src-51"><a href="https://nora.nerc.ac.uk/id/eprint/528665/1/The_East_Australian_Current.pdf">Ridgway &amp; Hill 2009 &mdash; The East Australian Current</a> (Marine Climate Change Report Card): the current separates from the coast around 31&deg;S (just north of Port Macquarie); eddies 200&ndash;300 km across, often lasting more than a year.</li>
+    <li id="src-52"><a href="https://science.nasa.gov/earth/earth-observatory/east-australian-current-15366/">NASA Earth Observatory &mdash; East Australian Current</a>: up to 100 km wide and 500 m deep.</li>
+    <li id="src-53"><a href="https://www.sciencedaily.com/releases/2008/03/080325100117.htm">CSIRO via ScienceDaily, 26 Mar 2008 &mdash; Giant ocean eddy shadows Sydney</a>: a cold eddy 300 km across, nearly 1 m low at its centre, one turn every 10 days.</li>
+    <li id="src-54"><a href="https://www.jpl.nasa.gov/news/from-satellites-to-sea-jpl-scientists-map-ocean-eddies/">NASA JPL, 13 Sep 2002 &mdash; From satellites to sea</a>: warm eddies stand higher than the water around them, cool eddies lower.</li>
+    <li id="src-55"><a href="https://data.marine.copernicus.eu/product/SEALEVEL_GLO_PHY_L4_NRT_008_046/description">Copernicus Marine Service &mdash; global gridded sea level (SEALEVEL_GLO_PHY_L4_NRT_008_046)</a>: the long-term step of about 30 cm between the coast and 150&ndash;200 km out along 33.8&deg;S (Manly&rsquo;s latitude) is our own reading of this product (its long-term mean, ADT minus SLA, on the 5 and 6 Oct 2026 maps), not a published figure. Twelve monthly snapshots (Nov 2025 to Oct 2026) show the day-to-day step varying with eddies, reversed on three of them. Generated using E.U. Copernicus Marine Service Information.</li>
+    <li id="src-56"><a href="https://geographiclib.sourceforge.io/cgi-bin/GeoidEval?input=-33.8+153">GeographicLib GeoidEval (EGM2008 gravity model)</a>: our own check that gravity&rsquo;s &lsquo;level&rsquo; surface falls from about 22.5 m at Manly (33.8&deg;S 151.3&deg;E) to about 16.1 m at 153&deg;E, about 160 km out.</li>
+    <li id="src-57">Bureau of Meteorology &mdash; About tide predictions: <a href="https://www.bom.gov.au/australia/tides/about/p3b-barometric.shtml">barometric pressure</a> (about 0.1 m per 10 hPa, seldom more than 0.3 m), <a href="https://www.bom.gov.au/australia/tides/about/p3c-wind.shtml">the effect of wind</a>, <a href="https://www.bom.gov.au/australia/tides/about/p3d-storms.shtml">storm surges</a>; <a href="https://media.bom.gov.au/social/blog/1603/explainer-king-tides">Explainer: king tides</a>.</li>
+    <li id="src-58"><a href="https://www.coastalconference.com/2016/papers2016/Ed-Couriel-Simon-Louis.pdf">Louis, Couriel et al. 2016 &mdash; NSW East Coast Low event, 3&ndash;7 June 2016</a> (Bureau of Meteorology and Manly Hydraulics Laboratory): surge up to 0.34 m on a winter king tide; about 0.20 m of Sydney&rsquo;s peak; damage along Manly Beach towards Fairy Bower.</li>
+    <li id="src-59"><a href="https://www.nsw.gov.au/driving-boating-and-transport/using-waterways-boating-and-transport-information/conditions-weather-and-tides/nsw-tide-tables">NSW tide tables</a> (Bureau of Meteorology predictions for Fort Denison). The tide range on this page is our own calculation from the 2023&ndash;24 tables.</li>
+    <li id="src-60"><a href="https://www.climatechange.environment.nsw.gov.au/sites/default/files/2021-06/Fort%20Denison%20sea%20level%20rise%20study.pdf">Watson &amp; Lord 2008 &mdash; Fort Denison Sea Level Rise Vulnerability Study</a> (NSW DECC): the tide register from 1866, reliable records from 1914; two highs and two lows a day; tide gauges measure the sea against the land; on an exposed open coast, wave setup and wave runup are the biggest part of how high storm water reaches at the shoreline, while the harbour round Fort Denison gets far less wave action than the open coast.</li>
+    <li id="src-61"><a href="https://psmsl.org/data/obtaining/stations/196.php">PSMSL &mdash; Sydney, Fort Denison 2 (station 196)</a>: acoustic gauge since 1996; the yearly means behind our own fits (3.75 &plusmn; 0.41 mm a year for 1993&ndash;2024; relative sea level).</li>
+    <li id="src-62"><a href="https://science.feedback.org/review/photo-meme-of-sydney-harbour-incorrectly-claims-no-sea-level-rise-has-occurred/">Science Feedback, 28 Oct 2019</a>: about 12 cm at Sydney since the end of the 19th century, about 0.8 mm a year through the 20th (T. Frederikse; rates from You et al. 2009).</li>
+    <li id="src-63"><a href="https://researchers.mq.edu.au/en/publications/enso-to-multi-decadal-time-scale-changes-in-east-australian-curre/">Holbrook et al. 2011</a> (<i>Deep-Sea Research II</i> 58): Fort Denison sea level varies over years to decades with the strength of the East Australian Current.</li>
+    <li id="src-64"><a href="https://noaa.gov/node/11181">NOAA &mdash; Effects of ENSO in the Pacific</a>: about 46 cm higher near Indonesia than Peru; the water moves back east when the trade winds weaken in El Ni&ntilde;o.</li>
+    <li id="src-65"><a href="https://www.jpl.nasa.gov/news/nasa-analysis-shows-unexpected-amount-of-sea-level-rise-in-2024/">NASA JPL, 13 Mar 2025 &mdash; Unexpected amount of sea level rise in 2024</a> (about 10 cm since 1993, data to 2024, rate more than doubled); <a href="https://www.bom.gov.au/weather-and-climate/past-weather-and-climate/state-of-the-climate-2024/oceans">Bureau of Meteorology &mdash; State of the Climate 2024: Oceans</a> (warming water expands; satellites limited to beyond 25&ndash;50 km from the coast).</li>
+    <li id="src-66"><a href="https://www.jpl.nasa.gov/news/us-european-mission-launches-to-monitor-the-worlds-oceans/">NASA JPL, 21 Nov 2020 &mdash; Sentinel-6 Michael Freilich launch</a> (the satellite chain since 1992); <a href="https://oceannews.com/news/science-technology/sentinel-6b-launched-to-extend-record-of-sea-level-rise">Ocean News &mdash; Sentinel-6B launched</a> (17 Nov 2025); <a href="https://marine.copernicus.eu/news/sentinel-6b-launch-new-era-measuring-sea-level-space">Copernicus Marine &mdash; Sentinel-6B</a> (flies in formation with Sentinel-6A for cross-checking).</li>
+    <li id="src-67"><a href="https://imos.org.au/facilities/srs/srscalval">IMOS &mdash; Satellite altimetry calibration and validation</a>: instruments moored in Bass Strait under a satellite&rsquo;s path, the only Southern Hemisphere site operating since TOPEX/Poseidon in 1992.</li>
+    <li id="src-68"><a href="https://oceancurrent.aodn.org.au/SNSW/latest.html">IMOS OceanCurrent &mdash; southern NSW, latest map</a> (sea temperature with sea-level contours; each map prints its own dates). Images are &copy; IMOS: see the <a href="https://imos.org.au/terms-of-use">IMOS terms of use</a> before reproducing them.</li>
+  </ul>
+  <p class="src-back"><a href="#sea-level">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="cold-water-sources">
+  <h3><span class="src-n">Chapter 11</span> Cold water, green water</h3>
+  <ul class="src">
+    <li id="src-69"><a href="https://unswscience.substack.com/p/shark-frenzy-empties-popular-byron">Kerry C., UNSW Coastal and Regional Oceanography &mdash; Shark frenzy empties popular Byron Bay beach (upwelling winds explained)</a>, UNSW Science, 12 Dec 2025</li>
+    <li id="src-70"><a href="https://ndownloader.figshare.com/files/40659032">Rossi V. et al. (2014) &mdash; Seasonality of sporadic physical processes driving temperature and nutrient high-frequency variability in the coastal ocean off southeast Australia</a>, JGR Oceans 119</li>
+    <li id="src-71"><a href="https://unsw.edu.au/content/dam/pdfs/campus/2024-05-oceanography/Schaeffer_et_al-2017-Geophysical_Research_Letters.pdf">Schaeffer A. &amp; Roughan M. (2017) &mdash; Sub-surface intensification of marine heatwaves off southeastern Australia</a>, GRL</li>
+    <li id="src-72"><a href="https://unsw.edu.au/content/dam/pdfs/campus/2024-05-oceanography/2019JC015227.pdf">Kerry C. &amp; Roughan M. (2020) &mdash; Downstream evolution of the East Australian Current system</a>, JGR Oceans</li>
+    <li id="src-73"><a href="https://nora.nerc.ac.uk/id/eprint/528665/1/The_East_Australian_Current.pdf">Ridgway K. &amp; Hill K. (2009) &mdash; The East Australian Current</a>, Marine Climate Change Report Card</li>
+    <li id="src-74"><a href="https://en.wikipedia.org/wiki/Ekman_transport">Ekman transport</a> (Wikipedia); <a href="https://oceanservice.noaa.gov/education/tutorial_currents/04currents4.html">NOAA &mdash; Ekman spiral</a>; <a href="https://oceanmotion.org/html/background/upwelling-and-downwelling.htm">Ocean Motion &mdash; Upwelling and downwelling</a></li>
+    <li id="src-75"><a href="https://www.swellnet.com/news/swellnet-analysis/2019/01/03/analysis-cold-water-and-green-seas">Swellnet &mdash; Analysis: Cold water and green seas</a>, 3 Jan 2019</li>
+    <li id="src-76"><a href="https://investsmart.com.au/investment-news/just-when-you-felt-it-was-safe/22022">SMH via InvestSMART &mdash; Just when you felt it was safe...</a>, 12 Dec 2010</li>
+    <li id="src-77"><a href="https://eldersweather.com.au/news/coastal-upwelling-shrouds-sydney-coast-with-sea-fog/1890175">Weatherzone via Elders Weather &mdash; Coastal upwelling shrouds Sydney coast with sea fog</a>, 6 Dec 2024</li>
+    <li id="src-78"><a href="https://www.weatherzone.com/au/news/travelling-north-to-meet-the-cold-waters/1681883">Weatherzone &mdash; Travelling north to meet the cold waters</a>, 16 Dec 2023</li>
+    <li id="src-79"><a href="https://open.uct.ac.za/items/5e85e0e4-92d8-456d-ad22-ac5914b2de21">Brown P.C. (1986) &mdash; The development and decline of phytoplankton blooms in the southern Benguela upwelling region</a>, PhD thesis, University of Cape Town</li>
+    <li id="src-80"><a href="https://www.cmar.csiro.au/remotesensing/oceancurrent/news.htm">CSIRO/IMOS OceanCurrent news archive</a> (strong upwelling in eastern Bass Strait, Feb 2013)</li>
+    <li id="src-81"><a href="https://connectsci.au/mf/article-lookup/doi/10.1071/MF9930325">Hallegraeff G.M. &amp; Jeffrey S.W. (1993) &mdash; Annually recurrent diatom blooms in spring along the New South Wales coast of Australia</a></li>
+    <li id="src-82">Dela-Cruz J. et al. (2002) <a href="https://doi.org/10.3354/meps236075">Temporal abundance patterns of the red tide dinoflagellate Noctiluca scintillans along the southeast coast of Australia</a>, MEPS 236; and (2003) <a href="https://doi.org/10.4319/lo.2003.48.2.0656">Population growth and transport of Noctiluca scintillans in the coastal waters off Sydney</a>, Limnol. Oceanogr. 48</li>
+    <li id="src-83"><a href="https://openjournals.library.sydney.edu.au/LIN/article/view/5044">Ajani P. et al. (2011) &mdash; Microalgal blooms in the coastal waters of New South Wales, Australia</a>, Proc. Linn. Soc. NSW 133</li>
+    <li id="src-84"><a href="https://manlyobserver.com.au/sea-ing-red-whats-that-funny-coloured-plume-in-the-water/">Manly Observer &mdash; Sea-ing red: what's that funny coloured plume in the water</a>, 1 Dec 2021</li>
+    <li id="src-85"><a href="https://science.nasa.gov/earth/earth-observatory/a-bloom-of-nitrogen-fixing-bacteria-145610">NASA Earth Observatory &mdash; A bloom of nitrogen-fixing bacteria</a>, 1 Sep 2019; <a href="https://www.illawarramercury.com.au/story/5936774/thirroul-pool-closed-due-to-water-quality-concerns/">Illawarra Mercury</a>, 5 Mar 2019</li>
+    <li id="src-86">NSW Beachwatch &mdash; <a href="https://www2.environment.nsw.gov.au/sites/default/files/state-of-beaches-2018-2019-sydney-190313.pdf">State of the Beaches 2018&ndash;19, Sydney</a> and <a href="https://www.environment.nsw.gov.au/sites/default/files/state-of-the-beaches-2022-23-hunter-region-230277.pdf">2022&ndash;23, Hunter</a></li>
+    <li id="src-87"><a href="https://www.waternsw.com.au/water-services/water-quality/algae-alerts">WaterNSW &mdash; Algae Alerts NSW map</a> (alerts from the Regional Algal Coordinating Committees; opened 7 Oct 2026)</li>
+    <li id="src-88"><a href="https://www.environment.nsw.gov.au/sites/default/files/towards-safer-swimming-terrigal-region-turbidity-and-discolouration-200413.pdf">Scanes P. (2020) &mdash; Understanding turbidity and discolouration in Terrigal Bay</a>, NSW DPIE</li>
+    <li id="src-89"><a href="https://ecat.ga.gov.au/geonetwork/srv/api/records/46029d31-2630-4c24-b672-8b56296d3bae">Huang Z. &amp; Wang X.H. (2019) &mdash; Mapping the upwelling systems of the Australian south-eastern coast using 14-year MODIS data</a>, Remote Sensing of Environment 227</li>
+  </ul>
+  <p class="src-back"><a href="#cold-water">&larr; Back to the chapter</a></p>
+  </div>
+  <div class="src-group" id="simulator-sources">
+  <h3><span class="src-n">Chapter 12</span> From the forecast to the corner</h3>
+  <ul class="src">
+    <li class="src-dup">Also used here, listed earlier: <a href="#src-4">VIZ &mdash; Dive conditions simulator</a>; <a href="#src-1">C. Sillig &mdash; Waves course</a>; <a href="#src-2">Southard &mdash; Water motions due to waves</a>; <a href="#src-5">Bosboom &amp; Stive &mdash; Coastal Dynamics: refraction</a>; <a href="#src-6">ScienceDirect &mdash; Shoaling wave</a>; <a href="#src-3">WeatherSTEM &mdash; Waves lesson</a>; <a href="#src-7">Surfertoday &mdash; What is wave diffraction?</a>; <a href="#src-8">Data: NSW Nearshore Wave Tool hindcast, node 103218; Open-Meteo marine hindcast; WillyWeather via the app's forecast history.</a>.</li>
+  </ul>
+  <p class="src-back"><a href="#simulator">&larr; Back to the chapter</a></p>
+  </div>
+</section>
+</div>
+
+<div class="wrap">
+  <p class="physics-note">This is physics, not a forecast. Nothing here says whether to swim: for today&rsquo;s conditions, use the app. Each chapter&rsquo;s sources are gathered in <a href="#sources">Sources</a>, above.</p>
   <footer><a href="https://app.viz.net.au/Manly-Swim/">Swim Manly</a> &middot; South Steyne &amp; Cabbage Tree Bay</footer>
 </div>
 </main>
 
-<script>
-/* Folded chapters (one-page build, 7 Oct 2026). Runs before ocean.js and the chapter
-   modules, so a chapter named in the address is already open (and measurable) when its
-   canvases first size themselves. ES5 + Proxy. Nothing is sent anywhere; which chapters
-   are open is kept on this device only (localStorage, wrapped). */
-(function () {
-'use strict';
-var OKEY = 'swim_ocean_open_v1';
-// old page names and other spellings of a chapter
-var ALIAS = { 'chapter-template': 'waves', fetch: 'wind', ssh: 'sea-level', upwelling: 'cold-water',
-  hub: 'top', glossary: 'words' };
-var chaps = {};
-[].forEach.call(document.querySelectorAll('section.chap[data-slug]'), function (s) { chaps[s.getAttribute('data-slug')] = s; });
-
-// Each chapter's script sees a document whose querySelector(All) is limited to its own
-// chapter; everything else (getElementById, events, fonts) is the real document.
-window.OCEAN_SCOPE = function (id) {
-  var root = document.getElementById(id);
-  if (!root || typeof Proxy !== 'function') return document;
-  return new Proxy(document, { get: function (t, p) {
-    if (p === 'querySelector') return function (s) { return root.querySelector(s); };
-    if (p === 'querySelectorAll') return function (s) { return root.querySelectorAll(s); };
-    var v = t[p];
-    return typeof v === 'function' ? v.bind(t) : v;
-  } });
-};
-
-function loadOpen() { try { return JSON.parse(localStorage.getItem(OKEY) || '[]') || []; } catch (e) { return []; } }
-function saveOpen() {
-  try {
-    var a = []; for (var k in chaps) if (chaps[k].classList.contains('is-open')) a.push(k);
-    localStorage.setItem(OKEY, JSON.stringify(a));
-  } catch (e) {}
-}
-function fireResize() {
-  try { window.dispatchEvent(new Event('resize')); }
-  catch (e) { try { var ev = document.createEvent('UIEvents'); ev.initUIEvent('resize', true, false, window, 0); window.dispatchEvent(ev); } catch (e2) {} }
-}
-function setOpen(slug, on, quiet) {
-  var s = chaps[slug]; if (!s) return false;
-  var body = s.querySelector('.chap-body'), btn = s.querySelector('.chap-toggle');
-  if (on === s.classList.contains('is-open')) return false;
-  s.classList.toggle('is-open', on);
-  body.hidden = !on;
-  btn.setAttribute('aria-expanded', on ? 'true' : 'false');
-  if (!quiet) saveOpen();
-  if (on) { fireResize(); (window.requestAnimationFrame || setTimeout)(fireResize); }
-  try { document.dispatchEvent(new CustomEvent('oceanchapter', { detail: { slug: slug, open: on } })); } catch (e) {}
-  return true;
-}
-// hash -> { slug, el } : el is what to scroll to
-function resolve(h) {
-  if (!h) return null;
-  if (h.indexOf('=') > -1) return { slug: 'simulator', el: document.getElementById('sim') };
-  try { h = decodeURIComponent(h); } catch (e) {}
-  h = ALIAS[h] || h;
-  if (chaps[h]) return { slug: h, el: chaps[h] };
-  var el = null;
-  try { el = document.getElementById(h); } catch (e) {}
-  if (!el) return null;
-  var c = el.closest ? el.closest('section.chap') : null;
-  return { slug: c ? c.getAttribute('data-slug') : null, el: el };
-}
-function go(h, scroll) {
-  var r = resolve(h); if (!r) return null;
-  if (r.slug) setOpen(r.slug, true);
-  if (scroll && r.el) { try { r.el.scrollIntoView(); } catch (e) {} }
-  return r;
-}
-
-// header taps
-document.addEventListener('click', function (e) {
-  var t = e.target, b = t.closest && t.closest('.chap-toggle');
-  if (b) { var s = b.closest('section.chap'), slug = s.getAttribute('data-slug'), on = !s.classList.contains('is-open');
-    setOpen(slug, on);
-    if (!on && s.getBoundingClientRect().top < 0) { try { s.scrollIntoView(); } catch (e2) {} }
-    return; }
-  var c = t.closest && t.closest('[data-chap-close]');
-  if (c) { var cs = chaps[c.getAttribute('data-chap-close')]; setOpen(c.getAttribute('data-chap-close'), false);
-    try { cs.scrollIntoView(); } catch (e3) {} cs.querySelector('.chap-toggle').focus({ preventScroll: true }); return; }
-  // links into this page: open the chapter first (capture phase, before the browser and
-  // the progress kit look for the target)
-  var a = t.closest && t.closest('a[href*="#"]');
-  if (!a || a.target || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-  if (a.pathname !== location.pathname || a.host !== location.host) return;
-  var h = a.hash.slice(1), r = resolve(h);
-  if (!r) return;
-  if (r.slug) setOpen(r.slug, true);
-  if (r.el && r.el.id !== h) {                     // a chapter name or alias: no element by that id
-    e.preventDefault();
-    try { history.pushState(null, '', '#' + h); } catch (e4) {}
-    try { r.el.scrollIntoView(); } catch (e5) {}
-  }
-}, true);
-window.addEventListener('hashchange', function () { go(location.hash.slice(1), true); });
-
-// on load: chapters opened before on this device, then the one in the address
-try { localStorage.removeItem(OKEY); } catch (e) {}   // chapters always start closed (owner, 7 Oct 2026); only a link or #hash opens one
-var first = go(location.hash.slice(1), false);
-if (first && first.el) {
-  // The browser's own jump happens before the contents panel is built above, which then
-  // pushes the target down; and a chapter name has no element by that id at all. So land
-  // again once laid out, unless the reader has already moved.
-  var moved = false;
-  ['wheel', 'touchmove', 'keydown', 'mousedown'].forEach(function (n) { window.addEventListener(n, function () { moved = true; }, { passive: true, capture: true }); });
-  var land = function () { if (!moved) { try { first.el.scrollIntoView(); } catch (e) {} } };
-  document.addEventListener('DOMContentLoaded', function () { (window.requestAnimationFrame || setTimeout)(land); });
-  window.addEventListener('load', land);
-}
-window.OceanChapters = { open: function (s) { return setOpen(s, true); }, close: function (s) { return setOpen(s, false); }, resolve: resolve };
-})();
-</script>
-
 <script src="ocean.js?v=sea2"></script>
 <script>if (window.OCEAN) window.OCEAN.hub();</script>
 <script src="ocean-progress-config.js?v=sea2"></script>
-<script src="ocean-progress.js?v=sea3" defer></script>
-<script>/* waves (chapter-template.html) */
+<script src="ocean-overlays.js?v=ov2" defer></script>
+<script src="ocean-progress.js?v=sea4" defer></script>
+<script type="text/x-ocean-chapter" data-chap="ch-waves">/* waves (chapter-template.html) */
 (function (document) {
 (function (O) {
 'use strict';
@@ -2303,7 +2210,7 @@ var G = O.G, REDUCED = O.REDUCED, waveK = O.waveK, groupSpeed = O.groupSpeed, ru
 
 })(window.OCEAN);
 }).call(window, OCEAN_SCOPE('ch-waves'));</script>
-<script>/* swell-and-sets (swell-and-sets.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-swell-and-sets">/* swell-and-sets (swell-and-sets.html) */
 (function (document) {
 (function (O) {
 'use strict';
@@ -2639,7 +2546,7 @@ document.addEventListener('wavesconfig', cfg);
 
 })(window.OCEAN);
 }).call(window, OCEAN_SCOPE('ch-swell-and-sets'));</script>
-<script>/* into-the-bay (into-the-bay.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-into-the-bay">/* into-the-bay (into-the-bay.html) */
 (function (document) {
 (function (O) {
 'use strict';
@@ -3162,7 +3069,7 @@ document.addEventListener('wavesconfig', cfg);
 
 })(window.OCEAN);
 }).call(window, OCEAN_SCOPE('ch-into-the-bay'));</script>
-<script>/* into-the-bay (into-the-bay.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-into-the-bay">/* into-the-bay (into-the-bay.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -3355,7 +3262,7 @@ btns.forEach(function (b) { b.addEventListener('click', function () { set(+b.get
 set(135);
 })();
 }).call(window, OCEAN_SCOPE('ch-into-the-bay'));</script>
-<script>/* point-and-wall (point-and-wall.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-point-and-wall">/* point-and-wall (point-and-wall.html) */
 (function (document) {
 (function (O) {
 'use strict';
@@ -3896,7 +3803,7 @@ document.addEventListener('wavesconfig', cfg);
 
 })(window.OCEAN);
 }).call(window, OCEAN_SCOPE('ch-point-and-wall'));</script>
-<script>/* wind (fetch.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-wind">/* wind (fetch.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -4340,7 +4247,7 @@ function runCanvas(cv, height, draw) {
 })();
 })();
 }).call(window, OCEAN_SCOPE('ch-wind'));</script>
-<script>/* currents (currents.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-currents">/* currents (currents.html) */
 (function (document) {
 (function (O) {
 'use strict';
@@ -4646,7 +4553,7 @@ document.addEventListener('wavesconfig', cfg);
 
 })(window.OCEAN);
 }).call(window, OCEAN_SCOPE('ch-currents'));</script>
-<script>/* currents (currents.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-currents">/* currents (currents.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -4700,7 +4607,7 @@ window.addEventListener('resize', draw);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw);
 })();
 }).call(window, OCEAN_SCOPE('ch-currents'));</script>
-<script>/* circulation (Round the bay, 8 Oct 2026; only on sea.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-circulation">/* circulation (Round the bay, 8 Oct 2026; only on sea.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -5009,7 +4916,7 @@ btns.forEach(function (b) { b.addEventListener('click', function () { set(b.getA
 set('swell');
 })();
 }).call(window, OCEAN_SCOPE('ch-circulation'));</script>
-<script>/* sand (sand.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-sand">/* sand (sand.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -5514,7 +5421,7 @@ function runCanvas(cv, height, draw) {
 // ══ PASTE END: NEW MODULE ══
 })();
 }).call(window, OCEAN_SCOPE('ch-sand'));</script>
-<script>/* tides (tides.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-tides">/* tides (tides.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -6188,7 +6095,7 @@ function tGap(ctx, x0, x1, y, r1, col, a) {               // a 2 px double-heade
 })();
 })();
 }).call(window, OCEAN_SCOPE('ch-tides'));</script>
-<script>/* sea-level (ssh.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-sea-level">/* sea-level (ssh.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -6670,7 +6577,7 @@ function runCanvas(cv, height, draw) {
 })();
 })();
 }).call(window, OCEAN_SCOPE('ch-sea-level'));</script>
-<script>/* cold-water (upwelling.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-cold-water">/* cold-water (upwelling.html) */
 (function (document) {
 (function () {
 'use strict';
@@ -7227,7 +7134,7 @@ function runCanvas(cv, height, draw) {
 })();
 })();
 }).call(window, OCEAN_SCOPE('ch-cold-water'));</script>
-<script>/* simulator (simulator.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-simulator">/* simulator (simulator.html) */
 (function (document) {
 (function (O) {
 'use strict';
@@ -7525,7 +7432,7 @@ window.wavesLog = function (ev) { O.log(ev); };
 
 })(window.OCEAN);
 }).call(window, OCEAN_SCOPE('ch-simulator'));</script>
-<script>/* words (words.html) */
+<script type="text/x-ocean-chapter" data-chap="ch-words">/* words (words.html) */
 (function (document) {
 (function () {
   'use strict';
@@ -7566,5 +7473,161 @@ window.wavesLog = function (ev) { O.log(ev); };
   run();
 })();
 }).call(window, OCEAN_SCOPE('ch-words'));</script>
+<script>
+/* Folded chapters (one-page build, 7 Oct 2026; each chapter built on first open since
+   8 Oct 2026). A chapter's body waits in a <template> and its script in a data block
+   (type="text/x-ocean-chapter"), so a first visit parses them but builds none of it: no
+   DOM, no canvases, no script run. The first time a chapter opens, by a tap, a link or
+   the address, its body is built and its script runs, once. This runs last, after ocean.js
+   (the chapter scripts use window.OCEAN) and the data blocks it runs, and before the deferred progress kit, which is told about
+   each newly built chapter (OceanProgress.adopt) so it adds its read buttons. ES5 + Proxy.
+   Nothing is sent anywhere. */
+(function () {
+'use strict';
+var OKEY = 'swim_ocean_open_v1';
+// old page names and other spellings of a chapter
+var ALIAS = { 'chapter-template': 'waves', fetch: 'wind', ssh: 'sea-level', upwelling: 'cold-water',
+  hub: 'top', glossary: 'words' };
+var chaps = {};
+[].forEach.call(document.querySelectorAll('section.chap[data-slug]'), function (s) { chaps[s.getAttribute('data-slug')] = s; });
+
+// Each chapter's script sees a document whose querySelector(All) is limited to its own
+// chapter; everything else (getElementById, events, fonts) is the real document.
+window.OCEAN_SCOPE = function (id) {
+  var root = document.getElementById(id);
+  if (!root || typeof Proxy !== 'function') return document;
+  return new Proxy(document, { get: function (t, p) {
+    if (p === 'querySelector') return function (s) { return root.querySelector(s); };
+    if (p === 'querySelectorAll') return function (s) { return root.querySelectorAll(s); };
+    var v = t[p];
+    return typeof v === 'function' ? v.bind(t) : v;
+  } });
+};
+
+// id -> chapter slug for everything still inside a template (read once, when first needed)
+var IDS = null;
+function idMap() {
+  if (IDS) return IDS;
+  IDS = {};
+  for (var k in chaps) {
+    var t = chaps[k].querySelector('template.chap-tpl');
+    if (t && t.content) [].forEach.call(t.content.querySelectorAll('[id]'), function (el) { IDS[el.id] = k; });
+  }
+  return IDS;
+}
+// Build a chapter's body and run its script, once.
+function build(slug) {
+  var s = chaps[slug];
+  if (!s || s.getAttribute('data-built')) return false;
+  idMap();                                               // before the template goes
+  s.setAttribute('data-built', '1');
+  var body = s.querySelector('.chap-body'), t = body && body.querySelector('template.chap-tpl');
+  if (t) {
+    if (t.content) body.replaceChild(document.importNode(t.content, true), t);
+    else { while (t.firstChild) body.insertBefore(t.firstChild, t); body.removeChild(t); }   // no <template> support
+  }
+  [].forEach.call(document.querySelectorAll('script[type="text/x-ocean-chapter"]'), function (src) {
+    if (src.getAttribute('data-chap') !== s.id) return;
+    var sc = document.createElement('script');
+    sc.text = src.text;                                  // runs on insertion; an error stays in this chapter
+    src.parentNode.insertBefore(sc, src.nextSibling);
+  });
+  if (window.OceanProgress && typeof window.OceanProgress.adopt === 'function') {
+    try { window.OceanProgress.adopt(); } catch (e) {}
+  }
+  return true;
+}
+
+function loadOpen() { try { return JSON.parse(localStorage.getItem(OKEY) || '[]') || []; } catch (e) { return []; } }
+function saveOpen() {
+  try {
+    var a = []; for (var k in chaps) if (chaps[k].classList.contains('is-open')) a.push(k);
+    localStorage.setItem(OKEY, JSON.stringify(a));
+  } catch (e) {}
+}
+function fireResize() {
+  try { window.dispatchEvent(new Event('resize')); }
+  catch (e) { try { var ev = document.createEvent('UIEvents'); ev.initUIEvent('resize', true, false, window, 0); window.dispatchEvent(ev); } catch (e2) {} }
+}
+function setOpen(slug, on, quiet) {
+  var s = chaps[slug]; if (!s) return false;
+  var body = s.querySelector('.chap-body'), btn = s.querySelector('.chap-toggle');
+  if (on === s.classList.contains('is-open')) return false;
+  s.classList.toggle('is-open', on);
+  body.hidden = !on;
+  btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+  if (on) build(slug);                                   // after unhiding, so its canvases measure real sizes
+  if (!quiet) saveOpen();
+  if (on) { fireResize(); (window.requestAnimationFrame || setTimeout)(fireResize); }
+  try { document.dispatchEvent(new CustomEvent('oceanchapter', { detail: { slug: slug, open: on } })); } catch (e) {}
+  return true;
+}
+// hash -> { slug, el, id }: el is what to scroll to (null until its chapter is built: see target)
+function resolve(h) {
+  if (!h) return null;
+  if (h.indexOf('=') > -1) return { slug: 'simulator', el: null, id: 'sim' };
+  try { h = decodeURIComponent(h); } catch (e) {}
+  h = ALIAS[h] || h;
+  if (chaps[h]) return { slug: h, el: chaps[h], id: chaps[h].id };
+  var el = null;
+  try { el = document.getElementById(h); } catch (e) {}
+  if (!el) { var sl = idMap()[h]; return sl ? { slug: sl, el: null, id: h } : null; }
+  var c = el.closest ? el.closest('section.chap') : null;
+  return { slug: c ? c.getAttribute('data-slug') : null, el: el, id: h };
+}
+function target(r) { return r.el || (r.el = r.id ? document.getElementById(r.id) : null); }
+function go(h, scroll) {
+  var r = resolve(h); if (!r) return null;
+  if (r.slug) setOpen(r.slug, true);
+  target(r);
+  if (scroll && r.el) { try { r.el.scrollIntoView(); } catch (e) {} }
+  return r;
+}
+
+// header taps
+document.addEventListener('click', function (e) {
+  var t = e.target, b = t.closest && t.closest('.chap-toggle');
+  if (b) { var s = b.closest('section.chap'), slug = s.getAttribute('data-slug'), on = !s.classList.contains('is-open');
+    setOpen(slug, on);
+    if (!on && s.getBoundingClientRect().top < 0) { try { s.scrollIntoView(); } catch (e2) {} }
+    return; }
+  var c = t.closest && t.closest('[data-chap-close]');
+  if (c) { var cs = chaps[c.getAttribute('data-chap-close')]; setOpen(c.getAttribute('data-chap-close'), false);
+    try { cs.scrollIntoView(); } catch (e3) {} cs.querySelector('.chap-toggle').focus({ preventScroll: true }); return; }
+  // links into this page: open (and build) the chapter first (capture phase, before the
+  // browser and the progress kit look for the target)
+  var a = t.closest && t.closest('a[href*="#"]');
+  if (!a || a.target || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (a.pathname !== location.pathname || a.host !== location.host) return;
+  var h = a.hash.slice(1), r = resolve(h);
+  if (!r) return;
+  if (r.id !== h) {                                      // a chapter name, an alias or simulator settings: no element by that id
+    e.preventDefault();
+    try { history.pushState(null, '', '#' + h); } catch (e4) {}   // first, so a chapter built now reads the new address
+    if (r.slug) setOpen(r.slug, true);
+    try { target(r).scrollIntoView(); } catch (e5) {}
+    return;
+  }
+  if (r.slug) setOpen(r.slug, true);                     // then the browser scrolls to it as usual
+}, true);
+window.addEventListener('hashchange', function () { go(location.hash.slice(1), true); });
+
+// on load: the chapter in the address, if any
+try { localStorage.removeItem(OKEY); } catch (e) {}   // chapters always start closed (owner, 7 Oct 2026); only a link or #hash opens one
+var first = go(location.hash.slice(1), false);
+if (first && first.el) {
+  // The browser's own jump happens before the contents panel is built above, which then
+  // pushes the target down; and a chapter name has no element by that id at all. So land
+  // again once laid out, unless the reader has already moved.
+  var moved = false;
+  ['wheel', 'touchmove', 'keydown', 'mousedown'].forEach(function (n) { window.addEventListener(n, function () { moved = true; }, { passive: true, capture: true }); });
+  var land = function () { if (!moved) { try { first.el.scrollIntoView(); } catch (e) {} } };
+  document.addEventListener('DOMContentLoaded', function () { (window.requestAnimationFrame || setTimeout)(land); });
+  window.addEventListener('load', land);
+}
+window.OceanChapters = { open: function (s) { return setOpen(s, true); }, close: function (s) { return setOpen(s, false); },
+  resolve: resolve, build: build, built: function (s) { return !!(chaps[s] && chaps[s].getAttribute('data-built')); } };
+})();
+</script>
 </body>
 </html>
