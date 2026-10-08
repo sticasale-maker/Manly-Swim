@@ -859,6 +859,13 @@
   .st-src { font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
             color: var(--dim); margin-top: 1px; }
   .st-src[hidden] { display: none; }
+  /* "Why? / How it works" doorways into the ocean explainer (8 Oct 2026). A link only:
+     plain wording, never a verdict or advice, styled like the tiles' small caps. */
+  .why-link { font-family: 'Inter', sans-serif; font-size: 9.5px; font-weight: 600; letter-spacing: 1px;
+              text-transform: uppercase; color: var(--ocean); text-decoration: none; white-space: nowrap; }
+  .why-link:hover { text-decoration: underline; }
+  .why-row { margin-top: 6px; text-align: right; }
+  .st-left .why-link { display: inline-block; margin-top: 2px; font-size: 8px; }
   .st-peng-wrap { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; }
   .st-penguin { height: 42px; width: auto; flex: 0 0 auto; display: none; }
   /* Pollution card: a state-matched penguin (label baked in), linked to Beachwatch. */
@@ -4189,6 +4196,7 @@
             <span style="font-size:11px;color:var(--dim);">°C</span>
           </div>
           <div class="st-src" id="seaTempSrc" hidden>satellite</div>
+          <a class="why-link" href="ocean/sea.html?src=card#cold-water">Why? &rsaquo;</a>
         </div>
         <div class="st-peng-wrap"><img id="seaTempPenguin" class="st-penguin" alt="" aria-hidden="true"></div>
       </div>
@@ -4263,6 +4271,7 @@
       <div class="chop-graph-legend">
         <span>White curved arrows = swell energy &middot; <span class="sw-wind-cap">amber arrow = wind</span>. Wind builds chop from its speed and its runway over open water &mdash; the fetch</span>
       </div>
+      <div class="why-row"><a class="why-link" href="ocean/sea.html?src=card#into-the-bay">How swell gets in &rsaquo;</a></div>
     </div>
 
     <!-- Live cams — Surfline stills, refreshed on load (tap opens the source page) -->
@@ -4605,6 +4614,7 @@
               few days to a couple of weeks, depending on how quickly ocean currents flush
               the bay and how fast local nutrients are depleted.</li>
           </ul>
+          <p class="why-row" style="text-align:left;"><a class="why-link" href="ocean/sea.html?src=card#cold-water">Cold water and green water &rsaquo;</a></p>
           <p class="chl-note-src">Contains modified Copernicus Sentinel data 2026, processed for this card &mdash; with VIIRS NOAA-21, PACE OCI and Sentinel-3 OLCI via NASA GIBS behind it. Whichever instrument produced the scene on screen is named above it.</p>
         </div>
       </div>
@@ -5257,6 +5267,7 @@
         </div>
       </div>
       <svg class="tide-graph-svg" id="tideGraphSvg" viewBox="0 0 360 105" preserveAspectRatio="xMidYMid meet" aria-label="Tide chart for the day"></svg>
+      <div class="why-row"><a class="why-link" href="ocean/sea.html?src=card#tides">How tides work &rsaquo;</a></div>
     </div>
 
 
@@ -20581,17 +20592,25 @@ function bbfModalHTML(){
     `</div>`;
 }
 
+// Doorway from each metric sheet to the matching chapter of the ocean explainer.
+// A link only, never advice: the wording names the topic and carries no verdict.
+const METRIC_WHY = { entry: 'shoaling', surge: 'bounce', swim: 'wind', bluebottles: 'currents' };
+function whyLinkHTML(key) {
+  const h = METRIC_WHY[key];
+  return h ? '<div class="why-row" style="white-space:normal;"><a class="why-link" href="ocean/sea.html?src=card#' + h + '">How it works &rsaquo;</a></div>' : '';
+}
+
 // Paint the sheet body for `key`. Split out of openMetricModal so the paint path
 // can refresh an already-open sheet without reopening it.
 function refreshMetricModalBody(key) {
   const info = METRIC_INFO[key];
   const body = document.getElementById('metric-modal-summary');
   if (!info || !body) return;
-  if (key === 'bluebottles') { body.innerHTML = bbfModalHTML(); return; }
+  if (key === 'bluebottles') { body.innerHTML = bbfModalHTML() + whyLinkHTML(key); return; }
   const blk = document.getElementById('metric' + key.charAt(0).toUpperCase() + key.slice(1));
   const ro  = blk && blk.dataset.readout;
   const roHTML = ro ? '<p style="margin:0 0 10px;font-family:\'Bebas Neue\',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep);">' + ro + '</p>' : '';
-  body.innerHTML = roHTML + '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key);
+  body.innerHTML = roHTML + '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key) + whyLinkHTML(key);
 }
 
 function openMetricModal(key) {
