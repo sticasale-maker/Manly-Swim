@@ -112,9 +112,10 @@ events can't leak).
   these are **relative, not absolute** — hence "× a typical day," never "%".
 - **Seasonal cap:** derived from monthly distinct-stranding-day counts (the abundance envelope).
   Cap = High for Oct–Mar, Elevated for Apr/Sep, Building for May–Aug. The shape matches the
-  peer-reviewed year-round lifeguard record (Bourg et al. 2022: ~50% of beachings in summer,
-  near-zero in winter), so it is not an observation-effort artifact; the exact winter cut-offs are
-  approximate.
+  peer-reviewed year-round lifeguard record (Bourg et al. 2022: ~50% of beachings in summer at
+  Maroubra, 47% at Coogee; winter very infrequent, 3% and 10%), so it is not an observation-effort
+  artifact; the exact winter cut-offs are approximate. **But see §5a:** the bay's own record and
+  Hewitt et al. (2026) both peak in spring, which this envelope under-weights.
 
   > **The stated cut-offs don't reproduce the shipped cap.** This doc originally gave the rule as
   > High ≥ 0.6, Elevated 0.3–0.6, Building < 0.3 on a max-normalised factor. Run against
@@ -138,11 +139,35 @@ events can't leak).
   sweep. Adding waves, sea temperature, wind-field resolution, per-beach fetch weighting, and an
   explicit two-stage (E-then-N) drift term each produced **no improvement** — the simple onshore
   band is the parsimonious best.
-- **Cabbage Tree Bay:** prior-3 h onshore separates strandings from typical days with
-  **AUC 0.89 (90% CI 0.82–0.95)** on the 48 local records.
+- **Cabbage Tree Bay:** the original fit reported prior-3 h onshore separating strandings from
+  typical days at **AUC 0.89 (90% CI 0.82–0.95)** on 48 local records. **This does not reproduce**
+  (§5a); the re-run figure is 0.77. The original analysis code was not kept.
 - **Independent corroboration:** onshore wind is the primary driver of *Physalia* beachings at both
-  daily and seasonal scales in the peer-reviewed literature (Bourg et al. 2022; Hewitt, Schaeffer
-  et al. 2025).
+  daily and seasonal scales in the peer-reviewed literature (Bourg et al. 2022; Hewitt et al. 2026).
+
+### 5a. Re-run, 9 Oct 2026 (reproducible)
+
+`docs/rerun_bluebottle_skill.py` (Python 3, standard library only) rebuilds the bay test from
+`data/obs_sydney.csv` and ERA5 hourly wind (Open-Meteo archive, open-ocean cell 33.75°S 151.50°E),
+and prints every number below. They are also the figures in `bluebottle-model.html`.
+
+- **Cases:** 40 sighting-days (51 records within 800 m of the bay), 2011–2026, at the day's first
+  observation time (noon for the 5 days with none). The original "48 records / 36 days" subset
+  could not be re-identified from the CSV.
+- **Controls:** every other day of 2010–2026 at the same clock hour (±3 days around cases
+  excluded), so the sea-breeze cycle cancels; and a same-season design (±30 days of year).
+- **Results:** onshore 3 h at 82° **AUC 0.77** (90% CI 0.71–0.82) vs every day, **0.69**
+  (0.62–0.76) vs same season. Wind speed alone 0.53: direction carries all the skill. The original
+  1 case : 3 controls design, resampled 2,000 times, averages 0.77 and never reaches 0.89. The
+  coastal ERA5 cell and the 500 m / 1.2 km radii give 0.73–0.77.
+- **Window:** AUC rises with the trailing window to 24 h (0.80 every day / 0.71 same season), then
+  falls by 48 h. That matches the one-day lag in Bourg et al. (2022) and the day-before mean in
+  Hewitt et al. (2026); the shipped 3 h is not the sharpest, contrary to §4.
+- **Aspect:** optimum 80° vs every day (shipped 82°), 50° (NE) vs same season.
+- **Season term:** wind × `BBF_SEASON_MULT` scores 0.75, *below* wind alone. 14 of the 40 bay
+  sighting-days fall in Sep–Oct, spread over ten years, where the multiplier is 0.45 / 0.75, and
+  Extreme is unreachable whenever it is below 0.80. Nothing was changed in the app on the strength
+  of this; it is recorded for the next retune.
 
 ## 6. Limitations
 
@@ -159,7 +184,11 @@ events can't leak).
 - Bourg N., Schaeffer A., et al. (2022). *Driving the blue fleet: temporal variability and drivers
   behind bluebottle beaching.* PLoS ONE 17(3): e0265593.
   [doi:10.1371/journal.pone.0265593](https://doi.org/10.1371/journal.pone.0265593)
-- Hewitt, Schaeffer, et al. (2025). *Blowin' in the wind: onshore winds drive the occurrence of
-  bluebottles (Physalia spp.) at east Australian beaches.* Ocean & Coastal Management.
+- Hewitt D.E., Schaeffer A., Lawes J.C., Kelly S., Poore A.G.B., Roughan M., Ajaz S.,
+  Ingleton T.C., Pitt K.A. (2026). *Blowin' in the wind: onshore winds drive the occurrence of
+  bluebottles (Physalia spp.) at east Australian beaches.* Ocean & Coastal Management 271: 107931.
+  [doi:10.1016/j.ocecoaman.2025.107931](https://doi.org/10.1016/j.ocecoaman.2025.107931)
+- Lee D., Schaeffer A., Groeskamp S. (2021). *Drifting dynamics of the bluebottle (Physalia
+  physalis).* Ocean Science 17: 1341–1351 (drift angle corrected in the 2022 corrigendum).
 - iNaturalist (genus *Physalia* observations, Sydney). <https://www.inaturalist.org>
 - Open-Meteo ERA5 reanalysis & Historical Forecast API. <https://open-meteo.com>
