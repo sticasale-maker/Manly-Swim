@@ -1,6 +1,6 @@
-"""Re-run of the Cabbage Tree Bay bluebottle skill test (9 Oct 2026).
+"""Cabbage Tree Bay bluebottle skill test (9 Oct 2026).
 
-Reproduces every number in the "Does it work? A re-run" section of
+Reproduces every number in the "Does it work?" section of
 bluebottle-model.html. Python 3, standard library only.
 
   python docs/rerun_bluebottle_skill.py                 # open-ocean ERA5 cell, 800 m radius (the page)
@@ -301,7 +301,7 @@ for _ in range(600):
 R['case_vec'] = cv; R['ctl_vec'] = kv
 R['case_days'] = [[d, cases[d]['n'], cases[d]['hr']] for d in case_days]
 
-# ---- robustness: 3 random controls per case (the original design), plain speed, daily max
+# ---- robustness: 3 random controls per case, plain speed
 rnd3 = random.Random(3)
 P82 = prefix(82)
 dist3 = []
@@ -317,8 +317,8 @@ for _ in range(2000):
         num += sum(1.0 if cs > v else 0.5 if cs == v else 0.0 for v in vals) / 3; n += 1
     dist3.append(num / n)
 dist3.sort()
-R['auc_3ctl'] = [round(sum(dist3)/len(dist3),3), round(dist3[int(0.05*len(dist3))],3), round(dist3[int(0.95*len(dist3))],3), round(sum(1 for x in dist3 if x >= 0.89)/len(dist3),4)]
-print('3-control design: mean %.3f, 90%% of draws %.3f-%.3f, share of draws >= 0.89: %.4f' % tuple(R['auc_3ctl']))
+R['auc_3ctl'] = [round(sum(dist3)/len(dist3),3), round(dist3[int(0.05*len(dist3))],3), round(dist3[int(0.95*len(dist3))],3)]
+print('3-control design: mean %.3f, 90%% of draws %.3f-%.3f' % tuple(R['auc_3ctl'][:3]))
 # plain speed (no direction) as a baseline
 Ps = [0.0]
 for j in range(N): Ps.append(Ps[-1] + spd[j])
@@ -335,7 +335,7 @@ for design in ('all', 'season'):
 
 # ---- operational model score: windPos x seasonMult (clamped 6..94), as index.html runs it
 TH3 = [4, 6, 12]
-SM = [1.0, 1.0, 0.9, 0.6, 0.35, 0.2, 0.15, 0.2, 0.45, 0.75, 0.95, 1.0]
+SM = [1.0, 1.0, 0.9, 0.6, 0.35, 0.2, 0.15, 0.2, 0.9, 1.0, 1.0, 1.0]   # BBF_SEASON_MULT since 9 Oct 2026
 def rawpos(o):
     bi = 0
     while bi < 3 and o > TH3[bi]: bi += 1

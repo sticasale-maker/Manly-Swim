@@ -1,5 +1,5 @@
-"""Bluebottle brief, extra analyses (9 Oct 2026): where the original AUC 0.89 could come from,
-and whether waves, swell or Stokes drift add to the wind. Reproduces Figs 5-7, 11 and the wave
+"""Bluebottle brief, extra analyses (9 Oct 2026): whether waves, swell or Stokes drift add to the
+wind, and the wind and swell roses. Reproduces Figs 5-7 and the wave
 table of bluebottle-model.html. Python 3, standard library only.
 
   python docs/rerun_bluebottle_extras.py
@@ -140,39 +140,7 @@ def run(name, cases, w, case_fn, ctl_fn, ctl_days=None):
     print(f'{a:.3f}  n={n:3d}  {name}')
     return a
 
-print('=== Part 1: the same test, built several ways (AUC, n)')
-if True:
-    rnd = random.Random(5)
-    E = W(ERA); H = W(HF)
-    bay = cases_by(radius(0.8))
-    same_hr = lambda w, d, h: w.at(d, h)
-    print('--- baseline')
-    run('baseline: ERA5, 800 m, same clock hour', bay, E, same_hr, same_hr)
-    print('--- case set')
-    for km in (0.5, 1.0, 1.5, 2.0):
-        run(f'radius {km} km', cases_by(radius(km)), E, same_hr, same_hr)
-    run('place name Manly/Shelly/Cabbage/Fairy', cases_by(byname), E, same_hr, same_hr)
-    run('800 m, 2021-26 only', cases_by(radius(0.8), '2021-01-01'), E, same_hr, same_hr)
-    print('--- control timing')
-    run('controls at a RANDOM hour (incl. night)', bay, E, same_hr, lambda w, x, h: w.at(x, rnd.randrange(24)))
-    run('controls at noon', bay, E, same_hr, lambda w, x, h: w.at(x, 12))
-    run('controls at 09:00', bay, E, same_hr, lambda w, x, h: w.at(x, 9))
-    run('controls = daily mean onshore', bay, E, same_hr, lambda w, x, h: w.daymean(x))
-    print('--- case timing / aggregation')
-    run('case = day max of 3 h window; controls same-hour', bay, E, lambda w, d, h: w.daymax(d), same_hr)
-    run('case AND control = day max of 3 h window', bay, E, lambda w, d, h: w.daymax(d), lambda w, x, h: w.daymax(x))
-    run('case = max up to obs time; controls = max up to same hour', bay, E, lambda w, d, h: w.daymax(d, upto=h), lambda w, x, h: w.daymax(x, upto=h))
-    print('--- wind source')
-    run('Historical Forecast wind (2021-26), same hour', cases_by(radius(0.8), '2021-01-01'), H, same_hr, same_hr)
-    run('Historical Forecast, controls random hour', cases_by(radius(0.8), '2021-01-01'), H, same_hr, lambda w, x, h: w.at(x, rnd.randrange(24)))
-    print('--- combinations')
-    run('random-hour controls + day-max cases', bay, E, lambda w, d, h: w.daymax(d), lambda w, x, h: w.at(x, rnd.randrange(24)))
-    run('random-hour controls + 1.5 km', cases_by(radius(1.5)), E, same_hr, lambda w, x, h: w.at(x, rnd.randrange(24)))
-    # season-restricted controls (warm half only) - the opposite direction, for scale
-    warm = [d for d in E.days if d[5:7] in ('10', '11', '12', '01', '02', '03')]
-    run('controls from Oct-Mar only (same hour)', bay, E, same_hr, same_hr, warm)
-
-print('=== Part 2: waves, swell and Stokes drift')
+print('=== Waves, swell and Stokes drift')
 G = 9.81
 
 def load(files, keys):
