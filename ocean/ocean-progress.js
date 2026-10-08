@@ -50,6 +50,22 @@
      A reload or Back never jumps to the section named in the address: only a fresh visit
      to a link does. The browser puts you back where you were.
 
+   FOLD WHAT I'VE READ: the switch OFF, the default (owner's request, 9 Oct 2026)
+     The page is long and a phone reader lost their place, so a read section no longer
+     stays at full length: it folds to a slim grey stub (.op-folded; the .op-stub that
+     addStub puts first in each section): its eyebrow and heading, a "Read" mark, and a
+     small "Read again" button. Ticking one gives the same Undo window as hiding ("Folding
+     it away in a moment" + Undo, PEND_MS), then foldStub folds it with the same
+     place-keeping. Already-read sections load folded, without animation.
+     - The stub itself does nothing when tapped. Read again shows an inline "Show it again?
+       [Yes, show it] [Cancel]"; only Yes opens it (opened{}, memory only: a reload folds
+       it again). It stays ticked; unticking and ticking inside it folds it again.
+     - Following a link to a folded section (contents, teaser, glossary, #hash on load or
+       later) opens it: a deliberate jump counts as intent (openFor).
+     - A chapter card whose sections are all read gets .op-is-read (as before), and the page
+       greys its header in the same language.
+     - Switch ON keeps everything above: read sections go altogether.
+
    RULES IT KEEPS (CLAUDE.md)
    §4  No accounts. Ticks and the hide switch belong to this device: localStorage,
        mirrored to a 400-day cookie by the app's own persistGet/persistSet (Safari's ITP
@@ -382,7 +398,7 @@ function rowHtml(s, num, kind) {
 // The switch: two real buttons, one pressed, like waves.html's .seg figure switches.
 function segHtml(what) {
   return '<div class="op-hide" hidden><div class="op-seg" role="group" aria-label="' + esc(what) + '">' +
-    '<button type="button" class="op-seg-b" data-op-hide="0" aria-pressed="true">Show everything</button>' +
+    '<button type="button" class="op-seg-b" data-op-hide="0" aria-pressed="true">Fold what I’ve read</button>' +
     '<button type="button" class="op-seg-b" data-op-hide="1" aria-pressed="false">Hide what I’ve read</button>' +
     '</div><p class="op-hide-st" hidden></p></div>';
 }
@@ -523,12 +539,13 @@ function paintRows(root, m, nx) {
   $all('[data-op-row]', root).forEach(function (li) {
     var id = li.getAttribute('data-op-row'), on = !!m[id], isNext = !!nx && nx.id === id;
     var hid = !!LOCAL[id] && LOCAL[id].classList.contains('op-hid');
+    var fold = !!LOCAL[id] && LOCAL[id].classList.contains('op-folded');
     li.classList.toggle('is-read', on);
     li.classList.toggle('is-next', isNext);
     li.classList.toggle('is-hid', hid);
     var tag = li.querySelector('.op-tag'); if (tag) tag.hidden = !isNext;
     var vh = li.querySelector('.op-st .op-vh');
-    if (vh) vh.textContent = on ? (hid ? ', read, hidden' : ', read') : (isNext ? ', next' : ', not read yet');
+    if (vh) vh.textContent = on ? (hid ? ', read, hidden' : fold ? ', read, folded' : ', read') : (isNext ? ', next' : ', not read yet');
   });
 }
 function paintMeter(meter, done, total) {
@@ -603,6 +620,8 @@ function paintSeg(v, on, m) {
     st = n ? (n === 1 ? '1 read section is hidden. Tap it in the list to see it again.'
       : n + ' read sections are hidden. Tap one in the list to see it again.')
       : done ? 'Nothing is hidden right now.' : 'Sections hide once you tick “I’ve read this”.';
+  } else if (done && (!hub || CFG.single)) {
+    st = 'A section you’ve read folds to a slim grey bar. To open it again, tap “Read again” on the bar.';
   }
   if (v.hideSt.textContent !== st) v.hideSt.textContent = st;
   v.hideSt.hidden = !st;
@@ -653,7 +672,7 @@ function paintButtons(m, on) {
     var n = b.parentNode.querySelector('.op-done-note'); if (!n) return;
     var txt = !r || pending[id] ? ''
       : id === justTapped && !on ? (KEEPS ? 'Tap again to undo' : 'Tap again to undo. Not kept after you close the page.')
-      : on && revealed[id] ? 'Shown for now' : '';
+      : (on && revealed[id]) || (!on && opened[id]) ? 'Shown again for now' : '';
     if (n.textContent !== txt) n.textContent = txt;
   });
 }
@@ -684,6 +703,10 @@ function summary(m) {
 // group of cards (a theme). revealed = shown again for this visit (see shownLoad);
 // pending = ticked while hiding, waiting out PEND_MS before it folds away.
 var UNITS = [], EMPTIES = [], GONES = [], revealed = {}, pending = {}, sayEl = null, sayT = 0;
+// Switch OFF (the default): a read section folds to a slim stub (.op-folded) instead of
+// going. opened = stubs opened again for this visit (memory only: a reload folds them
+// again, owner's request, 9 Oct 2026).
+var opened = {};
 
 // "Shown for now" lasts for this tab: sessionStorage, so a reload, or a tab the phone put
 // to sleep and reloads, comes back with the same sections showing. Then the browser's own
@@ -745,12 +768,21 @@ function wantHidden(u, on, m, chs) {
   for (var i = 0; i < u.cards.length; i++) if (!wantHidden(u.cards[i], on, m, chs)) return false;
   return true;
 }
+// Switch off: a read section folds to its stub, unless it is still in its Undo window or
+// was opened again for this visit.
+function wantFolded(u, on, m) {
+  return u.type === 'sec' && !on && !!m[u.id] && !pending[u.id] && !opened[u.key];
+}
 // Returns how many units came back into view (their canvases need a re-measure).
 function applyHide(on, m) {
   var chs = summary(m).chapters, shown = 0;
   UNITS.forEach(function (u) {
     var h = wantHidden(u, on, m, chs);
     if (h !== u.el.classList.contains('op-hid')) { u.el.classList.toggle('op-hid', h); if (!h) shown++; }
+    if (u.type === 'sec') {
+      var f = !h && wantFolded(u, on, m);
+      if (f !== u.el.classList.contains('op-folded')) { u.el.classList.toggle('op-folded', f); setAsk(u.id, false); if (!f) shown++; }
+    }
     if (u.type === 'card') { var c = chs[u.slug]; u.el.classList.toggle('op-is-read', !!c && c.total > 0 && c.done === c.total); }
   });
   document.documentElement.classList.toggle('op-hiding', on);
@@ -804,7 +836,7 @@ function paintEmpty(e, on, m) {
       : 'You’ve read every section so far, so this chapter’s sections are hidden.')
     : 'You’ve read all ' + v.list.length + ' sections, so they’re hidden.';
   e.el.innerHTML = '<p class="op-empty-q">' + esc(line) + '</p>' +
-    '<div class="op-ask-btns"><button type="button" class="op-pill op-pill-strong" data-op-act="showall">Show everything</button></div>' +
+    '<div class="op-ask-btns"><button type="button" class="op-pill op-pill-strong" data-op-act="showall">Stop hiding them</button></div>' +
     (nx ? nextLink(v, nx, 'Next up') : '');
 }
 function emptyFor(id) {
@@ -1064,9 +1096,14 @@ function btnTop(id) {
 function startPending(id) {
   cancelPending(id);
   if (revealed[id]) { delete revealed[id]; shownSave(); }
+  delete opened[id];
   var row = LOCAL[id] && LOCAL[id].querySelector('.op-done');
   var p = pending[id] = { t: 0, box: row && row.querySelector('.op-pend'), at: btnTop(id) };
-  if (p.box) p.box.hidden = false;
+  if (p.box) {
+    var pt = p.box.querySelector('.op-pend-t');
+    if (pt) pt.textContent = hideOn() ? 'Hiding it in a moment.' : 'Folding it away in a moment.';
+    p.box.hidden = false;
+  }
   // The visible "Hiding it in a moment." is not a live region: say it once, here.
   armPending(id, PEND_MS);
 }
@@ -1087,7 +1124,7 @@ function collapse(id) {
   var p = pending[id]; if (!p) return;
   var u = null;
   UNITS.forEach(function (x) { if (x.key === id) u = x; });
-  if (!u || !load()[id] || !hideOn()) { cancelPending(id); update(); return; }
+  if (!u || !load()[id]) { cancelPending(id); update(); return; }
   var now = btnTop(id), dy = now == null || p.at == null ? 9 : p.at - now;   // > 0: scrolled on
   var scrolled = Math.abs(dy) > 2, vh = viewH();
   var r = u.el.getBoundingClientRect(), onScreen = r.bottom > topLine() && r.top < vh;
@@ -1100,7 +1137,75 @@ function collapse(id) {
   // moves whatever is below it first.
   clearTimeout(p.t);
   delete pending[id];
-  foldAway(u, u.el.contains(document.activeElement), scrolled, p.box);
+  if (hideOn()) foldAway(u, u.el.contains(document.activeElement), scrolled, p.box);
+  else foldStub(u, u.el.contains(document.activeElement), scrolled, p.box);
+}
+// Switch off: a ticked section folds to its slim stub (eyebrow, title, "Read", Read again)
+// rather than going. Places as foldAway: off screen, the page keeps your place; scrolled
+// on, what you are reading stays put; still at its button, the stub lands where the
+// section's top was (or just under the top bar) and the next thing follows it up.
+function foldStub(u, hadFocus, scrolled, box) {
+  var sec = u.el, y = topLine(), r = sec.getBoundingClientRect(), vh = viewH();
+  function change() { if (box) box.hidden = true; update(); }
+  var btn = sec.querySelector('.op-btn'), br = btn && rendered(btn) ? btn.getBoundingClientRect() : null;
+  var atButton = !scrolled && !!br && br.bottom > y && br.top < vh;
+  function after() {
+    var st = sec.querySelector('.op-stub');
+    if (hadFocus && st) softFocus(st.querySelector('.op-stub-t') || st);
+    say('Folded: ' + u.title + '. Read again on its bar opens it.');
+  }
+  if (r.bottom <= y || r.top >= vh) { keepPlace(change); after(); return; }
+  if (!atButton) { holdStill(sec, change); after(); return; }
+  var aTop = r.top >= y ? r.top : y + LAND;
+  holdAnchor();
+  change();
+  window.scrollBy(0, sec.getBoundingClientRect().top - aTop);
+  var stub = sec.querySelector('.op-stub');
+  if (stub && !reduced()) { stub.classList.remove('op-arrive'); reflow(stub); stub.classList.add('op-arrive'); }
+  after();
+  releaseAnchor();
+}
+// The stub's own two-step: Read again shows "Show it again? [Yes, show it] [Cancel]".
+function stubOf(id) { return LOCAL[id] ? LOCAL[id].querySelector('.op-stub') : null; }
+function setAsk(id, on, focus) {
+  var st = stubOf(id); if (!st) return;
+  var box = st.querySelector('.op-stub-ask'), b = st.querySelector('.op-stub-again');
+  if (box) box.hidden = !on;
+  if (b) b.setAttribute('aria-expanded', on ? 'true' : 'false');
+  st.classList.toggle('is-asking', !!on);
+  if (focus) focusIn(st, on ? '[data-op-act="againno"]' : '.op-stub-again');
+}
+// Open folded sections again for this visit. The first one keeps its top where its stub
+// was, and its heading gets the focus when asked (focus = true).
+function openIds(ids, focus) {
+  var first = null, t0 = 0, names = [];
+  ids.forEach(function (id) {
+    var sec = LOCAL[id];
+    if (!sec || !sec.classList.contains('op-folded')) return;
+    if (!first) { first = sec; t0 = sec.getBoundingClientRect().top; }
+    opened[id] = 1;
+    if (SEC[id]) names.push(SEC[id].title);
+  });
+  if (!first) return false;
+  holdAnchor();
+  update();
+  var dy = first.getBoundingClientRect().top - t0;
+  if (Math.abs(dy) > 0.5) window.scrollBy(0, dy);
+  raf(fireResize);
+  if (focus) softFocus(first.querySelector('h2,h3,h4,h5') || first);
+  releaseAnchor();
+  say('Shown again: ' + names.join(', ') + '.');
+  return true;
+}
+// A link, the contents or the address pointing into a folded section opens it: following
+// a link is intent enough. No place-keeping: the browser is about to scroll to it.
+function openFor(el) {
+  var any = false;
+  unitsAround(el).forEach(function (u) {
+    if (u.type === 'sec' && u.el.classList.contains('op-folded')) { opened[u.key] = 1; any = true; }
+  });
+  if (any) { update(); raf(fireResize); }
+  return any;
 }
 // How a ticked section goes:
 // - still at its button (no scroll since the tap, button on screen): it fades, then the
@@ -1204,10 +1309,11 @@ function setHiding(on) {
   if (on === hideOn() && !on) return;
   for (var id in pending) if (Object.prototype.hasOwnProperty.call(pending, id)) cancelPending(id);
   revealed = {};
+  opened = {};
   shownSave();
   saveHide(on);
   keepPlace(update);
-  if (!on) { say('Shown: everything.'); return; }
+  if (!on) { say('Read sections are folded to slim bars, not hidden.'); return; }
   var s = 0, c = 0;
   UNITS.forEach(function (u) {
     if (!u.el.classList.contains('op-hid')) return;
@@ -1224,7 +1330,7 @@ function tapSay(id, on, pend) {
   if (!SEC[id]) return;
   var d = summary(load());
   say((on ? 'Read: ' : 'Not read: ') + SEC[id].title + ', ' + d.done + ' of ' + d.total + '.' +
-    (pend ? ' It will hide in a few seconds; Undo is next.' : ''));
+    (pend ? (hideOn() ? ' It will hide' : ' It will fold away') + ' in a few seconds; Undo is next.' : ''));
 }
 // ocean.js's "Next · chapter N" card at the foot of a chapter page: rebuilt from the kit,
 // so it names the first chapter after this one with something unread and asks that
@@ -1298,8 +1404,32 @@ function addButtons() {
         '<button type="button" class="op-pill op-undo" data-op-act="undo" data-op-id="' + esc(s.id) + '">Undo' +
         '<span class="op-vh"> – keep ' + esc(s.title) + ' showing and not ticked</span></button></span>';
       host.appendChild(row);
+      addStub(sec, s);
     });
   });
+}
+// The slim bar a read section folds to (switch off). It repeats the section's own eyebrow
+// and heading, says "Read", and offers one quiet way back in: Read again, then an inline
+// "Show it again?". The bar itself does nothing when tapped, so a thumb scrolling past
+// cannot open it by mistake (owner's request, 9 Oct 2026).
+function addStub(sec, s) {
+  if (sec.querySelector('.op-stub')) return;
+  var eb = sec.querySelector('.eyebrow'), hd = sec.querySelector('h2,h3,h4,h5');
+  var title = hd ? hd.textContent.replace(/\s+/g, ' ').trim() : s.title;
+  var eye = eb ? eb.textContent.replace(/\s+/g, ' ').trim() : '';
+  var lvl = hd ? hd.tagName.charAt(1) : '4', aid = 'op-again-' + s.id, idA = ' data-op-id="' + esc(s.id) + '"';
+  var st = document.createElement('div');
+  st.className = 'op-stub';
+  st.innerHTML = '<div class="op-stub-h">' + (eye ? '<span class="op-stub-e">' + esc(eye) + '</span>' : '') +
+    '<p class="op-stub-t" role="heading" aria-level="' + lvl + '">' + esc(title) + '</p></div>' +
+    '<div class="op-stub-row"><span class="op-stub-mk">' + ICON + 'Read<span class="op-vh">, folded away</span></span>' +
+    '<button type="button" class="op-stub-again" data-op-act="again"' + idA + ' aria-expanded="false" aria-controls="' + aid + '">' +
+    'Read again<span class="op-vh">: ' + esc(s.title) + '</span></button></div>' +
+    '<div class="op-stub-ask" id="' + aid + '" role="group" aria-label="' + esc('Show ' + s.title + ' again?') + '" hidden>' +
+    '<p class="op-stub-q">Show it again?</p><div class="op-ask-btns">' +
+    '<button type="button" class="op-pill op-pill-strong" data-op-act="againyes"' + idA + '>Yes, show it</button>' +
+    '<button type="button" class="op-pill" data-op-act="againno"' + idA + '>Cancel</button></div></div>';
+  sec.insertBefore(st, sec.firstChild);
 }
 
 // ── WHERE AM I (page views): the section in view is marked in the lists and named in
@@ -1349,7 +1479,7 @@ function bind() {
     if ((b = closest(t, '.op-btn'))) {
       var id = b.getAttribute('data-op-id'), on = b.getAttribute('aria-pressed') !== 'true';
       justTapped = id;
-      if (on && hideOn() && LOCAL[id]) startPending(id);   // stays put, with Undo, for PEND_MS
+      if (on && LOCAL[id]) startPending(id);              // stays put, with Undo, for PEND_MS, then hides or folds
       if (!on) cancelPending(id);
       setRead(id, on);
       tapSay(id, on, !!pending[id]);
@@ -1364,6 +1494,13 @@ function bind() {
         justTapped = null;
         setRead(uid, false);
         if (LOCAL[uid]) softFocus(LOCAL[uid].querySelector('.op-btn'));
+        return;
+      }
+      if (act === 'again' || act === 'againno' || act === 'againyes') {
+        var aid = b.getAttribute('data-op-id'), st = stubOf(aid);
+        if (act === 'again') setAsk(aid, !(st && st.classList.contains('is-asking')), true);
+        else if (act === 'againno') setAsk(aid, false, true);
+        else { setAsk(aid, false); openIds([aid], true); }
         return;
       }
       if (act === 'showall') {
@@ -1401,7 +1538,7 @@ function bind() {
     var a = closest(t, 'a[href]');
     if (a && !e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && UNITS.length) {
       var tg = linkTarget(a);
-      if (tg) revealFor(tg);
+      if (tg) { revealFor(tg); openFor(tg); }
     }
     if (mini) {
       if ((b = closest(t, '.op-mini-btn'))) { setMini(mini, !mini.open, false); return; }
@@ -1422,7 +1559,7 @@ function bind() {
   // a hash typed in, or Back/Forward to one
   window.addEventListener('hashchange', function () {
     var tg = hashTarget(location.hash.slice(1));
-    if (tg && UNITS.length && revealFor(tg)) { try { tg.scrollIntoView(); } catch (e) {} }
+    if (tg && UNITS.length && (revealFor(tg) | openFor(tg))) { try { tg.scrollIntoView(); } catch (e) {} }
   });
   // other tabs (storage fires only there), the back button (bfcache), coming back to
   // the tab (covers a cookie-only browser, where no storage event fires)
@@ -1490,6 +1627,7 @@ function init() {
   var tg = hashTarget(location.hash.slice(1));
   if (tg) unitsAround(tg).forEach(function (u) {
     revealed[u.key] = 1;
+    if (u.type === 'sec') opened[u.key] = 1;              // a link to a folded section opens it
     if (u.type === 'group') u.cards.forEach(function (c) { revealed[c.key] = 1; });
   });
   shownSave();
@@ -1548,7 +1686,7 @@ window.OceanProgress = {
   clear: function (ids) { clearIds(ids || SECTIONS.map(function (s) { return s.id; })); },
   hiding: function () { return hideOn(); },
   setHiding: setHiding,
-  reveal: function (id) { var el = document.getElementById(id); return el ? revealFor(el) : false; },
+  reveal: function (id) { var el = document.getElementById(id); return el ? !!(revealFor(el) | openFor(el)) : false; },
   adopt: adopt,
   refresh: refresh
 };
