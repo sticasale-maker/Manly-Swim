@@ -168,6 +168,20 @@ and prints every number below. They are also the figures in `bluebottle-model.ht
   sighting-days fall in Sep–Oct, spread over ten years, where the multiplier is 0.45 / 0.75, and
   Extreme is unreachable whenever it is below 0.80. Nothing was changed in the app on the strength
   of this; it is recorded for the next retune.
+- **Where the 0.89 most likely came from** (`docs/rerun_bluebottle_extras.py`, part 1). Every
+  version of the test that scores sighting-days and control days the same way lands at 0.74–0.78:
+  other radii, place-name selection, 2021–26 only, Historical Forecast wind, both sides scored by
+  the day's worst window. Only asymmetric versions get near 0.89. A sighting-day scored by its
+  **worst 3 h window** against a control day scored at **one hour** gives **0.91**; controls at a
+  fixed 09:00 or noon give 0.83 / 0.82. The app rates days by their worst window, so that
+  asymmetry is the likely origin. This is an inference: the original code is gone.
+- **Waves, swell, Stokes drift** (part 2; ERA5-ocean waves 2010–26, swell partition from 2022).
+  Swell height scores 0.34 (sighting-days have *smaller* swell: median 0.7 m vs 1.0 m) and mean
+  period 0.38: sighting-days are short wind-sea days. Onshore swell Stokes drift scores 0.56. Total
+  onshore Stokes drift (u_s ≈ π³Hs²/(gT³)) is a median 1.7 cm/s on sighting-days against 6–9 cm/s
+  of wind drift (1.7–2.66 % of U10), about 20 % of the surface drift, but two-thirds of it is
+  wind-sea Stokes that moves with the wind. Wind drift + onshore Stokes scores 0.78 vs 0.77 for
+  wind alone: no case for a wave term on this record.
 
 ## 6. Limitations
 
