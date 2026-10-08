@@ -201,6 +201,16 @@
     figure{padding:12px 8px 10px}
   }
 </style>
+<style>
+  /* Share this page (9 Oct 2026, owner): native share sheet on phones, copy-link elsewhere */
+  .share-row{display:flex; justify-content:center; margin:14px 0 4px}
+  .share-btn{display:inline-flex; align-items:center; gap:8px; min-height:44px; padding:0 18px; border-radius:999px;
+    border:1px solid rgba(13,43,62,.18); background:#fff; color:#0b4f6c; cursor:pointer;
+    font:500 13px/1 'DM Mono',ui-monospace,monospace; letter-spacing:.04em}
+  .share-btn:hover,.share-btn:focus-visible{border-color:#0a7ea4; outline:none}
+  .share-btn svg{width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round}
+  .share-msg{display:block; text-align:center; font:12px/1.4 'DM Mono',ui-monospace,monospace; color:#5f8795; min-height:1.4em; word-break:break-all}
+</style>
 </head>
 <body>
 
@@ -224,6 +234,7 @@
         </div>
       </div>
     </div>
+    <div class="share-row"><button type="button" class="share-btn" data-share><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M5 12v8h14v-8"/></svg>Share this page</button></div><span class="share-msg" aria-live="polite"></span>
     <p class="stale" id="stale" role="note"></p>
     <nav class="jump" aria-label="Jump to a part">
       <a href="#sixty">In 60 seconds</a>
@@ -657,6 +668,7 @@
 </section>
 
 <footer>
+  <div class="share-row"><button type="button" class="share-btn" data-share><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M5 12v8h14v-8"/></svg>Share this page</button></div><span class="share-msg" aria-live="polite"></span>
   <p class="fine">Written by Marco Bordieri &middot; 29 Sep 2026 &middot; updated 1 Oct 2026 (wind, chop, upwelling) &middot; Swim Manly</p>
 </footer>
 
@@ -762,5 +774,31 @@
 })();
 </script>
 
+<script>
+// Share this page: the clean address (no ?src / ?v / tracking), keeping a #chapter if there is one.
+(function () {
+  'use strict';
+  var BASE = 'https://app.viz.net.au/Manly-Swim/enso.html';
+  var TITLE = 'The big El Ni\u00f1o';
+  function url() {
+    var h = location.hash && /^#[A-Za-z0-9_-]+$/.test(location.hash) ? location.hash : '';
+    return BASE + h;
+  }
+  [].forEach.call(document.querySelectorAll('[data-share]'), function (b) {
+    var msg = b.parentNode.nextElementSibling;
+    function say(t) { if (msg) { msg.textContent = t; clearTimeout(b._t); b._t = setTimeout(function () { msg.textContent = ''; }, 6000); } }
+    b.addEventListener('click', function () {
+      var u = url();
+      if (navigator.share) {
+        navigator.share({ title: TITLE, url: u }).catch(function () {});
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(u).then(function () { say('Link copied: ' + u); }, function () { say(u); });
+      } else { say(u); }
+    });
+  });
+})();
+</script>
 </body>
 </html>
