@@ -136,12 +136,15 @@ events can't leak).
 ## 5. Validation
 
 - **Region model (onshore wind):** AUC ≈ 0.82 (wind alone), 0.86 with per-beach aspect and the lag
-  sweep. Adding waves, sea temperature, wind-field resolution, per-beach fetch weighting, and an
+  sweep. **Inflated by the same control-hour asymmetry as the bay figure** (`Bluebottle_phase1.py`
+  also put every background day at 08:00; see §5a). The symmetric, year-blocked held-out figure
+  across 21 beaches is **0.66** (`analysis/bluebottle/bb_aspect_refit.py`). Adding waves, sea temperature, wind-field resolution, per-beach fetch weighting, and an
   explicit two-stage (E-then-N) drift term each produced **no improvement** — the simple onshore
   band is the parsimonious best.
-- **Cabbage Tree Bay:** the original fit reported prior-3 h onshore separating strandings from
-  typical days at **AUC 0.89 (90% CI 0.82–0.95)** on 48 local records. **This does not reproduce**
-  (§5a); the re-run figure is 0.77. The original analysis code was not kept.
+- **Cabbage Tree Bay: AUC 0.77** (90% CI 0.71–0.82; §5a). The 0.89 (90% CI 0.82–0.95, 48 records)
+  previously given here was **wrong**: it came from `Bay_check.py`, which scored sightings at their
+  observation time but every control day at a fixed 08:00. It was a single bootstrap on a fixed
+  formula, **not** a year-blocked held-out score. Details in §5a.
 - **Independent corroboration:** onshore wind is the primary driver of *Physalia* beachings at both
   daily and seasonal scales in the peer-reviewed literature (Bourg et al. 2022; Hewitt et al. 2026).
 
@@ -168,13 +171,27 @@ and prints every number below. They are also the figures in `bluebottle-model.ht
   sighting-days fall in Sep–Oct, spread over ten years, where the multiplier is 0.45 / 0.75, and
   Extreme is unreachable whenever it is below 0.80. Nothing was changed in the app on the strength
   of this; it is recorded for the next retune.
-- **Where the 0.89 most likely came from** (`docs/rerun_bluebottle_extras.py`, part 1). Every
-  version of the test that scores sighting-days and control days the same way lands at 0.74–0.78:
-  other radii, place-name selection, 2021–26 only, Historical Forecast wind, both sides scored by
-  the day's worst window. Only asymmetric versions get near 0.89. A sighting-day scored by its
-  **worst 3 h window** against a control day scored at **one hour** gives **0.91**; controls at a
-  fixed 09:00 or noon give 0.83 / 0.82. The app rates days by their worst window, so that
-  asymmetry is the likely origin. This is an inference: the original code is gone.
+- **Where the 0.89 came from: CONFIRMED** (9 Oct 2026). The July scripts were found in
+  `C:\FBExtract\inatpull` and are now in `analysis/bluebottle/`. `Bay_check.py` run unchanged
+  (wind: Open-Meteo Historical Forecast at the bay, as it used) on its 48 `BAY_BOX` records gives
+  **0.879 (90% CI 0.80–0.94)**. It placed every control day at `DEFAULT_HR = 8` while sightings
+  kept their observation time, and most sightings are logged after the NE sea breeze has set in.
+  Moving the controls to the sightings' clock hours, nothing else changed, gives **0.783**. Both at
+  08:00 gives 0.738. Its "fetch weighting lost (0.84 vs 0.89)" comparison was made under the same
+  asymmetry; with the fix the two are equal (0.786 vs 0.783). In the re-run harness, every
+  symmetric design lands at 0.74–0.78 (`docs/rerun_bluebottle_extras.py`, part 1).
+- **Held-out CV.** The 0.77 re-run is not cross-validated, and does not need to be: the score is a
+  fixed formula (82°, 3 h), so nothing is fitted on the cases it is tested on. Neither was the 0.89.
+  Year-blocked held-out scoring matters only once something is fitted. In the July harness
+  (`bb_aspect_refit.py`, folds = the case's year, controls travel with their case, day-max feature
+  on both sides) the held-out AUC is 0.66 across 21 beaches and **0.72** for the Cabbage Tree Bay
+  beach rows (23 cases), consistent with 0.77 on the larger 800 m case set.
+- **Month / abundance term: no lift** (`analysis/bluebottle/month_term.py`, same year-blocked
+  folds, everything fitted on training years only). Bay, held-out: wind 0.720; wind × shipped
+  `BBF_SEASON_MULT` 0.711; wind + month logistic 0.681; wind × abundance learned in-fold 0.687;
+  boosted trees on wind + month 0.712. All 21 beaches: wind 0.657, × shipped season 0.671 (+0.014,
+  CIs overlap), month alone 0.590. Presence-only data cannot separate abundance from observer
+  effort by month; absolute season needs presence/absence (Beachwatch or "none seen" reports).
 - **Waves, swell, Stokes drift** (part 2; ERA5-ocean waves 2010–26, swell partition from 2022).
   Swell height scores 0.34 (sighting-days have *smaller* swell: median 0.7 m vs 1.0 m) and mean
   period 0.38: sighting-days are short wind-sea days. Onshore swell Stokes drift scores 0.56. Total
