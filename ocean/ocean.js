@@ -294,6 +294,8 @@ var CHAPTERS = [
     title: 'Wind and chop',                  hook: 'Why is it rough today when the forecast said the swell was small?' },
   { slug: 'currents',       theme: 'sand',  min: 3, href: '#currents',
     title: 'Carried along',                  hook: 'Why do you come out further along the beach than where you went in?' },
+  { slug: 'circulation',    theme: 'sand',  min: 4, href: '#circulation',
+    title: 'Round the bay',                  hook: 'Ever been carried round in a slow circle in the bay?' },
   { slug: 'sand',           theme: 'sand',  min: 5, href: '#sand',
     title: 'Where the sand goes',            hook: 'Where does the sand go after a big swell, and how does it come back?' },
   { slug: 'tides',          theme: 'tides', min: 5, href: '#tides',

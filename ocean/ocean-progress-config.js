@@ -6,7 +6,7 @@ window.OCEAN_PROGRESS = {
   hub: '#contents',
   hrefs: {
     'waves': '#waves', 'swell-and-sets': '#swell-and-sets', 'into-the-bay': '#into-the-bay',
-    'point-and-wall': '#point-and-wall', 'wind': '#wind', 'currents': '#currents', 'simulator': '#simulator',
+    'point-and-wall': '#point-and-wall', 'wind': '#wind', 'currents': '#currents', 'circulation': '#circulation', 'simulator': '#simulator',
     'sand': '#sand', 'tides': '#tides', 'sea-level': '#sea-level', 'cold-water': '#cold-water', 'words': '#words'
   }
 };
