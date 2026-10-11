@@ -20318,10 +20318,24 @@ async function loadForecastHistory() {
     const rows = await res.json();
     if (!Array.isArray(rows) || !rows.length) return 0;
 
+    // forecast_dt is TRUE UTC: the Worker logs topOfHourUTC(now) (swim-worker
+    // src/history.js), while _matrix dateTimes are Sydney wall-clock. Until 11 Oct 2026
+    // this read the UTC stamp as local, so every past hour in the time machine showed
+    // the conditions from 10–11 h later. Convert to Sydney time (handles AEST/AEDT).
+    const sydFmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    });
+    const toSydney = iso => {
+      const t = Date.parse(iso || '');
+      if (!isFinite(t)) return '';
+      const p = {}; sydFmt.formatToParts(new Date(t)).forEach(q => { p[q.type] = q.value; });
+      return p.year + '-' + p.month + '-' + p.day + ' ' + p.hour + ':' + p.minute + ':' + p.second;
+    };
     // Map DB rows → the same shape calcScore/_matrix expects.
     const histRows = rows.map(x => {
       const base = {
-        dateTime:  (x.forecast_dt || '').replace('T', ' ').substring(0, 19),
+        dateTime:  toSydney(x.forecast_dt),
         windKmh:   x.wind_kmh    ?? 0,
         windDir:   x.wind_dir    ?? 0,
         swell1H:   x.swell1_h    ?? 0,
