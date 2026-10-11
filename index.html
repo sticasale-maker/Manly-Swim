@@ -22948,6 +22948,36 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 
   }
 
+  /* Swap in new dashboard markup WITHOUT rebuilding what has not changed (12 Oct 2026).
+     fill() runs many times while the popup is open: once per async result (rain, home
+     city, swell origin), on the forecast retry, and on every 'bbreports' event, which
+     fires each minute. It used to rewrite the whole dashboard each time, so every tile
+     and the live swell canvas blanked for a frame and the layout jumped: the popup
+     looked as if it flashed, vanished and came back. Now identical markup is a no-op,
+     and when something did change only the tiles whose markup differs are replaced.
+     Tiles are compared against the markup we last WROTE (kept on the element), never
+     the live DOM: the swell canvas's size attributes change after paint, so the live
+     outerHTML would always look different. Returns true when the DOM was touched. */
+  function patchDash(el, html) {
+    if (el._ssdHtml === html) return false;
+    var tmp = document.createElement('div'); tmp.innerHTML = html;
+    var oldGrid = el.firstElementChild, newGrid = tmp.firstElementChild;
+    var fresh = newGrid ? Array.prototype.slice.call(newGrid.children) : [];
+    var next = fresh.map(function (c) { return c.outerHTML; });
+    var prev = el._ssdTiles || [];
+    if (oldGrid && newGrid && oldGrid.className === newGrid.className &&
+        prev.length === next.length && oldGrid.children.length === next.length) {
+      var cur = Array.prototype.slice.call(oldGrid.children);
+      for (var i = 0; i < next.length; i++) {
+        if (prev[i] !== next[i]) oldGrid.replaceChild(fresh[i], cur[i]);
+      }
+    } else {
+      el.innerHTML = html;            // first paint, or the set of tiles itself changed
+    }
+    el._ssdHtml = html; el._ssdTiles = next;
+    return true;
+  }
+
   /* replace [[STORM_STATS]] tokens inside a rendered announcement container */
   var _retry = null, _sc = null;
   function fill(sc) {
@@ -22955,11 +22985,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var nodes = sc.querySelectorAll('[data-ssd]');
     if (!nodes.length) return;
     var ready = (_matrix && _matrix.length);
+    var changed = false;
     Array.prototype.forEach.call(nodes, function (el) {
-      el.innerHTML = ready ? buildHTML()
+      var html = ready ? buildHTML()
         : '<div class="ssd-grid"><div class="ssd-tile ssd-wide"><div class="ssd-sub">crunching the live forecast…</div></div></div>';
+      if (patchDash(el, html)) changed = true;
     });
-    if (ready) { startSwellMirror(sc); }   // (re)attach the live swell animation
+    // (re)attach the live swell animation only when the DOM changed: an untouched
+    // canvas keeps its running loop.
+    if (ready && changed) { startSwellMirror(sc); }
     if (!ready) {
       clearTimeout(_retry);
       _retry = setTimeout(function () { if (document.body.contains(sc)) fill(sc); }, 1200);
