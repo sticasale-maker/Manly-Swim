@@ -14759,9 +14759,23 @@ function hardRefresh() {
     if (ov && ov.classList.contains('open')) return false;
     return true;
   }
+  // A drag that starts inside anything floating over the page (the announcement popup,
+  // the More sheet, any overlay or panel) is that layer's own scroll, never a pull on
+  // the page (12 Oct 2026). Scrolling an announcement back up from the More menu, with
+  // the page underneath at its top, read as pull-to-refresh and reloaded the app, so
+  // the popup vanished without its X being tapped. Fixed-position ancestors are what
+  // every overlay and sheet in this app have in common.
+  function inFloatingLayer(node) {
+    for (let n = node; n && n !== document.body && n.nodeType === 1; n = n.parentElement) {
+      if (n.id === 'refresh-prompt') return false;   // it asks the user to pull: let it through
+      if (getComputedStyle(n).position === 'fixed') return true;
+    }
+    return false;
+  }
 
   document.addEventListener('touchstart', e => {
     if (!canPull()) return;
+    if (inFloatingLayer(e.target)) return;
     startY = e.touches[0].clientY; pulling = true; triggered = false;
   }, { passive: true });
 
