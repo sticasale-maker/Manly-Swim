@@ -13138,9 +13138,21 @@ function renderSnapshot(h, wx) {
       const b = wxBarInfo(wx.wxCode ?? 0, wx.rainProb, _night);
       wxBarIconEl.textContent = b.icon;
       document.getElementById('wxBarDesc').textContent  = b.desc;
+      var _feelsWrap = document.querySelector('.wx-bar-feels'); if (_feelsWrap) _feelsWrap.style.visibility = '';
       document.getElementById('wxBarFeels').textContent =
         wx.feelsLike != null ? Math.round(wx.feelsLike) + '°' : '—';
     }
+  } else {
+    // No weather for this hour (past Open-Meteo's 7 days): blank it rather than leave
+    // the previous hour's sky and temperature standing (CLAUDE.md §8, 12 Oct 2026).
+    ['wxTemp', 'wxFeels', 'wxCloud', 'wxRain', 'wxBarFeels'].forEach(function (id) {
+      var el = document.getElementById(id); if (el) el.textContent = '—';
+    });
+    var _skyEl = document.getElementById('wxSkyIcon'); if (_skyEl) _skyEl.textContent = '';
+    var _condEl = document.getElementById('wxCondition'); if (_condEl) _condEl.textContent = 'No weather data';
+    var _barIcon = document.getElementById('wxBarIcon'); if (_barIcon) _barIcon.textContent = '';
+    var _barDesc = document.getElementById('wxBarDesc'); if (_barDesc) _barDesc.textContent = 'No data';
+    var _feelsOff = document.querySelector('.wx-bar-feels'); if (_feelsOff) _feelsOff.style.visibility = 'hidden';
   }
   // Sea temp — the Facebook community reading is the PREFERRED source and the only
   // WW/Open-Meteo: the FB value set for the day stands until the pipeline overwrites it.
@@ -13155,8 +13167,15 @@ function renderSnapshot(h, wx) {
   }
 
   // Conditions bar
-  document.getElementById('sWind').textContent    = Math.round(h.windKmh);
-  document.getElementById('sWindDir').textContent = `km/h · ${bearingName(h.windDir)} (${Math.round(h.windDir)}°)`;
+  // No wind for the hour (long-range outlook rows): say so. Math.round(null) is 0,
+  // which read as "0 km/h · N (0°)", a calm that was never forecast (CLAUDE.md §8).
+  if (Number.isFinite(h.windKmh) && Number.isFinite(h.windDir)) {
+    document.getElementById('sWind').textContent    = Math.round(h.windKmh);
+    document.getElementById('sWindDir').textContent = `km/h · ${bearingName(h.windDir)} (${Math.round(h.windDir)}°)`;
+  } else {
+    document.getElementById('sWind').textContent    = '—';
+    document.getElementById('sWindDir').textContent = 'no wind forecast this far ahead';
+  }
 
   // ── Observed wind, BOM North Head (display only) ─────────────────────────────
   // Shown ONLY on the hour the reading actually describes. Since the nowcast blend
@@ -13257,7 +13276,10 @@ function renderSnapshot(h, wx) {
       ? `Oceanside ${oH.toFixed(1)} m (WillyWeather) → ${Hm.toFixed(1)} m at the bay entrance (NS), knocked down by the headland to the ramp and Bower Lane.`
       : 'No NSW nearshore data for this hour, so no bay-entrance, ramp or Bower Lane height.';
   })();
-  document.getElementById('sTide').textContent    = h.tideM.toFixed(2);
+  // Long-range outlook rows carry no tide (or wind): '—', never a crash. This line
+  // threw on every such hour, so the rest of the snapshot (sunrise/sunset, On the sand,
+  // the day charts) never painted and kept the previous hour's values (12 Oct 2026).
+  document.getElementById('sTide').textContent    = Number.isFinite(h.tideM) ? h.tideM.toFixed(2) : '—';
 
   // Secondary swell — NOT in the NS model (swell + sea only). The NS merge forces
   // swell2 to 0, so this card is always hidden. Kept in the DOM (calc reads 0) but
@@ -21336,7 +21358,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     var _st = (_sw + 180) * Math.PI / 180, _sdx = Math.sin(_st), _sdy = -Math.cos(_st);
     drawSwellArrow(_sdx, _sdy);
     var _wt = (_windDir + 180) * Math.PI / 180, _wdx = Math.sin(_wt), _wdy = -Math.cos(_wt);
-    drawWindArrow(_wdx, _wdy);
+    if (_windKnown) drawWindArrow(_wdx, _wdy);
   }
 
   // The two sheltered heights, pushed in by renderSnapshot. null until the first
@@ -21436,7 +21458,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
   // ── Wind-chop overlay (restored) — the animated Calmer→Choppier surface field from
   // the old wind-chop map, drawn on this SAME basemap under the swell arrows. The fetch
   // shadow is ray-cast against the swell coastline (landBit) so it matches the map.
-  var _windLevel = 0, _windFieldKey = -999, _windSpd = 0;
+  var _windLevel = 0, _windFieldKey = -999, _windSpd = 0, _windKnown = true;
   var CGW = 72, CGH = 35, _cfield = null;
   function _lerp(a, b, t) { return a + (b - a) * t; }
   var C_STOPS = [[0,[76,175,80]],[0.4,[201,194,70]],[0.7,[224,138,60]],[1,[176,57,47]]];
@@ -21481,7 +21503,7 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
     ctx.restore(); ctx.globalAlpha=1;
   }
   function drawChopLayer(){
-    if (!_cfield) return;
+    if (!_cfield || !_windKnown) return;
     var travel=(_windDir+180)*Math.PI/180, dx=Math.sin(travel), dy=-Math.cos(travel);
     var level=_windLevel, speed=_lerp(0.0013,0.0050,level), count=Math.round(_lerp(90,200,level));
     var base=_lerp(0.10,1.0,level), gmax=0.030*W, crest=Math.atan2(dy,dx)+Math.PI/2;
@@ -21540,12 +21562,15 @@ function _metricEsc(e) { if (e.key === 'Escape') closeMetricModal(); }
         : zoneCls === 'yellow' ? 'var(--yellow)' : zoneCls === 'red' ? 'var(--red)' : 'var(--dim)';
     }
     // Merged card: wind arrow direction, chop-field intensity + line-2 wind readout.
-    if (typeof windDir === 'number' && isFinite(windDir)) _windDir = ((windDir % 360) + 360) % 360;
-    if (typeof windKmh === 'number' && isFinite(windKmh) && windKmh >= 0) _windSpd = windKmh;
+    // An hour with no wind (long-range outlook) used to keep the PREVIOUS hour's arrow,
+    // streaks and readout. Now it says so and the wind layers are left off (§8).
+    _windKnown = (typeof windDir === 'number' && isFinite(windDir) && typeof windKmh === 'number' && isFinite(windKmh));
+    if (_windKnown) _windDir = ((windDir % 360) + 360) % 360;
+    if (_windKnown && windKmh >= 0) _windSpd = windKmh;
     var _sm = windScaleMax > 0 ? windScaleMax : 14;
-    _windLevel = clamp((windQ7 || 0) / _sm, 0, 1);
+    _windLevel = _windKnown ? clamp((windQ7 || 0) / _sm, 0, 1) : 0;
     var nowW = document.getElementById('chopNowWind'), nowWZ = document.getElementById('chopNowZone');
-    if (nowW) nowW.textContent = dir16(_windDir) + ' wind · ' + Math.round(_windSpd) + ' km/h';
+    if (nowW) nowW.textContent = _windKnown ? dir16(_windDir) + ' wind · ' + Math.round(_windSpd) + ' km/h' : 'No wind forecast';
     if (nowWZ) {
       nowWZ.textContent = windLabel || '';
       nowWZ.style.color = windCls === 'green' ? 'var(--green)' : windCls === 'amber' ? 'var(--amber)'
