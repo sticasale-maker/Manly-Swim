@@ -166,6 +166,17 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Every OTHER media file is left to the browser (CLAUDE.md §9). <video> fetches byte
+  // ranges and iOS Safari needs a true 206 back; the network-first handler below breaks
+  // that. The blanket rule was narrowed to the splash alone in 9f7aaa3, which quietly
+  // routed any other video through network-first; restored for announcement videos
+  // (12 Oct 2026). A Range request is media by definition, so it bails out too.
+  if (event.request.headers.has('range') ||
+      (url.origin === self.location.origin &&
+       /\.(mp4|webm|ogg|ogv|mov|m4v|m4a|mp3|wav|aac)$/i.test(url.pathname))) {
+    return;
+  }
+
   // Always pass through API calls — never cache
   if (PASSTHROUGH_HOSTS.some(h => url.hostname.includes(h))) {
     return; // let browser handle normally

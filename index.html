@@ -23674,6 +23674,16 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".ann-card .ann-c-text h1,.ann-card .ann-c-text h2{font-size:22px;}.ann-card .ann-c-text h3{font-size:18px;}" +
       ".ann-card .ann-c-text blockquote{margin:9px 0;padding:6px 12px;border-left:3px solid var(--ocean,#4a8fad);color:var(--dim,#4a5f6e);font-style:italic;}" +
       ".ann-card .ann-c-text hr{border:none;border-top:1px solid rgba(74,143,173,.28);margin:12px 0;}" +
+      /* Announcement video (12 Oct 2026): a token in the post's text, [[VIDEO:name]],
+         becomes this player. Sized to fit the screen with the title above it. */
+      ".ann-video{display:block;position:relative;margin:4px auto 10px;width:fit-content;max-width:100%;}" +
+      ".ann-video video{display:block;max-width:100%;max-height:62dvh;width:auto;height:auto;margin:0 auto;border-radius:12px;background:#0d2b3e;}" +
+      ".ann-vid-sound{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);border:none;border-radius:999px;" +
+        "padding:9px 16px;background:rgba(6,30,46,0.78);color:#fff;font:600 14px 'Inter',sans-serif;cursor:pointer;" +
+        "box-shadow:0 2px 10px rgba(0,0,0,.35);white-space:nowrap;}" +
+      ".ann-vid-sound.on{left:auto;right:10px;bottom:10px;transform:none;padding:7px 10px;font-size:15px;}" +
+      ".ann-vid-sound[hidden]{display:none;}" +
+      ".ann-vid-sound:focus-visible{outline:2px solid #fff;outline-offset:2px;}" +
       "#annWhatsNew{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
       "#annWhatsNew.show{display:inline-flex;}" +
       "#annWhatsNew .ann-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--red,#c0392b);}" +
@@ -23707,6 +23717,73 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var h = d.getHours(), m = d.getMinutes(), ap = h < 12 ? 'am' : 'pm', h12 = h % 12 || 12;
     return d.getDate() + ' ' + mons[d.getMonth()] + ' ' + d.getFullYear() + ' \u00b7 ' + h12 + ':' + (m < 10 ? '0' : '') + m + ap;
   }
+  /* ---- announcement video ----------------------------------------------------
+     A post carries a video by containing the text [[VIDEO:name]]. Only names in this
+     registry play, served from media/announce/ on the app's own site (GitHub Pages),
+     never Supabase: the free plan's ~5 GB a month of downloads would not survive a
+     video popup to every regular. Add a file there and a line here to publish one.
+     Playback: sound ON by default (owner). Phones refuse sound without a recent tap,
+     so the first try is unmuted; if the phone says no, it plays muted with a
+     "Tap for sound" button. Opened from the Announcements row (a tap) it plays with
+     sound straight away. Loops; stops when the popup closes. */
+  var ANN_VIDEOS = {
+    'on-the-sand-promo': { w: 860, h: 1864, label: 'On the sand demo (5 s)' }
+  };
+  function annVideoInject(sc){
+    if (sc.innerHTML.indexOf('[[VIDEO:') === -1) return;
+    sc.innerHTML = sc.innerHTML.replace(/\[\[VIDEO:([a-z0-9-]{1,60})\]\]/g, function (m, name) {
+      var v = ANN_VIDEOS[name];
+      if (!v) return '';
+      var base = 'media/announce/' + name;
+      return '<span class="ann-video"><video data-annvid src="' + base + '.mp4" poster="' + base + '.jpg"' +
+             ' width="' + v.w + '" height="' + v.h + '" playsinline webkit-playsinline loop preload="auto"></video>' +
+             '<button type="button" class="ann-vid-sound" hidden></button></span>';
+    });
+  }
+  function annVideoStart(sc){
+    Array.prototype.forEach.call(sc.querySelectorAll('video[data-annvid]'), function (v) {
+      var btn = v.parentNode.querySelector('.ann-vid-sound');
+      function showBtn(muted){
+        if (!btn) return;
+        btn.hidden = false;
+        btn.classList.toggle('on', !muted);
+        btn.textContent = muted ? '\u{1F50A} Tap for sound' : '\u{1F507}';
+        btn.setAttribute('aria-label', muted ? 'Turn the sound on' : 'Mute');
+      }
+      if (btn && !btn._wired) {
+        btn._wired = true;
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          if (v.muted) {
+            v.muted = false;
+            try { v.currentTime = 0; } catch (err) {}
+            var pp = v.play(); if (pp && pp.catch) pp.catch(function () {});
+            showBtn(false);
+          } else { v.muted = true; showBtn(true); }
+        });
+      }
+      try { v.currentTime = 0; } catch (e) {}
+      v.muted = false;
+      var p;
+      try { p = v.play(); } catch (e) { p = null; }
+      if (p && p.then) {
+        p.then(function () { showBtn(false); })
+         .catch(function () {
+           v.muted = true;
+           var q = v.play(); if (q && q.catch) q.catch(function () {});
+           showBtn(true);
+         });
+      } else { showBtn(v.muted); }
+    });
+  }
+  function annVideoStop(){
+    var ov = $('annOverlay'); if (!ov) return;
+    Array.prototype.forEach.call(ov.querySelectorAll('video[data-annvid]'), function (v) {
+      try { v.pause(); } catch (e) {}
+    });
+  }
+  window.annVideoNames = function () { return Object.keys(ANN_VIDEOS); };
+
   function showPopup(list){
     if (!list || !list.length) return;
     buildPopup();
@@ -23742,6 +23819,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     // Picture-only set (no text on any card) → strip the frosted panel so a
     // transparent GIF/PNG shows the overlay through its clear pixels.
     if ($('annPopup')) $('annPopup').classList.toggle('ann-pic-only', !anyText);
+    // [[VIDEO:name]] token → the announcement video player (registry above).
+    annVideoInject(sc);
     // [[STORM_STATS]] token → live-computed Storm Watch dashboard (module above).
     if (window.stormStatsInject) window.stormStatsInject(sc);
     sc.querySelectorAll('.ann-c-img').forEach(function (im) {
@@ -23752,8 +23831,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     }, 4000);
     sc.scrollTop = 0;
     $('annOverlay').classList.add('show');
+    annVideoStart(sc);   // after .show, inside the same tap when the user opened it
   }
   function dismissPopup(){
+    annVideoStop();
     var ov = $('annOverlay'); if (ov) ov.classList.remove('show');
     // A draft preview must NOT mark the real live set as seen (and must restore
     // the z-index bump that lifted the popup above the admin overlay).
@@ -24030,6 +24111,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
           '<button type="button" class="aa-tbbtn" data-cmd="justifyRight" aria-label="Align right">\u2630</button>' +
           '<button type="button" class="aa-tbbtn" data-cmd="formatBlock" data-val="BLOCKQUOTE" aria-label="Quote">\u201d</button>' +
           '<button type="button" class="aa-tbbtn" data-cmd="insertHorizontalRule" aria-label="Divider">\u2014</button>' +
+          '<select class="aa-size" id="annVideoSel" aria-label="Insert a video" style="width:auto;max-width:150px;"><option value="">\u{1F3AC} Video\u2026</option></select>' +
           '<span class="aa-tbsep"></span>' +
           '<input type="number" class="aa-size" id="annSize" min="8" max="72" placeholder="px" aria-label="Font size of the selected text">' +
           '<button type="button" class="aa-tbbtn aa-tbtxt" id="annClearFmt" title="Strip colour, size, bold and headings back to plain text">Clear</button>' +
@@ -24279,6 +24361,21 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       if (!btn.getAttribute('data-cmd')) return;      // Clear / Copy / Paste wire themselves
       btn.addEventListener('click', function () { runCmd(btn.getAttribute('data-cmd'), btn.getAttribute('data-val')); });
     });
+    // Video picker: lists the published announcement videos; choosing one appends a
+    // [[VIDEO:name]] line to the post (the popup turns it into the player).
+    (function () {
+      var sel = $('annVideoSel'); if (!sel) return;
+      (window.annVideoNames ? window.annVideoNames() : []).forEach(function (n) {
+        var o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o);
+      });
+      sel.addEventListener('change', function () {
+        var n = sel.value; sel.value = '';
+        var ed = $('annEdBody'); if (!n || !ed) return;
+        var p = document.createElement('p'); p.textContent = '[[VIDEO:' + n + ']]';
+        ed.appendChild(p);
+        try { ed.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+      });
+    })();
     [['annClearFmt', clearFmt], ['annCopyFmt', copyFmt], ['annPasteFmt', pasteFmt]]
       .forEach(function (pair) {
         var b = $(pair[0]); if (b) b.addEventListener('click', pair[1]);
