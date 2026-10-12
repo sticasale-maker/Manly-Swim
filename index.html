@@ -516,6 +516,24 @@
   .sand-sub b { color: #113541; }
   .metric-block.sand-block.none .sand-sub { color: #4a5f6e; }
   .metric-block.sand-block .metric-track-labels { font-size: clamp(10px, 2.6vw, 13px); }
+  /* Compact (owner, 13 Oct 2026): the four rows fit the height of the three water dials
+     (274 vs 276 px at 375 px wide), so the time selector stays put on the switch. The
+     band-name row under each rail goes: the header already names the band ("WIND: BREEZY"). */
+  .sand-grid { gap: 5px; }
+  .metrics-panel .metric-block.sand-block { padding: 3px 6px 4px; column-gap: 8px; }
+  .sand-pic { width: 84px; height: 54px; border-radius: 8px; }
+  body.icontheme-roundel .sand-pic { width: 54px; height: 54px; }
+  .sand-pic-glyph { font-size: 25px; margin-bottom: 12px; }
+  .sand-pic-arrow { font-size: 26px; margin-bottom: 12px; }
+  .sand-pic .metric-icon-cap { font-size: 12px; left: 4px; bottom: 4px; padding: 0 6px; }
+  .metric-block.sand-block .metric-name, .metric-block.sand-block .metric-value { font-size: 19px; letter-spacing: 1.5px; }
+  .metric-block.sand-block .metric-header { row-gap: 0; }
+  .sand-detail { font-size: 11.5px; line-height: 1.25; }
+  .sand-sub { font-size: 12px; line-height: 1.3; padding: 1px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .metric-block.sand-block .metric-track-wrap { height: 18px; margin: 2px 0 1px; }
+  .metric-block.sand-block .metric-track-rail { height: 10px; border-width: 1.5px; }
+  .metric-block.sand-block .metric-track-dot { width: 18px; height: 18px; border-width: 3px; box-shadow: 0 0 0 1.5px currentColor; }
+  .metric-block.sand-block .metric-track-labels { display: none; }
   /* ── Bluebottle risk strip (BBF_) ───────────────────────────────────────────
      One colour per day, like the swell day-picker. Each day is rated by its
      WORST 3 h onshore-wind window (see bbfDayBand), so the colour reflects a
@@ -12704,11 +12722,12 @@ function renderSandBoard(h, wx) {
     var norm = (typeof STORM_CLIMO !== 'undefined' && STORM_CLIMO && STORM_CLIMO.airMaxNormC) ? STORM_CLIMO.airMaxNormC[month] : null;
     var sub = '';
     if (top != null) {
-      sub = 'Top ' + dayWord + ' <b>' + Math.round(top) + '°</b>';
+      // One line (compact rows): "Top 33° today · 10° above October normal".
+      sub = 'Top <b>' + Math.round(top) + '°</b> ' + dayWord;
       if (typeof norm === 'number') {
         var dev = Math.round(top - norm);
-        sub += dev === 0 ? ', about normal for ' + SAND_MONTHS[month - 1]
-          : ', ' + Math.abs(dev) + '° ' + (dev > 0 ? 'above' : 'below') + ' a normal ' + SAND_MONTHS[month - 1] + ' day (' + Math.round(norm) + '°)';
+        sub += dev === 0 ? ' · about normal for ' + SAND_MONTHS[month - 1]
+          : ' · ' + Math.abs(dev) + '° ' + (dev > 0 ? 'above' : 'below') + ' ' + SAND_MONTHS[month - 1] + ' normal';
       }
     }
     sandText('sandAirSub', sub || '&nbsp;', true);
