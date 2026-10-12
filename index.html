@@ -17904,7 +17904,12 @@ function bluebottleLine() {
 function airQualityLine() {
   try { return (window.swimAir && window.swimAir.oracleLine) ? window.swimAir.oracleLine() : ''; } catch (e) { return ''; }
 }
-function appendCommunity(text) { return (text || '') + waterQualityLine() + bluebottleLine() + airQualityLine() + forecastStaleLine(); }
+// WEATHER HEADS-UP (12 Oct 2026) — same contract: the alert's own factual sentences
+// (forecast, how far from normal, dated by day), only while an alert is active.
+function weatherAlertLine() {
+  try { return (window.swimWxAlert && window.swimWxAlert.oracleLine) ? window.swimWxAlert.oracleLine() : ''; } catch (e) { return ''; }
+}
+function appendCommunity(text) { return (text || '') + waterQualityLine() + bluebottleLine() + airQualityLine() + weatherAlertLine() + forecastStaleLine(); }
 
 // The closing beat, shown or hidden as ONE unit — the heading and the text
 // together. Two writers reach it (the summariser and the local baseline) and both
@@ -24555,7 +24560,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     _events = findEvents(fc);
     paintBanner();
     maybePopup(0);
+    // The Oracle appends this on the phone (appendCommunity), like the air line.
+    try { if (typeof refreshCommunitySummary === 'function') refreshCommunitySummary(); } catch (e) {}
   }
+  // Plain sentences for the Oracle's swim paragraph, '' when no alert is active.
+  function oracleLine() {
+    if (!_events.length) return '';
+    return ' ' + _events.map(function (e) { return e.html.replace(/<[^>]+>/g, '').trim(); }).join(' ');
+  }
+  window.swimWxAlert = { oracleLine: oracleLine };
   function load() {
     var cached = null;
     try { cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) {}
