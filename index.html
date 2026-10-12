@@ -934,6 +934,38 @@
   .bb-warn b { color: #fff; }
   .bb-warn .bb-warn-sub { display: block; color: #b9cfdc; font-size: 12.5px; }
   .aq-warn .aq-attr { color: #d9c6b3; }
+  /* Weather heads-up (12 Oct 2026): Today banner + once-per-event popup. */
+  .wx-warn[hidden] { display: none; }
+  .wx-warn { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: #3a2419;
+    border-left: 5px solid #e0653c; color: #f1e3d3; font-size: 13.5px; line-height: 1.45; }
+  .wx-warn.wx-cold { background: #13283a; border-left-color: #6fa8dc; color: #dde9f3; }
+  .wx-warn.wx-rain { background: #18293a; border-left-color: #8fb3c9; color: #dde9f3; }
+  .wx-warn b { color: #fff; }
+  .wx-warn-row + .wx-warn-row { margin-top: 6px; }
+  .wx-warn-src { margin-top: 6px; font-size: 11.5px; opacity: .75; }
+  .wx-warn-on { margin-left: 4px; padding: 0; border: 0; background: none; color: inherit; font: inherit;
+    text-decoration: underline; cursor: pointer; }
+  #wxAlertOverlay { position: fixed; inset: 0; z-index: 99994; display: none; align-items: center; justify-content: center;
+    padding: 12px; background: rgba(6,30,46,0.5); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+  #wxAlertOverlay.show { display: flex; }
+  #wxAlertCard { background: #fff; border-radius: 14px; max-width: min(94vw, 420px); width: 100%; padding: 18px 18px 14px;
+    box-shadow: 0 12px 34px rgba(6,30,46,0.32); border-top: 6px solid #e0653c; max-height: 88dvh; overflow-y: auto; }
+  #wxAlertCard.wx-cold { border-top-color: #6fa8dc; }
+  #wxAlertCard.wx-rain { border-top-color: #8fb3c9; }
+  #wxAlertKicker { font-family: 'Inter', sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: #b4532a; margin-bottom: 6px; }
+  #wxAlertCard.wx-cold #wxAlertKicker, #wxAlertCard.wx-rain #wxAlertKicker { color: #2f6f9e; }
+  #wxAlertTitle { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; font-size: 28px; line-height: 1.05; color: var(--deep, #113541);
+    margin-bottom: 10px; }
+  #wxAlertBody { font-size: 14.5px; line-height: 1.55; color: var(--text, #113541); }
+  #wxAlertBody p { margin: 0 0 9px; }
+  #wxAlertSrc { font-size: 11.5px; color: var(--dim, #4a5f6e); margin: 4px 0 12px; }
+  #wxAlertNever { display: block; width: 100%; padding: 10px 12px; border: 1px solid rgba(17,53,65,.18); border-radius: 10px;
+    background: #f4f7f8; color: var(--deep, #113541); font: 13px 'Inter', sans-serif; cursor: pointer; }
+  #wxAlertNever:focus-visible, #wxAlertClose:focus-visible { outline: 2px solid #1e6c8c; outline-offset: 2px; }
+  #wxAlertClose { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 10px; width: 40px; height: 40px;
+    padding: 0; border: none; border-radius: 50%; background: rgba(6,30,46,0.62); color: #fff; font-size: 22px; line-height: 40px;
+    text-align: center; cursor: pointer; box-shadow: 0 2px 10px rgba(6,30,46,.34); }
 
   /* ── Live cam row (Surfline stills, 2 cols) ── */
   .livecam-row {
@@ -4186,6 +4218,11 @@
          worse now, or forecast to be within 12 h. Reports the air; never advises about
          the water. Filled by paintAir(). -->
     <div class="aq-warn" id="aqWarn" data-tab="today" hidden></div>
+
+    <!-- WEATHER HEADS-UP (12 Oct 2026) — a day 4 C above or below the month's normal maximum,
+         or 20 mm+ of rain, today or (from midday) tomorrow. Facts only. Filled by the
+         weather heads-up module, which also shows the once-per-event popup. -->
+    <div class="wx-warn" id="wxWarn" data-tab="today" hidden></div>
 
     <!-- Sea temp + Pollution quality row (directly under slider) -->
     <div class="quality-row-slim" data-tab="today">
@@ -24370,6 +24407,176 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     loadActive();
     if (ADMIN_MODE) openAnnounceAdmin();
   }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+<script>
+// ===== WEATHER HEADS-UP (12 Oct 2026, per owner) =====================================
+// A day well off normal gets a popup the day before and a banner on the Today tab:
+//   - hot or cold: the forecast maximum at Manly is 4 C or more above or below the bay's
+//     normal maximum for that month (STORM_CLIMO.airMaxNormC);
+//   - heavy rain: 20 mm or more forecast for the day.
+// Tomorrow is checked from midday Sydney time; today all day. Facts only: what is
+// forecast and how far from normal. It never says whether to swim.
+// Popup: once per event per device, closed only by its X or by "Never show weather
+// alerts again" (persistSet, so Safari's 7-day localStorage purge cannot undo it). The
+// banner stays either way; it is part of today's forecast, not an alert. No forecast,
+// no banner and no popup: absent data never reads as a normal day.
+(function () {
+  var HOT_COLD_C = 4, RAIN_MM = 20;
+  var CACHE_KEY = 'swim_wxalert_fc_v1', CACHE_MAX_MS = 12 * 3600e3;
+  var SEEN_KEY = 'swim_wxalert_seen', OFF_KEY = 'swim_wxalert_off';
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var _events = [];
+
+  function pGet(k) { try { return (window.persistGet ? window.persistGet(k) : localStorage.getItem(k)) || ''; } catch (e) { return ''; } }
+  function pSet(k, v) { try { if (window.persistSet) window.persistSet(k, v); else localStorage.setItem(k, v); } catch (e) {} }
+  function sydDate(offsetDays) {
+    var d = new Date(Date.now() + (offsetDays || 0) * 86400e3);
+    try { return d.toLocaleDateString('en-CA', { timeZone: 'Australia/Sydney' }); } catch (e) { return d.toISOString().slice(0, 10); }
+  }
+  function sydHour() {
+    try { return +new Intl.DateTimeFormat('en-GB', { timeZone: 'Australia/Sydney', hour: '2-digit', hour12: false }).format(new Date()) % 24; }
+    catch (e) { return new Date().getHours(); }
+  }
+  function dayName(iso) {
+    var d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' });
+  }
+  function normMax(iso) {
+    var m = +iso.slice(5, 7);
+    var c = (typeof STORM_CLIMO !== 'undefined' && STORM_CLIMO && STORM_CLIMO.airMaxNormC) ? STORM_CLIMO.airMaxNormC[m] : null;
+    return (typeof c === 'number') ? c : null;
+  }
+
+  function findEvents(fc) {
+    var out = [], today = sydDate(0), tomorrow = sydDate(1);
+    var days = [{ iso: today, when: 'Today' }];
+    if (sydHour() >= 12) days.push({ iso: tomorrow, when: 'Tomorrow' });
+    days.forEach(function (d) {
+      var i = fc.time.indexOf(d.iso); if (i < 0) return;
+      var tmax = fc.temperature_2m_max[i], rain = fc.precipitation_sum[i], norm = normMax(d.iso);
+      var month = MONTHS[+d.iso.slice(5, 7) - 1];
+      if (typeof tmax === 'number' && norm != null) {
+        var dev = tmax - norm;
+        if (Math.abs(dev) >= HOT_COLD_C) {
+          out.push({ id: d.iso + '|' + (dev > 0 ? 'hot' : 'cold'), kind: dev > 0 ? 'hot' : 'cold', iso: d.iso, when: d.when,
+            html: '<b>' + d.when + ' (' + dayName(d.iso) + '): ' + Math.round(tmax) + '°C forecast at Manly</b>, ' +
+                  Math.round(Math.abs(dev)) + '°C ' + (dev > 0 ? 'above' : 'below') + ' a normal ' + month + ' day (' + Math.round(norm) + '°C).' });
+        }
+      }
+      if (typeof rain === 'number' && rain >= RAIN_MM) {
+        out.push({ id: d.iso + '|rain', kind: 'rain', iso: d.iso, when: d.when,
+          html: '<b>Heavy rain ' + d.when.toLowerCase() + ' (' + dayName(d.iso) + '): ' + Math.round(rain) + ' mm forecast at Manly.</b> ' +
+                'Water quality often drops after heavy rain; check the Beachwatch rating.' });
+      }
+    });
+    return out;
+  }
+
+  function paintBanner() {
+    var el = document.getElementById('wxWarn'); if (!el) return;
+    if (!_events.length) { el.hidden = true; el.innerHTML = ''; return; }
+    var kind = _events.some(function (e) { return e.kind === 'hot'; }) ? 'hot'
+             : _events.some(function (e) { return e.kind === 'cold'; }) ? 'cold' : 'rain';
+    el.className = 'wx-warn wx-' + kind;
+    el.hidden = false;
+    var off = pGet(OFF_KEY) === '1';
+    el.innerHTML = _events.map(function (e) { return '<div class="wx-warn-row">' + e.html + '</div>'; }).join('') +
+      '<div class="wx-warn-src">Forecast: Open-Meteo. Normal: the bay’s average maximum for the month.' +
+      (off ? ' <button type="button" class="wx-warn-on" id="wxWarnOn">Turn weather pop-ups back on</button>' : '') + '</div>';
+    var on = document.getElementById('wxWarnOn');
+    if (on) on.addEventListener('click', function () { pSet(OFF_KEY, ''); paintBanner(); });
+  }
+
+  function seenList() { return pGet(SEEN_KEY).split(';').filter(Boolean); }
+  function markSeen(evs) {
+    var s = seenList();
+    evs.forEach(function (e) { if (s.indexOf(e.id) < 0) s.push(e.id); });
+    pSet(SEEN_KEY, s.slice(-30).join(';'));
+  }
+
+  function buildPopup() {
+    if (document.getElementById('wxAlertOverlay')) return;
+    var ov = document.createElement('div'); ov.id = 'wxAlertOverlay';
+    ov.innerHTML =
+      '<button id="wxAlertClose" type="button" aria-label="Close weather alert">×</button>' +
+      '<div id="wxAlertCard" role="dialog" aria-modal="true" aria-labelledby="wxAlertTitle">' +
+        '<div id="wxAlertKicker">Weather heads-up</div>' +
+        '<div id="wxAlertTitle"></div>' +
+        '<div id="wxAlertBody"></div>' +
+        '<div id="wxAlertSrc">Forecast: Open-Meteo. Normal: the bay’s average maximum for the month.</div>' +
+        '<button id="wxAlertNever" type="button">Never show weather alerts again</button>' +
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('wxAlertClose').addEventListener('click', function () { closePopup(false); });
+    document.getElementById('wxAlertNever').addEventListener('click', function () { closePopup(true); });
+  }
+  var _shown = [];
+  function closePopup(never) {
+    var ov = document.getElementById('wxAlertOverlay'); if (ov) ov.classList.remove('show');
+    markSeen(_shown);
+    if (never) pSet(OFF_KEY, '1');
+    paintBanner();
+  }
+  function titleFor(evs) {
+    var k = {}; evs.forEach(function (e) { k[e.kind] = 1; });
+    var when = evs.every(function (e) { return e.when === 'Tomorrow'; }) ? 'tomorrow' : evs.every(function (e) { return e.when === 'Today'; }) ? 'today' : 'ahead';
+    var parts = [];
+    if (k.hot) parts.push('A hot day');
+    if (k.cold) parts.push('A cold day');
+    if (k.rain) parts.push(parts.length ? 'heavy rain' : 'Heavy rain');
+    return parts.join(' and ') + ' ' + when;
+  }
+  function maybePopup(tries) {
+    if (!_events.length || pGet(OFF_KEY) === '1') return;
+    if (/[?&](announce|tune|backtest|debug)=1(\b|&|$)/.test(location.search)) return;
+    var seen = seenList();
+    var fresh = _events.filter(function (e) { return seen.indexOf(e.id) < 0; });
+    if (!fresh.length) return;
+    // Never on top of the announcement popup: wait for it to close (bounded).
+    var ann = document.getElementById('annOverlay');
+    if (ann && ann.classList.contains('show')) {
+      if ((tries || 0) < 150) setTimeout(function () { maybePopup((tries || 0) + 1); }, 2000);
+      return;
+    }
+    buildPopup();
+    _shown = fresh;
+    document.getElementById('wxAlertTitle').textContent = titleFor(fresh);
+    document.getElementById('wxAlertBody').innerHTML = fresh.map(function (e) { return '<p>' + e.html + '</p>'; }).join('');
+    var card = document.getElementById('wxAlertCard');
+    var kind = fresh.some(function (e) { return e.kind === 'hot'; }) ? 'hot' : fresh.some(function (e) { return e.kind === 'cold'; }) ? 'cold' : 'rain';
+    card.className = 'wx-' + kind;
+    document.getElementById('wxAlertOverlay').classList.add('show');
+  }
+
+  function use(fc) {
+    if (!fc || !Array.isArray(fc.time)) return;
+    _events = findEvents(fc);
+    paintBanner();
+    maybePopup(0);
+  }
+  function load() {
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) {}
+    if (cached && cached.at && Date.now() - cached.at < CACHE_MAX_MS) use(cached.fc);
+    var base = (typeof OM_WEATHER_PROXY === 'string') ? OM_WEATHER_PROXY : 'https://bold-rain-6ded.sticasale.workers.dev/weather';
+    fetch(base + '?latitude=-33.7969&longitude=151.2878&daily=temperature_2m_max,precipitation_sum' +
+          '&forecast_days=3&timezone=Australia%2FSydney', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.daily) return;
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), fc: d.daily })); } catch (e) {}
+        use(d.daily);
+      })
+      .catch(function () {});
+  }
+  // Re-check when the app comes back to the front: the midday switch to "tomorrow"
+  // and a new day both happen while a home-screen app sits open in the background.
+  var _lastLoad = 0;
+  function maybeReload() { if (!document.hidden && Date.now() - _lastLoad > 30 * 60e3) { _lastLoad = Date.now(); load(); } }
+  document.addEventListener('visibilitychange', maybeReload);
+  function init() { _lastLoad = Date.now(); load(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 </script>
