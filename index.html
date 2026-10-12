@@ -11880,7 +11880,23 @@ async function refreshWindObsOnly(why) {
 }
 setInterval(function () { refreshWindObsOnly('timer'); }, OBS_REFRESH_MS);
 document.addEventListener('visibilitychange', function () {
-  if (!document.hidden) refreshWindObsOnly('foreground');
+  if (document.hidden) return;
+  // Back in front with a forecast older than WW_CACHE_TTL: reload it (12 Oct 2026).
+  // A home-screen app can sit in a phone's background for hours; returning to it used
+  // to refresh only the North Head wind, so the forecast stayed as first loaded and
+  // the "SAVED FORECAST ... couldn't update" note came up although every feed was fine.
+  // loadAndRender re-centres the slider on the current hour, which is right after a
+  // half-hour away, and it is why this runs only on return, never on a timer while the
+  // swimmer is mid-browse. Its own in-flight guard stops a double load.
+  try {
+    const at = forecastAsOf();
+    if (_forecastRendered && at && (Date.now() - at) >= WW_CACHE_TTL) {
+      diag('foreground: forecast ' + Math.round((Date.now() - at) / 60000) + ' min old, reloading');
+      loadAndRender(false);
+      return;            // the full load fetches the wind observation as well
+    }
+  } catch (e) {}
+  refreshWindObsOnly('foreground');
 });
 
 // Fallback banner — shown when the displayed hour is NOT NS-fed (nearshore feed down,
@@ -23683,6 +23699,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         "box-shadow:0 2px 10px rgba(0,0,0,.35);white-space:nowrap;}" +
       ".ann-vid-sound.on{left:auto;right:10px;bottom:10px;transform:none;padding:7px 10px;font-size:15px;}" +
       ".ann-vid-sound[hidden]{display:none;}" +
+      ".ann-card.ann-vidonly .ann-video{margin:0 auto;}" +
+      ".ann-card.ann-vidonly .ann-video video{max-height:calc(100dvh - 90px);border-radius:16px;}" +
+      ".ann-card.ann-vidonly .ann-c-text p{margin:0;}" +
       ".ann-vid-sound:focus-visible{outline:2px solid #fff;outline-offset:2px;}" +
       "#annWhatsNew{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
       "#annWhatsNew.show{display:inline-flex;}" +
@@ -23727,7 +23746,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
      "Tap for sound" button. Opened from the Announcements row (a tap) it plays with
      sound straight away. Loops; stops when the popup closes. */
   var ANN_VIDEOS = {
-    'on-the-sand-promo': { w: 860, h: 1864, label: 'On the sand demo (5 s)' }
+    // sound:false = the file has no audio track: plays muted, no sound button.
+    'on-the-sand-promo': { w: 860, h: 1864, label: 'On the sand demo (7.5 s)', sound: false }
   };
   function annVideoInject(sc){
     if (sc.innerHTML.indexOf('[[VIDEO:') === -1) return;
@@ -23735,7 +23755,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var v = ANN_VIDEOS[name];
       if (!v) return '';
       var base = 'media/announce/' + name;
-      return '<span class="ann-video"><video data-annvid src="' + base + '.mp4" poster="' + base + '.jpg"' +
+      return '<span class="ann-video"><video data-annvid data-sound="' + (v.sound === false ? '0' : '1') + '" src="' + base + '.mp4" poster="' + base + '.jpg"' +
              ' width="' + v.w + '" height="' + v.h + '" playsinline webkit-playsinline loop preload="auto"></video>' +
              '<button type="button" class="ann-vid-sound" hidden></button></span>';
     });
@@ -23763,6 +23783,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
         });
       }
       try { v.currentTime = 0; } catch (e) {}
+      if (v.getAttribute('data-sound') === '0') {        // silent clip: no sound button at all
+        v.muted = true;
+        var sp = v.play(); if (sp && sp.catch) sp.catch(function () {});
+        if (btn) btn.hidden = true;
+        return;
+      }
       v.muted = false;
       var p;
       try { p = v.play(); } catch (e) { p = null; }
@@ -23812,9 +23838,14 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var foot   = a.quiet ? '<div class="ann-c-foot">A little something for the swim — a new line each morning, not an announcement.</div>' : '';
       // Text-bearing cards get a solid readable background; picture-only cards
       // keep the popup's frosted transparency.
-      var solid  = !!(ttl || bodyHtml);
+      // Video-only post: nothing but [[VIDEO:name]] tokens (no title, picture or other
+      // words). It is shown like a picture-only post: no white card, video large.
+      var vidOnly = !ttl && !img && /\[\[VIDEO:[a-z0-9-]{1,60}\]\]/.test(bodyHtml) &&
+                    !bodyHtml.replace(/\[\[VIDEO:[a-z0-9-]{1,60}\]\]/g, '').replace(/<[^>]*>/g, '')
+                             .replace(/&nbsp;|\s/g, '');
+      var solid  = !vidOnly && !!(ttl || bodyHtml);
       if (solid) anyText = true;
-      return '<div class="ann-card ' + (solid ? 'ann-solid' : 'ann-img') + '">' + kicker + img + title + text + foot + '</div>';
+      return '<div class="ann-card ' + (solid ? 'ann-solid' : 'ann-img') + (vidOnly ? ' ann-vidonly' : '') + '">' + kicker + img + title + text + foot + '</div>';
     }).join('');
     // Picture-only set (no text on any card) → strip the frosted panel so a
     // transparent GIF/PNG shows the overlay through its clear pixels.
