@@ -4289,12 +4289,13 @@
           <div class="metric-header"><div class="metric-name">Rain:</div><div class="metric-value" id="sandRainVal">—</div><div class="sand-detail" id="sandRainDetail"></div></div>
           <div class="metric-track-wrap">
             <div class="metric-track-rail">
-              <div class="z" style="background:#e2ecf2"></div><div class="z" style="background:#b7d1e2"></div>
-              <div class="z" style="background:#7cadcd"></div><div class="z" style="background:#3c7cae"></div>
+              <div class="z" style="background:#e8f0f4"></div><div class="z" style="background:#c4dae7"></div>
+              <div class="z" style="background:#8fb8d2"></div><div class="z" style="background:#4f88b6"></div>
+              <div class="z" style="background:#264f78"></div>
             </div>
             <div class="metric-track-dot" id="sandRainDot" style="visibility:hidden"></div>
           </div>
-          <div class="metric-track-labels"><span style="flex:1">Unlikely</span><span style="flex:1">Possible</span><span style="flex:1">Likely</span><span style="flex:1">Very likely</span></div>
+          <div class="metric-track-labels"><span style="flex:1">Dry</span><span style="flex:1">Possible</span><span style="flex:1">Light</span><span style="flex:1">Moderate</span><span style="flex:1">Heavy</span></div>
         </div>
         <div class="metric-block sand-block none" id="sandSun">
           <div class="metric-icon sand-icon" aria-hidden="true"><div class="sand-pic" id="sandSunPic"><span class="sand-pic-glyph" id="sandSunIcon">☀️</span><span class="metric-icon-cap" id="sandSunCap">—</span></div></div>
@@ -12759,17 +12760,31 @@ function renderSandBoard(h, wx) {
     sandDot('sandWindDot', null);
   }
 
-  // RAIN: chance for the hour, and the amount when the model gives one.
+  // RAIN: one band from the chance AND the amount (owner, 13 Oct 2026). Amounts use the
+  // standard hourly intensities: light < 2.5 mm, moderate 2.5-7.6 mm, heavy > 7.6 mm.
+  //   Dry      chance < 20% and nothing forecast
+  //   Possible chance 20-49% and nothing forecast
+  //   Light    chance 50%+ or any amount, under 2.5 mm (a high chance with 0 mm in this
+  //            exact hour still reads Light: rain is likely around it)
+  //   Moderate 2.5-7.6 mm      Heavy  over 7.6 mm
   var hasRain = !!(wx && wx.rainProb != null);
   sandBlock('sandRain', hasRain);
-  var RB = [0, 20, 50, 80, 101];
   if (hasRain) {
-    sandText('sandRainVal', sandBandName(wx.rainProb, RB, ['Unlikely', 'Possible', 'Likely', 'Very likely']));
-    sandText('sandRainDetail', wx.rainMm != null ? (wx.rainMm >= 0.1 ? wx.rainMm.toFixed(1) + ' mm this hour' : 'no rain this hour') : '');
-    sandText('sandRainCap', Math.round(wx.rainProb) + '% chance');
+    var pr = wx.rainProb, mm = (wx.rainMm != null && isFinite(wx.rainMm)) ? wx.rainMm : 0;
+    var band, frac;
+    if (mm >= 7.6)                  { band = 4; frac = Math.min(1, (mm - 7.6) / 12.4); }
+    else if (mm >= 2.5)             { band = 3; frac = (mm - 2.5) / 5.1; }
+    else if (pr >= 50 || mm >= 0.1) { band = 2; frac = mm >= 0.1 ? mm / 2.5 : Math.min(0.4, (pr - 50) / 125); }
+    else if (pr >= 20)              { band = 1; frac = (pr - 20) / 30; }
+    else                            { band = 0; frac = pr / 20; }
+    var mmTxt = wx.rainMm == null ? '' : (mm >= 0.1 ? mm.toFixed(1) + ' mm' : '0 mm');
+    sandText('sandRainVal', ['Dry', 'Possible', 'Light', 'Moderate', 'Heavy'][band]);
+    sandText('sandRainDetail', Math.round(pr) + '% chance' + (wx.rainMm == null ? '' : ' · ' + (mm >= 0.1 ? mm.toFixed(1) + ' mm this hour' : 'no rain this hour')));
+    sandText('sandRainCap', Math.round(pr) + '%' + (mmTxt ? ' · ' + mmTxt : ''));
     var rg = document.getElementById('sandRainGlyph');
-    if (rg) rg.textContent = wx.rainProb >= 50 ? '🌧️' : wx.rainProb >= 20 ? '🌦️' : '🌂';
-    sandDot('sandRainDot', wx.rainProb, RB, ['#b7d1e2', '#7cadcd', '#3c7cae', '#24557d']);
+    if (rg) rg.textContent = ['🌂', '🌦️', '🌧️', '🌧️', '⛈️'][band];
+    sandDot('sandRainDot', band + Math.max(0, Math.min(0.999, frac)), [0, 1, 2, 3, 4, 5],
+            ['#c4dae7', '#8fb8d2', '#4f88b6', '#264f78', '#16324d']);
   } else {
     sandText('sandRainVal', 'No forecast'); sandText('sandRainDetail', ''); sandText('sandRainCap', '—');
     sandDot('sandRainDot', null);
