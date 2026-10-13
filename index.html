@@ -10386,6 +10386,23 @@ function buildHourlyMatrix(j) {
     }
   }));
   tidePts.sort((a,b) => a.ts - b.ts);
+  // WillyWeather's days start at local midnight, so nothing precedes the first turn and
+  // the hours up to it sat flat at its height, up to 1.2 m off at midnight (13 Oct 2026).
+  // Estimate the turn before it. It has the phase of the 4th and 8th turns (one and two
+  // lunar days on), so it takes the 4th's interval to the next turn (t5 - t4) and the
+  // trend in their heights (2*h4 - h8), which carries the high/low inequality and the
+  // spring-neap drift. On 73 days of WW turns: 1.7 cm RMSE, 8 cm worst (flat: 45 cm RMSE,
+  // 1.2 m worst). Never after WW's first midnight (WW would have listed it), always on
+  // the right side of the first turn, and never marked on the tide graph (`est`). Hours
+  // from the first turn on are unchanged.
+  const day0 = new Date(String(tideDays[0]?.dateTime).replace(' ','T')).getTime();
+  if (tidePts.length >= 8 && isFinite(day0)) {
+    const p = tidePts;
+    let h0 = 2 * p[3].h - p[7].h;
+    if ((h0 - p[0].h) * (p[1].h - p[0].h) <= 0) h0 = p[1].h;
+    const t0 = Math.min(p[0].ts - (p[4].ts - p[3].ts), day0);
+    tidePts.unshift({ ts: t0, h: h0, est: true });
+  }
   _tidePts = tidePts;   // expose for the tide graph (same points getTide uses)
 
   function getTide(dt) {
@@ -13823,7 +13840,8 @@ function renderTideGraph() {
   // Build the curve by cosine-interpolating between consecutive turning points,
   // then clip to the visible day. Because _tidePts carries the turning points from
   // the day before and after, the curve keeps its true slope across midnight
-  // instead of flat-lining from 12a to the day's first high/low.
+  // instead of flat-lining from 12a to the day's first high/low. On WillyWeather's
+  // first day the turn before is buildHourlyMatrix's estimate (`est`).
   const sortedTide = _tidePts;            // already ts-sorted
   const SEG_STEPS  = 120;                 // sub-samples per high↔low segment
   const dense = [];
@@ -13894,7 +13912,7 @@ function renderTideGraph() {
 
   // high/low markers for turning points inside the day
   _tidePts.forEach((p, i) => {
-    if (p.ts < dayStart || p.ts > dayEnd) return;
+    if (p.est || p.ts < dayStart || p.ts > dayEnd) return;   // est: an estimate, not a WW turn
     const prev = _tidePts[i-1], next = _tidePts[i+1];
     const isHigh = prev ? p.h > prev.h : (next ? p.h > next.h : true);
     const x = xOf(p.ts), y = yOf(p.h);
