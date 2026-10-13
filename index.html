@@ -7787,13 +7787,16 @@ const SITE_DEFAULTS = {
   // On 5 Oct: 16h Drifty 29.4 -> Steady 19.2 (Entry Doable), 06h Drifty 13.8 -> Steady 5.3.
   // Next 3 days: Surge above Entry 0 of 57 hours.
   wwSurgeLowMult: 0.15,
-  // ML BACKUP SWITCH (owner, 13 Oct 2026). OFF by default. When 1, and NSW is unavailable
-  // (a stale run, or no NSW feed at all), Entry and Surge come from "ML": a machine-learned
+  // ML BACKUP SWITCH (owner, 13 Oct 2026). ON by default since the same day: "if NS is down
+  // for more than 24h, switch automatically to ML". Backup mode starts when NSW's newest run
+  // is 48 h old (NS_RUN_MAX_AGE_MS), i.e. when the next daily run is a full day overdue, so
+  // that IS "down for more than 24 h". Then, and only then, Entry and Surge come from "ML": a machine-learned
   // model of NSW's own scores, fed by WillyWeather + Open-Meteo (see mlScore). Chop stays on
   // the backup above, which already matches NSW's Chop better. Turned on for everyone from
-  // ?tune=1 (LOCAL knob, pushed live), or for one device with ?ml=1. The model file is
+  // ?tune=1 (LOCAL knob, pushed live; 0 = back to the WillyWeather backup), or for one
+  // device with ?ml=0 / ?ml=1. Silent to swimmers. The model file is
   // ml/nsw-ml.json, trained outside the app (Drive data-exports/ml-nsw-scores-2026-10-13).
-  mlBackup:       0,
+  mlBackup:       1,
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
   // used before the sheet loads, or when a cell is blank. On the NS path the live values
@@ -15287,7 +15290,8 @@ async function loadAndRender(forceRefresh = false) {
 
       // ML backup switch: predictions on the rows before the re-render (needs WW, OM and
       // ML's own offshore fetch). On any failure the old backup simply stands.
-      if (mlBackupOn()) {
+      // Only once backup mode is on: on a normal NSW day nothing is downloaded.
+      if (mlBackupOn() && (wwBackupOn() || FORCE_WW)) {
         try { const nMl = await withTimeout(mlAnnotate(_matrix, wwData), 20000); diag('ML backup: ' + nMl + ' hours scored'); }
         catch (mlErr) { diag('ML backup unavailable, old backup stands: ' + mlErr.message); }
       }
@@ -16887,7 +16891,7 @@ const TUNE_PARAMS = [
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
-  { key:'mlBackup', label:'BACKUP · ML model while NSW is unavailable (0 off, 1 on)', min:0, max:1, step:1, hint:'LOCAL — no sheet cell. 0 (default) = the WillyWeather backup as before. 1 = while NSW is stale or gone, Entry and Surge come from the ML model (ml/nsw-ml.json) and the app no longer fails over to vecchio.html. Push live to switch everyone.' },
+  { key:'mlBackup', label:'BACKUP · ML model while NSW is unavailable (0 off, 1 on)', min:0, max:1, step:1, hint:'LOCAL — no sheet cell. 1 (default) = automatic: while NSW is stale (newest run 48 h old, a day overdue) or gone, Entry and Surge come from the ML model (ml/nsw-ml.json) and the app no longer fails over to vecchio.html. 0 = the WillyWeather backup as before. Push live to switch everyone.' },
   { key:'pointMinH', label:'SURGE · Point minimum swell height (m)', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Below this swell height the point term is EXACTLY zero, whatever the period. 0.3 m since 15 Sep 2026.' },
   { key:'pointPeriodLo', label:'SURGE · Point period floor (s)', min:5, max:18, step:0.5, hint:'LOCAL — no sheet cell. Below this swell period the point term is EXACTLY zero, which is what leaves ordinary days scoring bit-identically to before the point existed. Smoothsteps to full weight at the period ceiling. Raise it to make the point a rarer call.' },
   { key:'pointWashyMult', label:'SURGE · Point Washy release (× Surgy edge)', min:0, max:6, step:0.25, hint:'LOCAL — DRAFT, default 0 = OFF (point capped at Surgy, as before). Otherwise the multiple of the Surgy edge the raw point energy must reach before the cap lets go and the point alone can call Washy. Only at full period weight (P ≥ point period ceiling, 14 s). At 15 s in the direction window: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. 1 = no cap. Washy under a Caution entry makes the day DANGEROUS.' },
@@ -17109,7 +17113,7 @@ const TW_GROUPS = [
     ] } },
   { cls:'shared', badge:'BACKUP', feeds:'only while NSW is unavailable',
     knobs:[
-      { key:'mlBackup', name:'ML backup model', tag:'LIVE', desc:'<b>0 = off</b> (default): a stale or missing NSW feed uses the WillyWeather backup, and no NSW feed at all fails over to vecchio. <b>1 = on</b>: Entry and Surge come from the ML model (learnt from the NSW scores themselves, fed by WillyWeather + Open-Meteo), Chop stays on the backup, and the app stays here instead of failing over. Push live to switch everyone.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'mlBackup', name:'ML backup model', tag:'LIVE', desc:'<b>1 = on</b> (default, automatic once NSW is a day overdue): Entry and Surge come from the ML model (learnt from the NSW scores themselves, fed by WillyWeather + Open-Meteo), Chop stays on the backup, and the app stays here instead of failing over. <b>0 = off</b>: a stale or missing NSW feed uses the WillyWeather backup, and no NSW feed at all fails over to vecchio. Push live to switch everyone.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ] },
 ];
 
