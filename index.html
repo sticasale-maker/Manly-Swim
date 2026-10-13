@@ -7787,6 +7787,13 @@ const SITE_DEFAULTS = {
   // On 5 Oct: 16h Drifty 29.4 -> Steady 19.2 (Entry Doable), 06h Drifty 13.8 -> Steady 5.3.
   // Next 3 days: Surge above Entry 0 of 57 hours.
   wwSurgeLowMult: 0.15,
+  // ML BACKUP SWITCH (owner, 13 Oct 2026). OFF by default. When 1, and NSW is unavailable
+  // (a stale run, or no NSW feed at all), Entry and Surge come from "ML": a machine-learned
+  // model of NSW's own scores, fed by WillyWeather + Open-Meteo (see mlScore). Chop stays on
+  // the backup above, which already matches NSW's Chop better. Turned on for everyone from
+  // ?tune=1 (LOCAL knob, pushed live), or for one device with ?ml=1. The model file is
+  // ml/nsw-ml.json, trained outside the app (Drive data-exports/ml-nsw-scores-2026-10-13).
+  mlBackup:       0,
   // ── METRIC BAND EDGES ───────────────────────────────────────────────────────────
   // SOURCE OF TRUTH IS THE SHEET, NOT THIS BLOCK. These literals are only the fallback
   // used before the sheet loads, or when a cell is blank. On the NS path the live values
@@ -9698,6 +9705,185 @@ function noNearshoreScore() {
   };
 }
 
+// ── ML BACKUP (SITE_DEFAULTS.mlBackup, OFF by default; owner, 13 Oct 2026) ────────────────
+// "ML" learnt NSW's Entry / Surge / Chop scores from WillyWeather + Open-Meteo forecasts
+// (NSW hindcast + saved forecast hours, labelled by this file's own NSW path). It never
+// reads NSW, the sheet tables or any knob, so it keeps working the day NSW is gone. It runs
+// only while NSW is unavailable (calcScore's wwPath) and only when switched on:
+// ?ml=1 / ?ml=0 for this device and this load, else SITE.mlBackup (LOCAL, pushable).
+const ML_URL_FLAG = (location.search.match(/[?&]ml=([01])/) || [])[1] || null;
+function mlBackupOn() {
+  if (ML_URL_FLAG) return ML_URL_FLAG === '1';
+  return +SITE.mlBackup === 1;
+}
+const ML_MODEL_URL  = 'ml/nsw-ml.json';      // network-first through sw.js, so it is there offline once fetched
+const ML_OM_URL = 'https://marine-api.open-meteo.com/v1/marine?latitude=-33.791668&longitude=151.37502'
+  + '&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,swell_wave_direction,'
+  + 'wind_wave_height,wind_wave_period,wind_wave_direction,secondary_swell_wave_height,secondary_swell_wave_period,'
+  + 'secondary_swell_wave_direction&past_days=1&forecast_days=7&timezone=GMT';   // the point ML was trained on
+const ML_OM_CACHE   = 'swim_ml_om_v1';       // 3 h
+const ML_PRED_CACHE = 'swim_ml_pred_v1';     // last predictions, for the first paint (48 h)
+let _mlModel = null;
+/* ML core — the browser twin of data._common + predict.py. Pure function, no app state.
+   rows: [{t:'YYYY-MM-DDTHH' (UTC), wind_kmh, wind_dir, tide_m, om_wave_h, om_wave_p, om_wave_dir,
+           om_swell_h, om_swell_p, om_swell_dir, om_ww_h, om_ww_p, om_ww_dir, om_s2_h, om_s2_p, om_s2_dir,
+           ww_s1_h, ww_s1_p, ww_s1_dir}]  (null/undefined = missing)
+   returns { 'YYYY-MM-DDTHH': {entry, surge, chop} } for every row, scores in NSW demerits. */
+function swimMlPredict(model, rows) {
+  var N = function (v) { return (v == null || v === '' || !isFinite(+v)) ? NaN : +v; };
+  var rad = function (d) { return d * Math.PI / 180; };
+  var hourMs = function (t) { return Date.parse(t + ':00:00Z'); };
+  var R = rows.map(function (r) {
+    var o = { t: r.t };
+    ['wind_kmh', 'wind_dir', 'tide_m', 'om_wave_h', 'om_wave_p', 'om_wave_dir', 'om_swell_h', 'om_swell_p', 'om_swell_dir',
+     'om_ww_h', 'om_ww_p', 'om_ww_dir', 'om_s2_h', 'om_s2_p', 'om_s2_dir', 'ww_s1_h', 'ww_s1_p', 'ww_s1_dir']
+      .forEach(function (k) { o[k] = N(r[k]); });
+    [['om_swell_dir', 'om_swell'], ['om_ww_dir', 'om_ww'], ['om_s2_dir', 'om_s2'], ['om_wave_dir', 'om_wave'], ['ww_s1_dir', 'ww_s1']]
+      .forEach(function (p) { o[p[1] + '_ds'] = Math.sin(rad(o[p[0]])); o[p[1] + '_dc'] = Math.cos(rad(o[p[0]])); });
+    o.om_wave_E = o.om_wave_h * o.om_wave_h * o.om_wave_p;
+    o.om_swell_E = o.om_swell_h * o.om_swell_h * o.om_swell_p;
+    [['ne', 45], ['ene', 67.5], ['e', 90], ['ese', 112.5], ['se', 135], ['sse', 157.5]].forEach(function (s) {
+      var c = Math.cos(rad(o.om_wave_dir - s[1]));
+      o['om_wave_E_' + s[0]] = o.om_wave_E * (isNaN(c) ? NaN : Math.max(0, c));
+    });
+    o.wind_u = o.wind_kmh * Math.sin(rad(o.wind_dir));
+    o.wind_v = o.wind_kmh * Math.cos(rad(o.wind_dir));
+    return o;
+  });
+  // past-only rolling stats on an hourly grid; a window needs at least half its hours present
+  if (R.length) {
+    var t0 = Math.min.apply(null, R.map(function (o) { return hourMs(o.t); }));
+    var t1 = Math.max.apply(null, R.map(function (o) { return hourMs(o.t); }));
+    var n = Math.round((t1 - t0) / 3600e3) + 1, at = {};
+    R.forEach(function (o) { at[Math.round((hourMs(o.t) - t0) / 3600e3)] = o; });
+    [['om_wave_E', 12, 'max'], ['om_swell_h', 6, 'max'], ['om_swell_h', 24, 'mean'], ['om_wave_h', 12, 'max'],
+     ['om_ww_h', 6, 'mean'], ['wind_kmh', 3, 'mean'], ['wind_kmh', 6, 'mean'], ['wind_kmh', 12, 'mean'],
+     ['wind_kmh', 24, 'max'], ['wind_u', 6, 'mean'], ['wind_v', 6, 'mean'], ['wind_u', 24, 'mean'], ['wind_v', 24, 'mean']]
+      .forEach(function (s) {
+        var c = s[0], w = s[1], f = s[2], minp = Math.max(1, Math.floor(w / 2)), name = c + '_' + f + w;
+        var g = new Array(n);
+        for (var i = 0; i < n; i++) g[i] = at[i] ? at[i][c] : NaN;
+        for (var j = 0; j < n; j++) {
+          if (!at[j]) continue;
+          var cnt = 0, sum = 0, mx = -Infinity;
+          for (var q = Math.max(0, j - w + 1); q <= j; q++) {
+            var v = g[q]; if (isNaN(v)) continue;
+            cnt++; sum += v; if (v > mx) mx = v;
+          }
+          at[j][name] = cnt >= minp ? (f === 'max' ? mx : sum / cnt) : NaN;
+        }
+      });
+  }
+  var F = model.features, out = {};
+  // inputs rounded to 6 dp, exactly as data.py does before training (see there)
+  var r6 = function (v) { return (v == null || v !== v) ? NaN : Math.round(v * 1e6) / 1e6; };
+  var X = R.map(function (o) { return F.map(function (k) { return r6(o[k]); }); });
+  var res = R.map(function (o) { out[o.t] = {}; return out[o.t]; });
+  Object.keys(model.targets).forEach(function (k) {
+    var T = model.targets[k];
+    for (var i = 0; i < X.length; i++) {
+      var x = X[i], s = T.base;
+      for (var a = 0; a < T.trees.length; a++) {
+        var tr = T.trees[a], f = tr[0], th = tr[1], ml = tr[2], L = tr[3], Rr = tr[4], V = tr[5], nd = 0;
+        while (f[nd] !== -1) {
+          var xv = x[f[nd]];
+          nd = (xv !== xv) ? (ml[nd] ? L[nd] : Rr[nd]) : (xv <= th[nd] ? L[nd] : Rr[nd]);
+        }
+        s += V[nd];
+      }
+      res[i][k] = Math.exp(s) - 1;
+    }
+  });
+  return out;
+}
+async function mlLoadModel() {
+  if (_mlModel) return _mlModel;
+  const r = await fetchWithTimeout(ML_MODEL_URL, 20000);
+  if (!r.ok) throw new Error('ML model ' + r.status);
+  const j = await r.json();
+  if (j.format !== 'swim-ml-1' || !j.targets || !j.features) throw new Error('ML model format');
+  return (_mlModel = j);
+}
+async function mlFetchOffshore() {
+  try {
+    const c = JSON.parse(localStorage.getItem(ML_OM_CACHE) || 'null');
+    if (c && c.at && Date.now() - c.at < 3 * 3600e3 && c.data && c.data.hourly) return c.data;
+  } catch (e) {}
+  const r = await fetchWithTimeout(ML_OM_URL + '&t=' + Date.now(), 12000, { cache: 'no-store' });
+  if (!r.ok) throw new Error('ML offshore ' + r.status);
+  const j = await r.json();
+  if (!j.hourly || !Array.isArray(j.hourly.time)) throw new Error('ML offshore shape');
+  try { localStorage.setItem(ML_OM_CACHE, JSON.stringify({ at: Date.now(), data: j })); } catch (e) {}
+  return j;
+}
+function mlHourKey(dt) { return new Date(String(dt).replace(' ', 'T')).toISOString().slice(0, 13); }
+// Puts ML's prediction on every matrix row it can score (row._ml); returns how many.
+async function mlAnnotate(matrix, snap) {
+  const [model, om] = await Promise.all([mlLoadModel(), mlFetchOffshore()]);
+  const byKey = {};
+  matrix.forEach(r => { if (r && r.dateTime) byKey[mlHourKey(r.dateTime)] = r; });
+  const h = om.hourly, rows = [], hasOm = {};
+  h.time.forEach((t, i) => {
+    const k = t.slice(0, 13), r = byKey[k], w = r && r._ww;
+    if (h.wave_height[i] != null && h.swell_wave_height[i] != null) hasOm[k] = true;
+    rows.push({ t: k, wind_kmh: r ? r.windKmh : null, wind_dir: r ? r.windDir : null, tide_m: r ? r.tideM : null,
+      om_wave_h: h.wave_height[i], om_wave_p: h.wave_period[i], om_wave_dir: h.wave_direction[i],
+      om_swell_h: h.swell_wave_height[i], om_swell_p: h.swell_wave_period[i], om_swell_dir: h.swell_wave_direction[i],
+      om_ww_h: h.wind_wave_height[i], om_ww_p: h.wind_wave_period[i], om_ww_dir: h.wind_wave_direction[i],
+      om_s2_h: h.secondary_swell_wave_height[i], om_s2_p: h.secondary_swell_wave_period[i],
+      om_s2_dir: h.secondary_swell_wave_direction[i],
+      ww_s1_h: w ? w.swell1H : null, ww_s1_p: w ? w.swell1P : null, ww_s1_dir: w ? w.swell1Dir : null });
+  });
+  const pred = swimMlPredict(model, rows), keep = {};
+  let n = 0;
+  matrix.forEach(r => {
+    if (!r || !r.dateTime) return;
+    const k = mlHourKey(r.dateTime), q = pred[k];
+    // an hour needs Open-Meteo's sea and the row's own wind and tide, or ML is not asked
+    if (q && hasOm[k] && isFinite(r.windKmh) && isFinite(r.tideM)) { r._ml = q; keep[k] = q; n++; }
+    else delete r._ml;
+  });
+  if (snap && snap.dateTime && keep[mlHourKey(snap.dateTime)]) snap._ml = keep[mlHourKey(snap.dateTime)];
+  try { localStorage.setItem(ML_PRED_CACHE, JSON.stringify({ at: Date.now(), built: model.built, map: keep })); } catch (e) {}
+  return n;
+}
+// First paint: the last predictions, so the backup does not flash old numbers first.
+function mlApplySaved(matrix) {
+  if (!mlBackupOn()) return 0;
+  const c = JSON.parse(localStorage.getItem(ML_PRED_CACHE) || 'null');
+  if (!c || !c.map || !c.at || Date.now() - c.at > 48 * 3600e3) return 0;
+  let n = 0;
+  matrix.forEach(r => { const q = r && r.dateTime && c.map[mlHourKey(r.dateTime)]; if (q) { r._ml = q; n++; } });
+  return n;
+}
+// A full calcScore result from ML: Entry and Surge from ML, Chop from the backup (it already
+// matches NSW's Chop better than ML does), ML's Chop only where the backup has none.
+function mlScore(d) {
+  const m = d._ml;
+  let r = calcScore(Object.assign({}, d, { _ml: null }));
+  const backupChop = (r && !r.noData) ? r.swim : null;
+  if (!r || r.noData) r = Object.assign(noNearshoreScore(), { noData: false });
+  const te = SITE.entryThresholds, ts = SITE.surgeThresholds, tc = SITE.swimThresholds;
+  const e = Math.max(0, m.entry), s = Math.max(0, m.surge), c = Math.max(0, m.chop);
+  const es = Math.max(0, Math.round(60 - e)), ss = Math.max(0, Math.round(60 - s));
+  r.entry = e <= te.easy    ? { label: 'Easy',      cls: 'green',  score: es, raw: e, greenEdge: te.easy }
+          : e <= te.doable  ? { label: 'Doable',    cls: 'amber',  score: es, raw: e }
+          : e <= te.caution ? { label: 'Caution',   cls: 'yellow', score: es, raw: e }
+          :                   { label: 'Dangerous', cls: 'red',    score: es, raw: e };
+  const z = s <= ts.steady ? ['Steady', 'green'] : s <= ts.drifty ? ['Drifty', 'amber'] : s <= ts.surgy ? ['Surgy', 'yellow'] : ['Washy', 'red'];
+  r.water = { label: z[0], cls: z[1], score: ss, raw: s, greenEdge: ts.steady, locus: 'bay', parts: null, ml: true };
+  if (backupChop) r.swim = backupChop;
+  else {
+    const cap = tc.scaleMax > 0 ? tc.scaleMax : 45, c60 = Math.max(0, Math.round(60 - Math.min(c, cap) * (60 / cap)));
+    r.swim = c < tc.glassy  ? { label: 'Smooth', cls: 'green',  score: c60, raw: c, greenEdge: tc.glassy }
+           : c <= tc.ripply ? { label: 'Ripply', cls: 'amber',  score: c60, raw: c }
+           : c <= tc.choppy ? { label: 'Choppy', cls: 'yellow', score: c60, raw: c }
+           :                  { label: 'Messy',  cls: 'red',    score: c60, raw: c };
+  }
+  r.score = es; r.ml = true;
+  return r;
+}
+
 // The WillyWeather backup's Entry curve (SITE_DEFAULTS.wwEntryLowMult): small and moderate
 // readings eased, everything at or above the Dangerous line untouched. calcScore applies
 // it to WW inputs only.
@@ -9736,6 +9922,7 @@ function calcScore(d, modelOverride) {
   // so the backup fills the hours that would be grey and rewrites nothing. wwPath is
   // that switch.
   const wwPath = FORCE_WW || (!!_nsStaleSince && d._nsFeed !== true);
+  if (!modelOverride && wwPath && d._ml && mlBackupOn()) return mlScore(d);   // ML backup switch (SITE_DEFAULTS.mlBackup)
   if (!modelOverride && !wwPath && d._nsFeed !== true) return noNearshoreScore();
   // The NS feed (Worker route) and the NS dispersion table (New NS sheet tab) are
   // separate sources and fail independently. Both are required for the nuovo branch:
@@ -12021,7 +12208,9 @@ function setNsFallbackBanner(isFallback) {
         + ' not available, switching to Willyweather backup mode. DCCEEW notified,'
         + ' check the live camera in the Bay section';
     }
-    el.style.display = isFallback ? 'block' : 'none';
+    // ML backup switch on (owner, 13 Oct 2026): no banner. Swimmers neither need nor
+    // notice which backup is scoring; the scores simply continue.
+    el.style.display = (isFallback && !(wwBackupOn() && mlBackupOn())) ? 'block' : 'none';
   } catch (e) {}
 }
 
@@ -14987,6 +15176,7 @@ async function loadAndRender(forceRefresh = false) {
     }
     const firstH = _matrix[_sliderIdx] || (wwData && wwData.dateTime ? wwData : null);
     if (!firstH) throw new Error('No forecast data available');
+    try { const nMl = mlApplySaved(_matrix); if (nMl) diag('ML backup: ' + nMl + ' saved hours'); } catch (e) {}
     const rendered = renderSnapshot(firstH, null);
     diag(rendered ? ('snapshot rendered (idx ' + _sliderIdx + ')')
                   : ('snapshot FAILED — firstH.dt=' + firstH.dateTime + ', rows=' + _matrix.length));
@@ -15095,6 +15285,12 @@ async function loadAndRender(forceRefresh = false) {
       try { renderPollution(bwRes.status === 'fulfilled' ? bwRes.value : null); }
       catch (pErr) { diag('renderPollution error (isolated): ' + pErr.message); console.warn('renderPollution failed (isolated):', pErr); }
 
+      // ML backup switch: predictions on the rows before the re-render (needs WW, OM and
+      // ML's own offshore fetch). On any failure the old backup simply stands.
+      if (mlBackupOn()) {
+        try { const nMl = await withTimeout(mlAnnotate(_matrix, wwData), 20000); diag('ML backup: ' + nMl + ' hours scored'); }
+        catch (mlErr) { diag('ML backup unavailable, old backup stands: ' + mlErr.message); }
+      }
       // ── Re-render with full merged data ────────────────────────────────────────
       const currentH  = _matrix[_sliderIdx] || wwData || null;
       const currentWx = wxLookup(currentH?.dateTime) || (wxRes.status === 'fulfilled' ? wxRes.value?.current : null) || null;
@@ -16691,6 +16887,7 @@ const TUNE_PARAMS = [
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
+  { key:'mlBackup', label:'BACKUP · ML model while NSW is unavailable (0 off, 1 on)', min:0, max:1, step:1, hint:'LOCAL — no sheet cell. 0 (default) = the WillyWeather backup as before. 1 = while NSW is stale or gone, Entry and Surge come from the ML model (ml/nsw-ml.json) and the app no longer fails over to vecchio.html. Push live to switch everyone.' },
   { key:'pointMinH', label:'SURGE · Point minimum swell height (m)', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Below this swell height the point term is EXACTLY zero, whatever the period. 0.3 m since 15 Sep 2026.' },
   { key:'pointPeriodLo', label:'SURGE · Point period floor (s)', min:5, max:18, step:0.5, hint:'LOCAL — no sheet cell. Below this swell period the point term is EXACTLY zero, which is what leaves ordinary days scoring bit-identically to before the point existed. Smoothsteps to full weight at the period ceiling. Raise it to make the point a rarer call.' },
   { key:'pointWashyMult', label:'SURGE · Point Washy release (× Surgy edge)', min:0, max:6, step:0.25, hint:'LOCAL — DRAFT, default 0 = OFF (point capped at Surgy, as before). Otherwise the multiple of the Surgy edge the raw point energy must reach before the cap lets go and the point alone can call Washy. Only at full period weight (P ≥ point period ceiling, 14 s). At 15 s in the direction window: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. 1 = no cap. Washy under a Caution entry makes the day DANGEROUS.' },
@@ -16740,7 +16937,7 @@ const TUNE_LIVE_KEYS = [
   'entryChopPts', 'entryChopFloorCm', 'entryChopMaxPts',
   'entrySeaSteepFloor', 'entrySeaSteepLo', 'entrySeaSteepHi',
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
-  'pointSens', 'pointPeriodLo', 'pointWashyMult', 'pointMinH',
+  'pointSens', 'pointPeriodLo', 'pointWashyMult', 'pointMinH', 'mlBackup',
   'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi', 'surgeWallMaxPts',
 ];
 // The New NS cell a sheet-backed knob must be typed into, read off its own hint
@@ -16910,6 +17107,10 @@ const TW_GROUPS = [
       { key:'surgeThresholds.drifty', lab:'Drifty ≤' },
       { key:'surgeThresholds.surgy',  lab:'Surgy ≤' },
     ] } },
+  { cls:'shared', badge:'BACKUP', feeds:'only while NSW is unavailable',
+    knobs:[
+      { key:'mlBackup', name:'ML backup model', tag:'LIVE', desc:'<b>0 = off</b> (default): a stale or missing NSW feed uses the WillyWeather backup, and no NSW feed at all fails over to vecchio. <b>1 = on</b>: Entry and Surge come from the ML model (learnt from the NSW scores themselves, fed by WillyWeather + Open-Meteo), Chop stays on the backup, and the app stays here instead of failing over. Push live to switch everyone.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+    ] },
 ];
 
 function buildTunePanel() {
@@ -17339,6 +17540,12 @@ async function nuovoPreflight() {
       if (c && c.data && c.fetchedAt && (Date.now() - c.fetchedAt) < SAVED_FORECAST_MAX_MS
           && parseNearshore(c.data)) { ns = c.data; diag('NS feed: preflight last-resort cached feed'); }
     } catch (e) {}
+  }
+  if (!ns && mlBackupOn()) {
+    // ML backup switch: no NSW at all is exactly what it is for. Stay, in backup mode.
+    if (!_nsStaleSince) _nsStaleSince = Date.now();
+    diag('NS feed unavailable: ML backup on, staying (no vecchio failover)');
+    return true;
   }
   if (!ns) { failoverToVecchio('ns_feed_unavailable'); return false; }
 
@@ -18698,7 +18905,7 @@ function summaryConflict(text, facts) {
   // The WillyWeather backup (5 Oct 2026), in step with the Worker's validate.js: the
   // paragraph must name the backup, and with no ramp figure it must not size the
   // entry. "Next to nothing reaches" is a claim only a real 0 m ramp figure makes.
-  if (facts.backup && !/\bwilly ?weather\b|\bbackup\b/.test(t))
+  if (facts.backup && !facts.ml && !/\bwilly ?weather\b|\bbackup\b/.test(t))
     return 'does not say the call comes from the WillyWeather backup';
   if (typeof w.rampBreakH !== 'number' && /\b(?:next to nothing|almost nothing|virtually nothing|practically nothing|very little|hardly any(?:thing)?|barely any(?:thing)?)\b[^.]{0,40}?\breach(?:es|ing)?\b/.test(t))
     return 'says how little reaches the entry, but there is no ramp figure';
@@ -19187,10 +19394,10 @@ async function generateBannerSummaryLocal() {
   // Worker writes the fuller backup paragraph (facts.backup); this is what shows until
   // it answers, and whenever it cannot.
   if (!_noCall && wwBackupOn()) {
-    const bk = ['From the WillyWeather backup: Entry ' + domEntry + ', Surge ' + domSurge + ', Chop ' + domSwim + '.'];
+    const bk = [(mlBackupOn() ? '' : 'From the WillyWeather backup: ') + 'Entry ' + domEntry + ', Surge ' + domSurge + ', Chop ' + domSwim + '.'];
     const off = rows.map(r => r._ww).filter(o => o && o.swell1H != null);
     if (off.length) {
-      bk.push('Offshore, WillyWeather has ' + avg(off.map(o => o.swell1H)).toFixed(1)
+      bk.push((mlBackupOn() ? 'Offshore there is ' : 'Offshore, WillyWeather has ') + avg(off.map(o => o.swell1H)).toFixed(1)
         + ' m of swell from the ' + bearingName(off[Math.floor(off.length / 2)].swell1Dir) + '.');
     }
     if (_sv.siteCheck) bk.push(_sv.siteCheck.charAt(0).toUpperCase() + _sv.siteCheck.slice(1) + '.');
@@ -19360,6 +19567,10 @@ async function generateBannerSummaryLocal() {
     // these facts, never re-derived, so the bucket and the facts the Worker writes
     // from can never disagree about which mode they describe.
     backup: wwBackupOn(),
+    // ML backup switch on: the Worker may write the backup paragraph without naming any
+    // backup (owner, 13 Oct 2026: only the owner needs to know). Read by the Worker's
+    // prompt + validator once they learn it, and by summaryConflict below.
+    ml: wwBackupOn() && mlBackupOn(),
     // safetyLevel and siteCheck both come from swimVerdict() — the single
     // derivation shared with the answer line above the rails. They used to be
     // inlined here; two copies of this rule is exactly what CLAUDE.md §1 forbids.
@@ -21119,6 +21330,7 @@ function metricBreakdownHTML(key) {
 
   // No NS data: no components, and the placeholder zeros would read as a measured flat sea.
   if (r.noData) return wrap('<div style="color:var(--dim);">No nearshore forecast for this hour, so there is nothing to break down.</div>');
+  if (r.ml && (key !== 'swim' || !r.chopParts)) return wrap('<div style="color:var(--dim);">No component breakdown for this hour.</div>');
 
   if (key === 'entry') {
     const we = (dm.windEntry != null) ? dm.windEntry : ((dm.windSea || 0) + dm.windWave);
