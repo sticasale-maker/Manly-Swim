@@ -18907,6 +18907,9 @@ function summaryConflict(text, facts) {
   // entry. "Next to nothing reaches" is a claim only a real 0 m ramp figure makes.
   if (facts.backup && !facts.ml && !/\bwilly ?weather\b|\bbackup\b/.test(t))
     return 'does not say the call comes from the WillyWeather backup';
+  // ML backup mode is silent (owner, 13 Oct 2026), in step with the Worker's validate.js.
+  if (facts.backup && facts.ml && /\bwilly ?weather\b|\bbackup\b|\bmodel\b/.test(t))
+    return 'names the backup, but the ML backup is meant to be silent';
   if (typeof w.rampBreakH !== 'number' && /\b(?:next to nothing|almost nothing|virtually nothing|practically nothing|very little|hardly any(?:thing)?|barely any(?:thing)?)\b[^.]{0,40}?\breach(?:es|ing)?\b/.test(t))
     return 'says how little reaches the entry, but there is no ramp figure';
   return null;
@@ -18932,7 +18935,7 @@ async function generateBannerSummary() {
     // giving no entry height. A Worker older than 5 Oct 2026 rejects the suffix with a
     // 400, and the local backup paragraph simply stays.
     const bucket = n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()) + 'T' + n.getHours() + ':' + _bannerFacts.timeCtx
-      + (_bannerFacts.backup ? ':ww' : '');
+      + (_bannerFacts.backup ? (_bannerFacts.ml ? ':ml' : ':ww') : '');   // ':ml' = silent ML backup paragraph
     const res = await fetch('https://bold-rain-6ded.sticasale.workers.dev/swim-summary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
