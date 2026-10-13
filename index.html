@@ -10279,10 +10279,19 @@ function wwCacheUsable(cache) {
 // found nothing, and the saved forecast was never shown: from June to 30 Sep 2026
 // there was no instant paint on a warm open and no forecast at all on a dead
 // connection (CLAUDE.md §9). One reader now, so the shape cannot be misread again.
+// Since 13 Oct 2026 it also returns tidePts, the tide graph's turning points. A paint
+// from the save never runs buildHourlyMatrix, the only other place _tidePts is set, so
+// until then a reopen within WW_CACHE_TTL, and every offline open, drew "Tide data
+// unavailable". The points come back whole, every field as buildHourlyMatrix left it
+// (the `est` turn included). Null on an older save or a damaged one, and the caller
+// then leaves _tidePts alone.
 function loadWwCache() {
   const c = loadCache(WW_CACHE_KEY);
   if (!c || !c.fetchedAt || !c.data) return null;
-  return { fetchedAt: c.fetchedAt, data: c.data.data, matrix: c.data.matrix };
+  const tp = c.data.tidePts;
+  const tidePts = (Array.isArray(tp) && tp.length
+    && tp.every(p => p && Number.isFinite(p.ts) && Number.isFinite(p.h))) ? tp : null;
+  return { fetchedAt: c.fetchedAt, data: c.data.data, matrix: c.data.matrix, tidePts: tidePts };
 }
 // The saved NS feed merged into `rows` (and the snapshot `snap`), so a paint from saved
 // data is scored like a live one. Any age up to SAVED_FORECAST_MAX_MS: the preflight
@@ -14861,6 +14870,7 @@ async function loadAndRender(forceRefresh = false) {
       try {
         _matrix = wwCache.matrix.filter(r => r && r.dateTime);
         _fcAsOf = { ww: wwCache.fetchedAt, ns: 0 };
+        if (wwCache.tidePts) _tidePts = wwCache.tidePts;   // the tide graph's turning points, saved with these rows
         const ns = NS_FEED_ENABLED ? mergeSavedNs(_matrix, null) : null;
         if (ns) { _matrix = ns.rows; appendNsOutlook(ns.nsMap); _fcAsOf.ns = ns.at; }
         // Find closest entry to now in the saved matrix
@@ -14887,6 +14897,7 @@ async function loadAndRender(forceRefresh = false) {
       wwData  = wwCache.data;
       matrix  = wwCache.matrix || [];
       wwAt    = wwCache.fetchedAt;
+      if (wwCache.tidePts) _tidePts = wwCache.tidePts;   // buildHourlyMatrix is skipped on this path
       diag('using fresh cache (' + matrix.length + ' rows)');
       const ago = Math.round((Date.now() - wwCache.fetchedAt) / 60000);
       setStatus(`Cached ${ago} min ago · ${FEED_LABEL}`);
@@ -14908,7 +14919,7 @@ async function loadAndRender(forceRefresh = false) {
           wwData  = parseWillyWeather(j);
           matrix  = buildHourlyMatrix(j);
           if (!matrix.length) throw new Error('WW returned empty forecast');
-          saveCache(WW_CACHE_KEY, { data: wwData, matrix });   // read back by loadWwCache
+          saveCache(WW_CACHE_KEY, { data: wwData, matrix, tidePts: _tidePts });   // read back by loadWwCache; buildHourlyMatrix has just set _tidePts
           wwAt = Date.now();
           diag('WW ok — ' + matrix.length + ' rows');
           setStatus('');
