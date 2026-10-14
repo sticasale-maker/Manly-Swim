@@ -13103,21 +13103,47 @@ function renderSandBoard(h, wx) {
     rain: hasRain ? band : null,
     cloud: (wx && wx.cloud != null) ? wx.cloud : null,
     uv: (wx && wx.uv != null) ? wx.uv : null,
-    night: night, sun: sun || null
+    night: night, sun: sun || null,
+    wxCode: (wx && wx.wxCode != null) ? wx.wxCode : null,
+    // Wet paving and puddles for a couple of hours after rain stops (15 Oct 2026).
+    wet: (function () {
+      var t0 = Date.parse(h.dateTime.replace(' ', 'T').substring(0, 13) + ':00:00');
+      for (var b = 1; b <= 2; b++) {
+        var d = new Date(t0 - b * 3600e3), p = function (n) { return (n < 10 ? '0' : '') + n; };
+        var key = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':00';
+        var w = sandWxExact(key);
+        if (w && w.rainMm != null && w.rainMm >= 0.3) return true;
+      }
+      return false;
+    })()
   });
 }
 
-// ── SAND SCENE (prototype, 14 Oct 2026) ─────────────────────────────────────────
+// ── SAND SCENE (14 Oct 2026; layered rebuild 15 Oct 2026) ──────────────────────────
 // Paints the promenade picture for the slider's hour from the SAME values the four rows
-// show (passed in by renderSandBoard; nothing re-derived). Painted base and figures are
-// images/sand/*.webp; sky, sun, clouds, rain, windsock, blowing sand and the colour grade
-// are drawn here. The view looks SE along the promenade: sea on the left, land on the
-// right, so screen-right is compass 225 deg.
+// show (passed in by renderSandBoard; nothing re-derived). Painted base, night base, clouds
+// and figures are images/sand/*.webp; sky, sun, moon, stars, rainbow, mist, rain, flag,
+// shadows, puddles and the colour grade are drawn here. The view looks SE along the
+// promenade: sea on the left, land on the right, so screen-right is compass 225 deg.
+//
+// Layers (15 Oct 2026, owner: night scenes, more people, light, clouds, weather detail):
+//   sky     - gradient, sun, moon, stars                     (still, per hour)
+//   clouds  - painted cloud sprites, drifting with the wind   (every frame)
+//   rainbow - showers with the sun out                       (still, per hour)
+//   fg      - painting (day fading to night), lamps, people, shadows, puddles, sand
+//   grade   - cold/heat tint over everything
+//   flag, rain, lightning                                    (every frame)
+// Pines sway in strong wind and the paving shimmers on very hot days, both by redrawing
+// strips of the fg layer each frame. Nothing here ever draws on the sea beyond light:
+// no surf, no whitecaps, nobody in the water (the Water view owns the water).
 var SAND_SCENE = { img: {}, ready: 0, last: null };
 (function () {
-  var names = ['promenade', 'umbrella-calm', 'umbrella-wind', 'rain-light', 'wind-hat', 'wind-dog',
-               'cold', 'cold-hoodie', 'jumper', 'jumper-dog', 'tee-f', 'hot', 'hot-2', 'jogger',
-               'swim-m', 'swim-f', 'swim-g', 'swim-rain-m', 'swim-rain-f'];
+  var names = ['promenade', 'promenade-night', 'cloud-fair-1', 'cloud-fair-2', 'cloud-overcast', 'cloud-storm',
+               'umbrella-calm', 'umbrella-wind', 'rain-light', 'wind-hat', 'wind-dog',
+               'cold', 'cold-hoodie', 'elder-cold', 'jumper', 'jumper-dog', 'couple-cool', 'sit-coffee',
+               'tee-f', 'hot', 'hot-2', 'jogger', 'couple-warm', 'pram',
+               'swim-m', 'swim-f', 'swim-g', 'couple-swim', 'kid-boogie', 'swim-rain-m', 'swim-rain-f',
+               'night-walker'];
   names.forEach(function (n) {
     var im = new Image();
     im.onload = function () {
@@ -13128,7 +13154,7 @@ var SAND_SCENE = { img: {}, ready: 0, last: null };
     SAND_SCENE.img[n] = im;
   });
 })();
-// The Australian flag, drawn once (2:1) and cached; paintSandScene ripples it in strips.
+// The Australian flag, drawn once (2:1) and cached; the frame loop ripples it in strips.
 // Union Jack canton, Commonwealth Star under it, Southern Cross in the fly.
 function sandAusFlag() {
   if (SAND_SCENE.flag) return SAND_SCENE.flag;
@@ -13163,6 +13189,21 @@ function seedPhase(str) {
   for (var i = 0; i < str.length; i++) n = (n * 31 + str.charCodeAt(i)) % 100003;
   return n;
 }
+// Moon phase for a date, 0 = new, 0.5 = full (mean synodic month from the 6 Jan 2000 new moon).
+function sandMoonPhase(dateStr) {
+  var t = Date.parse(dateStr.substring(0, 10) + 'T12:00:00Z');
+  if (!isFinite(t)) return 0.5;
+  var days = (t - Date.UTC(2000, 0, 6, 18, 14)) / 86400000;
+  var p = (days / 29.530588853) % 1;
+  return p < 0 ? p + 1 : p;
+}
+function sandLayer(name, cv) {
+  var c = SAND_SCENE[name] || (SAND_SCENE[name] = document.createElement('canvas'));
+  if (c.width !== cv.width || c.height !== cv.height) { c.width = cv.width; c.height = cv.height; }
+  var g = c.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
+  return g;
+}
 function paintSandScene(h, wx, s) {
   SAND_SCENE.last = [h, wx, s];
   var cv = document.getElementById('sandSceneCv');
@@ -13170,20 +13211,22 @@ function paintSandScene(h, wx, s) {
   // Drawn in the painting's own 1376 x 768 frame (scaled by k), then CROPPED to a wider window
   // (owner, 14 Oct 2026: shorter, so the day and hour pickers stay on the first screen): the
   // canvas shows painting rows 110-710, i.e. it is 1100 x 480 and everything shifts up 110.
-  var g = cv.getContext('2d'), W = cv.width, k = W / 1376, H = 768 * k;   // art was 1376 wide
-  g.setTransform(1, 0, 0, 1, 0, -110 * k);
-  var I = SAND_SCENE.img, base = I.promenade;
+  var W = cv.width, k = W / 1376, H = 768 * k, CROP = -110 * k;   // art was 1376 wide
+  SAND_SCENE.k = k; SAND_SCENE.crop = CROP;
+  var I = SAND_SCENE.img;
   var none = !wx || (s.temp == null && s.wind == null && s.rain == null);
   var HOR = 352 * k;                                    // sea horizon in the painting
   function rnd(seed) { var x = seed; return function () { x = (x * 9301 + 49297) % 233280; return x / 233280; }; }
   function mix(a, b, t) { return a.map(function (v, i) { return Math.round(v + (b[i] - v) * t); }); }
   function rgb(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a == null ? 1 : a) + ')'; }
+  function ok(im) { return im && im.complete && im.naturalWidth; }
 
   // Where in the day: 0 at sunrise, 1 at sunset, outside that is night.
-  var hr = +h.dateTime.substring(11, 13), dayT = null, twilight = 0, nearSun = 99;
+  var hr = +h.dateTime.substring(11, 13), dayT = null, twilight = 0, nearSun = 99, sr = 6, ss = 19;
   if (s.sun && s.sun.sunrise && s.sun.sunset) {
     var hm = function (t) { var p = t.substring(t.indexOf('T') + 1).split(':'); return +p[0] + (+p[1]) / 60; };
-    var sr = hm(s.sun.sunrise), ss = hm(s.sun.sunset), at = hr + 0.5;
+    sr = hm(s.sun.sunrise); ss = hm(s.sun.sunset);
+    var at = hr + 0.5;
     dayT = (at - sr) / (ss - sr);
     nearSun = Math.min(Math.abs(at - sr), Math.abs(at - ss));   // hours from sunrise or sunset
     twilight = Math.max(0, 1 - nearSun / 0.9);
@@ -13192,227 +13235,305 @@ function paintSandScene(h, wx, s) {
   // for a while either side: within about half an hour of the sun the picture paints dawn or
   // dusk light, not stars (6:00 on a 6:08 sunrise is a pale dawn, not the middle of the night).
   var night = s.night && nearSun > 0.5;
+  // How far the painting has turned to its night version: lamps come on through dusk.
+  var nightness = none ? 0 : night ? 1 : s.night ? 0.6 : (dayT != null && dayT > 0.5 && twilight > 0.55 ? 0.25 : 0);
+  var wsx = s.windDir != null ? Math.cos((s.windDir + 180 - 225) * Math.PI / 180) : 0;   // +1 blows right
+  var wk = s.wind || 0;
+  var rainB = s.rain == null ? 0 : s.rain;
+  var code = s.wxCode == null ? null : +s.wxCode;
+  var foggy = code === 45 || code === 48;
+  var storm = code != null && code >= 95;
 
-  // 1. Sky. Cloud cover from the hour's cloud %, deepened by the rain band.
-  var top = night ? [19, 32, 58] : [104, 160, 205], bot = night ? [43, 58, 90] : [214, 230, 236];
-  if (!night && twilight > 0) { top = mix(top, [110, 130, 170], twilight); bot = mix(bot, [244, 186, 138], twilight); }
+  // ── 1. SKY layer ─────────────────────────────────────────────────────────────
+  var g = sandLayer('skyCv', cv); g.setTransform(1, 0, 0, 1, 0, CROP);
+  var top = night ? [17, 28, 52] : [104, 160, 205], bot = night ? [38, 52, 84] : [214, 230, 236];
+  if (!night && twilight > 0) {                         // golden hour: warm low sky, violet above
+    top = mix(top, [112, 128, 172], twilight); bot = mix(bot, [248, 178, 128], twilight);
+  }
   var cloud = s.cloud != null ? s.cloud / 100 : (s.rain != null ? [0.1, 0.45, 0.8, 0.95, 1][s.rain] : 0.3);
-  if (s.rain != null && s.rain >= 2) cloud = Math.max(cloud, 0.85);
-  var grey = s.rain != null && s.rain >= 3 ? [88, 98, 110] : [150, 158, 166];
-  if (night) grey = [40, 46, 58];
-  top = mix(top, grey, cloud * 0.85); bot = mix(bot, mix(grey, [200, 200, 200], 0.4), cloud * 0.8);
+  if (rainB >= 2) cloud = Math.max(cloud, 0.85);
+  var grey = rainB >= 3 ? [92, 102, 114] : [156, 164, 172];
+  if (night) grey = [38, 44, 56];
+  top = mix(top, grey, cloud * 0.75); bot = mix(bot, mix(grey, [205, 205, 205], 0.4), cloud * 0.7);
   if (none) { top = [176, 180, 184]; bot = [206, 208, 210]; }
   var sk = g.createLinearGradient(0, 0, 0, HOR + 40 * k);
   sk.addColorStop(0, rgb(top)); sk.addColorStop(1, rgb(bot));
   g.fillStyle = sk; g.fillRect(0, 0, W, H);
-
-  // 2. Sun (by day, unless the cloud is thick) - its glow grows with the UV index.
-  if (!none && !night && dayT != null && dayT > -0.02 && dayT < 1.02 && cloud < 0.9) {
-    var sx = (80 + dayT * 1220) * k, sy = (330 - Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI) * 185) * k;   // noon peak stays inside the crop
-    var uvf = Math.min(1, (s.uv || 0) / 11), vis = 1 - cloud * 0.9;
-    var gl = g.createRadialGradient(sx, sy, 0, sx, sy, (60 + 120 * uvf) * k);
-    gl.addColorStop(0, 'rgba(255,236,170,' + (0.75 * vis) + ')'); gl.addColorStop(1, 'rgba(255,236,170,0)');
-    g.fillStyle = gl; g.fillRect(0, 0, W, HOR + 60 * k);
-    g.fillStyle = twilight > 0.5 ? 'rgba(250,180,110,' + vis + ')' : 'rgba(255,240,180,' + vis + ')';
-    g.beginPath(); g.arc(sx, sy, 34 * k, 0, Math.PI * 2); g.fill();
+  var sun = null;                                       // where the sun is, for shadows and glitter
+  if (!none && !night && dayT != null && dayT > -0.04 && dayT < 1.04) {
+    var alt = Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI);
+    sun = { x: (80 + dayT * 1220) * k, y: (330 - alt * 185) * k, alt: alt, vis: Math.max(0, 1 - cloud * 1.05) };
+    if (sun.vis > 0.05) {
+      var uvf = Math.min(1, (s.uv || 0) / 11);
+      var gl = g.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, (60 + 130 * uvf + 80 * twilight) * k);
+      gl.addColorStop(0, twilight > 0.4 ? 'rgba(255,190,120,' + (0.8 * sun.vis) + ')' : 'rgba(255,236,170,' + (0.75 * sun.vis) + ')');
+      gl.addColorStop(1, 'rgba(255,236,170,0)');
+      g.fillStyle = gl; g.fillRect(0, 0, W, HOR + 60 * k);
+      g.fillStyle = twilight > 0.5 ? 'rgba(250,170,100,' + sun.vis + ')' : 'rgba(255,242,190,' + sun.vis + ')';
+      g.beginPath(); g.arc(sun.x, sun.y, 34 * k, 0, Math.PI * 2); g.fill();
+    }
   }
-  // Stars on a clear night.
-  if (!none && night && cloud < 0.5) {
-    var r0 = rnd(3); g.fillStyle = 'rgba(255,255,240,0.8)';
-    for (var i = 0; i < 40; i++) g.fillRect(r0() * W, r0() * HOR * 0.9, 2, 2);
-  }
-  // 3. Clouds: soft bands, more and darker as cover rises.
-  if (!none && cloud > 0.15) {
-    var r1 = rnd(11), n = Math.round(cloud * 14), cc = night ? [30, 36, 48] : (s.rain >= 3 ? [70, 78, 90] : [235, 238, 240]);
-    for (var j = 0; j < n; j++) {
-      var cx = r1() * (W + 300 * k) - 150 * k, cy = r1() * (HOR - 60 * k), cw = (220 + r1() * 260) * k;
-      g.fillStyle = rgb(cc, 0.18 + cloud * 0.25);
-      g.beginPath(); g.ellipse(cx, cy, cw / 2, cw / 9, 0, 0, Math.PI * 2); g.fill();
+  var moon = null;
+  if (!none && night && cloud < 0.75) {
+    // Stars: more and brighter the clearer it is.
+    var r0 = rnd(3), nst = Math.round(70 * (1 - cloud));
+    for (var i = 0; i < nst; i++) {
+      g.fillStyle = 'rgba(255,255,240,' + (0.35 + r0() * 0.55) + ')';
+      var st = r0() < 0.12 ? 3 : 2;
+      g.fillRect(r0() * W, 110 * k + r0() * (HOR - 130 * k), st, st);
+    }
+    // The real moon for the date, lit from the correct side for the southern hemisphere
+    // (a waxing moon is lit on the LEFT from Sydney), crossing from east (sea) to west.
+    var ph = sandMoonPhase(h.dateTime), illum = (1 - Math.cos(ph * 2 * Math.PI)) / 2;
+    var nightLen = 24 - (ss - sr), since = ((hr + 0.5) - ss + 24) % 24;
+    var nt = Math.max(0, Math.min(1, since / nightLen));
+    if (illum > 0.06) {
+      moon = { x: (140 + nt * 1000) * k, y: (300 - Math.sin(nt * Math.PI) * 150) * k, r: 22 * k, illum: illum };
+      var mg = g.createRadialGradient(moon.x, moon.y, 0, moon.x, moon.y, moon.r * 5);
+      mg.addColorStop(0, 'rgba(220,230,255,' + (0.28 * illum) + ')'); mg.addColorStop(1, 'rgba(220,230,255,0)');
+      g.fillStyle = mg; g.fillRect(moon.x - moon.r * 5, moon.y - moon.r * 5, moon.r * 10, moon.r * 10);
+      // The lit part: a bright disc with a shadow disc cut out of it, offset towards the dark
+      // side by more the fuller the moon (an approximation that reads right at this size).
+      var mc = document.createElement('canvas'), R = Math.ceil(moon.r) + 2;
+      mc.width = mc.height = R * 2;
+      var m2 = mc.getContext('2d');
+      m2.fillStyle = '#f1efe2'; m2.beginPath(); m2.arc(R, R, moon.r, 0, Math.PI * 2); m2.fill();
+      var shadowSide = ph < 0.5 ? 1 : -1;                // waxing: lit on the LEFT, so the shadow is right
+      m2.globalCompositeOperation = 'destination-out';
+      m2.beginPath(); m2.arc(R + shadowSide * 2 * moon.r * illum, R, moon.r * 1.02, 0, Math.PI * 2); m2.fill();
+      g.fillStyle = 'rgba(70,80,105,0.5)';               // the dark limb, faintly
+      g.beginPath(); g.arc(moon.x, moon.y, moon.r, 0, Math.PI * 2); g.fill();
+      g.drawImage(mc, moon.x - R, moon.y - R);
     }
   }
 
-  // 4. The painting (its sky is transparent).
-  if (base.complete && base.naturalWidth) g.drawImage(base, 0, 0, W, H);
+  // ── 2. CLOUDS: painted sprites, tinted for the hour, drifting with the wind ──────
+  var clouds = [];
+  if (!none && cloud > 0.12) {
+    var rc = rnd(seedPhase(h.dateTime.substring(0, 10)) + 7);
+    var set = [];
+    if (cloud < 0.5) { for (var a = 0; a < 2 + Math.round(cloud * 4); a++) set.push(rc() < 0.5 ? 'cloud-fair-1' : 'cloud-fair-2'); }
+    else if (cloud < 0.82) { set = ['cloud-overcast', 'cloud-fair-1', 'cloud-fair-2', 'cloud-fair-1', 'cloud-fair-2']; }
+    else { set = ['cloud-overcast', 'cloud-overcast', 'cloud-overcast', 'cloud-fair-2']; }
+    if (rainB >= 2 || storm) set = set.concat(['cloud-storm', 'cloud-storm']).concat(rainB >= 3 || storm ? ['cloud-storm'] : []);
+    var tint = night ? [14, 22, 40, 0.62] : (twilight > 0.45 ? [250, 160, 120, 0.28] : (rainB >= 3 || storm ? [60, 68, 82, 0.35] : null));
+    set.forEach(function (nm, ci) {
+      var im = I[nm]; if (!ok(im)) return;
+      var sc = (nm === 'cloud-overcast' ? 1.6 : nm === 'cloud-storm' ? 1.25 : 0.7) * (0.75 + rc() * 0.5);
+      var cw = 520 * sc * k, chh = cw * im.naturalHeight / im.naturalWidth;
+      var tc = document.createElement('canvas'); tc.width = Math.ceil(cw); tc.height = Math.ceil(chh);
+      var tg = tc.getContext('2d'); tg.drawImage(im, 0, 0, cw, chh);
+      if (tint) { tg.globalCompositeOperation = 'source-atop'; tg.fillStyle = rgb(tint, tint[3]); tg.fillRect(0, 0, cw, chh); }
+      clouds.push({ c: tc, x: rc() * (W + cw) - cw / 2, y: 110 * k + rc() * (HOR - 170 * k) - chh * 0.3,
+                    a: nm === 'cloud-overcast' ? 0.85 : 0.95 });
+    });
+  }
+  SAND_SCENE.cloudP = clouds.length ? { list: clouds, speed: (3 + Math.min(60, wk) * 0.5) * k * (wsx >= 0 ? 1 : -1), W: W } : null;
 
-  // Wind as seen on screen: +1 blows to the right, -1 to the left.
-  var wsx = s.windDir != null ? Math.cos((s.windDir + 180 - 225) * Math.PI / 180) : 0;
-  var wk = s.wind || 0;
+  // ── 3. RAINBOW: showers with the sun low enough and out (opposite the sun) ───────
+  var rb = SAND_SCENE.rainbowP = null;
+  if (!none && sun && sun.vis > 0.3 && (rainB === 1 || rainB === 2) && (dayT < 0.4 || dayT > 0.6)) {
+    SAND_SCENE.rainbowP = { cx: (sun.x < W / 2 ? W * 0.95 : W * 0.05), cy: HOR + 260 * k, r: 420 * k, a: 0.24 * sun.vis };
+  }
 
-  // 5. The Australian flag on a pole at the railing, near enough to read on a phone (owner,
-  //    14 Oct 2026, replacing a windsock). NEVER the red/yellow lifesaving flags: on a beach
-  //    they mean "patrolled, swim between the flags", a swimming call this weather picture
-  //    must not make (CLAUDE.md section 1). The flag hangs down the pole when still and flies
-  //    flat, rippling, when strong; it streams with the real wind, hoist always at the pole.
+  // ── 4. FOREGROUND layer: painting, lamps, glitter, puddles, people, shadows ──────
+  g = sandLayer('fgCv', cv); g.setTransform(1, 0, 0, 1, 0, CROP);
+  if (ok(I.promenade)) g.drawImage(I.promenade, 0, 0, W, H);
+  if (nightness > 0 && ok(I['promenade-night'])) {
+    g.globalAlpha = nightness; g.drawImage(I['promenade-night'], 0, 0, W, H); g.globalAlpha = 1;
+  }
+  // Light on the water: the low sun's glitter path at dawn (the sun rises over the sea), the
+  // moon's silver path at night. Light only - never waves.
+  function glitter(x, col, n) {
+    var rg = rnd(13); g.strokeStyle = col; g.lineWidth = 2 * k;
+    g.beginPath();
+    for (var q = 0; q < n; q++) {
+      var yy = HOR + 4 * k + Math.pow(rg(), 1.6) * 90 * k, ww = (8 + rg() * 30) * k * (1 + (yy - HOR) / (60 * k));
+      var xx = x + (rg() - 0.5) * (20 * k + (yy - HOR) * 0.9);
+      if (xx > 760 * k) continue;                        // the water ends where the beach begins
+      g.moveTo(xx - ww / 2, yy); g.lineTo(xx + ww / 2, yy);
+    }
+    g.stroke();
+  }
+  if (sun && sun.vis > 0.3 && sun.x < 700 * k && sun.alt < 0.55) glitter(sun.x, 'rgba(255,214,150,' + (0.55 * sun.vis) + ')', 40);
+  if (moon && moon.x < 700 * k) glitter(moon.x, 'rgba(225,232,255,' + (0.45 * moon.illum) + ')', 30);
+  // Wet paving: while it rains, and for a couple of hours after (puddles hold the sky).
+  var wet = rainB >= 2 || s.wet;
+  if (!none && wet) {
+    var shg = g.createLinearGradient(0, 470 * k, 0, H);
+    shg.addColorStop(0, 'rgba(200,215,230,0)'); shg.addColorStop(1, 'rgba(200,215,230,' + (rainB >= 2 ? 0.18 : 0.12) + ')');
+    g.fillStyle = shg; g.fillRect(0, 470 * k, W, H);
+    var rp = rnd(57), pc = mix(bot, [255, 255, 255], night ? 0 : 0.2);
+    for (var pq = 0; pq < 7; pq++) {
+      var py = (520 + rp() * 170) * k, pxp = (560 + rp() * 520 + (py / k - 520) * 0.4) * k, pw = (40 + rp() * 70) * k * (py / (600 * k));
+      g.fillStyle = rgb(pc, night ? 0.35 : 0.45);
+      g.beginPath(); g.ellipse(pxp, py, pw, pw * 0.18, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // Flag pole (the cloth is drawn every frame, see sandFlagCloth).
   SAND_SCENE.flagP = null;
   if (!none && s.wind != null) {
     var px = 352 * k, pb = 600 * k, pt = 300 * k, z = k * 1.7;   // z: drawn larger this near
     g.strokeStyle = '#2b3640'; g.lineWidth = 3 * z;
     g.beginPath(); g.moveTo(px, pb); g.lineTo(px, pt - 4 * z); g.stroke();
-    // Cloth model (owner, 14 Oct 2026: a still flag folds, it does not pivot). The hoist edge
-    // is tied along the pole and stays vertical. Each vertical strip of cloth is placed by how
-    // far it reaches from the pole (gathered tight when still, full length when flying) and
-    // how far it sags (the fly drops lowest when still); folds are shaded strips whose depth
-    // and count fall as the wind opens the cloth out.
-    // The cloth itself is drawn by sandFlagCloth() in every animation frame (owner, 14 Oct
-    // 2026: make the flag wave); here only its shape for this hour is stored.
+    // NEVER the red/yellow lifesaving flags: on a beach they mean "patrolled, swim between the
+    // flags", a swimming call this weather picture must not make (CLAUDE.md section 1).
     var lift = Math.min(1, wk / 40);                     // 0 hangs limp, 1 flies flat
     var FLb = 74 * (0.55 + 0.45 * Math.abs(wsx)) * z;    // foreshortened along the view
     SAND_SCENE.flagP = {
       k: k, x: px + 1.5 * z, y: pt, dir: wsx >= 0 ? 1 : -1, FL: FLb, FH: 37 * z,
-      reach: 0.18 + 0.82 * Math.pow(lift, 0.8),          // how far the cloth spreads from the pole
-      limp: 1 - lift, folds: 4.5 - 2.5 * lift, depth: 0.55 - 0.40 * lift,
-      amp: 37 * z * (0.10 * lift + 0.02),                // a little stir even when nearly still
-      ph0: (seedPhase(h.dateTime) % 628) / 100,
-      omega: 2 * Math.PI * (0.25 + 2.2 * lift)           // ripples per second: a gale snaps, a breath stirs
+      reach: 0.18 + 0.82 * Math.pow(lift, 0.8), limp: 1 - lift, folds: 4.5 - 2.5 * lift, depth: 0.55 - 0.40 * lift,
+      amp: 37 * z * (0.10 * lift + 0.02), ph0: (seedPhase(h.dateTime) % 628) / 100,
+      omega: 2 * Math.PI * (0.25 + 2.2 * lift)
     };
   }
 
-  // 6. People: one carries the rain (and the wind), one the air temperature.
-  function fig(name, xFeet, yFeet, hgt, faceLeft, natLeft) {
-    var im = I[name]; if (!im || !im.complete || !im.naturalWidth) return;
-    var ww = im.naturalWidth * hgt / im.naturalHeight;
-    g.fillStyle = 'rgba(60,55,50,0.28)';
-    g.beginPath(); g.ellipse(xFeet, yFeet, ww * 0.32, 5 * k, 0, 0, Math.PI * 2); g.fill();
-    g.save(); g.translate(xFeet, yFeet);
-    if (faceLeft !== natLeft) g.scale(-1, 1);
-    g.drawImage(im, -ww / 2, -hgt, ww, hgt);
-    g.restore();
-  }
-  // Slots: [x of feet, y of feet, height] in the painting's 1376-wide frame, near to far.
-  var slots = [[640, 700, 300], [1010, 560, 175], [1150, 470, 110]];   // nearest one raised: the crop ends at 710
-  // Which way each painting walks as drawn (true = to the left); the code mirrors as needed.
-  var NAT_LEFT = { 'umbrella-calm': false, 'umbrella-wind': true, 'rain-light': true, 'wind-hat': true,
-                   'wind-dog': true, cold: true, 'cold-hoodie': true, jumper: true, 'jumper-dog': true,
-                   'tee-f': true, hot: false, 'hot-2': true, jogger: true, 'swim-m': true, 'swim-f': true, 'swim-g': true,
-                   'swim-rain-m': true, 'swim-rain-f': true };
-  function put(slot, name, faceLeft) {
-    var sl = slots[slot];
-    fig(name, sl[0] * k, sl[1] * k, sl[2] * k, faceLeft, NAT_LEFT[name]);
-  }
-  // Variety that is steady within an hour but changes from hour to hour (no flicker on repaint).
-  var seed = 0, dt = String(h.dateTime);
-  for (var c = 0; c < dt.length; c++) seed = (seed * 31 + dt.charCodeAt(c)) % 100003;
+  // People. How many follows how pleasant the hour is (owner, 15 Oct 2026: more people, more
+  // when it is nice, busier at weekends and early mornings, nobody late at night). Who they
+  // are follows the owner's dress code by feels-like; rain only adds rain gear.
+  var seed = seedPhase(h.dateTime);
   var pick = rnd(seed + 1);
   function choose(pool) { return pool[Math.floor(pick() * pool.length) % pool.length]; }
-  var into = wsx > 0;                                   // walk INTO the wind
-  // Seaside Australian dress (owner, 14 Oct 2026), by feels-like: swimmers when hot, t-shirt
-  // when warm, jumper when cool, all in thongs; shoes only when cold or in heavy rain.
-  // Dogs on leads here and there, especially when windy; hats held down in the wind.
-  var feel = s.temp;
-  var cold = feel != null && feel < 17;
-  var pool = feel == null ? [] : cold ? ['cold', 'cold-hoodie']
-           : feel < 22 ? ['jumper', 'jumper-dog'] : feel < 27 ? ['tee-f', 'hot-2', 'hot', 'jogger']
-           : ['swim-m', 'swim-f', 'swim-g'];   // hot: swimmers only (owner); the hour picks who leads
-  // TEMPERATURE sets the outfit; rain only adds rain gear on top (owner, 14 Oct 2026: long
-  // trousers and a raincoat at 38 degrees make no sense). Tiers: cold <17, cool 17-22,
-  // warm 22-27, hot 27+.
+  var feel = s.temp, cold = feel != null && feel < 17;
   var tier = feel == null ? null : cold ? 'cold' : feel < 22 ? 'cool' : feel < 27 ? 'warm' : 'hot';
-  var HOT_RAIN = SAND_SCENE.img['swim-rain-m'] && SAND_SCENE.img['swim-rain-m'].naturalWidth
-    ? ['swim-rain-m', 'swim-rain-f'] : ['rain-light'];  // swimmers in a rain jacket, once painted
+  var POOLS = { cold: ['cold', 'cold-hoodie', 'elder-cold'], cool: ['jumper', 'jumper-dog', 'couple-cool', 'sit-coffee'],
+                warm: ['tee-f', 'hot-2', 'hot', 'jogger', 'couple-warm', 'pram'],
+                hot: ['swim-m', 'swim-f', 'swim-g', 'couple-swim', 'kid-boogie'] };
+  var pool = tier ? POOLS[tier].slice() : [];
+  var NAT_LEFT = { 'umbrella-calm': false, hot: false };   // every other painting walks to the left as drawn
+  var into = wsx > 0;                                     // walk INTO the wind
+  // Slots: [x of feet, y of feet, height] in the painting's 1376 frame, drawn far to near.
+  var SLOTS = [[640, 700, 300], [1010, 560, 175], [1150, 470, 110], [860, 600, 205], [1235, 438, 80], [1290, 422, 62]];
+  var SEAT = [505, 640, 205];                           // someone sitting by the railing with a coffee
+  var placed = [];
   if (!none) {
-    var rain = s.rain == null ? 0 : s.rain, lead = null, second = null;
-    if (rain >= 2 && (tier === 'cold' || tier === null)) {   // cold rain: raincoat, umbrella, shoes
-      lead = wk >= 25 ? 'umbrella-wind' : 'umbrella-calm';
-      second = tier === 'cold' ? 'cold-hoodie' : null;
-    } else if (rain >= 2 && tier === 'cool') {          // cool: rain jacket in thongs; umbrella when heavy
-      lead = rain >= 3 ? (wk >= 25 ? 'umbrella-wind' : 'umbrella-calm') : 'rain-light';
-      second = lead === 'rain-light' ? 'umbrella-calm' : 'rain-light';
-    } else if (rain >= 2 && tier === 'warm') {          // warm: rain jacket, shorts, thongs - no trousers
-      lead = 'rain-light';
-      second = choose(pool);
-    } else if (rain >= 2 && tier === 'hot') {           // hot: swimmers with a rain jacket over them
-      lead = choose(HOT_RAIN);
-      second = choose(pool);
-    } else if (wk >= 25) {                              // dry but windy: hat held down, a dog on a lead
-      lead = cold ? 'wind-hat' : 'wind-dog';
-      second = pool.length ? choose(pool) : null;
-    } else if (pool.length) {
-      lead = choose(pool);
-      var rest = pool.filter(function (n) { return n !== lead; });
-      second = rest.length ? choose(rest) : null;
+    var lead = null, second = null;
+    var HOT_RAIN = ['swim-rain-m', 'swim-rain-f'];
+    if (rainB >= 2 && (tier === 'cold' || tier === null)) { lead = wk >= 25 ? 'umbrella-wind' : 'umbrella-calm'; second = tier === 'cold' ? 'cold-hoodie' : null; }
+    else if (rainB >= 2 && tier === 'cool') { lead = rainB >= 3 ? (wk >= 25 ? 'umbrella-wind' : 'umbrella-calm') : 'rain-light'; second = lead === 'rain-light' ? 'umbrella-calm' : 'rain-light'; }
+    else if (rainB >= 2 && tier === 'warm') { lead = 'rain-light'; second = choose(pool.filter(function (n) { return n !== 'pram'; })); }
+    else if (rainB >= 2 && tier === 'hot') { lead = choose(HOT_RAIN); second = choose(['swim-m', 'swim-f', 'swim-g']); }
+    else if (wk >= 25) { lead = cold ? 'wind-hat' : 'wind-dog'; }
+    // How many: pleasantness 0-1 from temperature, rain, wind and light, then the time.
+    var pT = feel == null ? 0.5 : Math.max(0, 1 - Math.max(0, 19 - feel) / 10 - Math.max(0, feel - 31) / 8);
+    var pR = [1, 0.7, 0.35, 0.18, 0.1][rainB] || 1, pW = wk < 25 ? 1 : wk < 40 ? 0.6 : 0.35;
+    var pleasant = pT * pR * pW;
+    var dow = new Date(h.dateTime.substring(0, 10) + 'T12:00:00').getDay(), weekend = dow === 0 || dow === 6;
+    var count = Math.round(1 + pleasant * 4 * (weekend ? 1.25 : 1) * (hr >= 6 && hr <= 10 ? 1.15 : 1));
+    if (s.night) count = (hr >= 22 || hr < 5) ? 0 : 1;   // after dark: one late walker, then nobody
+    count = Math.max(0, Math.min(count, rainB >= 2 ? 2 : 6));
+    var people = [];
+    if (s.night && count) people = [feel != null && feel < 22 ? 'night-walker' : (pool.length ? choose(pool) : 'night-walker')];
+    else {
+      if (lead) people.push(lead);
+      if (second) people.push(second);
+      var rest = pool.filter(function (n) { return people.indexOf(n) < 0; });
+      while (people.length < count && rest.length) { var nx = choose(rest); people.push(nx); rest.splice(rest.indexOf(nx), 1); }
+      people = people.slice(0, Math.max(count, lead ? 1 : 0) || 0);
     }
-    var dirOf = function (n) { return (n === 'umbrella-wind' || n === 'wind-hat' || n === 'wind-dog') ? into : pick() < 0.5; };
-    if (lead) put(0, lead, dirOf(lead));
-    if (second && !night) put(1, second, dirOf(second));
-    if (rain === 1 && (tier === 'cold' || tier === 'cool')) put(2, 'umbrella-calm', true);   // rain possible: one umbrella, far off (it wears trousers)
+    var si = 0;
+    people.forEach(function (nm) {
+      if (nm === 'sit-coffee') { placed.push({ n: nm, s: SEAT, left: true, sit: true }); return; }
+      if (si >= SLOTS.length) return;
+      var windy = nm === 'umbrella-wind' || nm === 'wind-hat' || nm === 'wind-dog';
+      placed.push({ n: nm, s: SLOTS[si++], left: windy ? into : pick() < 0.5 });
+    });
+    if (rainB === 1 && (tier === 'cold' || tier === 'cool') && !s.night && si < SLOTS.length) placed.push({ n: 'umbrella-calm', s: SLOTS[si++], left: true });
   }
-
-  // 7. Rain streaks, slanted by the wind; sand blowing when it is strong. The streaks are not
-  //    painted here: their layout is stored in SAND_SCENE.rainP and sandRainFrame() draws them
-  //    over a snapshot of the finished picture, moving (owner, 14 Oct 2026: animate the rain).
-  SAND_SCENE.rainP = null;
-  if (!none && s.rain != null && s.rain >= 1) {
-    // The wind drives the rain sideways (owner, 14 Oct 2026: with strong wind the rain goes
-    // horizontal, and it must be obvious). The tilt comes from the wind SPEED alone - near
-    // vertical when calm, about 55 deg at Windy, 80 deg (almost flat) from 40 km/h - and the
-    // direction only sets which way it slants. Streaks lengthen and thicken as it blows.
-    var cnt = [0, 60, 260, 560, 900][s.rain], r2 = rnd(29);
-    var side = wsx >= 0 ? 1 : -1;
-    var tilt = Math.min(80, wk / 40 * 80) * Math.PI / 180;
-    var len = (30 + Math.min(45, wk) * 1.3) * k;
-    var rdx = side * Math.sin(tilt) * len, rdy = Math.cos(tilt) * len;
-    var drops = [];
-    for (var t = 0; t < cnt; t++) drops.push(r2(), r2());          // 0-1 starting spots, wrapped per frame
-    SAND_SCENE.rainP = {
-      drops: drops, rdx: rdx, rdy: rdy, k: k,
-      x0: -Math.abs(rdx) - 50 * k, spanX: W + 2 * Math.abs(rdx) + 100 * k,    // the box a streak can be seen in
-      y0: -rdy, spanY: H + rdy,
-      ux: Math.sin(tilt) * side, uy: Math.cos(tilt),                       // the direction it travels
-      speed: (1150 + Math.min(60, wk) * 14) * k,                           // px per second: wind drives it faster
-      stroke: night ? 'rgba(180,195,215,0.45)' : 'rgba(232,238,245,0.6)',
-      lw: (1.6 + Math.min(1, wk / 40) * 0.8) * k
-    };
-    if (s.rain >= 2) {                                  // wet sheen on the paving
-      var sh = g.createLinearGradient(0, 470 * k, 0, H);
-      sh.addColorStop(0, 'rgba(200,215,230,0)'); sh.addColorStop(1, 'rgba(200,215,230,0.18)');
-      g.fillStyle = sh; g.fillRect(0, 470 * k, W, H);
+  placed.sort(function (a, b) { return a.s[1] - b.s[1]; });   // far (higher up) first
+  placed.forEach(function (p) {
+    var im = I[p.n]; if (!ok(im)) return;
+    var hgt = p.s[2] * k, ww = im.naturalWidth * hgt / im.naturalHeight, fx = p.s[0] * k, fy = p.s[1] * k;
+    // Shadows follow the sun: long at dawn and dusk, short at midday, pointing away from the sun;
+    // soft round blobs under cloud, a faint pool under the lamps at night.
+    if (sun && sun.vis > 0.25) {
+      var len = hgt * (0.25 + 1.3 * (1 - sun.alt)), dirx = fx >= sun.x ? 1 : -1;
+      g.fillStyle = 'rgba(55,50,45,' + (0.22 * sun.vis) + ')';
+      g.beginPath(); g.ellipse(fx, fy, ww * 0.26, 5 * k, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(55,50,45,' + (0.24 * sun.vis) + ')';
+      g.beginPath(); g.moveTo(fx - ww * 0.18, fy); g.lineTo(fx + ww * 0.18, fy);
+      g.lineTo(fx + ww * 0.12 + dirx * len, fy - len * 0.10); g.lineTo(fx - ww * 0.12 + dirx * len, fy - len * 0.10); g.closePath(); g.fill();
+    } else {
+      g.fillStyle = 'rgba(55,50,45,' + (s.night ? 0.18 : 0.26) + ')';
+      g.beginPath(); g.ellipse(fx, fy, ww * 0.32, 5 * k, 0, 0, Math.PI * 2); g.fill();
     }
-  }
+    var src = im;
+    if (nightness > 0) {                                 // people take the night's blue too (on their own pixels only)
+      var tc = document.createElement('canvas'); tc.width = Math.ceil(ww); tc.height = Math.ceil(hgt);
+      var tg = tc.getContext('2d'); tg.drawImage(im, 0, 0, ww, hgt);
+      tg.globalCompositeOperation = 'source-atop'; tg.fillStyle = 'rgba(14,24,48,' + (0.5 * nightness) + ')';
+      tg.fillRect(0, 0, ww, hgt); src = tc;
+    }
+    g.save(); g.translate(fx, fy);
+    if (p.left !== (NAT_LEFT[p.n] !== false)) g.scale(-1, 1);
+    g.drawImage(src, -ww / 2, -hgt, ww, hgt);
+    g.restore();
+  });
+  // Blowing sand when it is strong.
   if (!none && wk >= 39) {
     var r3 = rnd(41); g.strokeStyle = 'rgba(214,190,140,0.55)'; g.lineWidth = 1.4 * k; g.beginPath();
     for (var u = 0; u < 70; u++) { var bx = r3() * W, by = (480 + r3() * 280) * k; g.moveTo(bx, by); g.lineTo(bx + wsx * 60 * k, by + (r3() - 0.5) * 4 * k); }
     g.stroke();
   }
 
-  // 8. Colour grade: night, cold, heat, grey for missing data.
-  //    The same tints are kept in SAND_SCENE.gradeP so the moving flag gets them too.
+  // ── 5. GRADE, MIST: over the whole picture; kept for the frame loop ──────────────
   var grades = [];
   if (none) grades.push('rgba(200,203,207,0.55)');
   else {
-    if (night) grades.push('rgba(12,22,48,0.5)');
+    if (night) grades.push('rgba(12,22,48,0.18)');
     if (s.temp != null && s.temp < 16) grades.push('rgba(120,150,190,' + Math.min(0.18, (16 - s.temp) * 0.03) + ')');
     if (s.temp != null && s.temp > 27) grades.push('rgba(255,190,120,' + Math.min(0.16, (s.temp - 27) * 0.03) + ')');
   }
-  grades.forEach(function (c) { g.fillStyle = c; g.fillRect(0, 0, W, H); });
   SAND_SCENE.gradeP = grades;
+  SAND_SCENE.flagNight = nightness > 0 ? 'rgba(14,24,48,' + (0.5 * nightness) + ')' : null;   // the flag dims with the night too
+  SAND_SCENE.mistP = !none && foggy ? { top: 110 * k, hor: HOR, a: night ? 0.35 : 0.55 } : null;
+  SAND_SCENE.stormP = !none && storm ? { seed: seed, k: k } : null;
+  SAND_SCENE.hazeP = !none && sun && sun.vis > 0.6 && feel != null && feel >= 32 ? { k: k, amp: Math.min(2.4, (feel - 30) * 0.35) * k } : null;
+  SAND_SCENE.swayP = !none && wk >= 20 ? { k: k, amp: Math.min(9, (wk - 15) * 0.25) * k, w: 0.8 + wk / 25 } : null;
+  SAND_SCENE.gullP = !none && !s.night && wk >= 18 && rainB < 3 && !foggy ? { x: 560 * k, y: 200 * k, k: k, dir: wsx >= 0 ? 1 : -1 } : null;
+
+  // ── 6. RAIN (drawn every frame) ──────────────────────────────────────────────
+  SAND_SCENE.rainP = null;
+  if (!none && rainB >= 1) {
+    // The tilt comes from the wind SPEED alone - near vertical when calm, about 55 deg at Windy,
+    // 80 deg (almost flat) from 40 km/h - and the direction sets which way it slants.
+    var cnt = [0, 60, 260, 560, 900][rainB], r2 = rnd(29);
+    var side = wsx >= 0 ? 1 : -1;
+    var tilt = Math.min(80, wk / 40 * 80) * Math.PI / 180;
+    var len2 = (30 + Math.min(45, wk) * 1.3) * k;
+    var rdx = side * Math.sin(tilt) * len2, rdy = Math.cos(tilt) * len2;
+    var drops = [];
+    for (var t = 0; t < cnt; t++) drops.push(r2(), r2());
+    SAND_SCENE.rainP = {
+      drops: drops, rdx: rdx, rdy: rdy, k: k,
+      x0: -Math.abs(rdx) - 50 * k, spanX: W + 2 * Math.abs(rdx) + 100 * k, y0: -rdy, spanY: H + rdy,
+      ux: Math.sin(tilt) * side, uy: Math.cos(tilt), speed: (1150 + Math.min(60, wk) * 14) * k,
+      stroke: night ? 'rgba(180,195,215,0.45)' : 'rgba(232,238,245,0.6)', lw: (1.6 + Math.min(1, wk / 40) * 0.8) * k
+    };
+  }
 
   // Screen readers get the same picture in words.
   var words = none ? 'no forecast for this hour' : [
     night ? 'night' : (dayT != null && twilight > 0.5 ? (dayT < 0.5 ? 'dawn' : 'dusk') : 'day'),
+    foggy ? 'fog' : null, storm ? 'thunderstorm' : null,
     s.rain != null ? ['dry', 'rain possible', 'light rain', 'moderate rain', 'heavy rain'][s.rain] : null,
     s.wind != null ? ['light', 'breezy', 'windy', 'strong wind'][Math.min(3, [12, 25, 39].filter(function (b) { return wk >= b; }).length)] : null,
-    s.temp != null ? Math.round(s.temp) + ' degrees' : null
+    s.temp != null ? Math.round(s.temp) + ' degrees' : null,
+    placed.length ? (placed.length === 1 ? 'one person about' : placed.length + ' people about') : 'nobody about'
   ].filter(Boolean).join(', ');
   cv.setAttribute('aria-label', 'Weather picture of the promenade: ' + words);
   sandHrSync(h);
-
-  // Keep the finished picture (no rain) for the animation to draw over, then show frame one.
-  var bc = SAND_SCENE.baseCv || (SAND_SCENE.baseCv = document.createElement('canvas'));
-  bc.width = cv.width; bc.height = cv.height;
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  bc.getContext('2d').drawImage(cv, 0, 0);
   sandRainFrame(SAND_SCENE.rainT || 0);
   sandRainKick();
 }
 
-// ── Moving rain (owner, 14 Oct 2026) ────────────────────────────────────────────
-// Each frame redraws the stored picture, the waving flag, and the streaks moved along their
-// own slant, so the wind direction and strength set how the rain flies and the flag snaps.
-// It runs only while there is rain or a flag AND the picture is on screen (On the sand view,
-// this tab, scrolled into view, app in front), at about 30 frames a second, and never with
-// "reduce motion" (one still frame).
+// ── Moving parts (14-15 Oct 2026) ────────────────────────────────────────────────
+// Each frame stacks the layers and draws what moves: drifting clouds, the waving flag, rain
+// along its slant, swaying pines in strong wind, heat shimmer, a gull riding the breeze, and
+// lightning in a thunderstorm. It runs only while the picture is on screen (Weather view,
+// this tab, scrolled into view, app in front), and never with "reduce motion" (one still frame).
 // The flag's cloth for one moment: the folds and ripples are a wave that travels from the
-// pole out to the fly (owner, 14 Oct 2026: make the flag wave). Drawn in the painting's frame.
+// pole out to the fly (owner, 14 Oct 2026: a still flag folds, it does not pivot).
 function sandFlagCloth(g, F, ms) {
   var flag = sandAusFlag(), N = 28;
   var ph = F.ph0 - (ms / 1000) * F.omega;
@@ -13421,9 +13542,6 @@ function sandFlagCloth(g, F, ms) {
     var u0 = q / N, um = (q + 0.5) / N;
     var wave = um * F.folds * 2 * Math.PI + ph;
     var x = u0 * F.FL * F.reach;
-    // Limp: the top edge falls from the pole top towards the fly tip while the bottom edge
-    // sags only a little, so the cloth tapers into a hanging drape. Flying: full height,
-    // rippling up and down more towards the fly. The hoist (um near 0) barely moves.
     var rip = F.amp * Math.sin(wave) * um;
     var top = um * F.FL * 0.60 * F.limp + rip;
     var bot = F.FH + um * F.FL * 0.23 * F.limp + rip;
@@ -13436,38 +13554,99 @@ function sandFlagCloth(g, F, ms) {
   g.restore();
 }
 function sandRainFrame(ms) {
-  var cv = document.getElementById('sandSceneCv'), bc = SAND_SCENE.baseCv, P = SAND_SCENE.rainP, F = SAND_SCENE.flagP;
-  if (!cv || !bc) return;
-  var g = cv.getContext('2d');
+  var cv = document.getElementById('sandSceneCv'), S = SAND_SCENE;
+  if (!cv || !S.skyCv || !S.fgCv) return;
+  var g = cv.getContext('2d'), W = cv.width, Hc = cv.height, k = S.k || 1, CROP = S.crop || 0, t = ms / 1000;
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.drawImage(bc, 0, 0);
+  g.drawImage(S.skyCv, 0, 0);
+  if (S.cloudP) {                                       // drift, wrapping round the sky
+    S.cloudP.list.forEach(function (c) {
+      var span = W + c.c.width * 2, x = ((c.x + S.cloudP.speed * t + c.c.width) % span + span) % span - c.c.width;
+      g.globalAlpha = c.a; g.drawImage(c.c, x, c.y + CROP); g.globalAlpha = 1;
+    });
+  }
+  if (S.rainbowP) {
+    var R = S.rainbowP, cols = ['#e5484d', '#f08a24', '#f2c94c', '#3ea72d', '#2f80ed', '#6a4cc8'];
+    g.save(); g.beginPath(); g.rect(0, 0, W, 352 * k + CROP); g.clip();
+    cols.forEach(function (c, i) {
+      g.strokeStyle = c; g.globalAlpha = R.a; g.lineWidth = 7 * k;
+      g.beginPath(); g.arc(R.cx, R.cy + CROP, R.r - i * 7 * k, Math.PI, 2 * Math.PI); g.stroke();
+    });
+    g.restore(); g.globalAlpha = 1;
+  }
+  if (S.gullP) {                                        // a gull hanging in the breeze, bobbing
+    var G = S.gullP, gx = G.x + Math.sin(t * 0.7) * 14 * k, gy = G.y + CROP + Math.sin(t * 1.9) * 6 * k, fl = Math.sin(t * 5) * 4 * k;
+    g.strokeStyle = '#3a4650'; g.lineWidth = 2.2 * k; g.beginPath();
+    g.moveTo(gx - 16 * k, gy - 3 * k + fl); g.quadraticCurveTo(gx - 7 * k, gy - 9 * k, gx, gy);
+    g.quadraticCurveTo(gx + 7 * k, gy - 9 * k, gx + 16 * k, gy - 3 * k + fl); g.stroke();
+  }
+  // The foreground, with swaying pines and heat shimmer redrawn in strips.
+  var fg = S.fgCv, sway = S.swayP, haze = S.hazeP;
+  var pineX = Math.round(1040 * k), pineB = Math.max(0, Math.round(330 * k + CROP)), hazeT = Math.round(560 * k + CROP);
+  g.save(); g.beginPath();
+  g.rect(0, 0, W, Hc);
+  if (sway) g.rect(pineX, 0, W - pineX, pineB);
+  if (haze) g.rect(0, hazeT, W, Hc - hazeT);
+  g.clip('evenodd');
+  g.drawImage(fg, 0, 0);
+  g.restore();
+  if (sway) {
+    for (var y = 0; y < pineB; y += 3) {
+      var f = Math.pow(1 - y / pineB, 1.6), off = sway.amp * f * (Math.sin(t * sway.w * 2.2) * 0.7 + Math.sin(t * sway.w * 3.7 + y * 0.01) * 0.3);
+      g.drawImage(fg, pineX, y, W - pineX, 3, pineX + off, y, W - pineX, 3);
+    }
+  }
+  if (haze) {
+    for (var yh = hazeT; yh < Hc; yh += 2) {
+      var oh = haze.amp * Math.sin(t * 6 + yh * 0.35);
+      g.drawImage(fg, 0, yh, W, 2, oh, yh, W, 2);
+    }
+  }
+  (S.gradeP || []).forEach(function (c) { g.fillStyle = c; g.fillRect(0, 0, W, Hc); });
+  var F = S.flagP;
   if (F) {
-    // On its own layer, then given the picture's night/cold/heat tint (source-atop tints
-    // only the cloth), so the flag never glows against a darkened scene.
-    var fl = SAND_SCENE.flagCv || (SAND_SCENE.flagCv = document.createElement('canvas'));
-    if (fl.width !== cv.width || fl.height !== cv.height) { fl.width = cv.width; fl.height = cv.height; }
-    var fg = fl.getContext('2d');
-    fg.setTransform(1, 0, 0, 1, 0, 0); fg.clearRect(0, 0, fl.width, fl.height);
-    fg.setTransform(1, 0, 0, 1, 0, -110 * F.k);
-    sandFlagCloth(fg, F, ms);
-    fg.setTransform(1, 0, 0, 1, 0, 0);
-    fg.globalCompositeOperation = 'source-atop';
-    (SAND_SCENE.gradeP || []).forEach(function (c) { fg.fillStyle = c; fg.fillRect(0, 0, fl.width, fl.height); });
-    fg.globalCompositeOperation = 'source-over';
-    g.drawImage(fl, 0, 0);
+    // On its own layer, then given the picture's tint (source-atop tints only the cloth),
+    // so the flag never glows against a darkened scene.
+    var flg = sandLayer('flagCv', cv);
+    flg.setTransform(1, 0, 0, 1, 0, CROP);
+    sandFlagCloth(flg, F, ms);
+    flg.setTransform(1, 0, 0, 1, 0, 0);
+    flg.globalCompositeOperation = 'source-atop';
+    (S.gradeP || []).concat(S.flagNight ? [S.flagNight] : []).forEach(function (c) { flg.fillStyle = c; flg.fillRect(0, 0, W, Hc); });
+    flg.globalCompositeOperation = 'source-over';
+    g.drawImage(S.flagCv, 0, 0);
   }
-  if (!P) return;
-  g.setTransform(1, 0, 0, 1, 0, -110 * P.k);           // the picture's crop, as in paintSandScene
-  var d = (ms / 1000) * P.speed, dx = P.ux * d, dy = P.uy * d;
-  g.strokeStyle = P.stroke; g.lineWidth = P.lw;
-  g.beginPath();
-  for (var i = 0; i < P.drops.length; i += 2) {
-    var x = P.x0 + (((P.drops[i] * P.spanX + dx) % P.spanX) + P.spanX) % P.spanX;
-    var y = P.y0 + (((P.drops[i + 1] * P.spanY + dy) % P.spanY) + P.spanY) % P.spanY;
-    g.moveTo(x, y); g.lineTo(x + P.rdx, y + P.rdy);
+  if (S.mistP) {                                        // fog: thickest towards the horizon
+    var M = S.mistP, mg = g.createLinearGradient(0, M.top + CROP, 0, Hc);
+    mg.addColorStop(0, 'rgba(225,230,234,' + (M.a * 0.6) + ')'); mg.addColorStop((M.hor - M.top) / (Hc - CROP - M.top), 'rgba(225,230,234,' + M.a + ')');
+    mg.addColorStop(1, 'rgba(225,230,234,' + (M.a * 0.25) + ')');
+    g.fillStyle = mg; g.fillRect(0, 0, W, Hc);
   }
-  g.stroke();
-  g.setTransform(1, 0, 0, 1, 0, 0);
+  var P = S.rainP;
+  if (P) {
+    g.setTransform(1, 0, 0, 1, 0, CROP);
+    var d = t * P.speed, dx = P.ux * d, dy = P.uy * d;
+    g.strokeStyle = P.stroke; g.lineWidth = P.lw;
+    g.beginPath();
+    for (var i = 0; i < P.drops.length; i += 2) {
+      var x = P.x0 + (((P.drops[i] * P.spanX + dx) % P.spanX) + P.spanX) % P.spanX;
+      var yy = P.y0 + (((P.drops[i + 1] * P.spanY + dy) % P.spanY) + P.spanY) % P.spanY;
+      g.moveTo(x, yy); g.lineTo(x + P.rdx, yy + P.rdy);
+    }
+    g.stroke();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  if (S.stormP) {                                       // lightning: a flash every few seconds
+    var cyc = 4.3, ph = (t + (S.stormP.seed % 7)) % cyc;
+    if (ph < 0.22) {
+      var fl = ph < 0.07 || (ph > 0.13 && ph < 0.18) ? 1 : 0.35;
+      g.fillStyle = 'rgba(235,240,255,' + (0.35 * fl) + ')'; g.fillRect(0, 0, W, Hc);
+      var n = Math.floor(t / cyc), bx = (200 + (n * 397) % 800) * k, by = 0;
+      g.strokeStyle = 'rgba(255,255,255,' + (0.9 * fl) + ')'; g.lineWidth = 3 * k; g.beginPath(); g.moveTo(bx, by);
+      for (var sgi = 0; sgi < 7; sgi++) { bx += (((n * 31 + sgi * 17) % 9) - 4) * 9 * k; by += 30 * k; g.lineTo(bx, by); }
+      g.stroke();
+    }
+  }
 }
 function sandRainOnScreen() {
   var cv = document.getElementById('sandSceneCv');
@@ -13478,23 +13657,24 @@ function sandRainOnScreen() {
 function sandRainKick() {
   var reduce = false;
   try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
-  var moving = function () { return !!(SAND_SCENE.rainP || SAND_SCENE.flagP); };   // rain or the flag
-  if (!moving() || reduce || !sandRainOnScreen() || SAND_SCENE.rainRun) return;
-  SAND_SCENE.rainRun = true;
-  var last = 0, start = performance.now() - (SAND_SCENE.rainT || 0);
+  var S = SAND_SCENE;
+  var moving = function () { return !!(S.rainP || S.flagP || S.cloudP || S.stormP || S.swayP || S.hazeP || S.gullP); };
+  if (!moving() || reduce || !sandRainOnScreen() || S.rainRun) return;
+  S.rainRun = true;
+  var last = 0, start = performance.now() - (S.rainT || 0);
   function tick(now) {
-    if (!moving() || !sandRainOnScreen()) { SAND_SCENE.rainRun = false; return; }
-    if (now - last >= 32) {
+    if (!moving() || !sandRainOnScreen()) { S.rainRun = false; return; }
+    if (now - last >= 36) {
       last = now;
-      SAND_SCENE.rainT = now - start;
-      sandRainFrame(SAND_SCENE.rainT);
+      S.rainT = now - start;
+      sandRainFrame(S.rainT);
     }
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 }
 (function () {
-  // Restart the rain when the picture comes back on screen.
+  // Restart the motion when the picture comes back on screen.
   document.addEventListener('visibilitychange', sandRainKick);
   window.addEventListener('scroll', sandRainKick, { passive: true });
   window.addEventListener('resize', sandRainKick);
