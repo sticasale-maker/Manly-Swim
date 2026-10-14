@@ -13228,14 +13228,26 @@ function paintSandScene(h, wx, s) {
   var pool = feel == null ? [] : cold ? ['cold', 'cold-hoodie']
            : feel < 22 ? ['jumper', 'jumper-dog'] : feel < 27 ? ['tee-f', 'hot-2', 'hot', 'jogger']
            : ['swim-m', 'swim-f', 'swim-g'];   // hot: swimmers only (owner); the hour picks who leads
+  // TEMPERATURE sets the outfit; rain only adds rain gear on top (owner, 14 Oct 2026: long
+  // trousers and a raincoat at 38 degrees make no sense). Tiers: cold <17, cool 17-22,
+  // warm 22-27, hot 27+.
+  var tier = feel == null ? null : cold ? 'cold' : feel < 22 ? 'cool' : feel < 27 ? 'warm' : 'hot';
+  var HOT_RAIN = SAND_SCENE.img['swim-rain-m'] && SAND_SCENE.img['swim-rain-m'].naturalWidth
+    ? ['swim-rain-m', 'swim-rain-f'] : ['rain-light'];  // swimmers in a rain jacket, once painted
   if (!none) {
     var rain = s.rain == null ? 0 : s.rain, lead = null, second = null;
-    if (rain >= 3) {                                    // moderate/heavy rain: umbrellas and shoes
+    if (rain >= 2 && (tier === 'cold' || tier === null)) {   // cold rain: raincoat, umbrella, shoes
       lead = wk >= 25 ? 'umbrella-wind' : 'umbrella-calm';
-      if (cold) second = 'cold-hoodie';
-    } else if (rain === 2) {                            // light rain: a raincoat in thongs, or an umbrella
-      lead = wk >= 25 ? 'umbrella-wind' : cold ? 'umbrella-calm' : 'rain-light';
-      second = lead === 'rain-light' ? 'umbrella-calm' : (cold ? null : 'rain-light');
+      second = tier === 'cold' ? 'cold-hoodie' : null;
+    } else if (rain >= 2 && tier === 'cool') {          // cool: rain jacket in thongs; umbrella when heavy
+      lead = rain >= 3 ? (wk >= 25 ? 'umbrella-wind' : 'umbrella-calm') : 'rain-light';
+      second = lead === 'rain-light' ? 'umbrella-calm' : 'rain-light';
+    } else if (rain >= 2 && tier === 'warm') {          // warm: rain jacket, shorts, thongs - no trousers
+      lead = 'rain-light';
+      second = choose(pool);
+    } else if (rain >= 2 && tier === 'hot') {           // hot: swimmers with a rain jacket over them
+      lead = choose(HOT_RAIN);
+      second = choose(pool);
     } else if (wk >= 25) {                              // dry but windy: hat held down, a dog on a lead
       lead = cold ? 'wind-hat' : 'wind-dog';
       second = pool.length ? choose(pool) : null;
@@ -13247,7 +13259,7 @@ function paintSandScene(h, wx, s) {
     var dirOf = function (n) { return (n === 'umbrella-wind' || n === 'wind-hat' || n === 'wind-dog') ? into : pick() < 0.5; };
     if (lead) put(0, lead, dirOf(lead));
     if (second && !night) put(1, second, dirOf(second));
-    if (rain === 1) put(2, 'umbrella-calm', true);      // rain possible: one umbrella, far off
+    if (rain === 1 && (tier === 'cold' || tier === 'cool')) put(2, 'umbrella-calm', true);   // rain possible: one umbrella, far off (it wears trousers)
   }
 
   // 7. Rain streaks, slanted by the wind; sand blowing when it is strong.
