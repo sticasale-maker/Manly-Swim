@@ -508,6 +508,16 @@
   .sand-hr button:disabled { opacity: 0.3; cursor: default; }
   .sand-hr button:focus-visible { outline: 2px solid #fff; }
   .sand-hr span { min-width: 84px; text-align: center; font-variant-numeric: tabular-nums; }
+  .sand-info { position: absolute; right: 8px; top: 8px; width: 28px; height: 28px; border: 0; border-radius: 50%;
+    background: rgba(13,43,62,0.62); color: #fff; font: italic 700 15px Georgia, serif; cursor: pointer;
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .sand-info[aria-expanded="true"] { background: var(--ocean); }
+  .sand-info:focus-visible { outline: 2px solid #fff; }
+  .sand-key { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px;
+    font-size: 13px; line-height: 1.4; color: var(--text); }
+  .sand-key ul { margin: 0; padding-left: 18px; }
+  .sand-key li { margin: 3px 0; }
+  .sand-key p { margin: 6px 0 0; color: var(--dim); font-size: 12px; }
   /* Same tan card as the water rows (the navy theme sets #c8bda0 on .metric-block.*),
      with a neutral border: these rows carry no band colour of their own. */
   .metrics-panel .metric-block.sand-block { cursor: default; background: #c8bda0; border: 1.5px solid rgba(17,53,65,0.28); }
@@ -4301,6 +4311,17 @@
         <div class="sand-scene" id="sandScene" tabindex="0" aria-label="Weather picture. Swipe or use the arrow keys for other hours.">
           <canvas id="sandSceneCv" width="1100" height="480" role="img" aria-label="Weather picture: loading"></canvas>
           <div class="sand-hr"><button type="button" id="sandHrPrev" aria-label="Earlier hour">&lsaquo;</button><span id="sandHrLbl" aria-live="polite"></span><button type="button" id="sandHrNext" aria-label="Later hour">&rsaquo;</button></div>
+          <button type="button" class="sand-info" id="sandInfo" aria-expanded="false" aria-controls="sandKey" aria-label="What the picture shows">i</button>
+        </div>
+        <!-- The key (owner, 15 Oct 2026): what to read in the picture. Opens below it, never over it. -->
+        <div class="sand-key" id="sandKey" hidden>
+          <ul>
+            <li><b>Flag</b> &ndash; the wind: hanging limp when it&rsquo;s still, flying flat when it&rsquo;s strong, and blowing the way the wind blows.</li>
+            <li><b>Rain</b> &ndash; more streaks for heavier rain; the slant shows the wind. Puddles mean it rained in the last couple of hours.</li>
+            <li><b>Sky</b> &ndash; the cloud, the sun at its real height for the season, and the real moon at night. Fog, lightning and rainbows when they&rsquo;re forecast.</li>
+            <li><b>People</b> &ndash; dressed for how warm it feels; more of them when the hour is pleasant, busier at weekends and in summer, and in hats and shade under a strong sun.</li>
+          </ul>
+          <p>Weather only: the water has its own view. Swipe the picture for other hours.</p>
         </div>
         <div class="metric-block sand-block none" id="sandAir">
           <div class="metric-icon sand-icon" aria-hidden="true"><div class="sand-pic" id="sandAirPic"><span class="sand-pic-glyph">🌡️</span><span class="metric-icon-cap" id="sandAirCap">—</span></div></div>
@@ -13197,6 +13218,20 @@ function sandMoonPhase(dateStr) {
   var p = (days / 29.530588853) % 1;
   return p < 0 ? p + 1 : p;
 }
+// The sun's noon altitude at Manly (33.8 S) for a date, in degrees: about 80 at midsummer,
+// 33 at midwinter. Declination from the usual day-of-year approximation.
+function sandNoonAlt(dateStr) {
+  var t = Date.parse(dateStr.substring(0, 10) + 'T12:00:00Z');
+  if (!isFinite(t)) return 60;
+  var n = Math.floor((t - Date.UTC(new Date(t).getUTCFullYear(), 0, 0)) / 86400000);
+  var decl = 23.44 * Math.sin(2 * Math.PI * (284 + n) / 365);
+  return 90 - Math.abs(-33.8 - decl);
+}
+// Australian seasons by month: summer Dec-Feb, autumn Mar-May, winter Jun-Aug, spring Sep-Nov.
+function sandSeason(dateStr) {
+  var m = +dateStr.substring(5, 7);
+  return (m === 12 || m <= 2) ? 'summer' : m <= 5 ? 'autumn' : m <= 8 ? 'winter' : 'spring';
+}
 function sandLayer(name, cv) {
   var c = SAND_SCENE[name] || (SAND_SCENE[name] = document.createElement('canvas'));
   if (c.width !== cv.width || c.height !== cv.height) { c.width = cv.width; c.height = cv.height; }
@@ -13261,7 +13296,9 @@ function paintSandScene(h, wx, s) {
   g.fillStyle = sk; g.fillRect(0, 0, W, H);
   var sun = null;                                       // where the sun is, for shadows and glitter
   if (!none && !night && dayT != null && dayT > -0.04 && dayT < 1.04) {
-    var alt = Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI);
+    // The sun's height follows the Sydney season: about 80 deg at noon in December, 33 deg in
+    // June, so winter suns sit low and cast long shadows all day (owner, 15 Oct 2026).
+    var alt = Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI) * Math.sin(sandNoonAlt(h.dateTime) * Math.PI / 180) / Math.sin(80 * Math.PI / 180);
     sun = { x: (80 + dayT * 1220) * k, y: (330 - alt * 185) * k, alt: alt, vis: Math.max(0, 1 - cloud * 1.05) };
     if (sun.vis > 0.05) {
       var uvf = Math.min(1, (s.uv || 0) / 11);
@@ -13370,6 +13407,31 @@ function paintSandScene(h, wx, s) {
       g.beginPath(); g.ellipse(pxp, py, pw, pw * 0.18, 0, 0, Math.PI * 2); g.fill();
     }
   }
+  // Christmas lights along the railing through December (owner, 15 Oct 2026): coloured bulbs on
+  // a drooping wire from post to post, glowing from dusk.
+  if (!none && +h.dateTime.substring(5, 7) === 12) {
+    var POSTS = [[-40, 630], [140, 600], [350, 553], [462, 525], [600, 487], [720, 457], [800, 432], [900, 402], [960, 380]];
+    var BULB = ['#e5484d', '#3ea72d', '#f2c94c', '#2f80ed', '#f08a24'], bi = 0, glow = Math.max(nightness, twilight > 0.6 ? 0.4 : 0);
+    g.lineWidth = 1.4 * k; g.strokeStyle = 'rgba(40,50,58,0.7)';
+    for (var pi = 1; pi < POSTS.length; pi++) {
+      var p0 = POSTS[pi - 1], p1 = POSTS[pi], sag = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) * 0.12;
+      var mx = (p0[0] + p1[0]) / 2, my = (p0[1] + p1[1]) / 2 + sag;
+      g.beginPath(); g.moveTo(p0[0] * k, p0[1] * k); g.quadraticCurveTo(mx * k, my * k, p1[0] * k, p1[1] * k); g.stroke();
+      var nb = Math.max(3, Math.round(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) / 26));
+      for (var bq = 1; bq < nb; bq++) {
+        var tt = bq / nb, bxp = (1 - tt) * (1 - tt) * p0[0] + 2 * (1 - tt) * tt * mx + tt * tt * p1[0];
+        var byp = (1 - tt) * (1 - tt) * p0[1] + 2 * (1 - tt) * tt * my + tt * tt * p1[1];
+        var br = Math.max(1.2, 4.2 * (byp - 330) / 300) * k, col = BULB[bi++ % BULB.length];
+        if (glow > 0) {
+          var gg = g.createRadialGradient(bxp * k, byp * k, 0, bxp * k, byp * k, br * 5);
+          gg.addColorStop(0, col); gg.addColorStop(1, 'rgba(0,0,0,0)');
+          g.globalAlpha = 0.55 * glow; g.fillStyle = gg; g.fillRect(bxp * k - br * 5, byp * k - br * 5, br * 10, br * 10); g.globalAlpha = 1;
+        }
+        g.fillStyle = col; g.globalAlpha = 0.6 + 0.4 * glow;
+        g.beginPath(); g.arc(bxp * k, byp * k + br * 0.6, br, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+      }
+    }
+  }
   // Flag pole (the cloth is drawn every frame, see sandFlagCloth).
   SAND_SCENE.flagP = null;
   if (!none && s.wind != null) {
@@ -13400,10 +13462,24 @@ function paintSandScene(h, wx, s) {
                 warm: ['tee-f', 'hot-2', 'hot', 'jogger', 'couple-warm', 'pram'],
                 hot: ['swim-m', 'swim-f', 'swim-g', 'couple-swim', 'kid-boogie'] };
   var pool = tier ? POOLS[tier].slice() : [];
+  // Hot sun (UV Very high or Extreme, sun out): the people out are the ones in hats, and they
+  // keep to the pine side, standing in the trees' shade (owner, 15 Oct 2026).
+  var hotSun = !none && !!sun && sun.vis > 0.5 && (s.uv || 0) >= 8;
+  var HATS = ['tee-f', 'hot-2', 'hot', 'jogger', 'couple-warm', 'swim-f', 'swim-g'];
+  if (hotSun) { var hatted = pool.filter(function (n) { return HATS.indexOf(n) >= 0; }); if (hatted.length) pool = hatted; }
   var NAT_LEFT = { 'umbrella-calm': false, hot: false };   // every other painting walks to the left as drawn
   var into = wsx > 0;                                     // walk INTO the wind
   // Slots: [x of feet, y of feet, height] in the painting's 1376 frame, drawn far to near.
   var SLOTS = [[640, 700, 300], [1010, 560, 175], [1150, 470, 110], [860, 600, 205], [1235, 438, 80], [1290, 422, 62]];
+  if (hotSun) {                                         // in the shade on the pine side
+    SLOTS = [[960, 700, 290], [1100, 572, 178], [1205, 486, 118], [1035, 636, 232], [1262, 446, 84], [1305, 428, 64]];
+    SLOTS.forEach(function (sl) {
+      var sg = g.createRadialGradient(sl[0] * k, sl[1] * k, 0, sl[0] * k, sl[1] * k, sl[2] * 0.75 * k);
+      sg.addColorStop(0, 'rgba(40,52,40,0.24)'); sg.addColorStop(1, 'rgba(40,52,40,0)');
+      g.fillStyle = sg; g.save(); g.translate(sl[0] * k, sl[1] * k); g.scale(1, 0.32); g.translate(-sl[0] * k, -sl[1] * k);
+      g.beginPath(); g.arc(sl[0] * k, sl[1] * k, sl[2] * 0.75 * k, 0, Math.PI * 2); g.fill(); g.restore();
+    });
+  }
   var SEAT = [505, 640, 205];                           // someone sitting by the railing with a coffee
   var placed = [];
   if (!none) {
@@ -13419,7 +13495,8 @@ function paintSandScene(h, wx, s) {
     var pR = [1, 0.7, 0.35, 0.18, 0.1][rainB] || 1, pW = wk < 25 ? 1 : wk < 40 ? 0.6 : 0.35;
     var pleasant = pT * pR * pW;
     var dow = new Date(h.dateTime.substring(0, 10) + 'T12:00:00').getDay(), weekend = dow === 0 || dow === 6;
-    var count = Math.round(1 + pleasant * 4 * (weekend ? 1.25 : 1) * (hr >= 6 && hr <= 10 ? 1.15 : 1));
+    var seasonF = { summer: 1.2, autumn: 1, winter: 0.8, spring: 1 }[sandSeason(h.dateTime)];   // busier in summer
+    var count = Math.round(1 + pleasant * 4 * seasonF * (weekend ? 1.25 : 1) * (hr >= 6 && hr <= 10 ? 1.15 : 1));
     if (s.night) count = (hr >= 22 || hr < 5) ? 0 : 1;   // after dark: one late walker, then nobody
     count = Math.max(0, Math.min(count, rainB >= 2 ? 2 : 6));
     var people = [];
@@ -13491,6 +13568,8 @@ function paintSandScene(h, wx, s) {
   SAND_SCENE.hazeP = !none && sun && sun.vis > 0.6 && feel != null && feel >= 32 ? { k: k, amp: Math.min(2.4, (feel - 30) * 0.35) * k } : null;
   SAND_SCENE.swayP = !none && wk >= 20 ? { k: k, amp: Math.min(9, (wk - 15) * 0.25) * k, w: 0.8 + wk / 25 } : null;
   SAND_SCENE.gullP = !none && !s.night && wk >= 18 && rainB < 3 && !foggy ? { x: 560 * k, y: 200 * k, k: k, dir: wsx >= 0 ? 1 : -1 } : null;
+  // A seaplane crosses now and then (owner, 15 Oct 2026) - by day, and only in weather they fly in.
+  SAND_SCENE.planeP = !none && !s.night && !!sun && rainB < 2 && !foggy && !storm && wk < 45 ? { k: k, seed: seed } : null;
 
   // ── 6. RAIN (drawn every frame) ──────────────────────────────────────────────
   SAND_SCENE.rainP = null;
@@ -13574,6 +13653,7 @@ function sandRainFrame(ms) {
     });
     g.restore(); g.globalAlpha = 1;
   }
+  if (S.planeP) sandSeaplane(g, S.planeP, t, W, CROP);
   if (S.gullP) {                                        // a gull hanging in the breeze, bobbing
     var G = S.gullP, gx = G.x + Math.sin(t * 0.7) * 14 * k, gy = G.y + CROP + Math.sin(t * 1.9) * 6 * k, fl = Math.sin(t * 5) * 4 * k;
     g.strokeStyle = '#3a4650'; g.lineWidth = 2.2 * k; g.beginPath();
@@ -13648,6 +13728,40 @@ function sandRainFrame(ms) {
     }
   }
 }
+// The seaplane: one pass of about 14 s every 45-80 s, alternating direction, at a varying
+// height in the sky. Drawn in ink-and-paint style: high wing, two floats on struts, a prop blur.
+function sandSeaplane(g, P, t, W, CROP) {
+  var k = P.k, n = 0, start = 8 + (P.seed % 13), ts = start;
+  while (true) {                                        // find the pass that t falls in
+    var gap = 45 + ((P.seed * 7 + n * 37) % 36);
+    if (t < ts + 14) break;
+    ts += 14 + gap; n++;
+    if (n > 500) return;
+  }
+  var f = (t - ts) / 14; if (f < 0 || f > 1) return;
+  var dir = n % 2 ? -1 : 1, s = (1.45 + ((n * 13) % 5) * 0.1) * k;   // big enough to spot on a phone
+  var x = dir > 0 ? -80 * k + f * (W + 160 * k) : W + 80 * k - f * (W + 160 * k);
+  var y = (150 + ((n * 29 + P.seed) % 70)) * k + CROP + Math.sin(t * 0.9) * 3 * k;
+  g.save(); g.translate(x, y); g.scale(dir * s, s);
+  g.lineWidth = 1.6; g.strokeStyle = '#2a3a46'; g.lineJoin = 'round';
+  // floats and struts
+  g.fillStyle = '#e8e4d8';
+  g.beginPath(); g.moveTo(-20, 14); g.lineTo(18, 14); g.quadraticCurveTo(24, 14, 22, 11); g.lineTo(-20, 11); g.closePath(); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(-8, 4); g.lineTo(-10, 11); g.moveTo(8, 4); g.lineTo(10, 11); g.stroke();
+  // fuselage and tail
+  g.fillStyle = '#f4f1e8';
+  g.beginPath(); g.moveTo(-26, -2); g.lineTo(-32, -11); g.lineTo(-27, -11); g.lineTo(-20, -3);
+  g.quadraticCurveTo(0, -7, 18, -4); g.quadraticCurveTo(25, -2, 24, 1); g.quadraticCurveTo(10, 6, -18, 3); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = '#2f7f8f'; g.fillRect(-18, -1, 34, 2);   // a teal stripe
+  // high wing
+  g.fillStyle = '#ece8dc';
+  g.beginPath(); g.moveTo(-6, -7); g.lineTo(14, -7); g.lineTo(13, -9); g.lineTo(-5, -9); g.closePath(); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(2, -7); g.lineTo(6, 2); g.stroke();
+  // windows and propeller blur
+  g.fillStyle = '#5a7182'; g.fillRect(6, -4, 8, 3);
+  g.fillStyle = 'rgba(60,70,80,0.25)'; g.beginPath(); g.ellipse(25, -1, 2, 8, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
 function sandRainOnScreen() {
   var cv = document.getElementById('sandSceneCv');
   if (!cv || document.visibilityState === 'hidden' || !cv.offsetParent) return false;
@@ -13658,7 +13772,7 @@ function sandRainKick() {
   var reduce = false;
   try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
   var S = SAND_SCENE;
-  var moving = function () { return !!(S.rainP || S.flagP || S.cloudP || S.stormP || S.swayP || S.hazeP || S.gullP); };
+  var moving = function () { return !!(S.rainP || S.flagP || S.cloudP || S.stormP || S.swayP || S.hazeP || S.gullP || S.planeP); };
   if (!moving() || reduce || !sandRainOnScreen() || S.rainRun) return;
   S.rainRun = true;
   var last = 0, start = performance.now() - (S.rainT || 0);
@@ -13752,6 +13866,11 @@ function sandHrSync(h) {
   var p = document.getElementById('sandHrPrev'), n = document.getElementById('sandHrNext');
   if (p) p.addEventListener('click', function () { sandHrStep(-1); });
   if (n) n.addEventListener('click', function () { sandHrStep(1); });
+  var info = document.getElementById('sandInfo'), key = document.getElementById('sandKey');
+  if (info && key) info.addEventListener('click', function () {
+    key.hidden = !key.hidden;
+    info.setAttribute('aria-expanded', key.hidden ? 'false' : 'true');
+  });
 })();
 // The switch. Hidden and forced to the water view when the tabs are off (?tune,
 // ?backtest, ?debug), where tune mode re-parents .metrics-panel.
