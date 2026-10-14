@@ -492,8 +492,19 @@
   .sand-grid { display: none; flex-direction: column; gap: 6px; }
   .metrics-panel.view-sand .metrics-grid { display: none; }
   .metrics-panel.view-sand .sand-grid { display: flex; }
-  .sand-scene { border-radius: 12px; overflow: hidden; background: #c9cdd2; aspect-ratio: 1100 / 614; }
+  .sand-scene { position: relative; border-radius: 12px; overflow: hidden; background: #c9cdd2; aspect-ratio: 1100 / 480;
+    touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; }
+  .sand-scene:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
   .sand-scene canvas { display: block; width: 100%; height: 100%; }
+  /* Swipe-for-hours (owner, 14 Oct 2026): the picture is also the hour control. */
+  .sand-hr { position: absolute; left: 8px; bottom: 8px; display: flex; align-items: center;   /* over the railing: never on a figure */
+    gap: 2px; padding: 2px; border-radius: 999px; background: rgba(13,43,62,0.62); color: #fff;
+    font: 600 13px Inter, sans-serif; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+  .sand-hr button { width: 30px; height: 26px; border: 0; border-radius: 999px; background: none; color: #fff;
+    font-size: 18px; line-height: 1; cursor: pointer; padding: 0; }
+  .sand-hr button:disabled { opacity: 0.3; cursor: default; }
+  .sand-hr button:focus-visible { outline: 2px solid #fff; }
+  .sand-hr span { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
   /* Same tan card as the water rows (the navy theme sets #c8bda0 on .metric-block.*),
      with a neutral border: these rows carry no band colour of their own. */
   .metrics-panel .metric-block.sand-block { cursor: default; background: #c8bda0; border: 1.5px solid rgba(17,53,65,0.28); }
@@ -4281,7 +4292,10 @@
              glance. Weather only: the sea stays neutral (no whitecaps, which would claim a Chop
              reading), the flag is a neutral windsock (never red: that reads as a closed beach),
              and missing data paints a grey scene with nobody in it (CLAUDE.md section 8). -->
-        <div class="sand-scene" id="sandScene"><canvas id="sandSceneCv" width="1100" height="614" role="img" aria-label="Weather picture: loading"></canvas></div>
+        <div class="sand-scene" id="sandScene" tabindex="0" aria-label="Weather picture. Swipe or use the arrow keys for other hours.">
+          <canvas id="sandSceneCv" width="1100" height="480" role="img" aria-label="Weather picture: loading"></canvas>
+          <div class="sand-hr"><button type="button" id="sandHrPrev" aria-label="Earlier hour">&lsaquo;</button><span id="sandHrLbl" aria-live="polite"></span><button type="button" id="sandHrNext" aria-label="Later hour">&rsaquo;</button></div>
+        </div>
         <div class="metric-block sand-block none" id="sandAir">
           <div class="metric-icon sand-icon" aria-hidden="true"><div class="sand-pic" id="sandAirPic"><span class="sand-pic-glyph">🌡️</span><span class="metric-icon-cap" id="sandAirCap">—</span></div></div>
           <div class="metric-header"><div class="metric-name">Air:</div><div class="metric-value" id="sandAirVal">—</div><div class="sand-detail" id="sandAirDetail"></div></div>
@@ -13147,7 +13161,11 @@ function paintSandScene(h, wx, s) {
   SAND_SCENE.last = [h, wx, s];
   var cv = document.getElementById('sandSceneCv');
   if (!cv || !cv.getContext) return;
-  var g = cv.getContext('2d'), W = cv.width, H = cv.height, k = W / 1376;   // art was 1376 wide
+  // Drawn in the painting's own 1376 x 768 frame (scaled by k), then CROPPED to a wider window
+  // (owner, 14 Oct 2026: shorter, so the day and hour pickers stay on the first screen): the
+  // canvas shows painting rows 110-710, i.e. it is 1100 x 480 and everything shifts up 110.
+  var g = cv.getContext('2d'), W = cv.width, k = W / 1376, H = 768 * k;   // art was 1376 wide
+  g.setTransform(1, 0, 0, 1, 0, -110 * k);
   var I = SAND_SCENE.img, base = I.promenade;
   var none = !wx || (s.temp == null && s.wind == null && s.rain == null);
   var HOR = 352 * k;                                    // sea horizon in the painting
@@ -13180,7 +13198,7 @@ function paintSandScene(h, wx, s) {
 
   // 2. Sun (by day, unless the cloud is thick) - its glow grows with the UV index.
   if (!none && !night && dayT != null && dayT > -0.02 && dayT < 1.02 && cloud < 0.9) {
-    var sx = (80 + dayT * 1220) * k, sy = (330 - Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI) * 260) * k;
+    var sx = (80 + dayT * 1220) * k, sy = (330 - Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI) * 185) * k;   // noon peak stays inside the crop
     var uvf = Math.min(1, (s.uv || 0) / 11), vis = 1 - cloud * 0.9;
     var gl = g.createRadialGradient(sx, sy, 0, sx, sy, (60 + 120 * uvf) * k);
     gl.addColorStop(0, 'rgba(255,236,170,' + (0.75 * vis) + ')'); gl.addColorStop(1, 'rgba(255,236,170,0)');
@@ -13263,7 +13281,7 @@ function paintSandScene(h, wx, s) {
     g.restore();
   }
   // Slots: [x of feet, y of feet, height] in the painting's 1376-wide frame, near to far.
-  var slots = [[640, 735, 330], [1010, 560, 175], [1150, 470, 110]];
+  var slots = [[640, 700, 300], [1010, 560, 175], [1150, 470, 110]];   // nearest one raised: the crop ends at 710
   // Which way each painting walks as drawn (true = to the left); the code mirrors as needed.
   var NAT_LEFT = { 'umbrella-calm': false, 'umbrella-wind': true, 'rain-light': true, 'wind-hat': true,
                    'wind-dog': true, cold: true, 'cold-hoodie': true, jumper: true, 'jumper-dog': true,
@@ -13368,7 +13386,67 @@ function paintSandScene(h, wx, s) {
     s.temp != null ? Math.round(s.temp) + ' degrees' : null
   ].filter(Boolean).join(', ');
   cv.setAttribute('aria-label', 'Weather picture of the promenade: ' + words);
+  sandHrSync(h);
 }
+
+// ── Swipe-for-hours (owner, 14 Oct 2026) ────────────────────────────────────────
+// The picture is also the hour control: drag across it, tap its arrows, or use the arrow
+// keys. It steps through the same 6am-8pm hours as the hour buttons and drives the SAME
+// onSlider(pos) path, so the rows, scores and buttons all stay in step. touch-action:
+// pan-y keeps vertical page scrolling working through it.
+function sandHrTarget(d) {
+  if (typeof _matrix === 'undefined' || !_matrix || !_selectedDay) return -1;
+  var rows = [];
+  _matrix.forEach(function (r, i) { if (r.dateTime.startsWith(_selectedDay)) rows.push(i); });
+  var t = rows.indexOf(_sliderIdx);
+  if (t < 0) return -1;
+  for (t += d; t >= 0 && t < rows.length; t += d) {
+    var hr = +_matrix[rows[t]].dateTime.substring(11, 13);
+    if (hr >= 6 && hr <= 20) return t;                // the hour buttons' daylight window
+  }
+  return -1;
+}
+function sandHrStep(d) {
+  var t = sandHrTarget(d);
+  if (t < 0 || typeof onSlider !== 'function') return false;
+  onSlider(t);
+  return true;
+}
+function sandHrSync(h) {
+  var lbl = document.getElementById('sandHrLbl');
+  if (!lbl || !h || !h.dateTime) return;
+  lbl.textContent = (typeof fmtHourLabel === 'function') ? fmtHourLabel(h.dateTime) : h.dateTime.substring(11, 16);
+  var p = document.getElementById('sandHrPrev'), n = document.getElementById('sandHrNext');
+  if (p) p.disabled = sandHrTarget(-1) < 0;
+  if (n) n.disabled = sandHrTarget(1) < 0;
+}
+(function () {
+  var sc = document.getElementById('sandScene');
+  if (!sc) return;
+  var STEP = 34;                                         // px of drag per hour
+  var x0 = null, done = 0, id = null;
+  sc.addEventListener('pointerdown', function (e) {
+    if (e.target.closest && e.target.closest('button')) return;
+    x0 = e.clientX; done = 0; id = e.pointerId;
+    try { sc.setPointerCapture(id); } catch (err) {}
+  });
+  sc.addEventListener('pointermove', function (e) {
+    if (x0 == null || e.pointerId !== id) return;
+    var want = Math.trunc((x0 - e.clientX) / STEP);   // drag left = later, like turning a page
+    while (done < want && sandHrStep(1)) done++;
+    while (done > want && sandHrStep(-1)) done--;
+  });
+  function end() { x0 = null; id = null; }
+  sc.addEventListener('pointerup', end);
+  sc.addEventListener('pointercancel', end);
+  sc.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') { if (sandHrStep(1)) e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { if (sandHrStep(-1)) e.preventDefault(); }
+  });
+  var p = document.getElementById('sandHrPrev'), n = document.getElementById('sandHrNext');
+  if (p) p.addEventListener('click', function () { sandHrStep(-1); });
+  if (n) n.addEventListener('click', function () { sandHrStep(1); });
+})();
 // The switch. Hidden and forced to the water view when the tabs are off (?tune,
 // ?backtest, ?debug), where tune mode re-parents .metrics-panel.
 (function () {
