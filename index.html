@@ -13219,20 +13219,34 @@ function paintSandScene(h, wx, s) {
     var px = 352 * k, pb = 600 * k, pt = 300 * k, z = k * 1.7;   // z: drawn larger this near
     g.strokeStyle = '#2b3640'; g.lineWidth = 3 * z;
     g.beginPath(); g.moveTo(px, pb); g.lineTo(px, pt - 4 * z); g.stroke();
+    // Cloth model (owner, 14 Oct 2026: a still flag folds, it does not pivot). The hoist edge
+    // is tied along the pole and stays vertical. Each vertical strip of cloth is placed by how
+    // far it reaches from the pole (gathered tight when still, full length when flying) and
+    // how far it sags (the fly drops lowest when still); folds are shaded strips whose depth
+    // and count fall as the wind opens the cloth out.
     var flag = sandAusFlag();
-    var lift = Math.min(1, wk / 40);                     // 0 hangs down, 1 flies level
-    var ang = (Math.PI / 2) * (1 - lift) * 0.85;         // below horizontal
+    var lift = Math.min(1, wk / 40);                     // 0 hangs limp, 1 flies flat
     var dir = wsx >= 0 ? 1 : -1;
     var FL = 74 * (0.55 + 0.45 * Math.abs(wsx)) * z, FH = 37 * z;   // foreshortened along the view
-    var N = 24, amp = FH * (0.06 + 0.10 * lift), waves = 1.2 + lift * 1.3, ph = (seedPhase(h.dateTime) % 628) / 100;
-    g.save(); g.translate(px, pt); g.scale(dir, 1); g.rotate(ang);
-    for (var q = 0; q < N; q++) {
-      var u0 = q / N, u1 = (q + 1) / N, um = (u0 + u1) / 2;
-      var off = amp * Math.sin(um * waves * 2 * Math.PI + ph) * um;                  // the hoist is held still
-      var shade = Math.cos(um * waves * 2 * Math.PI + ph);
-      g.drawImage(flag, u0 * flag.width, 0, flag.width / N + 0.5, flag.height, u0 * FL, off, FL / N + 0.6, FH);
-      g.fillStyle = shade > 0 ? 'rgba(255,255,255,' + (0.10 * shade) + ')' : 'rgba(0,0,0,' + (-0.18 * shade) + ')';
-      g.fillRect(u0 * FL, off, FL / N + 0.6, FH);
+    var reach = 0.18 + 0.82 * Math.pow(lift, 0.8);       // how far the cloth spreads from the pole
+    var limp = 1 - lift;
+    var folds = 4.5 - 2.5 * lift, depth = 0.55 - 0.40 * lift;
+    var amp = FH * 0.10 * lift, ph = (seedPhase(h.dateTime) % 628) / 100, N = 28;
+    g.save(); g.translate(px + 1.5 * z, pt); g.scale(dir, 1);
+    for (var q = N - 1; q >= 0; q--) {                   // fly first, so the cloth nearer the pole lies on top
+      var u0 = q / N, um = (q + 0.5) / N;
+      var wave = um * folds * 2 * Math.PI + ph;
+      var x = u0 * FL * reach;
+      // Limp: the top edge falls from the pole top towards the fly tip while the bottom edge
+      // sags only a little, so the cloth tapers into a hanging drape. Flying: full height,
+      // rippling up and down more towards the fly.
+      var top = um * FL * 0.60 * limp + amp * Math.sin(wave) * um;
+      var bot = FH + um * FL * 0.23 * limp + amp * Math.sin(wave) * um;
+      var w = FL * reach / N + 0.8, y = top, hgt = Math.max(1, bot - top);
+      g.drawImage(flag, u0 * flag.width, 0, flag.width / N + 0.5, flag.height, x, y, w, hgt);
+      var sh = Math.cos(wave);
+      g.fillStyle = sh > 0 ? 'rgba(255,255,255,' + (depth * 0.35 * sh) + ')' : 'rgba(0,0,0,' + (-depth * 0.6 * sh) + ')';
+      g.fillRect(x, y, w, hgt);
     }
     g.restore();
   }
