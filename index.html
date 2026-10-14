@@ -13095,7 +13095,8 @@ function renderSandBoard(h, wx) {
 // right, so screen-right is compass 225 deg.
 var SAND_SCENE = { img: {}, ready: 0, last: null };
 (function () {
-  var names = ['promenade', 'umbrella-calm', 'umbrella-wind', 'cold', 'hot'];
+  var names = ['promenade', 'umbrella-calm', 'umbrella-wind', 'wind-hat', 'cold', 'cold-2', 'dog',
+               'mild', 'jogger', 'hot', 'hot-2'];
   names.forEach(function (n) {
     var im = new Image();
     im.onload = function () {
@@ -13204,20 +13205,38 @@ function paintSandScene(h, wx, s) {
   }
   // Slots: [x of feet, y of feet, height] in the painting's 1376-wide frame, near to far.
   var slots = [[640, 735, 330], [1010, 560, 175], [1150, 470, 110]];
-  function put(slot, name, natLeft, faceLeft) {
+  // Which way each painting walks as drawn (true = to the left); the code mirrors as needed.
+  var NAT_LEFT = { 'umbrella-calm': false, 'umbrella-wind': true, 'wind-hat': true, cold: true, 'cold-2': true,
+                   dog: true, mild: true, jogger: true, hot: false, 'hot-2': true };
+  function put(slot, name, faceLeft) {
     var sl = slots[slot];
-    fig(name, sl[0] * k, sl[1] * k, sl[2] * k, faceLeft, natLeft);
+    fig(name, sl[0] * k, sl[1] * k, sl[2] * k, faceLeft, NAT_LEFT[name]);
   }
+  // Variety that is steady within an hour but changes from hour to hour (no flicker on repaint).
+  var seed = 0, dt = String(h.dateTime);
+  for (var c = 0; c < dt.length; c++) seed = (seed * 31 + dt.charCodeAt(c)) % 100003;
+  var pick = rnd(seed + 1);
+  function choose(pool) { return pool[Math.floor(pick() * pool.length) % pool.length]; }
   var into = wsx > 0;                                   // walk INTO the wind
-  var tempFig = s.temp == null ? null : s.temp < 19 ? 'cold' : s.temp >= 24 ? 'hot' : null;   // 19-24: no mild walker yet
+  var feel = s.temp;
+  // Air figures: who you would see at this temperature (feels-like).
+  var pool = feel == null ? [] : feel < 14 ? ['cold', 'cold-2'] : feel < 19 ? ['cold', 'cold-2', 'dog']
+           : feel < 24 ? ['mild', 'jogger', 'dog'] : feel < 29 ? ['hot', 'hot-2', 'jogger'] : ['hot', 'hot-2'];
   if (!none) {
-    if (s.rain != null && s.rain >= 2) {               // wet: the umbrella leads, the air figure behind
-      put(0, wk >= 25 ? 'umbrella-wind' : 'umbrella-calm', wk >= 25, into);
-      if (tempFig) put(1, tempFig, tempFig === 'cold', tempFig === 'cold' ? into : false);
+    var lead = null;
+    if (s.rain != null && s.rain >= 2) lead = wk >= 25 ? 'umbrella-wind' : 'umbrella-calm';   // wet: an umbrella leads
+    else if (wk >= 25) lead = 'wind-hat';                                                       // dry but windy
+    var air1 = pool.length ? choose(pool) : null, rest = pool.filter(function (n) { return n !== air1; });
+    var air2 = rest.length ? choose(rest) : null;
+    var dirOf = function (n) { return (n === 'umbrella-wind' || n === 'wind-hat') ? into : pick() < 0.5; };
+    if (lead) {
+      put(0, lead, dirOf(lead));
+      if (air1) put(1, air1, dirOf(air1));
     } else {
-      if (tempFig) put(0, tempFig, tempFig === 'cold', tempFig === 'cold' ? into : false);
-      if (s.rain === 1) put(2, 'umbrella-calm', false, true);   // rain possible: one umbrella, far off
+      if (air1) put(0, air1, dirOf(air1));
+      if (air2 && !night) put(1, air2, dirOf(air2));
     }
+    if (s.rain === 1) put(2, 'umbrella-calm', true);   // rain possible: one umbrella, far off
   }
 
   // 7. Rain streaks, slanted by the wind; sand blowing when it is strong.

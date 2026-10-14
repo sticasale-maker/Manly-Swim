@@ -24,6 +24,19 @@ const SHELL_ASSETS = [
   './images/logos/icon-180.png',
   './images/logos/favicon-32.png',
   './images/marco2.png',
+  // On the sand weather picture (14 Oct 2026): the painted promenade and its figures, so the
+  // picture paints in a car park with no signal, like the rows under it.
+  './images/sand/promenade.webp',
+  './images/sand/umbrella-calm.webp',
+  './images/sand/umbrella-wind.webp',
+  './images/sand/wind-hat.webp',
+  './images/sand/cold.webp',
+  './images/sand/cold-2.webp',
+  './images/sand/dog.webp',
+  './images/sand/mild.webp',
+  './images/sand/jogger.webp',
+  './images/sand/hot.webp',
+  './images/sand/hot-2.webp',
   // Google Fonts — must match the exact URL index.html requests, or it won't hit
   'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap',
 ];
