@@ -13174,14 +13174,18 @@ function paintSandScene(h, wx, s) {
   function rgb(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a == null ? 1 : a) + ')'; }
 
   // Where in the day: 0 at sunrise, 1 at sunset, outside that is night.
-  var hr = +h.dateTime.substring(11, 13), dayT = null, twilight = 0;
+  var hr = +h.dateTime.substring(11, 13), dayT = null, twilight = 0, nearSun = 99;
   if (s.sun && s.sun.sunrise && s.sun.sunset) {
     var hm = function (t) { var p = t.substring(t.indexOf('T') + 1).split(':'); return +p[0] + (+p[1]) / 60; };
     var sr = hm(s.sun.sunrise), ss = hm(s.sun.sunset), at = hr + 0.5;
     dayT = (at - sr) / (ss - sr);
-    twilight = Math.max(0, 1 - Math.min(Math.abs(at - sr), Math.abs(at - ss)) / 1.2);
+    nearSun = Math.min(Math.abs(at - sr), Math.abs(at - ss));   // hours from sunrise or sunset
+    twilight = Math.max(0, 1 - nearSun / 0.9);
   }
-  var night = s.night;
+  // The app's night flag starts exactly at sunset and ends at sunrise, but the beach is light
+  // for a while either side: within about half an hour of the sun the picture paints dawn or
+  // dusk light, not stars (6:00 on a 6:08 sunrise is a pale dawn, not the middle of the night).
+  var night = s.night && nearSun > 0.5;
 
   // 1. Sky. Cloud cover from the hour's cloud %, deepened by the rain band.
   var top = night ? [19, 32, 58] : [104, 160, 205], bot = night ? [43, 58, 90] : [214, 230, 236];
