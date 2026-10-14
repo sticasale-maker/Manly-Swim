@@ -492,6 +492,8 @@
   .sand-grid { display: none; flex-direction: column; gap: 6px; }
   .metrics-panel.view-sand .metrics-grid { display: none; }
   .metrics-panel.view-sand .sand-grid { display: flex; }
+  .sand-scene { border-radius: 12px; overflow: hidden; background: #c9cdd2; aspect-ratio: 1100 / 614; }
+  .sand-scene canvas { display: block; width: 100%; height: 100%; }
   /* Same tan card as the water rows (the navy theme sets #c8bda0 on .metric-block.*),
      with a neutral border: these rows carry no band colour of their own. */
   .metrics-panel .metric-block.sand-block { cursor: default; background: #c8bda0; border: 1.5px solid rgba(17,53,65,0.28); }
@@ -4274,6 +4276,12 @@
       </div>
       <!-- ON THE SAND rows: filled by renderSandBoard() for the slider's hour. Start grey. -->
       <div class="sand-grid" id="sandGrid" aria-live="polite">
+        <!-- SAND SCENE (prototype, 14 Oct 2026, per owner): a painted South Steyne promenade with
+             the hour's weather drawn over it by paintSandScene(), so the four rows below read at a
+             glance. Weather only: the sea stays neutral (no whitecaps, which would claim a Chop
+             reading), the flag is a neutral windsock (never red: that reads as a closed beach),
+             and missing data paints a grey scene with nobody in it (CLAUDE.md section 8). -->
+        <div class="sand-scene" id="sandScene"><canvas id="sandSceneCv" width="1100" height="614" role="img" aria-label="Weather picture: loading"></canvas></div>
         <div class="metric-block sand-block none" id="sandAir">
           <div class="metric-icon sand-icon" aria-hidden="true"><div class="sand-pic" id="sandAirPic"><span class="sand-pic-glyph">🌡️</span><span class="metric-icon-cap" id="sandAirCap">—</span></div></div>
           <div class="metric-header"><div class="metric-name">Air:</div><div class="metric-value" id="sandAirVal">—</div><div class="sand-detail" id="sandAirDetail"></div></div>
@@ -13069,6 +13077,184 @@ function renderSandBoard(h, wx) {
     sandText('sandSunVal', 'No forecast'); sandText('sandSunDetail', ''); sandText('sandSunCap', '—');
     sandDot('sandSunDot', null);
   }
+  paintSandScene(h, wx, {
+    temp: hasAir ? (wx.feelsLike != null ? wx.feelsLike : wx.temp) : null,
+    wind: hasWind ? h.windKmh : null, windDir: hasWind ? h.windDir : null,
+    rain: hasRain ? band : null,
+    cloud: (wx && wx.cloud != null) ? wx.cloud : null,
+    uv: (wx && wx.uv != null) ? wx.uv : null,
+    night: night, sun: sun || null
+  });
+}
+
+// ── SAND SCENE (prototype, 14 Oct 2026) ─────────────────────────────────────────
+// Paints the promenade picture for the slider's hour from the SAME values the four rows
+// show (passed in by renderSandBoard; nothing re-derived). Painted base and figures are
+// images/sand/*.webp; sky, sun, clouds, rain, windsock, blowing sand and the colour grade
+// are drawn here. The view looks SE along the promenade: sea on the left, land on the
+// right, so screen-right is compass 225 deg.
+var SAND_SCENE = { img: {}, ready: 0, last: null };
+(function () {
+  var names = ['promenade', 'umbrella-calm', 'umbrella-wind', 'cold', 'hot'];
+  names.forEach(function (n) {
+    var im = new Image();
+    im.onload = function () {
+      SAND_SCENE.ready++;
+      if (SAND_SCENE.last) paintSandScene.apply(null, SAND_SCENE.last);
+    };
+    im.src = 'images/sand/' + n + '.webp';
+    SAND_SCENE.img[n] = im;
+  });
+})();
+function paintSandScene(h, wx, s) {
+  SAND_SCENE.last = [h, wx, s];
+  var cv = document.getElementById('sandSceneCv');
+  if (!cv || !cv.getContext) return;
+  var g = cv.getContext('2d'), W = cv.width, H = cv.height, k = W / 1376;   // art was 1376 wide
+  var I = SAND_SCENE.img, base = I.promenade;
+  var none = !wx || (s.temp == null && s.wind == null && s.rain == null);
+  var HOR = 352 * k;                                    // sea horizon in the painting
+  function rnd(seed) { var x = seed; return function () { x = (x * 9301 + 49297) % 233280; return x / 233280; }; }
+  function mix(a, b, t) { return a.map(function (v, i) { return Math.round(v + (b[i] - v) * t); }); }
+  function rgb(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a == null ? 1 : a) + ')'; }
+
+  // Where in the day: 0 at sunrise, 1 at sunset, outside that is night.
+  var hr = +h.dateTime.substring(11, 13), dayT = null, twilight = 0;
+  if (s.sun && s.sun.sunrise && s.sun.sunset) {
+    var hm = function (t) { var p = t.substring(t.indexOf('T') + 1).split(':'); return +p[0] + (+p[1]) / 60; };
+    var sr = hm(s.sun.sunrise), ss = hm(s.sun.sunset), at = hr + 0.5;
+    dayT = (at - sr) / (ss - sr);
+    twilight = Math.max(0, 1 - Math.min(Math.abs(at - sr), Math.abs(at - ss)) / 1.2);
+  }
+  var night = s.night;
+
+  // 1. Sky. Cloud cover from the hour's cloud %, deepened by the rain band.
+  var top = night ? [19, 32, 58] : [104, 160, 205], bot = night ? [43, 58, 90] : [214, 230, 236];
+  if (!night && twilight > 0) { top = mix(top, [110, 130, 170], twilight); bot = mix(bot, [244, 186, 138], twilight); }
+  var cloud = s.cloud != null ? s.cloud / 100 : (s.rain != null ? [0.1, 0.45, 0.8, 0.95, 1][s.rain] : 0.3);
+  if (s.rain != null && s.rain >= 2) cloud = Math.max(cloud, 0.85);
+  var grey = s.rain != null && s.rain >= 3 ? [88, 98, 110] : [150, 158, 166];
+  if (night) grey = [40, 46, 58];
+  top = mix(top, grey, cloud * 0.85); bot = mix(bot, mix(grey, [200, 200, 200], 0.4), cloud * 0.8);
+  if (none) { top = [176, 180, 184]; bot = [206, 208, 210]; }
+  var sk = g.createLinearGradient(0, 0, 0, HOR + 40 * k);
+  sk.addColorStop(0, rgb(top)); sk.addColorStop(1, rgb(bot));
+  g.fillStyle = sk; g.fillRect(0, 0, W, H);
+
+  // 2. Sun (by day, unless the cloud is thick) - its glow grows with the UV index.
+  if (!none && !night && dayT != null && dayT > -0.02 && dayT < 1.02 && cloud < 0.9) {
+    var sx = (80 + dayT * 1220) * k, sy = (330 - Math.sin(Math.max(0, Math.min(1, dayT)) * Math.PI) * 260) * k;
+    var uvf = Math.min(1, (s.uv || 0) / 11), vis = 1 - cloud * 0.9;
+    var gl = g.createRadialGradient(sx, sy, 0, sx, sy, (60 + 120 * uvf) * k);
+    gl.addColorStop(0, 'rgba(255,236,170,' + (0.75 * vis) + ')'); gl.addColorStop(1, 'rgba(255,236,170,0)');
+    g.fillStyle = gl; g.fillRect(0, 0, W, HOR + 60 * k);
+    g.fillStyle = twilight > 0.5 ? 'rgba(250,180,110,' + vis + ')' : 'rgba(255,240,180,' + vis + ')';
+    g.beginPath(); g.arc(sx, sy, 34 * k, 0, Math.PI * 2); g.fill();
+  }
+  // Stars on a clear night.
+  if (!none && night && cloud < 0.5) {
+    var r0 = rnd(3); g.fillStyle = 'rgba(255,255,240,0.8)';
+    for (var i = 0; i < 40; i++) g.fillRect(r0() * W, r0() * HOR * 0.9, 2, 2);
+  }
+  // 3. Clouds: soft bands, more and darker as cover rises.
+  if (!none && cloud > 0.15) {
+    var r1 = rnd(11), n = Math.round(cloud * 14), cc = night ? [30, 36, 48] : (s.rain >= 3 ? [70, 78, 90] : [235, 238, 240]);
+    for (var j = 0; j < n; j++) {
+      var cx = r1() * (W + 300 * k) - 150 * k, cy = r1() * (HOR - 60 * k), cw = (220 + r1() * 260) * k;
+      g.fillStyle = rgb(cc, 0.18 + cloud * 0.25);
+      g.beginPath(); g.ellipse(cx, cy, cw / 2, cw / 9, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  // 4. The painting (its sky is transparent).
+  if (base.complete && base.naturalWidth) g.drawImage(base, 0, 0, W, H);
+
+  // Wind as seen on screen: +1 blows to the right, -1 to the left.
+  var wsx = s.windDir != null ? Math.cos((s.windDir + 180 - 225) * Math.PI / 180) : 0;
+  var wk = s.wind || 0;
+
+  // 5. Windsock on a pole at the railing, near enough to read on a phone (neutral teal/white,
+  //    NEVER red: a red flag on a beach means closed).
+  if (!none && s.wind != null) {
+    var px = 352 * k, pb = 600 * k, pt = 300 * k, z = k * 1.7;   // z: the sock is larger this near
+    g.strokeStyle = '#2b3640'; g.lineWidth = 3 * z;
+    g.beginPath(); g.moveTo(px, pb); g.lineTo(px, pt); g.stroke();
+    var lift = Math.min(1, wk / 40);                     // 0 hangs down, 1 flies level
+    var ang = (Math.PI / 2) * (1 - lift) * 0.85;         // below horizontal
+    var dir = wsx >= 0 ? 1 : -1, len = (70 * (0.45 + 0.55 * Math.abs(wsx))) * z;
+    g.save(); g.translate(px, pt + 4 * z); g.scale(dir, 1); g.rotate(ang);
+    for (var q = 0; q < 4; q++) {
+      var x0 = len * q / 4, x1 = len * (q + 1) / 4, h0 = 13 - q * 2.2, h1 = 13 - (q + 1) * 2.2;
+      g.fillStyle = q % 2 ? '#f3efe4' : '#2f7f8f';
+      g.beginPath(); g.moveTo(x0, -h0 * z); g.lineTo(x1, -h1 * z); g.lineTo(x1, h1 * z); g.lineTo(x0, h0 * z); g.closePath(); g.fill();
+    }
+    g.restore();
+  }
+
+  // 6. People: one carries the rain (and the wind), one the air temperature.
+  function fig(name, xFeet, yFeet, hgt, faceLeft, natLeft) {
+    var im = I[name]; if (!im || !im.complete || !im.naturalWidth) return;
+    var ww = im.naturalWidth * hgt / im.naturalHeight;
+    g.fillStyle = 'rgba(60,55,50,0.28)';
+    g.beginPath(); g.ellipse(xFeet, yFeet, ww * 0.32, 5 * k, 0, 0, Math.PI * 2); g.fill();
+    g.save(); g.translate(xFeet, yFeet);
+    if (faceLeft !== natLeft) g.scale(-1, 1);
+    g.drawImage(im, -ww / 2, -hgt, ww, hgt);
+    g.restore();
+  }
+  // Slots: [x of feet, y of feet, height] in the painting's 1376-wide frame, near to far.
+  var slots = [[640, 735, 330], [1010, 560, 175], [1150, 470, 110]];
+  function put(slot, name, natLeft, faceLeft) {
+    var sl = slots[slot];
+    fig(name, sl[0] * k, sl[1] * k, sl[2] * k, faceLeft, natLeft);
+  }
+  var into = wsx > 0;                                   // walk INTO the wind
+  var tempFig = s.temp == null ? null : s.temp < 19 ? 'cold' : s.temp >= 24 ? 'hot' : null;   // 19-24: no mild walker yet
+  if (!none) {
+    if (s.rain != null && s.rain >= 2) {               // wet: the umbrella leads, the air figure behind
+      put(0, wk >= 25 ? 'umbrella-wind' : 'umbrella-calm', wk >= 25, into);
+      if (tempFig) put(1, tempFig, tempFig === 'cold', tempFig === 'cold' ? into : false);
+    } else {
+      if (tempFig) put(0, tempFig, tempFig === 'cold', tempFig === 'cold' ? into : false);
+      if (s.rain === 1) put(2, 'umbrella-calm', false, true);   // rain possible: one umbrella, far off
+    }
+  }
+
+  // 7. Rain streaks, slanted by the wind; sand blowing when it is strong.
+  if (!none && s.rain != null && s.rain >= 1) {
+    var cnt = [0, 60, 260, 560, 900][s.rain], r2 = rnd(29), sl2 = wsx * Math.min(1, wk / 40) * 14 * k;
+    g.strokeStyle = night ? 'rgba(180,195,215,0.45)' : 'rgba(232,238,245,0.55)'; g.lineWidth = 1.6 * k;
+    g.beginPath();
+    for (var t = 0; t < cnt; t++) { var rx = r2() * (W + 100 * k) - 50 * k, ry = r2() * H; g.moveTo(rx, ry); g.lineTo(rx + sl2, ry + 30 * k); }
+    g.stroke();
+    if (s.rain >= 2) {                                  // wet sheen on the paving
+      var sh = g.createLinearGradient(0, 470 * k, 0, H);
+      sh.addColorStop(0, 'rgba(200,215,230,0)'); sh.addColorStop(1, 'rgba(200,215,230,0.18)');
+      g.fillStyle = sh; g.fillRect(0, 470 * k, W, H);
+    }
+  }
+  if (!none && wk >= 39) {
+    var r3 = rnd(41); g.strokeStyle = 'rgba(214,190,140,0.55)'; g.lineWidth = 1.4 * k; g.beginPath();
+    for (var u = 0; u < 70; u++) { var bx = r3() * W, by = (480 + r3() * 280) * k; g.moveTo(bx, by); g.lineTo(bx + wsx * 60 * k, by + (r3() - 0.5) * 4 * k); }
+    g.stroke();
+  }
+
+  // 8. Colour grade: night, cold, heat, grey for missing data.
+  if (none) { g.fillStyle = 'rgba(200,203,207,0.55)'; g.fillRect(0, 0, W, H); }
+  else {
+    if (night) { g.fillStyle = 'rgba(12,22,48,0.5)'; g.fillRect(0, 0, W, H); }
+    if (s.temp != null && s.temp < 16) { g.fillStyle = 'rgba(120,150,190,' + Math.min(0.18, (16 - s.temp) * 0.03) + ')'; g.fillRect(0, 0, W, H); }
+    if (s.temp != null && s.temp > 27) { g.fillStyle = 'rgba(255,190,120,' + Math.min(0.16, (s.temp - 27) * 0.03) + ')'; g.fillRect(0, 0, W, H); }
+  }
+
+  // Screen readers get the same picture in words.
+  var words = none ? 'no forecast for this hour' : [
+    night ? 'night' : (dayT != null && twilight > 0.5 ? (dayT < 0.5 ? 'dawn' : 'dusk') : 'day'),
+    s.rain != null ? ['dry', 'rain possible', 'light rain', 'moderate rain', 'heavy rain'][s.rain] : null,
+    s.wind != null ? ['light', 'breezy', 'windy', 'strong wind'][Math.min(3, [12, 25, 39].filter(function (b) { return wk >= b; }).length)] : null,
+    s.temp != null ? Math.round(s.temp) + ' degrees' : null
+  ].filter(Boolean).join(', ');
+  cv.setAttribute('aria-label', 'Weather picture of the promenade: ' + words);
 }
 // The switch. Hidden and forced to the water view when the tabs are off (?tune,
 // ?backtest, ?debug), where tune mode re-parents .metrics-panel.
