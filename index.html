@@ -504,7 +504,7 @@
     font-size: 18px; line-height: 1; cursor: pointer; padding: 0; }
   .sand-hr button:disabled { opacity: 0.3; cursor: default; }
   .sand-hr button:focus-visible { outline: 2px solid #fff; }
-  .sand-hr span { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+  .sand-hr span { min-width: 84px; text-align: center; font-variant-numeric: tabular-nums; }
   /* Same tan card as the water rows (the navy theme sets #c8bda0 on .metric-block.*),
      with a neutral border: these rows carry no band colour of their own. */
   .metrics-panel .metric-block.sand-block { cursor: default; background: #c8bda0; border: 1.5px solid rgba(17,53,65,0.28); }
@@ -13395,31 +13395,43 @@ function paintSandScene(h, wx, s) {
 
 // ── Swipe-for-hours (owner, 14 Oct 2026) ────────────────────────────────────────
 // The picture is also the hour control: drag across it, tap its arrows, or use the arrow
-// keys. It steps through the same 6am-8pm hours as the hour buttons and drives the SAME
-// onSlider(pos) path, so the rows, scores and buttons all stay in step. touch-action:
+// keys. It steps through EVERY forecast hour, night included, and on across days for as
+// long as there is a weather forecast for the hour (owner, 14 Oct 2026: "going forward as
+// forecast data allows"; it first stopped at the hour buttons' 8pm). Crossing midnight
+// moves the selected day, the way the day picker does, then drives the SAME onSlider(pos)
+// path, so the rows, scores, buttons and day picker all stay in step. touch-action:
 // pan-y keeps vertical page scrolling working through it.
 function sandHrTarget(d) {
-  if (typeof _matrix === 'undefined' || !_matrix || !_selectedDay) return -1;
-  var rows = [];
-  _matrix.forEach(function (r, i) { if (r.dateTime.startsWith(_selectedDay)) rows.push(i); });
-  var t = rows.indexOf(_sliderIdx);
-  if (t < 0) return -1;
-  for (t += d; t >= 0 && t < rows.length; t += d) {
-    var hr = +_matrix[rows[t]].dateTime.substring(11, 13);
-    if (hr >= 6 && hr <= 20) return t;                // the hour buttons' daylight window
+  if (typeof _matrix === 'undefined' || !_matrix || !_matrix[_sliderIdx]) return -1;
+  for (var i = _sliderIdx + d; i >= 0 && i < _matrix.length; i += d) {
+    var dt = _matrix[i] && _matrix[i].dateTime;
+    if (!dt) continue;
+    if (typeof sandWxExact === 'function' && !sandWxExact(dt)) {
+      if (d > 0) return -1;                             // past the end of the weather forecast
+      continue;
+    }
+    return i;
   }
   return -1;
 }
 function sandHrStep(d) {
-  var t = sandHrTarget(d);
-  if (t < 0 || typeof onSlider !== 'function') return false;
-  onSlider(t);
+  var i = sandHrTarget(d);
+  if (i < 0 || typeof onSlider !== 'function') return false;
+  var day = _matrix[i].dateTime.substring(0, 10);
+  if (day !== _selectedDay) _selectedDay = day;        // crossing midnight: move the selected day
+  var pos = _matrix.map(function (r, j) { return { r: r, j: j }; })
+    .filter(function (x) { return x.r.dateTime.startsWith(day); })
+    .findIndex(function (x) { return x.j === i; });
+  if (pos < 0) return false;
+  onSlider(pos);
   return true;
 }
 function sandHrSync(h) {
   var lbl = document.getElementById('sandHrLbl');
   if (!lbl || !h || !h.dateTime) return;
-  lbl.textContent = (typeof fmtHourLabel === 'function') ? fmtHourLabel(h.dateTime) : h.dateTime.substring(11, 16);
+  var wd = '';
+  try { wd = new Date(h.dateTime.substring(0, 10) + 'T12:00:00').toLocaleDateString('en-AU', { weekday: 'short' }) + ' '; } catch (e) {}
+  lbl.textContent = wd + ((typeof fmtHourLabel === 'function') ? fmtHourLabel(h.dateTime) : h.dateTime.substring(11, 16));
   var p = document.getElementById('sandHrPrev'), n = document.getElementById('sandHrNext');
   if (p) p.disabled = sandHrTarget(-1) < 0;
   if (n) n.disabled = sandHrTarget(1) < 0;
