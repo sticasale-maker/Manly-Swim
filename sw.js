@@ -43,6 +43,8 @@ const SHELL_ASSETS = [
   './images/sand/swim-m.webp',
   './images/sand/swim-f.webp',
   './images/sand/swim-g.webp',
+  './images/sand/swim-rain-m.webp',
+  './images/sand/swim-rain-f.webp',
   // Google Fonts — must match the exact URL index.html requests, or it won't hit
   'https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,500&family=Playfair+Display:ital,wght@0,700;1,400&display=swap',
 ];
