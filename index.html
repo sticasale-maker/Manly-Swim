@@ -13237,6 +13237,7 @@ function paintSandScene(h, wx, s) {
   //    they mean "patrolled, swim between the flags", a swimming call this weather picture
   //    must not make (CLAUDE.md section 1). The flag hangs down the pole when still and flies
   //    flat, rippling, when strong; it streams with the real wind, hoist always at the pole.
+  SAND_SCENE.flagP = null;
   if (!none && s.wind != null) {
     var px = 352 * k, pb = 600 * k, pt = 300 * k, z = k * 1.7;   // z: drawn larger this near
     g.strokeStyle = '#2b3640'; g.lineWidth = 3 * z;
@@ -13246,31 +13247,18 @@ function paintSandScene(h, wx, s) {
     // far it reaches from the pole (gathered tight when still, full length when flying) and
     // how far it sags (the fly drops lowest when still); folds are shaded strips whose depth
     // and count fall as the wind opens the cloth out.
-    var flag = sandAusFlag();
+    // The cloth itself is drawn by sandFlagCloth() in every animation frame (owner, 14 Oct
+    // 2026: make the flag wave); here only its shape for this hour is stored.
     var lift = Math.min(1, wk / 40);                     // 0 hangs limp, 1 flies flat
-    var dir = wsx >= 0 ? 1 : -1;
-    var FL = 74 * (0.55 + 0.45 * Math.abs(wsx)) * z, FH = 37 * z;   // foreshortened along the view
-    var reach = 0.18 + 0.82 * Math.pow(lift, 0.8);       // how far the cloth spreads from the pole
-    var limp = 1 - lift;
-    var folds = 4.5 - 2.5 * lift, depth = 0.55 - 0.40 * lift;
-    var amp = FH * 0.10 * lift, ph = (seedPhase(h.dateTime) % 628) / 100, N = 28;
-    g.save(); g.translate(px + 1.5 * z, pt); g.scale(dir, 1);
-    for (var q = N - 1; q >= 0; q--) {                   // fly first, so the cloth nearer the pole lies on top
-      var u0 = q / N, um = (q + 0.5) / N;
-      var wave = um * folds * 2 * Math.PI + ph;
-      var x = u0 * FL * reach;
-      // Limp: the top edge falls from the pole top towards the fly tip while the bottom edge
-      // sags only a little, so the cloth tapers into a hanging drape. Flying: full height,
-      // rippling up and down more towards the fly.
-      var top = um * FL * 0.60 * limp + amp * Math.sin(wave) * um;
-      var bot = FH + um * FL * 0.23 * limp + amp * Math.sin(wave) * um;
-      var w = FL * reach / N + 0.8, y = top, hgt = Math.max(1, bot - top);
-      g.drawImage(flag, u0 * flag.width, 0, flag.width / N + 0.5, flag.height, x, y, w, hgt);
-      var sh = Math.cos(wave);
-      g.fillStyle = sh > 0 ? 'rgba(255,255,255,' + (depth * 0.35 * sh) + ')' : 'rgba(0,0,0,' + (-depth * 0.6 * sh) + ')';
-      g.fillRect(x, y, w, hgt);
-    }
-    g.restore();
+    var FLb = 74 * (0.55 + 0.45 * Math.abs(wsx)) * z;    // foreshortened along the view
+    SAND_SCENE.flagP = {
+      k: k, x: px + 1.5 * z, y: pt, dir: wsx >= 0 ? 1 : -1, FL: FLb, FH: 37 * z,
+      reach: 0.18 + 0.82 * Math.pow(lift, 0.8),          // how far the cloth spreads from the pole
+      limp: 1 - lift, folds: 4.5 - 2.5 * lift, depth: 0.55 - 0.40 * lift,
+      amp: 37 * z * (0.10 * lift + 0.02),                // a little stir even when nearly still
+      ph0: (seedPhase(h.dateTime) % 628) / 100,
+      omega: 2 * Math.PI * (0.25 + 2.2 * lift)           // ripples per second: a gale snaps, a breath stirs
+    };
   }
 
   // 6. People: one carries the rain (and the wind), one the air temperature.
@@ -13343,7 +13331,10 @@ function paintSandScene(h, wx, s) {
     if (rain === 1 && (tier === 'cold' || tier === 'cool')) put(2, 'umbrella-calm', true);   // rain possible: one umbrella, far off (it wears trousers)
   }
 
-  // 7. Rain streaks, slanted by the wind; sand blowing when it is strong.
+  // 7. Rain streaks, slanted by the wind; sand blowing when it is strong. The streaks are not
+  //    painted here: their layout is stored in SAND_SCENE.rainP and sandRainFrame() draws them
+  //    over a snapshot of the finished picture, moving (owner, 14 Oct 2026: animate the rain).
+  SAND_SCENE.rainP = null;
   if (!none && s.rain != null && s.rain >= 1) {
     // The wind drives the rain sideways (owner, 14 Oct 2026: with strong wind the rain goes
     // horizontal, and it must be obvious). The tilt comes from the wind SPEED alone - near
@@ -13354,14 +13345,17 @@ function paintSandScene(h, wx, s) {
     var tilt = Math.min(80, wk / 40 * 80) * Math.PI / 180;
     var len = (30 + Math.min(45, wk) * 1.3) * k;
     var rdx = side * Math.sin(tilt) * len, rdy = Math.cos(tilt) * len;
-    g.strokeStyle = night ? 'rgba(180,195,215,0.45)' : 'rgba(232,238,245,0.6)';
-    g.lineWidth = (1.6 + Math.min(1, wk / 40) * 0.8) * k;
-    g.beginPath();
-    for (var t = 0; t < cnt; t++) {
-      var rx = r2() * (W + 2 * Math.abs(rdx) + 100 * k) - Math.abs(rdx) - 50 * k, ry = r2() * (H + rdy) - rdy;
-      g.moveTo(rx, ry); g.lineTo(rx + rdx, ry + rdy);
-    }
-    g.stroke();
+    var drops = [];
+    for (var t = 0; t < cnt; t++) drops.push(r2(), r2());          // 0-1 starting spots, wrapped per frame
+    SAND_SCENE.rainP = {
+      drops: drops, rdx: rdx, rdy: rdy, k: k,
+      x0: -Math.abs(rdx) - 50 * k, spanX: W + 2 * Math.abs(rdx) + 100 * k,    // the box a streak can be seen in
+      y0: -rdy, spanY: H + rdy,
+      ux: Math.sin(tilt) * side, uy: Math.cos(tilt),                       // the direction it travels
+      speed: (1150 + Math.min(60, wk) * 14) * k,                           // px per second: wind drives it faster
+      stroke: night ? 'rgba(180,195,215,0.45)' : 'rgba(232,238,245,0.6)',
+      lw: (1.6 + Math.min(1, wk / 40) * 0.8) * k
+    };
     if (s.rain >= 2) {                                  // wet sheen on the paving
       var sh = g.createLinearGradient(0, 470 * k, 0, H);
       sh.addColorStop(0, 'rgba(200,215,230,0)'); sh.addColorStop(1, 'rgba(200,215,230,0.18)');
@@ -13375,12 +13369,16 @@ function paintSandScene(h, wx, s) {
   }
 
   // 8. Colour grade: night, cold, heat, grey for missing data.
-  if (none) { g.fillStyle = 'rgba(200,203,207,0.55)'; g.fillRect(0, 0, W, H); }
+  //    The same tints are kept in SAND_SCENE.gradeP so the moving flag gets them too.
+  var grades = [];
+  if (none) grades.push('rgba(200,203,207,0.55)');
   else {
-    if (night) { g.fillStyle = 'rgba(12,22,48,0.5)'; g.fillRect(0, 0, W, H); }
-    if (s.temp != null && s.temp < 16) { g.fillStyle = 'rgba(120,150,190,' + Math.min(0.18, (16 - s.temp) * 0.03) + ')'; g.fillRect(0, 0, W, H); }
-    if (s.temp != null && s.temp > 27) { g.fillStyle = 'rgba(255,190,120,' + Math.min(0.16, (s.temp - 27) * 0.03) + ')'; g.fillRect(0, 0, W, H); }
+    if (night) grades.push('rgba(12,22,48,0.5)');
+    if (s.temp != null && s.temp < 16) grades.push('rgba(120,150,190,' + Math.min(0.18, (16 - s.temp) * 0.03) + ')');
+    if (s.temp != null && s.temp > 27) grades.push('rgba(255,190,120,' + Math.min(0.16, (s.temp - 27) * 0.03) + ')');
   }
+  grades.forEach(function (c) { g.fillStyle = c; g.fillRect(0, 0, W, H); });
+  SAND_SCENE.gradeP = grades;
 
   // Screen readers get the same picture in words.
   var words = none ? 'no forecast for this hour' : [
@@ -13391,7 +13389,113 @@ function paintSandScene(h, wx, s) {
   ].filter(Boolean).join(', ');
   cv.setAttribute('aria-label', 'Weather picture of the promenade: ' + words);
   sandHrSync(h);
+
+  // Keep the finished picture (no rain) for the animation to draw over, then show frame one.
+  var bc = SAND_SCENE.baseCv || (SAND_SCENE.baseCv = document.createElement('canvas'));
+  bc.width = cv.width; bc.height = cv.height;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  bc.getContext('2d').drawImage(cv, 0, 0);
+  sandRainFrame(SAND_SCENE.rainT || 0);
+  sandRainKick();
 }
+
+// ── Moving rain (owner, 14 Oct 2026) ────────────────────────────────────────────
+// Each frame redraws the stored picture, the waving flag, and the streaks moved along their
+// own slant, so the wind direction and strength set how the rain flies and the flag snaps.
+// It runs only while there is rain or a flag AND the picture is on screen (On the sand view,
+// this tab, scrolled into view, app in front), at about 30 frames a second, and never with
+// "reduce motion" (one still frame).
+// The flag's cloth for one moment: the folds and ripples are a wave that travels from the
+// pole out to the fly (owner, 14 Oct 2026: make the flag wave). Drawn in the painting's frame.
+function sandFlagCloth(g, F, ms) {
+  var flag = sandAusFlag(), N = 28;
+  var ph = F.ph0 - (ms / 1000) * F.omega;
+  g.save(); g.translate(F.x, F.y); g.scale(F.dir, 1);
+  for (var q = N - 1; q >= 0; q--) {                   // fly first, so the cloth nearer the pole lies on top
+    var u0 = q / N, um = (q + 0.5) / N;
+    var wave = um * F.folds * 2 * Math.PI + ph;
+    var x = u0 * F.FL * F.reach;
+    // Limp: the top edge falls from the pole top towards the fly tip while the bottom edge
+    // sags only a little, so the cloth tapers into a hanging drape. Flying: full height,
+    // rippling up and down more towards the fly. The hoist (um near 0) barely moves.
+    var rip = F.amp * Math.sin(wave) * um;
+    var top = um * F.FL * 0.60 * F.limp + rip;
+    var bot = F.FH + um * F.FL * 0.23 * F.limp + rip;
+    var w = F.FL * F.reach / N + 0.8, hgt = Math.max(1, bot - top);
+    g.drawImage(flag, u0 * flag.width, 0, flag.width / N + 0.5, flag.height, x, top, w, hgt);
+    var sh = Math.cos(wave);
+    g.fillStyle = sh > 0 ? 'rgba(255,255,255,' + (F.depth * 0.35 * sh) + ')' : 'rgba(0,0,0,' + (-F.depth * 0.6 * sh) + ')';
+    g.fillRect(x, top, w, hgt);
+  }
+  g.restore();
+}
+function sandRainFrame(ms) {
+  var cv = document.getElementById('sandSceneCv'), bc = SAND_SCENE.baseCv, P = SAND_SCENE.rainP, F = SAND_SCENE.flagP;
+  if (!cv || !bc) return;
+  var g = cv.getContext('2d');
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.drawImage(bc, 0, 0);
+  if (F) {
+    // On its own layer, then given the picture's night/cold/heat tint (source-atop tints
+    // only the cloth), so the flag never glows against a darkened scene.
+    var fl = SAND_SCENE.flagCv || (SAND_SCENE.flagCv = document.createElement('canvas'));
+    if (fl.width !== cv.width || fl.height !== cv.height) { fl.width = cv.width; fl.height = cv.height; }
+    var fg = fl.getContext('2d');
+    fg.setTransform(1, 0, 0, 1, 0, 0); fg.clearRect(0, 0, fl.width, fl.height);
+    fg.setTransform(1, 0, 0, 1, 0, -110 * F.k);
+    sandFlagCloth(fg, F, ms);
+    fg.setTransform(1, 0, 0, 1, 0, 0);
+    fg.globalCompositeOperation = 'source-atop';
+    (SAND_SCENE.gradeP || []).forEach(function (c) { fg.fillStyle = c; fg.fillRect(0, 0, fl.width, fl.height); });
+    fg.globalCompositeOperation = 'source-over';
+    g.drawImage(fl, 0, 0);
+  }
+  if (!P) return;
+  g.setTransform(1, 0, 0, 1, 0, -110 * P.k);           // the picture's crop, as in paintSandScene
+  var d = (ms / 1000) * P.speed, dx = P.ux * d, dy = P.uy * d;
+  g.strokeStyle = P.stroke; g.lineWidth = P.lw;
+  g.beginPath();
+  for (var i = 0; i < P.drops.length; i += 2) {
+    var x = P.x0 + (((P.drops[i] * P.spanX + dx) % P.spanX) + P.spanX) % P.spanX;
+    var y = P.y0 + (((P.drops[i + 1] * P.spanY + dy) % P.spanY) + P.spanY) % P.spanY;
+    g.moveTo(x, y); g.lineTo(x + P.rdx, y + P.rdy);
+  }
+  g.stroke();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+}
+function sandRainOnScreen() {
+  var cv = document.getElementById('sandSceneCv');
+  if (!cv || document.visibilityState === 'hidden' || !cv.offsetParent) return false;
+  var r = cv.getBoundingClientRect();
+  return r.bottom > 0 && r.top < (window.innerHeight || 800);
+}
+function sandRainKick() {
+  var reduce = false;
+  try { reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  var moving = function () { return !!(SAND_SCENE.rainP || SAND_SCENE.flagP); };   // rain or the flag
+  if (!moving() || reduce || !sandRainOnScreen() || SAND_SCENE.rainRun) return;
+  SAND_SCENE.rainRun = true;
+  var last = 0, start = performance.now() - (SAND_SCENE.rainT || 0);
+  function tick(now) {
+    if (!moving() || !sandRainOnScreen()) { SAND_SCENE.rainRun = false; return; }
+    if (now - last >= 32) {
+      last = now;
+      SAND_SCENE.rainT = now - start;
+      sandRainFrame(SAND_SCENE.rainT);
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+(function () {
+  // Restart the rain when the picture comes back on screen.
+  document.addEventListener('visibilitychange', sandRainKick);
+  window.addEventListener('scroll', sandRainKick, { passive: true });
+  window.addEventListener('resize', sandRainKick);
+  var sw = document.getElementById('boardSwitch');
+  if (sw) sw.addEventListener('click', function () { setTimeout(sandRainKick, 50); });
+  document.addEventListener('click', function () { setTimeout(sandRainKick, 80); }, true);   // tab bar etc.
+})();
 
 // ── Swipe-for-hours (owner, 14 Oct 2026) ────────────────────────────────────────
 // The picture is also the hour control: drag across it, tap its arrows, or use the arrow
@@ -29233,8 +29337,11 @@ else theftLoad();
   //
   // A pass lasts SWIM_MS (10s), so at this cadence something is on screen about a
   // twenty-fifth of the time, each animal about one every eight minutes.
+  // Marco, 14 Oct 2026, "too frequent": the first pass now waits a MINUTE (it was 10s),
+  // and coming back to the app waits a minute too (it was 2-6s, so every quick check of
+  // the app met an animal). The 3-5 minute gap after that is unchanged.
   var CAST = [TURTLE, RAY];
-  var FIRST_MS = 10000, FIRST_JITTER = 600;
+  var FIRST_MS = 60000, FIRST_JITTER = 600;
   var MIN_GAP_MS = 180000, GAP_SPREAD = 120000;  // 180-300s (3-5 min) between passes
   var lastRun = 0;
   var pending = null;          // the animal drawn for the NEXT pass, sprite warmed
@@ -29303,7 +29410,7 @@ else theftLoad();
 
   if (!thinPipe()) {
     // The first animal is drawn and warmed straight away rather than at
-    // drawNext's polite 400ms: it has only ten seconds to arrive, and on a cold
+    // drawNext's polite 400ms: it has only FIRST_MS to arrive, and on a cold
     // cache it will otherwise turn up half-loaded. Every pass after this one is
     // warmed by drawNext, which has the whole gap to work in.
     pending = pick();
@@ -29312,7 +29419,7 @@ else theftLoad();
     // runs either way - it is one timer every couple of minutes - so switching
     // them back on in Customise brings one along within a gap, without a reload.
     if (sealifeOn()) setTimeout(function () { try { new Image().src = first; } catch (e) {} }, 250);
-    // TEN SECONDS FROM PAGE OPEN, not from whenever this script happened to
+    // FIRST_MS (a minute) FROM PAGE OPEN, not from whenever this script happened to
     // run. On a real connection the app's own scripts push this block a second
     // or two past navigation, which showed up live as a 7.3s first pass when a
     // 3s delay was measured from here. So it is measured against performance.now(),
@@ -29321,9 +29428,10 @@ else theftLoad();
     var since = 0;
     try { since = performance.now(); } catch (e) {}
     schedule(Math.max(600, FIRST_MS - since) + Math.random() * FIRST_JITTER);
-    // A tab left in the background must not bank up passes.
+    // A tab left in the background must not bank up passes, and coming back to the
+    // app waits the same minute as opening it (owner, 14 Oct 2026).
     document.addEventListener('visibilitychange', function () {
-      if (document.visibilityState === 'visible') schedule(2000 + Math.random() * 4000);
+      if (document.visibilityState === 'visible') schedule(FIRST_MS + Math.random() * FIRST_JITTER);
     });
   }
 
