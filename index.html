@@ -493,6 +493,7 @@
   .board-switch button[aria-pressed="true"] { background: var(--ocean); color: #fff; }
   .board-switch button:focus-visible { outline: 2px solid var(--ocean); outline-offset: 2px; }
   .sand-grid { display: none; flex-direction: column; gap: 6px; }
+  .sand-src { font-family: 'Inter', sans-serif; font-size: 9px; letter-spacing: 0.4px; color: var(--dim); padding: 0 4px; }
   .metrics-panel.view-sand .metrics-grid { display: none; }
   .metrics-panel.view-sand .sand-grid { display: flex; }
   .sand-scene { position: relative; border-radius: 12px; overflow: hidden; background: #c9cdd2; aspect-ratio: 1100 / 480;
@@ -4366,6 +4367,8 @@
           </div>
           <div class="metric-track-labels"><span style="flex:1">Low</span><span style="flex:1">Moderate</span><span style="flex:1">High</span><span style="flex:1">V. high</span><span style="flex:1">Extreme</span></div>
         </div>
+        <!-- Whose forecast this hour is (16 Oct 2026): BOM's via WillyWeather, or Open-Meteo's fallback. -->
+        <div class="sand-src" id="sandSrc"></div>
       </div>
     </div>
 
@@ -11187,9 +11190,110 @@ function parseOMWeather(j) {
   return { current, hourly, daily };
 }
 
+// BOM's own forecast (16 Oct 2026, owner): the Bureau's forecast for Cabbage Tree Bay as
+// WillyWeather carries it, from the Worker's hourly snapshot (/bom-weather, no WW request
+// per phone). It replaces Open-Meteo's model guess where BOM has a value: temperature and
+// UV hourly; sky and chance of rain 3-hourly, each held for the hours around it. BOM gives
+// no hourly rain amount, humidity, cloud % or wind, so rain amounts and humidity stay
+// Open-Meteo's and wind stays the blend the scores use; feels-like keeps Open-Meteo's
+// wind-and-humidity offset on top of BOM's temperature, and cloud % is read from BOM's sky
+// so the picture and the words agree. Open-Meteo alone is the fallback when BOM is absent.
+const BOM_WX_URL = 'https://bold-rain-6ded.sticasale.workers.dev/bom-weather?days=7';
+// BOM precis code -> [WMO weather code, cloud %] for the icons and the picture.
+const BOM_PRECIS = {
+  'fine': [0, 5], 'mostly-fine': [1, 20], 'high-cloud': [2, 40], 'partly-cloudy': [2, 45],
+  'mostly-cloudy': [3, 70], 'cloudy': [3, 85], 'overcast': [3, 100],
+  'fog': [45, 100], 'haze': [45, 60], 'dust': [45, 60], 'wind': [2, 45], 'frost': [0, 5],
+  'drizzle': [51, 90], 'chance-shower-fine': [80, 40], 'chance-shower-cloud': [80, 75],
+  'shower-or-two': [80, 70], 'few-showers': [80, 80], 'showers-rain': [81, 90],
+  'heavy-showers-rain': [82, 95], 'chance-thunderstorm-fine': [95, 50],
+  'chance-thunderstorm-cloud': [95, 80], 'chance-thunderstorm-showers': [95, 85],
+  'thunderstorm': [95, 90], 'hail': [96, 90],
+  'chance-snow-fine': [71, 50], 'chance-snow-cloud': [71, 80], 'snow-and-rain': [68, 95],
+  'light-snow': [71, 90], 'snow': [73, 95], 'heavy-snow': [75, 100]
+};
+async function fetchBomWeather() {
+  try {
+    const res = await fetchWithTimeout(BOM_WX_URL + '&t=' + Date.now(), 7000, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    if (!j || !j.forecasts) throw new Error('empty');
+    return j.forecasts;
+  } catch (e) {
+    diag('BOM weather failed: ' + e.message);
+    return null;
+  }
+}
+function bomKey(dt) { return String(dt).slice(0, 10) + 'T' + String(dt).slice(11, 16); }
+// Every entry of one BOM forecast as [ms, entry], for nearest-in-time lookups.
+function bomSeries(f) {
+  const out = [];
+  ((f && f.days) || []).forEach(d => (d.entries || []).forEach(e => {
+    if (e && e.dateTime) out.push([Date.parse(bomKey(e.dateTime) + ':00Z'), e]);
+  }));
+  return out;
+}
+function bomNearest(series, key, maxMin) {
+  const t = Date.parse(key + ':00Z');
+  let best = null, bd = Infinity;
+  for (const [ms, e] of series) { const d = Math.abs(ms - t); if (d < bd) { bd = d; best = e; } }
+  return bd <= maxMin * 60000 ? best : null;
+}
+function overlayBomWeather(data, bom) {
+  if (!data || !bom) return data;
+  const temp = bomSeries(bom.temperature), uv = bomSeries(bom.uv);
+  const sky = bomSeries(bom.precis), chance = bomSeries(bom.rainfallprobability);
+  if (!temp.length && !sky.length) return data;
+  const hourly = {};
+  Object.keys(data.hourly || {}).forEach(k => {
+    const h = { ...data.hourly[k] };
+    const t = bomNearest(temp, k, 30);
+    if (t && Number.isFinite(t.temperature)) {
+      if (Number.isFinite(h.feelsLike) && Number.isFinite(h.temp)) h.feelsLike += t.temperature - h.temp;
+      h.temp = t.temperature;
+    }
+    const u = bomNearest(uv, k, 30);
+    if (u && Number.isFinite(u.index)) h.uv = u.index;
+    else if (uv.length && String(k).slice(0, 10) <= bomKey(uv[uv.length - 1][1].dateTime).slice(0, 10)) {
+      // BOM lists UV 06:00-18:00 only: outside that on a covered day it is 0.
+      const hr = +String(k).slice(11, 13);
+      if (hr < 6 || hr > 18) h.uv = 0;
+    }
+    const s = bomNearest(sky, k, 90);
+    const m = s && BOM_PRECIS[s.precisCode];
+    if (m) { h.wxCode = m[0]; h.cloud = m[1]; h.precis = s.precis || null; }
+    const c = bomNearest(chance, k, 90);
+    if (c && Number.isFinite(c.probability)) h.rainProb = c.probability;
+    if (t || m || c) h.src = 'bom';
+    hourly[k] = h;
+  });
+  // Current conditions follow the hour we are in.
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit',
+    day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const nowKey = `${p.year}-${p.month}-${p.day}T${p.hour}:00`;
+  const cur = { ...data.current }, hn = hourly[nowKey];
+  if (hn && hn.src === 'bom') {
+    if (Number.isFinite(cur.feelsLike) && Number.isFinite(cur.temp) && Number.isFinite(hn.temp)) cur.feelsLike += hn.temp - cur.temp;
+    if (Number.isFinite(hn.temp)) cur.temp = hn.temp;
+    if (hn.wxCode != null) { cur.wxCode = hn.wxCode; cur.cloud = hn.cloud; }
+  }
+  // Daily min/max and BOM's words for the day.
+  const daily = {};
+  Object.keys(data.daily || {}).forEach(d => { daily[d] = { ...data.daily[d] }; });
+  ((bom.weather && bom.weather.days) || []).forEach(d => {
+    const e = (d.entries || [])[0], key = String(d.dateTime).slice(0, 10);
+    if (!e || !daily[key]) return;    // only days Open-Meteo has: sunrise/sunset come from it
+    daily[key] = { ...daily[key], min: e.min ?? null, max: e.max ?? null, precis: e.precis || null };
+  });
+  return { ...data, current: cur, hourly, daily, src: 'bom' };
+}
+
 async function fetchOMWeather() {
   const cache = loadCache(OM_WX_CACHE_KEY);
-  if (cacheIsFresh(cache, OM_WX_CACHE_TTL)) return cache.data;
+  // A saved copy without BOM's forecast is never "fresh": BOM is tried again next load.
+  if (cacheIsFresh(cache, OM_WX_CACHE_TTL) && cache.data && cache.data.src === 'bom') return cache.data;
+  const bomP = fetchBomWeather();
+  const withBom = async (d) => overlayBomWeather(d, await bomP);
   // Two attempts with a real AbortController timeout. On cellular a stalled
   // socket would otherwise hang forever (plain fetch has no timeout), so weather
   // silently never arrived while swell — which retries — loaded fine.
@@ -11203,19 +11307,20 @@ async function fetchOMWeather() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const j = await res.json();
       if (j && j.error) throw new Error('API: ' + (j.reason || 'error'));
-      const data = parseOMWeather(j);
-      if (data.current.temp == null && !Object.keys(data.hourly).length) {
+      const om = parseOMWeather(j);
+      if (om.current.temp == null && !Object.keys(om.hourly).length) {
         throw new Error('empty payload');
       }
+      const data = await withBom(om);
       saveCache(OM_WX_CACHE_KEY, data);
-      diag('weather ok (attempt ' + attempt + (attempt === 2 ? ', core' : '') + ')');
+      diag('weather ok (attempt ' + attempt + (attempt === 2 ? ', core' : '') + (data.src === 'bom' ? ', BOM' : ', Open-Meteo only') + ')');
       return data;
     } catch(e) {
       diag('weather attempt ' + attempt + ' failed: ' + e.message);
       console.warn('OM Weather attempt ' + attempt + ' failed:', e.message);
       if (attempt < 2) { await new Promise(r => setTimeout(r, 800)); continue; }
       // Last resort: serve stale cache rather than nothing.
-      if (cache && cache.data) { diag('weather → stale cache'); return cache.data; }
+      if (cache && cache.data) { diag('weather → stale cache'); return withBom(cache.data); }
       return null;
     }
   }
@@ -13118,6 +13223,9 @@ function renderSandBoard(h, wx) {
     sandText('sandSunVal', 'No forecast'); sandText('sandSunDetail', ''); sandText('sandSunCap', '—');
     sandDot('sandSunDot', null);
   }
+  sandText('sandSrc', !wx ? '' : wx.src === 'bom'
+    ? 'Forecast: Bureau of Meteorology, via WillyWeather. Feels-like and rain amounts: Open-Meteo.'
+    : 'Forecast: Open-Meteo.');
   paintSandScene(h, wx, {
     temp: hasAir ? (wx.feelsLike != null ? wx.feelsLike : wx.temp) : null,
     wind: hasWind ? h.windKmh : null, windDir: hasWind ? h.windDir : null,
