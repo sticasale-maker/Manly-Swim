@@ -16826,9 +16826,12 @@ async function bbUploadPhoto(blob) {
 }
 
 // Only trust photo URLs that live in our own public bucket — never render an
-// arbitrary URL as an <img src> (mirrors the board's safePhoto guard).
+// arbitrary URL as an <img src> (mirrors the board's safePhoto guard). The prefix
+// alone is not enough: the server's old `like prefix%` let a quote through after it
+// (15 Oct 2026 audit), so the file name must be plain characters as well.
 function bbSafePhoto(u) {
-  return (u && String(u).indexOf(BB_PHOTO_PREFIX) === 0) ? String(u) : '';
+  u = String(u || '');
+  return (u.indexOf(BB_PHOTO_PREFIX) === 0 && /^[A-Za-z0-9._/-]{1,200}$/.test(u.slice(BB_PHOTO_PREFIX.length))) ? u : '';
 }
 
 // Tap-to-expand the strip into a gallery of photo-backed reports. Only active
@@ -16995,10 +16998,10 @@ function bbRenderFromData(reports) {
         // shot carries its day word too (today/yesterday/weekday) — same idiom as
         // the "last reported" line. Kept to one short caption line.
         const when = bbRelDay(ts) + ' ' + t + (BB_WHERE_TEXT[r.location] ? ' · ' + BB_WHERE_TEXT[r.location] : '');
-        const url = bbSafePhoto(r.photo_url);
+        const url = oracleEsc(bbSafePhoto(r.photo_url)), whenH = oracleEsc(when);
         return `<a class="bb-shot" href="${url}" target="_blank" rel="noopener">
-            <img src="${url}" loading="lazy" alt="Bluebottle reported ${when}">
-            <div class="bb-shot-time">${when}</div>
+            <img src="${url}" loading="lazy" alt="Bluebottle reported ${whenH}">
+            <div class="bb-shot-time">${whenH}</div>
           </a>`;
       }).join('');
     } else {
@@ -19609,6 +19612,9 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 // the point, so "17.2\u00b0C" bolded as 17.<em>2\u00b0C</em> - the app emphasising the
 // wrong half of its own sea temperature. Same for "12.5 km/h".
 // Keep this in step with the second copy inside the baseline generator.
+function oracleEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
 function emphasise(t) {
   return String(t || '').replace(/\b(\d+(?:\.\d+)?[\u2013\-]\d+(?:\.\d+)?\u00b0[Cc]|\d+(?:\.\d+)?\u00b0[Cc]|\d+(?:\.\d+)?[\u2013\-]\d+(?:\.\d+)? km\/h|\d+(?:\.\d+)? km\/h|Easy|Doable|Caution|Dangerous|Smooth|Ripply|Choppy|Messy)\b/g, '<em>$1</em>');
 }
@@ -19792,6 +19798,10 @@ async function generateBannerSummary() {
     const clash = summaryConflict((j.water_text || '') + ' ' + (j.after_text || ''), _bannerFacts)
       || wxConflict(j.wx_text, _bannerFacts);
     if (clash) { diag('Oracle: kept local baseline — LLM ' + clash); return; }
+    // The Worker's text is DATA, and it reaches innerHTML (via emphasise, which adds
+    // the only markup it may carry). Escape it once here, after the check has read
+    // it raw, so the repaint from _bannerWaterBase and the closing beat are covered too.
+    j.wx_text = oracleEsc(j.wx_text); j.water_text = oracleEsc(j.water_text); j.after_text = oracleEsc(j.after_text);
     const wxEl = document.getElementById('banner-wx-text');
     const waterEl = document.getElementById('banner-water-text');
     const afterEl = document.getElementById('banner-after-text');
@@ -24670,7 +24680,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return keep.join(';');
   }
   function clean(src){
-    var tmp = document.createElement('div'); tmp.innerHTML = (src == null ? '' : String(src));
+    // Parsed in an INERT document (15 Oct 2026 audit): a live-document div loads <img> and fires its onerror before the allowlist runs.
+    var tmp = new DOMParser().parseFromString(src == null ? '' : String(src), 'text/html').body;
     var out = document.createElement('div');
     (function copy(node, dest){
       Array.prototype.forEach.call(node.childNodes, function (ch) {

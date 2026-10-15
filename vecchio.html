@@ -8198,7 +8198,8 @@ if ('serviceWorker' in navigator) {
   /* ---- rich-text sanitizer: rebuild a clean tree from an allowlist --------- */
   var ALLOW = { B:1, STRONG:1, I:1, EM:1, U:1, UL:1, OL:1, LI:1, A:1, BR:1, P:1, DIV:1, SPAN:1 };
   function clean(src){
-    var tmp = document.createElement('div'); tmp.innerHTML = (src == null ? '' : String(src));
+    // Parsed in an INERT document (15 Oct 2026 audit): a live-document div loads <img> and fires its onerror before the allowlist runs.
+    var tmp = new DOMParser().parseFromString(src == null ? '' : String(src), 'text/html').body;
     var out = document.createElement('div');
     (function copy(node, dest){
       Array.prototype.forEach.call(node.childNodes, function (ch) {

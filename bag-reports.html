@@ -833,6 +833,14 @@ const dur   = m => m == null || !isFinite(m) ? '—'
 const money = v => '$' + Number(v||0).toLocaleString('en-AU');
 const plural = (n,s,p) => n + ' ' + (n === 1 ? s : (p || s + 's'));
 
+// A photo link is clicked on THIS page, where swim_admin_token sits in localStorage,
+// so a javascript: URL in photo_url would run as the admin. Only our own public
+// bucket, https, plain file names (15 Oct 2026 audit).
+const PHOTO_PREFIX = SB_URL + '/storage/v1/object/public/board-images/';
+function safePhoto(u){
+  u = String(u || '');
+  return (u.indexOf(PHOTO_PREFIX) === 0 && /^[A-Za-z0-9._/-]{1,200}$/.test(u.slice(PHOTO_PREFIX.length))) ? u : '';
+}
 function esc(s){
   return String(s == null ? '' : s)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1647,9 +1655,10 @@ function caseSheet(r){
       + f('What happened', blank(r.what_happened) ? NONE : '<div class="quote">' + esc(r.what_happened) + '</div>')
       + f('Effect on them', blank(r.impact) ? NONE : '<div class="quote">' + esc(r.impact) + '</div>')
       + (blank(r.recovered_note) ? '' : f('Recovery note', '<div class="quote">' + esc(r.recovered_note) + '</div>', 'full'))
-      + (r.photo_url ? f('Photograph supplied',
-          '<a href="' + esc(r.photo_url) + '" target="_blank" rel="noopener">'
-          + '<img class="evimg" src="' + esc(r.photo_url) + '" alt="photograph supplied with report ' + r._k + '"></a>', 'full') : '')
+      + (safePhoto(r.photo_url) ? f('Photograph supplied',
+          '<a href="' + esc(safePhoto(r.photo_url)) + '" target="_blank" rel="noopener">'
+          + '<img class="evimg" src="' + esc(safePhoto(r.photo_url)) + '" alt="photograph supplied with report ' + r._k + '"></a>', 'full')
+        : (r.photo_url ? f('Photograph supplied', 'Withheld: not a photo from our own storage', 'full') : ''))
     + '</div></div>'
 
     + (audit ? '<div class="grp"><b>Other recorded fields</b><div class="fields">' + audit + '</div></div>' : '')
