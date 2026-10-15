@@ -4689,7 +4689,7 @@
         <div class="radar-mm">
           <div class="radar-mm-head">
             <span class="radar-mm-title">Rain at Manly &middot; today + 3 days</span>
-            <span class="radar-mm-src">Forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></span>
+            <span class="radar-mm-src" id="radarMmSrc">Forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a></span>
           </div>
           <div class="radar-mm-lead is-none" id="radarMmLead">Reading the bay&hellip;</div>
           <svg class="radar-mm-svg" id="radarMmSvg" viewBox="0 0 360 118"
@@ -4700,8 +4700,8 @@
         <div class="radar-legend">
           Left of the <em>now</em> mark is the <strong>radar rain rate</strong>, right of it is
           <span class="rd-fcst-cap">forecast rain</span>, a 3-hourly model field in total millimetres.
-          Map: Bureau of Meteorology. The Rain at Manly chart is Open-Meteo's forecast, so
-          the two can differ.
+          Map: Bureau of Meteorology. The Rain at Manly chart is a separate forecast (its
+          source is named above it), so the two can differ.
         </div>
       </div>
     </div>
@@ -26147,7 +26147,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (sydHour() >= 12) days.push({ iso: tomorrow, when: 'Tomorrow' });
     days.forEach(function (d) {
       var i = fc.time.indexOf(d.iso); if (i < 0) return;
-      var tmax = fc.temperature_2m_max[i], rain = fc.precipitation_sum[i], norm = normMax(d.iso);
+      // BOM's rain is a range: a 50% chance of at least the lower figure, so the lower
+      // figure is the one held to RAIN_MM, and the text gives the whole range.
+      var bom = fc.src === 'bom';
+      var tmax = fc.temperature_2m_max[i], rain = bom ? fc.rainLo[i] : fc.precipitation_sum[i], norm = normMax(d.iso);
+      var rainTxt = bom ? fc.rainLo[i] + (fc.rainHi[i] > fc.rainLo[i] ? '–' + fc.rainHi[i] : '') + ' mm'
+                        : Math.round(rain) + ' mm';
       var month = MONTHS[+d.iso.slice(5, 7) - 1];
       if (typeof tmax === 'number' && norm != null) {
         var dev = tmax - norm;
@@ -26159,7 +26164,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       }
       if (typeof rain === 'number' && rain >= RAIN_MM) {
         out.push({ id: d.iso + '|rain', kind: 'rain', iso: d.iso, when: d.when,
-          html: '<b>Heavy rain ' + d.when.toLowerCase() + ' (' + dayName(d.iso) + '): ' + Math.round(rain) + ' mm forecast at Manly.</b> ' +
+          html: '<b>Heavy rain ' + d.when.toLowerCase() + ' (' + dayName(d.iso) + '): ' + rainTxt + ' forecast at Manly.</b> ' +
                 'Water quality often drops after heavy rain; check the Beachwatch rating.' });
       }
     });
@@ -26175,7 +26180,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     el.hidden = false;
     var off = pGet(OFF_KEY) === '1';
     el.innerHTML = _events.map(function (e) { return '<div class="wx-warn-row">' + e.html + '</div>'; }).join('') +
-      '<div class="wx-warn-src">Forecast: Open-Meteo. Normal: the bay’s average maximum for the month.' +
+      '<div class="wx-warn-src">' + srcLine() +
       (off ? ' <button type="button" class="wx-warn-on" id="wxWarnOn">Turn weather pop-ups back on</button>' : '') + '</div>';
     var on = document.getElementById('wxWarnOn');
     if (on) on.addEventListener('click', function () { pSet(OFF_KEY, ''); paintBanner(); });
@@ -26237,6 +26242,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     buildPopup();
     _shown = fresh;
     document.getElementById('wxAlertTitle').textContent = titleFor(fresh);
+    document.getElementById('wxAlertSrc').textContent = srcLine();
     document.getElementById('wxAlertBody').innerHTML = fresh.map(function (e) { return '<p>' + e.html + '</p>'; }).join('');
     var card = document.getElementById('wxAlertCard');
     var kind = fresh.some(function (e) { return e.kind === 'hot'; }) ? 'hot' : fresh.some(function (e) { return e.kind === 'cold'; }) ? 'cold' : 'rain';
@@ -26244,8 +26250,30 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     document.getElementById('wxAlertOverlay').classList.add('show');
   }
 
+  var _src = '';
+  function srcLine() {
+    return (_src === 'bom' ? 'Forecast: Bureau of Meteorology, via WillyWeather.' : 'Forecast: Open-Meteo.') +
+      ' Normal: the bay’s average maximum for the month.';
+  }
+  // BOM's daily forecast (/bom-weather, 16 Oct 2026) in the shape findEvents reads.
+  function fromBom(f) {
+    var w = f && f.weather, rf = f && f.rainfall;
+    if (!w || !Array.isArray(w.days) || !rf || !Array.isArray(rf.days)) return null;
+    var fc = { src: 'bom', time: [], temperature_2m_max: [], rainLo: [], rainHi: [] };
+    w.days.forEach(function (d) {
+      var iso = String(d.dateTime).slice(0, 10), e = (d.entries || [])[0];
+      var r = rf.days.filter(function (x) { return String(x.dateTime).slice(0, 10) === iso; })[0];
+      var re = r && (r.entries || [])[0];
+      if (!e || !re || typeof e.max !== 'number' || typeof re.startRange !== 'number') return;
+      fc.time.push(iso); fc.temperature_2m_max.push(e.max);
+      fc.rainLo.push(re.startRange); fc.rainHi.push(typeof re.endRange === 'number' ? re.endRange : re.startRange);
+    });
+    return fc.time.length ? fc : null;
+  }
+
   function use(fc) {
     if (!fc || !Array.isArray(fc.time)) return;
+    _src = fc.src || '';
     _events = findEvents(fc);
     paintBanner();
     maybePopup(0);
@@ -26263,15 +26291,20 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     try { cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null'); } catch (e) {}
     if (cached && cached.at && Date.now() - cached.at < CACHE_MAX_MS) use(cached.fc);
     var base = (typeof OM_WEATHER_PROXY === 'string') ? OM_WEATHER_PROXY : 'https://bold-rain-6ded.sticasale.workers.dev/weather';
-    fetch(base + '?latitude=-33.7969&longitude=151.2878&daily=temperature_2m_max,precipitation_sum' +
-          '&forecast_days=3&timezone=Australia%2FSydney', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) {
-        if (!d || !d.daily) return;
-        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), fc: d.daily })); } catch (e) {}
-        use(d.daily);
-      })
-      .catch(function () {});
+    function keep(fc) {
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), fc: fc })); } catch (e) {}
+      use(fc);
+    }
+    // BOM's forecast first; Open-Meteo only when BOM is not there.
+    var bomP = (typeof fetchBomWeather === 'function') ? fetchBomWeather() : Promise.resolve(null);
+    bomP.then(function (f) {
+      var fc = fromBom(f);
+      if (fc) { keep(fc); return; }
+      return fetch(base + '?latitude=-33.7969&longitude=151.2878&daily=temperature_2m_max,precipitation_sum' +
+            '&forecast_days=3&timezone=Australia%2FSydney', { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { if (d && d.daily) keep(d.daily); });
+    }).catch(function () {});
   }
   // Re-check when the app comes back to the front: the midday switch to "tomorrow"
   // and a new day both happen while a home-screen app sits open in the background.
@@ -28689,7 +28722,12 @@ else theftLoad();
     + '&longitude=' + (typeof MANLY_LNG === 'number' ? MANLY_LNG : 151.2878)
     + '&hourly=precipitation_probability,precipitation'
     + '&past_hours=3&forecast_hours=100&timeformat=unixtime';
-  var MM_CACHE_KEY = 'swim_rainchart_v1';
+  // v2 (16 Oct 2026): the chance of rain is BOM's (via WillyWeather, the Worker's
+  // /bom-weather), 3-hourly, each value held for the hours within 90 min of it, the
+  // same rule as the weather view. BOM gives no hourly amounts, so the mm strip stays
+  // Open-Meteo's. Without BOM the chart is Open-Meteo's alone, as before, and that
+  // copy is never "fresh", so BOM is tried again on the next load.
+  var MM_CACHE_KEY = 'swim_rainchart_v2';
   var MM_CACHE_TTL = 60 * 60000;    // an hour; the Worker edge-caches 10 min on top
 
   // BOM's chance-of-rain colours and amount classes, kept so the chart still reads
@@ -28738,20 +28776,41 @@ else theftLoad();
   function mmFetch() {
     var c = null;
     try { c = loadCache(MM_CACHE_KEY); } catch (e) {}
-    if (c && c.data && cacheIsFresh(c, MM_CACHE_TTL)) return Promise.resolve({ d: c.data, at: c.fetchedAt });
+    if (c && c.data && c.data.src === 'bom' && cacheIsFresh(c, MM_CACHE_TTL)) return Promise.resolve({ d: c.data, at: c.fetchedAt });
+    var bomP = (typeof fetchBomWeather === 'function') ? fetchBomWeather() : Promise.resolve(null);
     return fetchWithTimeout(MM_URL, 9000).then(function (r) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then(function (j) {
       var h = j && j.hourly;
       if (!h || !Array.isArray(h.time) || !h.time.length) throw new Error('empty forecast');
-      var d = { time: h.time, chance: h.precipitation_probability || [], mm: h.precipitation || [] };
+      return bomP.then(function (bom) { return mmWithBom({ time: h.time, chance: h.precipitation_probability || [], mm: h.precipitation || [] }, bom); });
+    }).then(function (d) {
       saveCache(MM_CACHE_KEY, d);
       return { d: d, at: Date.now() };
     }).catch(function (e) {
       if (c && c.data) return { d: c.data, at: c.fetchedAt };
       throw e;
     });
+  }
+
+  // BOM's chance of rain onto the hourly series. Each hour covers the hour BEFORE its
+  // unix timestamp; it takes the BOM value nearest its middle, within 90 min.
+  function mmWithBom(d, bom) {
+    var f = bom && bom.rainfallprobability;
+    if (!f || !Array.isArray(f.days) || typeof bomSeries !== 'function') return d;
+    var series = bomSeries(f);
+    if (!series.length) return d;
+    var chance = d.chance.slice(), hit = 0;
+    for (var i = 0; i < d.time.length; i++) {
+      var mid = d.time[i] * 1000 - 1800000;
+      var p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney', year: 'numeric', month: '2-digit',
+        day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(mid))
+        .reduce(function (a, x) { a[x.type] = x.value; return a; }, {});
+      var e = bomNearest(series, p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute, 90);
+      if (e && typeof e.probability === 'number') { chance[i] = e.probability; hit++; }
+    }
+    return hit ? { time: d.time, chance: chance, mm: d.mm, src: 'bom' } : d;
   }
 
   // Hours -> 3-hour blocks of Sydney time (12am-3am, 3am-6am, ...). A block's
@@ -28784,7 +28843,11 @@ else theftLoad();
     mmFoot.textContent = '';
   }
 
-  function drawMm(rows, fetchedAt) {
+  function drawMm(rows, fetchedAt, src) {
+    var srcEl = document.getElementById('radarMmSrc');
+    if (srcEl) srcEl.innerHTML = src === 'bom'
+      ? 'Chance: BOM, via WillyWeather'
+      : 'Forecast: <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>';
     var W = 360, H = 118, PAD_L = 32, PAD_B = 40, PAD_T = 6;
     var x0 = PAD_L, x1 = W - 4, yB = H - PAD_B, plot = yB - PAD_T;
     var stripY = yB + 5, stripH = 9;
@@ -28902,7 +28965,7 @@ else theftLoad();
                           ? fmtTime.format(fetchedAt) : fmtDayTime.format(fetchedAt)) : null;
     var missing = rows.length - withP.length;
     mmFoot.textContent = 'Bars: highest chance of rain in each 3-hour block · strip: total rain (mm).'
-      + (at ? ' Open-Meteo forecast, fetched ' + at + '.' : '')
+      + (at ? (src === 'bom' ? ' Chance: BOM via WillyWeather; amounts: Open-Meteo. Fetched ' : ' Open-Meteo forecast, fetched ') + at + '.' : '')
       + (missing ? ' ' + missing + ' block(s) had no reading.' : '');
   }
 
@@ -28910,7 +28973,7 @@ else theftLoad();
     mmFetch().then(function (res) {
       var rows = mmBlocks(res.d);
       if (!rows.length) { mmNone('Rain outlook unavailable.'); return; }
-      drawMm(rows, res.at);
+      drawMm(rows, res.at, res.d && res.d.src);
     }).catch(function () { mmNone('Rain outlook unavailable.'); });
   }
 
