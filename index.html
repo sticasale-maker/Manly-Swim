@@ -13181,6 +13181,12 @@ function renderSandBoard(h, wx) {
     else if (pr >= 50 || mm >= 0.1) { band = 2; frac = mm >= 0.1 ? mm / 2.5 : Math.min(0.4, (pr - 50) / 125); }
     else if (pr >= 20)              { band = 1; frac = (pr - 20) / 30; }
     else                            { band = 0; frac = pr / 20; }
+    // The PICTURE is kinder than the row at the low end (owner, 16 Oct 2026: it drew rain at
+    // 20% / 0 mm and a lot of it at 30% / 0.1 mm). The row's label is unchanged.
+    //   Possible (nothing forecast)                -> nothing falling
+    //   Light, under 0.5 mm unless 70%+ and 0.2 mm -> a few drops
+    //   Light from 0.5 mm (or 70%+ with 0.2 mm), Moderate, Heavy -> as the row
+    var picBand = band >= 3 ? band : band === 2 ? ((mm >= 0.5 || (pr >= 70 && mm >= 0.2)) ? 2 : 1) : 0;
     var mmTxt = wx.rainMm == null ? '' : (mm >= 0.1 ? mm.toFixed(1) + ' mm' : '0 mm');
     sandText('sandRainVal', ['Dry', 'Possible', 'Light', 'Moderate', 'Heavy'][band]);
     sandText('sandRainDetail', Math.round(pr) + '% chance' + (wx.rainMm == null ? '' : ' · ' + (mm >= 0.1 ? mm.toFixed(1) + ' mm this hour' : 'no rain this hour')));
@@ -13229,19 +13235,20 @@ function renderSandBoard(h, wx) {
   paintSandScene(h, wx, {
     temp: hasAir ? (wx.feelsLike != null ? wx.feelsLike : wx.temp) : null,
     wind: hasWind ? h.windKmh : null, windDir: hasWind ? h.windDir : null,
-    rain: hasRain ? band : null,
+    rain: hasRain ? band : null, rainPic: hasRain ? picBand : null,
     cloud: (wx && wx.cloud != null) ? wx.cloud : null,
     uv: (wx && wx.uv != null) ? wx.uv : null,
     night: night, sun: sun || null,
     wxCode: (wx && wx.wxCode != null) ? wx.wxCode : null,
-    // Wet paving and puddles for a couple of hours after rain stops (15 Oct 2026).
+    // Wet paving and puddles for a couple of hours after rain stops (15 Oct 2026), only
+    // after an hour the picture would have drawn as real rain (16 Oct 2026).
     wet: (function () {
       var t0 = Date.parse(h.dateTime.replace(' ', 'T').substring(0, 13) + ':00:00');
       for (var b = 1; b <= 2; b++) {
         var d = new Date(t0 - b * 3600e3), p = function (n) { return (n < 10 ? '0' : '') + n; };
         var key = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':00';
         var w = sandWxExact(key);
-        if (w && w.rainMm != null && w.rainMm >= 0.3) return true;
+        if (w && w.rainMm != null && (w.rainMm >= 0.5 || ((w.rainProb || 0) >= 70 && w.rainMm >= 0.2))) return true;
       }
       return false;
     })()
@@ -13382,7 +13389,7 @@ function paintSandScene(h, wx, s) {
   var nightness = none ? 0 : night ? 1 : s.night ? 0.6 : (dayT != null && dayT > 0.5 && twilight > 0.55 ? 0.25 : 0);
   var wsx = s.windDir != null ? Math.cos((s.windDir + 180 - 225) * Math.PI / 180) : 0;   // +1 blows right
   var wk = s.wind || 0;
-  var rainB = s.rain == null ? 0 : s.rain;
+  var rainB = s.rainPic != null ? s.rainPic : s.rain == null ? 0 : s.rain;   // the picture's band
   var code = s.wxCode == null ? null : +s.wxCode;
   var foggy = code === 45 || code === 48;
   var storm = code != null && code >= 95;
@@ -13393,7 +13400,7 @@ function paintSandScene(h, wx, s) {
   if (!night && twilight > 0) {                         // golden hour: warm low sky, violet above
     top = mix(top, [112, 128, 172], twilight); bot = mix(bot, [248, 178, 128], twilight);
   }
-  var cloud = s.cloud != null ? s.cloud / 100 : (s.rain != null ? [0.1, 0.45, 0.8, 0.95, 1][s.rain] : 0.3);
+  var cloud = s.cloud != null ? s.cloud / 100 : (s.rain != null ? [0.1, 0.45, 0.8, 0.95, 1][rainB] : 0.3);
   if (rainB >= 2) cloud = Math.max(cloud, 0.85);
   var grey = rainB >= 3 ? [92, 102, 114] : [156, 164, 172];
   if (night) grey = [38, 44, 56];
