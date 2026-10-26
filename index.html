@@ -7952,6 +7952,19 @@ const SITE_DEFAULTS = {
   surgeWallTideHi:  1.8,   // m — full reflection
   surgeWallReflect: 1.6,   // reflected share of the bay's swell + sea at full reflection; 0 = off
   surgeWallMaxPts:  24,    // ceiling on the reflected demerits at full reflection
+  // ── High-water ceilings (26 Oct 2026, per owner) — NS path only ──────────────────
+  // On 25 Oct 08-09 (1.04 m / 7.5 s ENE sea, 0.6 m swell, tide 1.65-1.71 m) the owner
+  // saw yellow/red on BOTH Entry and Surge; the app read Entry 62-66 and Surge 70-78.
+  // The tide term (and the wall on Surge) scale with arriving energy and had no ceiling
+  // that bit, so a big sea at high tide ran to the end of the scale. Still multiplicative
+  // (no energy, no tide points), as the wall cap already was. Fitted so 14 Sep 10:00
+  // (Surgy 37.3, tide + wall 22.5) and 26 Sep 07-08 (Surgy 46-49) keep their bands.
+  entryTideMaxPts:      12,  // Entry: most the high tide can add (credits below tideRef untouched)
+  surgeHighTideMaxPts:  23,  // Surge (bay): most tide + wall reflection can add together
+  // Surge soft ceiling: bay demerits above surgeSoftKnee count at surgeSoftSlope. Takes
+  // 25 Oct 08-09 to Washy 51-52 (just red). Leaves the point untouched. 1 = off.
+  surgeSoftKnee:        45,
+  surgeSoftSlope:       0.4,
   pointSens:      7.0,   // LOCAL — no sheet cell. Demerit scale on swellPower(H,P) at the point.
                          // ANCHORED on the one observed event: 0.38 m / 15.09 s / 124.6° on
                          // 12 Sep 2026 → ~26 demerits, i.e. mid-Drifty. The rail comes off green
@@ -9591,6 +9604,18 @@ function surgeWallDemerits(tideM, energy) {
   return t * t * (3 - 2 * t) * Math.min(R * energy, cap);
 }
 
+// High-water ceilings (26 Oct 2026) — see SITE_DEFAULTS.entryTideMaxPts. Only ever lowers a
+// positive tide add; the low-tide credit passes straight through.
+function capHighTide(tide_d, max) {
+  return (max != null && isFinite(max) && tide_d > max) ? max : tide_d;
+}
+// Surge bay soft ceiling — see SITE_DEFAULTS.surgeSoftKnee.
+function surgeSoftCeiling(x) {
+  const K = SITE.surgeSoftKnee, s = SITE.surgeSoftSlope;
+  if (K == null || s == null || !(s < 1) || !(x > K)) return x;
+  return K + (x - K) * Math.max(0, s);
+}
+
 function blSwimWater(d, chop) {
   const { swell1H, swell1Dir, swell1P,
           windWaveH, windWaveDir, windWaveP, windDir, windKmh, tideM } = d;
@@ -9623,8 +9648,9 @@ function blSwimWater(d, chop) {
   // entrance-shelf depth, so it shoals ALL incoming long-period energy — sea and swell
   // alike (added 5 Jul 2026, matching Entry which already passes sea/ww). Short-period
   // chop stays off tide by design. Shared tideGain (MASTER); splittable to bl_tide_gain later.
-  const tide_d = SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d: sea_d,
-    wwDir: Number.isFinite(windWaveDir) ? windWaveDir : swell1Dir }, 'bowerTideGate');  // sea partition; never windDir
+  // High tide adds at most surgeHighTideMaxPts, shared with the wall below (26 Oct 2026).
+  const tide_d = capHighTide(SITE.tideDir(tideM, { s1_d, s1Dir: swell1Dir, ww_d: sea_d,
+    wwDir: Number.isFinite(windWaveDir) ? windWaveDir : swell1Dir }, 'bowerTideGate'), SITE.surgeHighTideMaxPts);  // sea partition; never windDir
   // CHOP (the slap fraction) was removed from Surge on 3 Jul 2026 — the standalone CHOP
   // metric carries it, and mixing it in muddied the swell/wash signal this rail shows.
   // NOTE: Surge is NOT "swell + tide only". The wind-sea's HEAVE fraction (sea_d) is still
@@ -9638,8 +9664,13 @@ function blSwimWater(d, chop) {
   // back off the wall (SITE.surgeWallReflect), capped (surgeWallMaxPts). Zero below
   // surgeWallTideLo and zero on a flat day, so it can only make a big-tide day with real
   // energy rougher.
-  const wall_d = surgeWallDemerits(tideM, s1_d + sea_d);
-  const rawBay = s1_d + sea_d + tide_d + wall_d;  // swell + sea heave + tide + wall reflection
+  const htMax  = SITE.surgeHighTideMaxPts;
+  const wall_d = (htMax != null && isFinite(htMax))
+    ? Math.max(0, Math.min(surgeWallDemerits(tideM, s1_d + sea_d), htMax - Math.max(0, tide_d)))
+    : surgeWallDemerits(tideM, s1_d + sea_d);
+  const stackBay = s1_d + sea_d + tide_d + wall_d;  // swell + sea heave + tide + wall reflection
+  const rawBay = surgeSoftCeiling(stackBay);
+  const ceil_d = rawBay - stackBay;                 // <= 0; the soft ceiling's cut, for the breakdown
   // SURGE IS NOW THE WORST POINT ON THE LINE, NOT ONE NODE (12 Sep 2026). The bay
   // term above is scored at Bower Lane; pointSurge is the point you pass on the
   // way there. Take the WORSE of the two and remember which — a swimmer wants the
@@ -9668,7 +9699,7 @@ function blSwimWater(d, chop) {
   // summing. The point term is its own key alongside them, and `locus` says which of
   // the two the band above was actually classified on.
   return { label: z[0], cls: z[1], score: score, raw: rawBL, greenEdge: t.steady, locus: locus,
-           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, wall: wall_d, chop: chop_d, point: pt_d, raw: rawBL } };
+           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, wall: wall_d, ceiling: ceil_d, chop: chop_d, point: pt_d, raw: rawBL } };
 }
 
 // ── WW-NATIVE SURGE — reinstated 2026-08-02 (the retired pre-NS Bower Lane path) ──
@@ -10194,6 +10225,8 @@ function calcScore(d, modelOverride) {
   // signed `tideDir` byte-for-byte — this is gated on useWWInputs, which is FALSE for
   // every NS-fed hour once DEFAULT_SRC flips back to 'ns', so the NS model is untouched.
   if (useWWInputs) tide_d = Math.max(0, tide_d);
+  // NS only: the high tide adds at most entryTideMaxPts (26 Oct 2026). The backup keeps its own calibration.
+  else tide_d = capHighTide(tide_d, SITE.entryTideMaxPts);
 
   // ── Offshore (W) flattening credit — subtracted from the ENTRY total only ───
   // Weight is 1 at offshoreDir and cosine-tapers to 0 at ±offshoreArc, so a SW or NW
@@ -15141,9 +15174,9 @@ function renderGemComparison(h) {
   const wEntry_g = Math.max(0, Math.min(1, wwTx_g));
   const windEntry_g = ws_d_g * (1 - wEntry_g) + ww_d_g * wEntry_g;
   const o_g      = windEntry_g + s1_d_g;
-  const tide_d_g = SITE.tideDir(tideM, {
+  const tide_d_g = capHighTide(SITE.tideDir(tideM, {
     s1_d: s1_d_g, s1Dir: swell1Dir, ww_d: ww_d_g, wwDir: windWaveDir || windDir,
-  }, 'tideGate');
+  }, 'tideGate'), SITE.entryTideMaxPts);
   // Offshore westerly credit — mirrors calcScore by CALLING the same helper rather
   // than restating the rule, so this mirror cannot drift from it again. Clamped to
   // o_g exactly as calcScore clamps to o (a credit can only flatten energy present).
@@ -22322,7 +22355,7 @@ function metricBreakdownHTML(key) {
       // AND the wind-wave. (The note said 70/90 until 27 Sep, a leftover from before.)
       row('Tide effect', f(dm.tide), dm.ww
         ? `(headland, ${f(tideM)} m — WillyWeather backup: swell, from 70°, full at 90°)`
-        : `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 40°, full at 70°)`) +
+        : `(headland, ${f(tideM)} m — swell &amp; wind-wave, from 40°, full at 70°; at most ${f(SITE.entryTideMaxPts)})`) +
       // Credit, so it prints negative — an offshore westerly flattens the swell face
       // at the entry. Only shown when it actually bites.
       (Math.abs(dm.offshore || 0) > 0.05
@@ -22393,6 +22426,8 @@ function metricBreakdownHTML(key) {
       // The backup's curve on the bay (never the point), so a backup hour still adds up.
       (w.ww && Math.abs(w.curve || 0) > 0.05
         ? row('Backup curve', f(w.curve), '(WillyWeather backup: the bay eased, nothing at or above Washy)') : '') +
+      (Math.abs(w.ceiling || 0) > 0.05
+        ? row('High-water ceiling', f(w.ceiling), `(bay demerits above ${f(SITE.surgeSoftKnee)} count at ${Math.round((SITE.surgeSoftSlope || 0) * 100)}%)`) : '') +
       row('At the point', f(w.point || 0), '(long-period swell surging over the shelf — scored at the point, not in the bay)') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       row('Surge demerits', f(w.raw), `(the worse of the two — ${r.water.locus === 'point' ? 'the point' : 'the bay'})`) +
