@@ -7952,6 +7952,20 @@ const SITE_DEFAULTS = {
   surgeWallTideHi:  1.8,   // m — full reflection
   surgeWallReflect: 1.6,   // reflected share of the bay's swell + sea at full reflection; 0 = off
   surgeWallMaxPts:  24,    // ceiling on the reflected demerits at full reflection
+  // ── South swell at the wall — SURGE, bay only (DRAFT 29 Oct 2026, per owner) ─────────
+  // The NSW node sits at the bay mouth and is computed at mean tide, so a long-period
+  // SOUTH swell wrapping round the headland reaches it as a few tens of cm from ~125 deg,
+  // which the BL table all but closes. On 29 Oct (WW 1.5 m 10 s from 176 deg, 1.93 m king
+  // tide) the app read Steady 0.5 while a swimmer called it very surgy, waves over the
+  // walkway, and the cam showed whitewash at the wall peaking at high tide and gone by
+  // 14:45 (tide 0.99 m). Owner's physics: the headland's shallow edge drowns at high tide,
+  // so more of the swell reaches the wall. Term = tide ramp x S-sector gate on the WW
+  // OFFSHORE swell x period gate (8->10 s) x surgeSouthMaxPts x (1 - exp(-H^2 T / 12)).
+  // Multiplicative in tide (no swell, no points). Zero on ENE days, so 14 Sep, 26 Sep and
+  // 25 Oct score exactly as before. 0 turns it off.
+  surgeSouthMaxPts: 45,    // ceiling at full tide for a big long south swell; 0 = off
+  surgeSouthTideLo: 0.5,   // m — below this the south swell breaks on the shelf, nothing at the wall
+  surgeSouthTideHi: 1.7,   // m — full exposure
   // ── High-water ceilings (26 Oct 2026, per owner) — NS path only ──────────────────
   // On 25 Oct 08-09 (1.04 m / 7.5 s ENE sea, 0.6 m swell, tide 1.65-1.71 m) the owner
   // saw yellow/red on BOTH Entry and Surge; the app read Entry 62-66 and Surge 70-78.
@@ -9604,6 +9618,23 @@ function surgeWallDemerits(tideM, energy) {
   return t * t * (3 - 2 * t) * Math.min(R * energy, cap);
 }
 
+// South swell at the wall — see SITE.surgeSouthMaxPts. Reads the WillyWeather OFFSHORE swell
+// (d._ww), because the NSW node is where this energy goes missing. Exactly 0 without a south,
+// long-period swell, so every other day scores as before.
+function surgeSouthWrap(d, tideM) {
+  const cap = (SITE.surgeSouthMaxPts != null) ? SITE.surgeSouthMaxPts : 0;
+  const w = d && d._ww;
+  if (!(cap > 0) || !w || tideM == null || !isFinite(tideM)) return 0;
+  const H = w.swell1H || 0, T = w.swell1P || 0, D = w.swell1Dir || 0;
+  if (!(H > 0) || !(T > 0)) return 0;
+  const ss = (x, a, b) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const lo = (SITE.surgeSouthTideLo != null) ? SITE.surgeSouthTideLo : 0.5;
+  const hi = (SITE.surgeSouthTideHi != null) ? SITE.surgeSouthTideHi : 1.7;
+  const g = ss(D, 140, 155) * (1 - ss(D, 190, 210)) * ss(T, 8, 10) * ss(tideM, lo, Math.max(lo + 0.05, hi));
+  if (!(g > 0)) return 0;
+  return g * cap * (1 - Math.exp(-(H * H * T) / 12));
+}
+
 // High-water ceilings (26 Oct 2026) — see SITE_DEFAULTS.entryTideMaxPts. Only ever lowers a
 // positive tide add; the low-tide credit passes straight through.
 function capHighTide(tide_d, max) {
@@ -9668,7 +9699,8 @@ function blSwimWater(d, chop) {
   const wall_d = (htMax != null && isFinite(htMax))
     ? Math.max(0, Math.min(surgeWallDemerits(tideM, s1_d + sea_d), htMax - Math.max(0, tide_d)))
     : surgeWallDemerits(tideM, s1_d + sea_d);
-  const stackBay = s1_d + sea_d + tide_d + wall_d;  // swell + sea heave + tide + wall reflection
+  const south_d = surgeSouthWrap(d, tideM);         // south swell at the wall (DRAFT, see SITE)
+  const stackBay = s1_d + sea_d + tide_d + wall_d + south_d;  // swell + sea heave + tide + wall reflection + south swell
   const rawBay = surgeSoftCeiling(stackBay);
   const ceil_d = rawBay - stackBay;                 // <= 0; the soft ceiling's cut, for the breakdown
   // SURGE IS NOW THE WORST POINT ON THE LINE, NOT ONE NODE (12 Sep 2026). The bay
@@ -9699,7 +9731,7 @@ function blSwimWater(d, chop) {
   // summing. The point term is its own key alongside them, and `locus` says which of
   // the two the band above was actually classified on.
   return { label: z[0], cls: z[1], score: score, raw: rawBL, greenEdge: t.steady, locus: locus,
-           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, wall: wall_d, ceiling: ceil_d, chop: chop_d, point: pt_d, raw: rawBL } };
+           parts: { swell1: s1_d, windWave: sea_d, tide: tide_d, wall: wall_d, south: south_d, ceiling: ceil_d, chop: chop_d, point: pt_d, raw: rawBL } };
 }
 
 // ── WW-NATIVE SURGE — reinstated 2026-08-02 (the retired pre-NS Bower Lane path) ──
@@ -17877,6 +17909,9 @@ const TUNE_PARAMS = [
   { key:'surgeWallMaxPts', label:'SURGE · Wall reflection — ceiling (pts)', min:0, max:60, step:1, hint:'LOCAL — no sheet cell. The most the wall can add at full reflection, however big the sea. Stops a big wind-sea doubling the bay.' },
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
+  { key:'surgeSouthMaxPts', label:'SURGE · South swell at the wall — strength (pts)', min:0, max:60, step:1, hint:'LOCAL — DRAFT 29 Oct 2026, no sheet cell. Most a big long SOUTH swell (WW offshore, 155-190 deg, 10 s+) can add to the bay at full tide; a 1.5 m 10 s swell gets ~85% of it. 0 turns it off. 45 reads 29 Oct 11-13 Surgy ~38.' },
+  { key:'surgeSouthTideLo', label:'SURGE · South swell at the wall — starts (m tide)', min:0, max:1.5, step:0.05, hint:'LOCAL — DRAFT. Below this tide the south swell breaks on the shelf and nothing reaches the wall. 0.5 m.' },
+  { key:'surgeSouthTideHi', label:'SURGE · South swell at the wall — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — DRAFT. Tide at which the full strength applies (smoothstep between). 1.7 m puts 29 Oct 14:45 (0.99 m) at ~14, Steady, when the last wash was seen.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
   { key:'mlBackup', label:'BACKUP · ML model while NSW is unavailable (0 off, 1 on)', min:0, max:1, step:1, hint:'LOCAL — no sheet cell. 1 (default) = automatic: while NSW is stale (newest run 48 h old, a day overdue) or gone, Entry and Surge come from the ML model (ml/nsw-ml.json) and the app no longer fails over to vecchio.html. 0 = the WillyWeather backup as before. Push live to switch everyone.' },
   { key:'pointMinH', label:'SURGE · Point minimum swell height (m)', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Below this swell height the point term is EXACTLY zero, whatever the period. 0.3 m since 15 Sep 2026.' },
@@ -17930,6 +17965,7 @@ const TUNE_LIVE_KEYS = [
   'chopLeeFactor', 'chopLeeFrom', 'chopLeeTo', 'chopWindGain',
   'pointSens', 'pointPeriodLo', 'pointWashyMult', 'pointMinH', 'mlBackup',
   'surgeWallReflect', 'surgeWallTideLo', 'surgeWallTideHi', 'surgeWallMaxPts',
+  'surgeSouthMaxPts', 'surgeSouthTideLo', 'surgeSouthTideHi',
 ];
 // The New NS cell a sheet-backed knob must be typed into, read off its own hint
 // ("New NS AQ2 — COPY here") so there is no second list to fall out of step.
@@ -18092,6 +18128,9 @@ const TW_GROUPS = [
       { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the point</b>, and this scales the point. The point is the one spot on the line where long-period swell is concentrated rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointPeriodLo', name:'Point period floor', tag:'LIVE', desc:'Below this period the point term is <b>exactly zero</b> — long swell feels the shelf, short swell does not. This is what keeps ordinary days scoring as they always did. The point term is capped at the <b>Surgy edge</b> below, so the point alone can reach Surgy but never Washy — unless the release below is on.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointWashyMult', name:'Point Washy release', tag:'DRAFT', desc:'<b>0 = off.</b> On a long-period swell (≥14 s) that keeps building, lets the point go past the Surgy cap once its energy reaches this many × the Surgy edge — so a 1.4 m 15 s SE swell no longer reads the same as a 0.6 m one. At 15 s: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. Washy under a Caution entry makes the day <b>dangerous</b>.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'surgeSouthMaxPts', name:'South swell at the wall', tag:'DRAFT', desc:'A long <b>south</b> swell offshore (WillyWeather, 155–190°, 10 s+) that the NSW node misses. Points it can add to the bay at full tide; a 1.5 m 10 s swell gets ~85%. <b>0 = off.</b> Zero on ENE days.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'surgeSouthTideLo', name:'South swell — starts (m tide)', tag:'DRAFT', desc:'Below this tide the swell breaks on the shelf and nothing reaches the wall.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'surgeSouthTideHi', name:'South swell — full (m tide)', tag:'DRAFT', desc:'Tide at which the full strength applies; smooth in between. 1.7 puts 29 Oct 14:45 (0.99 m) at ~14, Steady.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
     bands:{ label:'Bands', edges:'AQ10:AQ13', items:[
       { key:'surgeThresholds.steady', lab:'Steady ≤' },
@@ -22416,13 +22455,14 @@ function metricBreakdownHTML(key) {
         ? `(${f(tideM)} m — WillyWeather backup: the Bower tide on the swell, no direction gate)`
         : `(${f(tideM)} m — headland; 10% at 10°, 20% at 40°, full at 80°)`) +
       ((w.wall || 0) > 0.0005 ? row('Wall reflection', f(w.wall), '(high tide: waves reach the wall and bounce back into the bay)') : '') +
+      ((w.south || 0) > 0.0005 ? row('South swell at the wall', f(w.south), '(offshore south swell wrapping in; more of it reaches the wall as the tide rises)') : '') +
       `<div style="border-top:1px solid var(--border);margin:5px 0;"></div>` +
       // TWO COLUMNS SINCE 12 Sep 2026. Everything above is the BAY, scored at Bower
       // Lane; the point is scored separately and Surge is the WORSE of the two. Without
       // these two rows the printed stack stops reconciling with the demerit total on a
       // point day — the exact defect the heave row was added to fix, and the reason the
       // point could not simply be folded into the swell row.
-      row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0) + (w.wall || 0))) +
+      row('Bay stack', f((w.swell1 || 0) + (w.windWave || 0) + (w.tide || 0) + (w.wall || 0) + (w.south || 0))) +
       // The backup's curve on the bay (never the point), so a backup hour still adds up.
       (w.ww && Math.abs(w.curve || 0) > 0.05
         ? row('Backup curve', f(w.curve), '(WillyWeather backup: the bay eased, nothing at or above Washy)') : '') +
