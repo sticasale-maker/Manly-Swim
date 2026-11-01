@@ -15,6 +15,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#113541">
 <meta name="color-scheme" content="dark">
+<script>try{var hcV=localStorage.getItem('swim_high_contrast');if(!hcV){var hcM=document.cookie.match(/(?:^|; )swim_high_contrast=([^;]*)/);hcV=hcM&&hcM[1];}if(hcV==='1')document.documentElement.classList.add('hc');}catch(e){}</script>
 <title>Swim Manly — Ocean swim forecast</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Swim Manly">
@@ -3798,6 +3799,32 @@
   .more-item.more-coffee:active, .more-item.more-coffee:hover { background: #f1dcb2; }
   .more-item.more-coffee svg { stroke: #c97d1a; stroke-width: 1.9; }
   .more-item.more-coffee small { color: #5b5240; }
+  /* ── HIGH CONTRAST (More › High contrast, per device) ────────────────
+     White cards and darker secondary ink on the same navy page; the tan is the
+     default look. Colour only: nothing here re-derives a verdict. Set before first
+     paint by the <head> script, stored as swim_high_contrast. */
+  html.hc {
+    --card:#ffffff; --sand:#ffffff; --foam:#ffffff;
+    --dim:#34485a; --ocean:#1a5f7c; --map-frame:#ffffff;
+    --amber:#6b4600; --yellow:#b4560f; --red:#b02a1e;
+  }
+  /* Sits directly on the navy page, so these two tokens go light instead of dark. */
+  html.hc .footer-logo, html.hc .wrap > p, html.hc .page-footer,
+  html.hc .status-bar, html.hc .tab-water-head { --dim:#c8d4da; --ocean:#7ec8e3; }
+  html.hc .app-version { opacity:1; }
+  html.hc .long-range .lr-label, html.hc #tabRibbon .tr-when { color:#dfe8ec; }
+  html.hc .tabbar-btn:not([aria-selected="true"]) { color:#c8d4da; }
+  html.hc #ptr-indicator, html.hc .more-panel { background:#fff; }
+  /* :where keeps this below the bluebottle alert fills, which must keep their colours. */
+  html.hc :where(.community), html.hc .bb-strip.bb-quiet { background:#fff; }
+  html.hc .chop-graph-now .h.sw-wind-h, html.hc .sw-wind-cap { color:#8a5a10; }
+  html.hc .metric-block.green, html.hc .metric-block.amber, html.hc .metric-block.yellow,
+  html.hc .metric-block.orange, html.hc .metric-block.red, html.hc .metric-block.none,
+  html.hc .metrics-panel .metric-block.sand-block { background:#fff; }
+  .more-switch { flex:none; width:40px; height:24px; border-radius:12px; background:#5b7683; position:relative; transition:background .15s; }
+  .more-switch::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .15s; }
+  #moreContrast[aria-checked="true"] .more-switch { background:var(--ocean); }
+  #moreContrast[aria-checked="true"] .more-switch::after { transform:translateX(16px); }
 </style>
 </head>
 <body>
@@ -6014,6 +6041,9 @@
   <button type="button" class="more-item more-settings" data-more="settings">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
     <span>Display &amp; swim times<small>Indicator style, character, time picker, usual swim times, where your heart is</small></span><span class="chev">&rsaquo;</span></button>
+  <button type="button" class="more-item" data-more="contrast" id="moreContrast" role="switch" aria-checked="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" stroke="none"/></svg>
+    <span>High contrast<small>White cards and darker text, easier to read</small></span><span class="more-switch" aria-hidden="true"></span></button>
   </section>
   <!-- Install the tile: always here for anyone who dismissed the banner and later wants
        it (26 Sep 2026, per user). Hidden by default; the Add-to-Home-Screen script shows
@@ -6207,6 +6237,12 @@
     if (e.target.closest('#annWhatsNew')) { setMore(false); return; }
     var b = e.target.closest('[data-more]'); if (!b) return;
     var what = b.getAttribute('data-more');
+    if (what === 'contrast') {   // stays open, so the change shows straight away
+      var hcOn = document.documentElement.classList.toggle('hc');
+      b.setAttribute('aria-checked', hcOn ? 'true' : 'false');
+      if (window.persistSet) window.persistSet('swim_high_contrast', hcOn ? '1' : '0');
+      return;
+    }
     setMore(false);
     if (what === 'sections' || what === 'settings') {
       openPanelSheet(what);
@@ -6218,6 +6254,8 @@
       if (typeof window.a2hsOpen === 'function') window.a2hsOpen();
     }
   });
+
+  document.getElementById('moreContrast').setAttribute('aria-checked', document.documentElement.classList.contains('hc') ? 'true' : 'false');
 
   // Move the view switch and the feedback card into the sheet. Moving, not copying,
   // keeps every listener already attached to them.
