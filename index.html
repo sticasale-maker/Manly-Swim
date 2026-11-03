@@ -15998,6 +15998,8 @@ async function fetchBeachwatch() {
     fetchFresh().then(function(fresh) {
       if (fresh && fresh.forecast !== cache.data.forecast) {
         try { renderPollution(fresh); } catch(e) {}
+        // waterQualityLine() reads this cache, so the Oracle's caution line must follow.
+        try { if (typeof refreshCommunitySummary === 'function') refreshCommunitySummary(); } catch(e) {}
       }
     }).catch(function(){});
     return cache.data;
@@ -16075,6 +16077,21 @@ function renderPollution(bw) {
   if (txt) { txt.className = `pollution-text ${cls}`; txt.textContent = full; }
   if (sb)  sb.textContent = sub;
 }
+
+// The pollution card's own refresh (4 Nov 2026). It used to be fetched only by
+// loadAndRender, so an open app showed the morning's verdict until someone pulled to
+// refresh, while the wind beside it moved every 5 min. Same cadence as the wind obs:
+// a timer while visible, and on every return to the front. fetchBeachwatch is the
+// throttle: inside BW_CACHE_TTL it never touches the network, and past it it repaints
+// the cached verdict and revalidates in the background. Never paints a failure over a
+// good card, and the full load still owns the first paint.
+function refreshPollutionOnly() {
+  if (document.hidden || !_forecastRendered) return;
+  fetchBeachwatch().then(function (bw) { if (bw) renderPollution(bw); })
+    .catch(function (e) { diag('BW refresh failed (isolated): ' + e.message); });
+}
+setInterval(refreshPollutionOnly, 5 * 60 * 1000);
+document.addEventListener('visibilitychange', refreshPollutionOnly);
 
 // =============================================================================
 // MAIN LOAD — WillyWeather (primary) + Open-Meteo Marine/Weather (supplementary)
