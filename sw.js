@@ -104,10 +104,12 @@ const PASSTHROUGH_HOSTS = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
-      // Cache what we can; don't let one failure block the install
+      // Cache what we can; don't let one failure block the install.
+      // cache:'reload' skips the phone's HTTP cache (GitHub Pages sends max-age=600), so a
+      // new build never pre-caches the previous build's shell (5 Nov 2026).
       return Promise.allSettled(
         SHELL_ASSETS.map(url =>
-          cache.add(url).catch(err => console.warn('[SW] pre-cache failed:', url, err))
+          cache.add(new Request(url, { cache: 'reload' })).catch(err => console.warn('[SW] pre-cache failed:', url, err))
         )
       );
     }).then(() => self.skipWaiting())
@@ -228,9 +230,18 @@ self.addEventListener('fetch', event => {
   // Only handle GET requests
   if (event.request.method !== 'GET') return;
 
-  // Network-first: try network, update cache, fall back to cache
+  // Network-first: try network, update cache, fall back to cache.
+  // An app open (navigation) asks the server every time (cache:'no-cache', a cheap 304
+  // when nothing changed), so a release reaches the phone on its next open instead of
+  // up to 10 minutes later from the HTTP cache (5 Nov 2026). A navigate-mode Request
+  // can't take an init, hence the URL. A redirected answer can't be handed back to a
+  // navigation, so that rare case falls back to the plain fetch.
+  const fromNetwork = event.request.mode === 'navigate'
+    ? fetch(event.request.url, { cache: 'no-cache', credentials: 'same-origin' })
+        .then(r => r.redirected ? fetch(event.request) : r)
+    : fetch(event.request);
   event.respondWith(
-    fetch(event.request)
+    fromNetwork
       .then(networkResponse => {
         // Only cache valid same-origin or CORS responses
         if (
