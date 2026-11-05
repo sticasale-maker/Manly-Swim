@@ -65,13 +65,20 @@
   html { font-size: clamp(13px, 3.4vw, 15px); }
   /* Solid strip under the iPhone status bar (5 Nov 2026). With viewport-fit=cover and
      a translucent status bar, page content scrolls up under the clock, and iOS frosts
-     whatever sits there, so headings read as a smeared blur. Painting the app's own
-     ground colour over the safe-area inset means only flat colour ever goes under it.
+     whatever sits in the top band, so text there reads as a smeared blur. Painting the
+     app's own ground colour over --top-clear means only flat colour ever goes there.
      Height 0 on phones without a notch, so it changes nothing there. It sits over the
      page and under the splash (10000); popups keep clear of the inset themselves. */
+  /* --top-clear: the status bar PLUS the band below it that iOS frosts (about 44px
+     on a notched iPhone, measured off two owner screenshots, 5-6 Nov 2026). Anything
+     placed or scrolled into that band is smeared, so the strip below paints it solid
+     and every top inset in the app uses this instead of env(safe-area-inset-top).
+     The extra band is scaled off the inset, so a phone with no notch (inset 0) and
+     a desktop browser get 0 and nothing moves. */
+  :root { --top-clear: calc(env(safe-area-inset-top, 0px) + min(44px, calc(env(safe-area-inset-top, 0px) * 0.75))); }
   body::before {
     content: ""; position: fixed; top: 0; left: 0; right: 0;
-    height: env(safe-area-inset-top, 0px);
+    height: var(--top-clear);
     background: #113541; z-index: 9999; pointer-events: none;
   }
   body {
@@ -240,7 +247,7 @@
   header {
     /* Bottom padding trimmed: the Complete/Custom row sits directly beneath and
        supplies its own spacing, so the old 10px just stacked dead height. */
-    padding:calc(env(safe-area-inset-top) + 10px) 0 4px;
+    padding:calc(var(--top-clear) + 10px) 0 4px;
     display:flex; align-items:flex-start; justify-content:space-between;
   }
   .logo {
@@ -1063,7 +1070,7 @@
   #wxAlertNever { display: block; margin: 10px auto 0; padding: 6px 8px; border: 0; background: none;
     color: var(--dim, #4a5f6e); font: 12px 'Inter', sans-serif; text-decoration: underline; cursor: pointer; }
   #wxAlertOk:focus-visible, #wxAlertNever:focus-visible, #wxAlertClose:focus-visible { outline: 2px solid #1e6c8c; outline-offset: 2px; }
-  #wxAlertClose { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 10px); right: 10px; width: 40px; height: 40px;
+  #wxAlertClose { position: absolute; top: calc(var(--top-clear) + 10px); right: 10px; width: 40px; height: 40px;
     padding: 0; border: none; border-radius: 50%; background: rgba(6,30,46,0.62); color: #fff; font-size: 22px; line-height: 40px;
     text-align: center; cursor: pointer; box-shadow: 0 2px 10px rgba(6,30,46,.34); }
 
@@ -2376,7 +2383,7 @@
   .chop-graph-wrap.sw-zoom {
     position:fixed; inset:0; z-index:9000; margin:0; border-radius:0; border:none;
     background:var(--bg,#eaf3f7);
-    padding:max(12px, env(safe-area-inset-top)) 12px 12px;
+    padding:max(12px, var(--top-clear)) 12px 12px;
     display:flex; flex-direction:column; justify-content:center; gap:6px;
     overflow:auto; -webkit-overflow-scrolling:touch;
   }
@@ -2563,7 +2570,7 @@
   .radar-wrap.radar-zoom {
     position:fixed; inset:0; z-index:9000; margin:0; border-radius:0; border:none;
     background:var(--bg,#eaf3f7);
-    padding:max(12px, env(safe-area-inset-top)) 12px 12px;
+    padding:max(12px, var(--top-clear)) 12px 12px;
     display:flex; flex-direction:column; justify-content:center; gap:6px;
     overflow:auto; -webkit-overflow-scrolling:touch;
   }
@@ -3394,11 +3401,11 @@
     max-height: 100vh; max-height: 100dvh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
+    padding: calc(var(--top-clear) + 16px) 16px calc(env(safe-area-inset-bottom) + 24px);
     box-shadow: 0 10px 40px rgba(6,46,62,0.35);
   }
   .about-close {
-    position: sticky; top: calc(env(safe-area-inset-top) + 8px);
+    position: sticky; top: calc(var(--top-clear) + 8px);
     display: flex; align-items: center; justify-content: center;
     margin-left: auto; margin-bottom: 6px;
     z-index: 20;
@@ -3658,7 +3665,7 @@
   /* The header holds nothing visible any more (logo moved to the foot, links to More), so
      it keeps only the safe-area inset: no dead band above the date. The model badge still
      shows when it is on. */
-  body.tabs-on .wrap > header { padding: env(safe-area-inset-top, 0px) 0 0; }
+  body.tabs-on .wrap > header { padding: var(--top-clear) 0 0; }
   body.tabs-on .header-sub { margin-top: 0; font-size: 0; }
   body.tabs-on #gem-badge { line-height: 1.6; }
 
@@ -25032,12 +25039,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annOverlay')) return;
     var css = document.createElement('style');
     css.textContent =
-      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:max(12px, calc(env(safe-area-inset-top, 0px) + 8px)) 12px max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
+      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:max(12px, calc(var(--top-clear) + 8px)) 12px max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
       "#annOverlay.show{display:flex;}" +
       "#annPopup{background:rgba(255,255,255,0.30);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:14px;max-width:min(94vw,460px);width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:100%;display:flex;flex-direction:column;}" +
       "#annImg{width:100%;max-height:64dvh;object-fit:contain;background:#eef2f4;display:none;}" +
       "#annPopup.ann-imageonly{background:transparent;box-shadow:none;max-width:none;width:auto;max-height:none;overflow:visible;}" +
-      "#annPopup.ann-imageonly #annImg{width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));object-fit:contain;background:transparent;border-radius:12px;}" +
+      "#annPopup.ann-imageonly #annImg{width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px - var(--top-clear) - env(safe-area-inset-bottom, 0px));object-fit:contain;background:transparent;border-radius:12px;}" +
       "#annPopup.ann-imageonly #annHint{color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.7);}" +
       "#annBody{padding:16px 18px 6px;overflow-y:auto;}" +
       "#annTitle{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:26px;line-height:1.05;color:var(--deep,#113541);margin-bottom:9px;}" +
@@ -25099,7 +25106,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".ann-vid-sound.on{left:auto;right:10px;bottom:10px;transform:none;padding:7px 10px;font-size:15px;}" +
       ".ann-vid-sound[hidden]{display:none;}" +
       ".ann-card.ann-vidonly .ann-video{margin:0 auto;}" +
-      ".ann-card.ann-vidonly .ann-video video{max-height:calc(100dvh - 90px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));border-radius:16px;}" +
+      ".ann-card.ann-vidonly .ann-video video{max-height:calc(100dvh - 90px - var(--top-clear) - env(safe-area-inset-bottom, 0px));border-radius:16px;}" +
       ".ann-card.ann-vidonly .ann-c-text p{margin:0;}" +
       ".ann-vid-sound:focus-visible{outline:2px solid #fff;outline-offset:2px;}" +
       "#annWhatsNew{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
@@ -25108,7 +25115,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       "#annWhatsNew.unseen .ann-dot{display:inline-block;}" +
       // Sits on the OVERLAY, not the card: the card can be a full-bleed image
       // or a full-screen dashboard with overflow:hidden, which would clip it.
-      "#annClose{position:absolute;top:calc(env(safe-area-inset-top, 0px) + 10px);right:10px;z-index:2;width:40px;height:40px;padding:0;border:none;border-radius:50%;background:rgba(6,30,46,0.62);color:#fff;font-size:22px;line-height:40px;text-align:center;cursor:pointer;box-shadow:0 2px 10px rgba(6,30,46,.34);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}" +
+      "#annClose{position:absolute;top:calc(var(--top-clear) + 10px);right:10px;z-index:2;width:40px;height:40px;padding:0;border:none;border-radius:50%;background:rgba(6,30,46,0.62);color:#fff;font-size:22px;line-height:40px;text-align:center;cursor:pointer;box-shadow:0 2px 10px rgba(6,30,46,.34);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);}" +
       "#annClose:focus-visible{outline:2px solid #fff;outline-offset:2px;}";
     document.head.appendChild(css);
     var ov = document.createElement('div'); ov.id = 'annOverlay';
@@ -25418,7 +25425,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     try { document.execCommand('styleWithCSS', false, false); } catch (e) {}   // emit <b>/<i> tags, not inline styles
     var css = document.createElement('style');
     css.textContent =
-      "#annAdminOverlay{position:fixed;inset:0;z-index:99996;display:none;background:rgba(6,30,46,0.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow-y:auto;padding:max(env(safe-area-inset-top),16px) 14px 30px;}" +
+      "#annAdminOverlay{position:fixed;inset:0;z-index:99996;display:none;background:rgba(6,30,46,0.55);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);overflow-y:auto;padding:max(var(--top-clear),16px) 14px 30px;}" +
       "#annAdminOverlay.show{display:block;}" +
       "#annAdminCard{max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:16px;}" +
       ".aa-h{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:22px;color:var(--deep,#113541);}" +
