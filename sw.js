@@ -24,6 +24,9 @@ const SHELL_ASSETS = [
   './images/logos/icon-180.png',
   './images/logos/favicon-32.png',
   './images/marco2.png',
+  // Defibrillator page (5 Nov 2026): must open with no signal on the beach.
+  './aed.html',
+  './images/aed-cabinet.webp',
   // On the sand weather picture (14 Oct 2026): the painted promenade and its figures, so the
   // picture paints in a car park with no signal, like the rows under it.
   './images/sand/promenade.webp',
