@@ -63,6 +63,17 @@
   /* Fluid root: 13px on 320px phones → 14px at 390px → caps at 15px on wide screens.
      All rem/em values scale proportionally so the layout looks consistent everywhere. */
   html { font-size: clamp(13px, 3.4vw, 15px); }
+  /* Solid strip under the iPhone status bar (5 Nov 2026). With viewport-fit=cover and
+     a translucent status bar, page content scrolls up under the clock, and iOS frosts
+     whatever sits there, so headings read as a smeared blur. Painting the app's own
+     ground colour over the safe-area inset means only flat colour ever goes under it.
+     Height 0 on phones without a notch, so it changes nothing there. It sits over the
+     page and under the splash (10000); popups keep clear of the inset themselves. */
+  body::before {
+    content: ""; position: fixed; top: 0; left: 0; right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: #113541; z-index: 9999; pointer-events: none;
+  }
   body {
     background: #113541;
     min-height:100vh;
@@ -25021,12 +25032,12 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if ($('annOverlay')) return;
     var css = document.createElement('style');
     css.textContent =
-      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:12px;background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
+      "#annOverlay{position:fixed;inset:0;z-index:99995;display:none;align-items:center;justify-content:center;padding:max(12px, calc(env(safe-area-inset-top, 0px) + 8px)) 12px max(12px, calc(env(safe-area-inset-bottom, 0px) + 8px));background:rgba(6,30,46,0.5);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);}" +
       "#annOverlay.show{display:flex;}" +
-      "#annPopup{background:rgba(255,255,255,0.30);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:14px;max-width:min(94vw,460px);width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:92dvh;display:flex;flex-direction:column;}" +
+      "#annPopup{background:rgba(255,255,255,0.30);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-radius:14px;max-width:min(94vw,460px);width:100%;overflow:hidden;box-shadow:0 12px 34px rgba(6,30,46,0.32);max-height:100%;display:flex;flex-direction:column;}" +
       "#annImg{width:100%;max-height:64dvh;object-fit:contain;background:#eef2f4;display:none;}" +
       "#annPopup.ann-imageonly{background:transparent;box-shadow:none;max-width:none;width:auto;max-height:none;overflow:visible;}" +
-      "#annPopup.ann-imageonly #annImg{width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px);object-fit:contain;background:transparent;border-radius:12px;}" +
+      "#annPopup.ann-imageonly #annImg{width:auto;height:auto;max-width:calc(100vw - 24px);max-height:calc(100dvh - 56px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));object-fit:contain;background:transparent;border-radius:12px;}" +
       "#annPopup.ann-imageonly #annHint{color:#fff;text-shadow:0 1px 4px rgba(0,0,0,0.7);}" +
       "#annBody{padding:16px 18px 6px;overflow-y:auto;}" +
       "#annTitle{font-family:'Bebas Neue',sans-serif;letter-spacing:1px;font-size:26px;line-height:1.05;color:var(--deep,#113541);margin-bottom:9px;}" +
@@ -25088,7 +25099,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".ann-vid-sound.on{left:auto;right:10px;bottom:10px;transform:none;padding:7px 10px;font-size:15px;}" +
       ".ann-vid-sound[hidden]{display:none;}" +
       ".ann-card.ann-vidonly .ann-video{margin:0 auto;}" +
-      ".ann-card.ann-vidonly .ann-video video{max-height:calc(100dvh - 90px);border-radius:16px;}" +
+      ".ann-card.ann-vidonly .ann-video video{max-height:calc(100dvh - 90px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));border-radius:16px;}" +
       ".ann-card.ann-vidonly .ann-c-text p{margin:0;}" +
       ".ann-vid-sound:focus-visible{outline:2px solid #fff;outline-offset:2px;}" +
       "#annWhatsNew{position:fixed;right:14px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:99990;display:none;align-items:center;gap:7px;padding:8px 13px;border-radius:999px;border:1px solid var(--ocean,#4a8fad);background:#fff;color:var(--ocean,#4a8fad);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;box-shadow:0 4px 16px rgba(6,40,55,.22);}" +
