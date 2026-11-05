@@ -8104,7 +8104,10 @@ const SITE_DEFAULTS = {
   // Bounded THREE ways — never more than offshoreMaxPts, never more than offshoreMaxFrac
   // of the swell/wind demerits present (o), and zero outside the arc.
   // CHOP and SURGE are untouched: an offshore wind still ruffles the bay surface.
-  offshoreDir:     270,  // bearing (deg, wind FROM) of maximum flattening — due W
+  offshoreDir:     255,  // bearing (deg, wind FROM) of maximum flattening. 270 → 255 (5 Nov 2026, owner: a 22-28 km/h WSW at 241-248° left the entry ~10 cm while the arc barely counted it)
+  // The same offshore weight also lowers the ramp HEIGHT (shelteredRampH), which had no wind
+  // term: height × (1 − offshoreRampK × credit/offshorePts). 0 = off. Entry only; 5 Nov 2026.
+  offshoreRampK:   0.8,
   offshoreArc:     45,   // half-width (deg): full weight at 270, zero at 225/315. 30 → 35 (11 Aug) → 60 → 45; BAKED from live KV (saved 2026-08-27T21:23Z, unchanged in it).
   offshoreRefKmh:  30,   // reference wind speed for the quoted credit
   offshorePts:     20,   // Entry points credited at offshoreRefKmh from offshoreDir. 10 → 11 (11 Aug) → 15 → 20; BAKED from live KV (saved 2026-08-27T21:23Z, unchanged in it).
@@ -9030,7 +9033,11 @@ function shelteredRampH(h) {
   const tg = function (d) { try { return SITE.tideGate ? SITE.tideGate(d) : 1; } catch (e) { return 1; } };
   const Hs2 = (h.swell1H || 0) * (h.swell1H || 0) * nsTx * (1 + amp * tg(h.swell1Dir))
             + (h.windWaveH || 0) * (h.windWaveH || 0) * wwTx * (1 + amp * tg(wwDir));
-  return Math.sqrt(Math.max(0, Hs2));
+  // An offshore wind flattens what reaches the ramp, not only the score (owner, 5 Nov 2026).
+  const k = (SITE.offshoreRampK != null) ? SITE.offshoreRampK : 0;
+  const pts = (SITE.offshorePts != null) ? SITE.offshorePts : 10;
+  const flat = (k > 0 && pts > 0) ? Math.min(1, offshoreFlatten(h.windKmh, h.windDir) / pts) : 0;
+  return Math.sqrt(Math.max(0, Hs2)) * (1 - k * flat);
 }
 // Both heights are modelled from NSW's nearshore swell and sea, so a row without them
 // has no height to give. The WillyWeather backup and a no-call hour carry zeros in
@@ -17994,7 +18001,7 @@ const TUNE_PARAMS = [
   // they live only in SITE, so the panel is the only place to turn them. Slider moves
   // re-score live through offshoreFlatten(), which reads SITE on every call.
   { key:'offshorePts', label:'ENTRY · Offshore W credit (pts @ 30 km/h)', min:0, max:25, step:0.5, hint:'LOCAL — no sheet cell. Entry points SUBTRACTED from the demerit total for a due-W wind at 30 km/h (scales linearly with speed). 0 disables the rule. Higher = a westerly makes entry look easier.' },
-  { key:'offshoreArc', label:'ENTRY · Offshore arc (± deg)',              min:0, max:90, step:5,   hint:'LOCAL — no sheet cell. Half-width of the flattening sector about 270°. Full credit on-axis, cosine-taper to zero at the edge. 30 = 240–300° counts; 0 disables the rule.' },
+  { key:'offshoreArc', label:'ENTRY · Offshore arc (± deg)',              min:0, max:90, step:5,   hint:'LOCAL — no sheet cell. Half-width of the flattening sector about offshoreDir (255°). Full credit on-axis, cosine-taper to zero at the edge. 30 = 240–300° counts; 0 disables the rule.' },
   { key:'offshoreMaxPts', label:'ENTRY · Offshore credit ceiling (pts)',  min:0, max:40, step:1,   hint:'LOCAL — no sheet cell. Hard cap on the credit however hard it blows (default 20, reached ~60 km/h due W). The credit is ALSO capped at the swell+wind subtotal, so it can never invent calm on a flat day.' },
   { key:'offshoreFloorKmh', label:'ENTRY · Offshore credit — wind floor (km/h)', min:0, max:25, step:1, hint:'LOCAL — no sheet cell. Below this westerly speed the credit is ZERO; from here it ramps linearly to the full points at 30 km/h. A land breeze grooms nothing. 0 = old behaviour (credit from the first km/h).' },
   { key:'offshoreMaxFrac', label:'ENTRY · Offshore credit — max share of stack', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. Hardest ceiling on the credit: the largest FRACTION of the swell+wind subtotal a westerly may cancel. 1 = old behaviour (can zero Entry outright and make the sea invisible); 0.6 = it can never take more than 60%.' },
@@ -18142,7 +18149,7 @@ const TW_GROUPS = [
       // prov:'wired' — these have no sheet cell at all; SITE is the only home, so the
       // panel is authoritative rather than a copy-to-cell staging area.
       { key:'offshorePts',    name:'Offshore W credit', tag:'LIVE', desc:'A westerly blows off the land and flattens the swell face, so it <b>subtracts</b> from Entry. Points at 30 km/h from due W, linear in speed. <b>Entry only</b> — Chop and Surge untouched.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
-      { key:'offshoreArc',    name:'Offshore arc (±°)',             desc:'Half-width of the sector about 270°. Full on-axis, cosine-taper to nil at the edge. 0 turns the rule off.',                                                                              cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'offshoreArc',    name:'Offshore arc (±°)',             desc:'Half-width of the sector about 255° (WSW). Full on-axis, cosine-taper to nil at the edge. 0 turns the rule off.',                                                                              cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'offshoreMaxPts', name:'Offshore ceiling',              desc:'Cap on the credit in a gale. Also capped at a share of the swell+wind subtotal — it can only flatten what is there.',                                                                    cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'offshoreFloorKmh', name:'Offshore wind floor', tag:'LIVE', desc:'Westerly speed below which the credit is <b>zero</b> — a land breeze grooms nothing. Ramps from here to the full points at 30 km/h.',                                          cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'offshoreMaxFrac', name:'Offshore max share', tag:'LIVE', desc:'The largest <b>share of the swell+wind stack</b> a westerly may cancel. At 1 it can zero Entry outright and the sea stops moving the number at all.',                                  cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
