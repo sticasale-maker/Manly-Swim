@@ -364,7 +364,7 @@
   .metric-block.none   { background:rgba(74,143,173,0.10);  border:1.5px dashed var(--dim); }
   /* Name + value on one line */
   .metric-header {
-    display:flex; align-items:baseline; gap:8px;
+    display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; row-gap:3px;
   }
   /* Non-colour band encoding. Colour is never the only channel: the dot's SHAPE
      changes with the band, so the rails still read for a colour-blind swimmer and
@@ -448,11 +448,15 @@
      Caution rail that made the chip #e07c2a on a light card, which is unreadable
      at 9.5px. Fixed neutral ink instead; the rail beside it already carries the
      colour, so the chip only has to say which one. */
+  /* Sits AFTER the value, as its own item in the header row (8 Nov 2026). Inside
+     the name (which never shrinks) it pushed the value off a narrow card: "SURG".
+     The header wraps, so when the row is full only this tag drops to a second line;
+     the value always stays beside the name. */
   .metric-setby {
     font-family:'Inter',sans-serif; font-weight:600;
     font-size:9.5px; letter-spacing:0.4px; text-transform:uppercase;
     color:#3f515e; border:1px solid rgba(63,81,94,0.6); border-radius:20px;
-    padding:1px 6px; margin-left:6px; vertical-align:2px;
+    padding:1px 6px; align-self:center; white-space:nowrap; line-height:1.4;
   }
 
   .metric-name {
@@ -13093,18 +13097,18 @@ function renderAnswerLine(result) {
   Object.keys(blocks).forEach(k => {
     const b = document.getElementById(blocks[k]);
     if (!b) return;
-    const nameEl = b.querySelector('.metric-name');
-    const old = nameEl && nameEl.querySelector('.metric-setby');
+    const valEl = b.querySelector('.metric-value');
+    const old = b.querySelector('.metric-setby');
     if (old) old.remove();
     // Nothing is tagged on a good day, or on a day where all three agree — a tag
     // that appears every morning stops being a signal. The other rails are NOT
     // dimmed any more (13 Sep 2026, per user): every rail stays fully lit.
     const mark = driving.has(k) && driving.size < 3 && v.roughLevel !== 'good';
-    if (mark && nameEl) {
+    if (mark && valEl) {
       const tag = document.createElement('span');
       tag.className = 'metric-setby';
       tag.textContent = 'setting today';
-      nameEl.appendChild(tag);
+      valEl.insertAdjacentElement('afterend', tag);
     }
   });
 
