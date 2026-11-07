@@ -8017,7 +8017,10 @@ const SITE_DEFAULTS = {
   // OFFSHORE swell x period gate (8->10 s) x surgeSouthMaxPts x (1 - exp(-H^2 T / 12)).
   // Multiplicative in tide (no swell, no points). Zero on ENE days, so 14 Sep, 26 Sep and
   // 25 Oct score exactly as before. 0 turns it off.
-  surgeSouthMaxPts: 45,    // ceiling at full tide for a big long south swell; 0 = off
+  surgeSouthMaxPts: 30,    // ceiling at full tide for a big long south swell; 0 = off. 45 → 30 (8 Nov 2026, owner: too strong; 29 Oct 11-13 now Drifty ~25)
+  // WillyWeather reports whole-second periods, so 9 → 10 s doubled the term within the hour
+  // (8 Nov 2026: Drifty 23 → Surgy 45). The period is averaged over ±this many hours first.
+  surgeSouthPeriodHalfH: 2,
   surgeSouthTideLo: 0.5,   // m — below this the south swell breaks on the shelf, nothing at the wall
   surgeSouthTideHi: 1.7,   // m — full exposure
   // ── High-water ceilings (26 Oct 2026, per owner) — NS path only ──────────────────
@@ -9682,11 +9685,29 @@ function surgeWallDemerits(tideM, energy) {
 // South swell at the wall — see SITE.surgeSouthMaxPts. Reads the WillyWeather OFFSHORE swell
 // (d._ww), because the NSW node is where this energy goes missing. Exactly 0 without a south,
 // long-period swell, so every other day scores as before.
+// The hour's WillyWeather swell period, averaged with its neighbours in _matrix (see
+// SITE.surgeSouthPeriodHalfH). A row that is not in the matrix keeps its own period.
+let _wwPMap = null, _wwPMapSrc = null, _wwPMapLen = -1;
+function wwSouthPeriod(d) {
+  const own = (d && d._ww && d._ww.swell1P) || 0;
+  const half = (SITE.surgeSouthPeriodHalfH != null) ? SITE.surgeSouthPeriodHalfH : 0;
+  if (!(half > 0) || !d || !d.dateTime || typeof _matrix === 'undefined' || !_matrix.length) return own;
+  if (_wwPMapSrc !== _matrix || _wwPMapLen !== _matrix.length) {
+    _wwPMap = new Map();
+    for (const r of _matrix) if (r && r.dateTime && r._ww && r._ww.swell1P > 0) _wwPMap.set(Date.parse(r.dateTime.replace(' ', 'T')), r._ww.swell1P);
+    _wwPMapSrc = _matrix; _wwPMapLen = _matrix.length;
+  }
+  const t = Date.parse(String(d.dateTime).replace(' ', 'T'));
+  if (!isFinite(t)) return own;
+  let sum = 0, n = 0;
+  for (let k = -half; k <= half; k++) { const p = _wwPMap.get(t + k * 3600e3); if (p > 0) { sum += p; n++; } }
+  return n ? sum / n : own;
+}
 function surgeSouthWrap(d, tideM) {
   const cap = (SITE.surgeSouthMaxPts != null) ? SITE.surgeSouthMaxPts : 0;
   const w = d && d._ww;
   if (!(cap > 0) || !w || tideM == null || !isFinite(tideM)) return 0;
-  const H = w.swell1H || 0, T = w.swell1P || 0, D = w.swell1Dir || 0;
+  const H = w.swell1H || 0, T = wwSouthPeriod(d), D = w.swell1Dir || 0;
   if (!(H > 0) || !(T > 0)) return 0;
   const ss = (x, a, b) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   const lo = (SITE.surgeSouthTideLo != null) ? SITE.surgeSouthTideLo : 0.5;
@@ -14414,9 +14435,16 @@ function renderSnapshot(h, wx) {
     // the bay (CLAUDE.md §2, and see shelteredRampH), and inventing a third at the point
     // is precisely the modelled in-bay figure that rule exists to keep out of sight.
     // The bay number is still one tap away in the breakdown.
+    // The south swell at the wall adds Surge that the bay height cannot show (8 Nov 2026:
+    // "0.1 m in the bay" under a Surgy rail). When that term is most of an off-Steady
+    // reading, name the wall instead, with no height, as the point branch does.
+    const wp = result.water && result.water.parts;
+    const atWall = !!(wp && result.water.locus !== 'point' && wp.south > 0.5 * result.water.raw &&
+      result.water.raw > ((SITE.surgeThresholds && SITE.surgeThresholds.steady) || 20));
     const surgeCap = result.noData ? ''
       : (result.water && result.water.locus === 'point')
       ? 'surge at the point'
+      : atWall ? 'surge at the wall'
       : _nsWaves ? bayH.toFixed(1) + ' m in the bay' : '';
     setMetric('metricSurge', 'metricSurgeVal', 'metricSurgeScore', result.water, false, surgeCap);
     // The call itself, from the labels these three blocks just rendered — so the
@@ -17987,7 +18015,7 @@ const TUNE_PARAMS = [
   { key:'surgeWallMaxPts', label:'SURGE · Wall reflection — ceiling (pts)', min:0, max:60, step:1, hint:'LOCAL — no sheet cell. The most the wall can add at full reflection, however big the sea. Stops a big wind-sea doubling the bay.' },
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
-  { key:'surgeSouthMaxPts', label:'SURGE · South swell at the wall — strength (pts)', min:0, max:60, step:1, hint:'LOCAL — DRAFT 29 Oct 2026, no sheet cell. Most a big long SOUTH swell (WW offshore, 155-190 deg, 10 s+) can add to the bay at full tide; a 1.5 m 10 s swell gets ~85% of it. 0 turns it off. 45 reads 29 Oct 11-13 Surgy ~38.' },
+  { key:'surgeSouthMaxPts', label:'SURGE · South swell at the wall — strength (pts)', min:0, max:60, step:1, hint:'LOCAL — DRAFT 29 Oct 2026, no sheet cell. Most a big long SOUTH swell (WW offshore, 155-190 deg, 10 s+) can add to the bay at full tide; a 1.5 m 10 s swell gets ~85% of it. 0 turns it off. 30 (8 Nov) reads 29 Oct 11-13 Drifty ~25; 45 read it Surgy ~38.' },
   { key:'surgeSouthTideLo', label:'SURGE · South swell at the wall — starts (m tide)', min:0, max:1.5, step:0.05, hint:'LOCAL — DRAFT. Below this tide the south swell breaks on the shelf and nothing reaches the wall. 0.5 m.' },
   { key:'surgeSouthTideHi', label:'SURGE · South swell at the wall — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — DRAFT. Tide at which the full strength applies (smoothstep between). 1.7 m puts 29 Oct 14:45 (0.99 m) at ~14, Steady, when the last wash was seen.' },
   { key:'pointSens', label:'SURGE · Point sensitivity', min:0, max:25, step:0.1, hint:'LOCAL — no sheet cell. Demerit scale on swell energy AT THE POINT; Surge takes the worse of this and the bay. Anchored on 12 Sep 2026 (0.38 m / 15.09 s / 124.6° → ~26, mid-Drifty against the LIVE edges 20/35/50). 0 disables the point entirely and Surge reverts to bay-only. The ceiling is not a knob — it tracks the Surgy edge.' },
