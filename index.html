@@ -11731,6 +11731,9 @@ function _bindDayCardSwipe(card){
   card.addEventListener('pointercancel', function(){ active = false; });
 }
 
+// calcScore cls -> the rail colour of that band (the card's own colours).
+var DW_BAND_FILL = { green:'var(--rail-green)', amber:'var(--rail-amber)',
+                     yellow:'var(--rail-yellow)', red:'var(--rail-red)' };
 function renderDayWindow(dateTimeStr){
   var svg    = document.getElementById('dayWindowSvg');
   var bestEl = document.getElementById('dayWindowBest');
@@ -11756,6 +11759,9 @@ function renderDayWindow(dateTimeStr){
       hhmm:  r.dateTime.substring(11,16),
       dt:    r.dateTime,
       entry: res.entry.score, chop: res.swim.score, surge: res.water.score,
+      // Each metric's BAND, as the card shows it (10 Nov 2026): the cells are painted
+      // from these, so the grid can never disagree with the cards above it.
+      entryCls: res.entry.cls, chopCls: res.swim.cls, surgeCls: res.water.cls,
       combo: wgCombo(res.entry.score, res.swim.score, res.water.score),
       red:   (res.entry.cls === 'red' || res.swim.cls === 'red' || res.water.cls === 'red'),
       noData: !!res.noData,   // no NS data => blank on every row, and no best time
@@ -11810,8 +11816,13 @@ function renderDayWindow(dateTimeStr){
       // data is grey, never green.
       // An hour with no NS data is blank on all three rows, for the same reason.
       var blank = p.noData || ((row[1] === 'chop') && p.noWind);
-      var col = blank ? 'rgba(180,210,230,0.10)' : _wgColor(p[row[1]]);
-      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" fill="'+col+'"/>';
+      // Band colour, the same as that band's section of the card's rail. NOT _wgColor:
+      // that is a gradient over the raw 0-60 score (the Week Ahead's), and a score the
+      // Chop cut-offs call Messy sat mid-gradient, painting a red card's hour yellow-
+      // orange (owner, 10 Nov 2026). Unknown band -> grey, never green (section 8).
+      var band = DW_BAND_FILL[p[row[1] + 'Cls']];
+      var fill = (blank || !band) ? 'rgba(180,210,230,0.10)' : band;
+      cells += '<rect x="'+(L + i*cellW).toFixed(1)+'" y="'+ry+'" width="'+(cellW-1.4).toFixed(1)+'" height="'+rowH+'" rx="2" style="fill:'+fill+'"/>';
     });
   });
 
