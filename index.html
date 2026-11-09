@@ -2186,6 +2186,16 @@
   body.timesel-brass .time-buttons { display:none !important; }
   #timeRoller { display:none; }
   body.timesel-brass #timeRoller { display:block; margin:4px 0 2px; }
+  /* ── "Just bars" (9 Nov 2026): no separate hour picker. The hourly grid under Chop
+     (#dayWindowCard) is tapped instead; the day chips and outlook stay. Scoped to
+     tabs-on so the tune/backtest workbenches (tabs off) keep their slider. */
+  body.tabs-on.timesel-bars #timeSlider,
+  body.tabs-on.timesel-bars #sliderTicks,
+  body.tabs-on.timesel-bars .time-buttons,
+  body.tabs-on.timesel-bars #timeRoller { display:none !important; }
+  /* Never leave a swimmer with no way to pick an hour: with the grid switched off in
+     Choose sections, the tap buttons come back. (:has needs iOS 15.4+.) */
+  body.tabs-on.timesel-bars:has(#dayWindowCard.sec-hidden) .time-buttons { display:grid !important; }
   #timeRoller .tr-read { text-align:center; margin-bottom:6px; }
   #timeRoller .tr-read { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#8ea6b3; }
   #timeRoller .tr-read span { display:block; font-family:'Bebas Neue',sans-serif; font-size:38px; letter-spacing:1.5px; color:#eef3f6; text-transform:none; line-height:1.05; margin-top:2px; }
@@ -4017,6 +4027,13 @@
           </div>
           <div class="ind-label">Brass roller</div>
         </button>
+        <!-- 9 Nov 2026: no separate picker; the hourly grid under Chop is tapped instead. -->
+        <button type="button" class="ind-opt" data-time="bars" aria-pressed="false">
+          <div class="ind-demo" style="grid-template-columns:1fr;padding:7px 4px;">
+            <div class="tsel-demo-bars"><span></span><span></span><span></span></div>
+          </div>
+          <div class="ind-label">Just bars</div>
+        </button>
       </div>
 
       <div class="ind-group" id="homeGroup">
@@ -4220,6 +4237,14 @@
       .tsel-demo-pills span { width: 26px; height: 16px; border-radius: 999px;
         background: rgba(17,53,65,0.12); border: 1px solid rgba(17,53,65,0.28); }
       .tsel-demo-pills span.on { background: var(--ocean); border-color: var(--ocean); }
+      /* "Just bars": three rows of small cells, a miniature of the day grid. */
+      .tsel-demo-bars { display: flex; flex-direction: column; gap: 2px; }
+      .tsel-demo-bars span { height: 5px; border-radius: 1px; background: repeating-linear-gradient(90deg,
+        var(--rail-green) 0 7px, transparent 7px 8px, var(--rail-green) 8px 15px, transparent 15px 16px,
+        var(--rail-amber) 16px 23px, transparent 23px 24px, var(--rail-green) 24px 31px, transparent 31px 32px); }
+      .tsel-demo-bars span:nth-child(2) { background: repeating-linear-gradient(90deg,
+        var(--rail-amber) 0 7px, transparent 7px 8px, var(--rail-yellow) 8px 15px, transparent 15px 16px,
+        var(--rail-amber) 16px 23px, transparent 23px 24px, var(--rail-amber) 24px 31px, transparent 31px 32px); }
     </style>
     <!-- Detail-level toggle (Complete / Custom) + its Custom panel were
          moved to the BOTTOM of this snapshot panel (just before /panel-snapshot). -->
@@ -11756,6 +11781,10 @@ function renderDayWindow(dateTimeStr){
   if (bestEl){
     bestEl.textContent = bw.txt || (bw.why === 'flat' ? 'No standout time — much the same all day' : '');
     bestEl.classList.toggle('dw-best-quiet', !bw.txt);
+    // "Just bars": the grid is the only hour picker, so when there is nothing else to
+    // say, say how to use it. A tip, not a verdict; the best-times guards are untouched.
+    if (!bestEl.textContent && document.body.classList.contains('timesel-bars'))
+      bestEl.textContent = 'Tap an hour to see it';
     bestEl.hidden = !bestEl.textContent;
   }
 
@@ -23565,11 +23594,17 @@ if ('serviceWorker' in navigator) {
   // Time-of-day picker style — 'slider' (default) drag, or 'buttons' tap targets.
   // Both render from the same day rows in renderSlider; a body class swaps which
   // one shows. Choice lives in the Custom panel and persists like the rail style.
-  var TIMESEL_KEY = 'swim_time_style';   // 'slider' | 'buttons' (default) | 'brass'
-  function getTimeStyle(){ var v = _pGet(TIMESEL_KEY); return (v === 'slider' || v === 'brass') ? v : 'buttons'; }
+  var TIMESEL_KEY = 'swim_time_style';   // 'slider' | 'buttons' (default) | 'brass' | 'bars'
+  function getTimeStyle(){ var v = _pGet(TIMESEL_KEY); return (v === 'slider' || v === 'brass' || v === 'bars') ? v : 'buttons'; }
   function applyTimeStyle(v){
     document.body.classList.toggle('timesel-buttons', v === 'buttons');
     document.body.classList.toggle('timesel-brass', v === 'brass');
+    document.body.classList.toggle('timesel-bars', v === 'bars');
+    // The grid's tip line depends on the mode; redraw it for the current hour.
+    try {
+      if (typeof _matrix !== 'undefined' && _matrix && _matrix[_sliderIdx] && typeof renderDayWindow === 'function')
+        renderDayWindow(_matrix[_sliderIdx].dateTime);
+    } catch (e) {}
     var ch = document.getElementById('timeChoice');
     if (ch) ch.querySelectorAll('.ind-opt').forEach(function (o) {
       o.setAttribute('aria-pressed', o.getAttribute('data-time') === v ? 'true' : 'false');
