@@ -20,6 +20,11 @@
 <meta name="theme-color" content="#113541">
 <meta name="color-scheme" content="dark">
 <script>try{var hcV=localStorage.getItem('swim_high_contrast');if(!hcV){var hcM=document.cookie.match(/(?:^|; )swim_high_contrast=([^;]*)/);hcV=hcM&&hcM[1];}if(hcV==='1')document.documentElement.classList.add('hc');}catch(e){}</script>
+<script>/* First open on this device? (10 Nov 2026) Read before anything writes the device id
+   or a preference cookie. New = no swim_device_id AND no swim_* cookie at all (the cookie
+   mirror outlives Safari's 7-day localStorage eviction, so a regular whose storage was
+   cleared still counts as existing). Drives the time picker default: see getTimeStyle. */
+try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)swim_/.test(document.cookie);}catch(e){window._swimFirstOpen=false;}</script>
 <title>Swim Manly — Ocean swim forecast</title>
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Swim Manly">
@@ -23605,7 +23610,11 @@ if ('serviceWorker' in navigator) {
   // Time-of-day picker style — 'slider' (default) drag, or 'buttons' tap targets.
   // Both render from the same day rows in renderSlider; a body class swaps which
   // one shows. Choice lives in the Custom panel and persists like the rail style.
-  var TIMESEL_KEY = 'swim_time_style';   // 'slider' | 'buttons' (default) | 'brass' | 'bars'
+  // 10 Nov 2026 (owner): NEW swimmers start on 'bars', the hourly grid under Chop being
+  // the picker; that choice is saved on their first open (see the init below), so it
+  // holds once the device id exists. Everyone else keeps what they have: an unsaved
+  // value still means the old default, 'buttons'.
+  var TIMESEL_KEY = 'swim_time_style';   // 'slider' | 'buttons' | 'brass' | 'bars'
   function getTimeStyle(){ var v = _pGet(TIMESEL_KEY); return (v === 'slider' || v === 'brass' || v === 'bars') ? v : 'buttons'; }
   function applyTimeStyle(v){
     document.body.classList.toggle('timesel-buttons', v === 'buttons');
@@ -23633,6 +23642,68 @@ if ('serviceWorker' in navigator) {
     try { if (window.track) window.track('time_style', { style: v, explicit: true, changed: 1 }); } catch (e) {}
   }
   window.setTimeStyle = setTimeStyle; window.getTimeStyle = getTimeStyle;
+
+  // ── One-off tip for regulars (10 Nov 2026, owner) ─────────────────────────────
+  // Anyone not on 'bars' is told once that the colour bars now pick the hour, and
+  // where Just bars lives. Their own picker is never changed unless they tap the
+  // button. Shown only when it can be acted on: tabs on, forecast drawn, the grid
+  // not switched off, and no other popup or the splash in the way. Marked seen the
+  // moment it shows, so it can never come back.
+  var BARS_TIP_KEY = 'swim_bars_tip_seen';
+  var BARS_TIP_NAME = { slider: 'slider', buttons: 'time buttons', brass: 'brass roller' };
+  var BARS_TIP_STAY = { slider: 'Your slider stays as it is', buttons: 'Your time buttons stay as they are',
+                        brass: 'Your brass roller stays as it is' };
+  function barsTipBlocked(){
+    var b = document.body, grid = document.getElementById('dayWindowCard');
+    if (!b.classList.contains('tabs-on') || !grid || grid.classList.contains('sec-hidden')) return true;
+    if (typeof _matrix === 'undefined' || !_matrix || !_matrix.length) return true;
+    if (document.querySelector('#annOverlay.show, #wxAlertOverlay.show, #customPanel.show')) return true;
+    var sp = document.getElementById('video-splash');
+    if (sp && getComputedStyle(sp).display !== 'none') return true;
+    return false;
+  }
+  function showBarsTip(){
+    var cur = getTimeStyle(), name = BARS_TIP_NAME[cur] || 'time picker',
+        stay = BARS_TIP_STAY[cur] || 'Your time picker stays as it is';
+    _pSet(BARS_TIP_KEY, '1');
+    if (!document.getElementById('barsTipCss')) {
+      var css = document.createElement('style'); css.id = 'barsTipCss';
+      css.textContent =
+        '#barsTip{position:fixed;inset:0;z-index:99993;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(6,30,46,0.55);}' +
+        '#barsTip .bt-card{background:var(--card,#c8bda0);color:var(--deep,#113541);border-radius:16px;max-width:400px;width:100%;padding:20px 20px 16px;box-shadow:0 12px 34px rgba(6,30,46,0.4);font-family:Inter,sans-serif;}' +
+        '#barsTip h3{font-family:"Bebas Neue",sans-serif;font-weight:400;font-size:26px;letter-spacing:1px;margin:0 0 8px;}' +
+        '#barsTip p{font-size:15px;line-height:1.45;margin:0 0 10px;}' +
+        '#barsTip .bt-path{font-weight:600;}' +
+        '#barsTip .bt-row{display:flex;gap:10px;margin-top:14px;}' +
+        '#barsTip button{flex:1;padding:11px 8px;border-radius:12px;font:600 15px Inter,sans-serif;cursor:pointer;border:1.5px solid var(--deep,#113541);background:transparent;color:var(--deep,#113541);}' +
+        '#barsTip button.bt-go{background:var(--deep,#113541);color:#fff;}';
+      document.head.appendChild(css);
+    }
+    var ov = document.createElement('div'); ov.id = 'barsTip';
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'barsTipH');
+    ov.innerHTML =
+      '<div class="bt-card">' +
+        '<h3 id="barsTipH">Tap the colour bars</h3>' +
+        '<p>The colour bars under Chop now pick the hour: tap any hour to see it, without scrolling through times.</p>' +
+        '<p>' + stay + '. To use just the bars, go to <span class="bt-path">More \u2192 Display &amp; swim times \u2192 Time-of-day picker \u2192 Just bars</span>.</p>' +
+        '<div class="bt-row"><button type="button" class="bt-keep">Keep my ' + name + '</button>' +
+        '<button type="button" class="bt-go">Use just the bars</button></div>' +
+      '</div>';
+    function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
+    ov.querySelector('.bt-keep').addEventListener('click', close);
+    ov.querySelector('.bt-go').addEventListener('click', function(){ setTimeStyle('bars'); close(); });
+    document.body.appendChild(ov);
+    try { if (window.track) window.track('bars_tip', { from: cur }); } catch (e) {}
+  }
+  function scheduleBarsTip(){
+    if (_pGet(BARS_TIP_KEY) || getTimeStyle() === 'bars') return;
+    var tries = 0;
+    (function attempt(){
+      if (_pGet(BARS_TIP_KEY) || getTimeStyle() === 'bars') return;
+      if (!barsTipBlocked()) { showBarsTip(); return; }
+      if (++tries < 40) setTimeout(attempt, 5000);   // keep trying for ~3 min this session
+    })();
+  }
 
   function openCustom(){
     var p = document.getElementById('customPanel'); if (p) p.classList.add('show');
@@ -23815,7 +23886,10 @@ if ('serviceWorker' in navigator) {
     var tch = document.getElementById('timeChoice');
     if (tch) tch.addEventListener('click', function (e) { var o = e.target.closest('.ind-opt'); if (o) setTimeStyle(o.getAttribute('data-time')); });
     try { if (typeof initTimeRoller === 'function') initTimeRoller(); } catch (e) {}
-    applyTimeStyle(getTimeStyle());        // slider / tap-buttons / brass roller, applies in every mode
+    // New swimmer: save 'bars' now, and mark the bars tip seen (it is for regulars).
+    if (window._swimFirstOpen && !_pGet(TIMESEL_KEY)) { _pSet(TIMESEL_KEY, 'bars'); _pSet(BARS_TIP_KEY, '1'); }
+    applyTimeStyle(getTimeStyle());        // slider / tap-buttons / brass roller / bars, applies in every mode
+    scheduleBarsTip();
 
     // ── "Where your heart is" ───────────────────────────────────────────────
     // The storage, geocoding and comparison live with the dashboard module and
