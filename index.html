@@ -23662,10 +23662,15 @@ if ('serviceWorker' in navigator) {
     if (sp && getComputedStyle(sp).display !== 'none') return true;
     return false;
   }
+  // ?barstip=1 previews the popup on demand (owner, 10 Nov 2026): it ignores the seen
+  // flag and the current picker, and saves nothing, so a preview never uses up the
+  // real one-off showing or changes anyone's picker unless they tap the button.
+  var BARS_TIP_PREVIEW = /[?&]barstip=1(&|$)/.test(location.search);
   function showBarsTip(){
     var cur = getTimeStyle(), name = BARS_TIP_NAME[cur] || 'time picker',
         stay = BARS_TIP_STAY[cur] || 'Your time picker stays as it is';
-    _pSet(BARS_TIP_KEY, '1');
+    if (cur === 'bars') { cur = 'buttons'; name = BARS_TIP_NAME.buttons; stay = BARS_TIP_STAY.buttons; }  // preview only
+    if (!BARS_TIP_PREVIEW) _pSet(BARS_TIP_KEY, '1');
     if (!document.getElementById('barsTipCss')) {
       var css = document.createElement('style'); css.id = 'barsTipCss';
       css.textContent =
@@ -23691,15 +23696,16 @@ if ('serviceWorker' in navigator) {
       '</div>';
     function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
     ov.querySelector('.bt-keep').addEventListener('click', close);
-    ov.querySelector('.bt-go').addEventListener('click', function(){ setTimeStyle('bars'); close(); });
+    ov.querySelector('.bt-go').addEventListener('click', function(){ if (!BARS_TIP_PREVIEW) setTimeStyle('bars'); close(); });
     document.body.appendChild(ov);
-    try { if (window.track) window.track('bars_tip', { from: cur }); } catch (e) {}
+    if (!BARS_TIP_PREVIEW) try { if (window.track) window.track('bars_tip', { from: cur }); } catch (e) {}
   }
   function scheduleBarsTip(){
-    if (_pGet(BARS_TIP_KEY) || getTimeStyle() === 'bars') return;
+    function done(){ return !BARS_TIP_PREVIEW && (_pGet(BARS_TIP_KEY) || getTimeStyle() === 'bars'); }
+    if (done()) return;
     var tries = 0;
     (function attempt(){
-      if (_pGet(BARS_TIP_KEY) || getTimeStyle() === 'bars') return;
+      if (done() || document.getElementById('barsTip')) return;
       if (!barsTipBlocked()) { showBarsTip(); return; }
       if (++tries < 40) setTimeout(attempt, 5000);   // keep trying for ~3 min this session
     })();
