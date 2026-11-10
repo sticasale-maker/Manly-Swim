@@ -2937,6 +2937,10 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
   .dw-in-board .dw-svg .dw-bnum  { fill: #113541; }
   .dw-in-board .dw-svg .dw-sel   { stroke: #fff; }
   .dw-in-board .dw-best { margin-top: 4px; }
+  /* Brief highlight after "Use just the bars" in the bars tip: shows where to tap. */
+  .dw-card.dw-flash { animation: dwFlash 2s ease-out; border-radius: 12px; }
+  @keyframes dwFlash { 0%, 35% { box-shadow: 0 0 0 3px #fff; } 100% { box-shadow: 0 0 0 3px rgba(255,255,255,0); } }
+  @media (prefers-reduced-motion: reduce) { .dw-card.dw-flash { animation: none; box-shadow: 0 0 0 3px #fff; } }
   .dw-nav {
     flex: none; width: 34px; height: 34px; border-radius: 9px;
     background: rgba(22,50,66,0.45); color: #c8bda0;
@@ -23663,8 +23667,9 @@ if ('serviceWorker' in navigator) {
     return false;
   }
   // ?barstip=1 previews the popup on demand (owner, 10 Nov 2026): it ignores the seen
-  // flag and the current picker, and saves nothing, so a preview never uses up the
-  // real one-off showing or changes anyone's picker unless they tap the button.
+  // flag and the current picker and never marks the tip seen, so a preview cannot use
+  // up the real one-off showing. Its "Use just the bars" button does switch, as the
+  // real one does.
   var BARS_TIP_PREVIEW = /[?&]barstip=1(&|$)/.test(location.search);
   function showBarsTip(){
     var cur = getTimeStyle(), name = BARS_TIP_NAME[cur] || 'time picker',
@@ -23696,7 +23701,18 @@ if ('serviceWorker' in navigator) {
       '</div>';
     function close(){ if (ov.parentNode) ov.parentNode.removeChild(ov); }
     ov.querySelector('.bt-keep').addEventListener('click', close);
-    ov.querySelector('.bt-go').addEventListener('click', function(){ if (!BARS_TIP_PREVIEW) setTimeStyle('bars'); close(); });
+    // "Use just the bars" always switches, the preview included (owner, 10 Nov 2026:
+    // a button that did nothing read as broken), then brings the grid into view and
+    // flashes it, so the change is seen to happen rather than hidden below the fold.
+    ov.querySelector('.bt-go').addEventListener('click', function(){
+      setTimeStyle('bars'); close();
+      var g = document.getElementById('dayWindowCard');
+      if (!g) return;
+      try { if (window.showTabFor) window.showTabFor(g); } catch (e) {}
+      try { g.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { g.scrollIntoView(); }
+      g.classList.remove('dw-flash'); void g.offsetWidth; g.classList.add('dw-flash');
+      setTimeout(function(){ g.classList.remove('dw-flash'); }, 2200);
+    });
     document.body.appendChild(ov);
     if (!BARS_TIP_PREVIEW) try { if (window.track) window.track('bars_tip', { from: cur }); } catch (e) {}
   }
