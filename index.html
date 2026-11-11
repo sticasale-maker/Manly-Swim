@@ -7940,14 +7940,14 @@ const SITE_DEFAULTS = {
   periodExp:      1.2,    // pinned to MASTER R24 (was 1.15); tab-1 severed. sheet col R r24 — exponent on period in swellPower (H² × P^periodExp). Higher = long-period swell penalised more.
   tideGateStart:  70,     // sheet col R r25 — entry tide gate: swell/sea <this°=0 weight, ramps to full by tideGateFull°. Set sheet r25=70 to match.
   tideGateFull:   90,     // sheet col R r26 — retired (gate no longer used for tide; kept for back-compat)
-  tideGain:       0.585,  // x1.5 on 14 Sep 2026 (was 0.39, per user) - New NS C7 MUST carry the same value or the sheet overrides this. Pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideAmp(tideM) × (s1_d + ww_d), signed (adds above ref, credits below); see tideHighMult for the high-side tilt
+  tideGain:       0.585,  // BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here. x1.5 on 14 Sep 2026 (was 0.39, per user). Pinned to MASTER P29 / New NS C7 (was 0.35) so the fallback tide is correct if NS is down. sheet label "Tide gain" (col B / value col P) — entry tide scale; tide_d = tideAmp(tideM) × (s1_d + ww_d), signed (adds above ref, credits below); see tideHighMult for the high-side tilt
   // Dispersion-table shape. TRUE = legacy 19-row mirror (fold 181–359° onto 1–179°).
-  // blDispFold follows the sheet: the parser flips it to false once rows 190°–350° carry
-  // values. nsDispFold is PINNED true by SS_DISP_LOCK_FOLD — Entry does not move.
-  // Defaulting both to true means a missing/half-filled sheet can never move a live score.
+  // nsDispFold is PINNED true by SS_DISP_LOCK_FOLD — Entry does not move.
+  // blDispFold is false: the baked BL table below has all 36 rows (it used to follow the
+  // sheet, which flipped it to false once rows 190°–350° carried values).
   nsDispFold:     true,
-  blDispFold:     true,
-  tideRef:        0.7,    // neutral tide height (m, WW datum): at or below ref the tide adds nothing; above it high water amplifies. MONOTONE — a rising tide can only ever raise demerits (11 Jul 2026, low-tide credit retired).
+  blDispFold:     false,  // BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here.
+  tideRef:        0.7,    // BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here. Neutral tide height (m, WW datum): at or below ref the tide adds nothing; above it high water amplifies. MONOTONE — a rising tide can only ever raise demerits (11 Jul 2026, low-tide credit retired).
   tideHighMult:   1.2,    // ASYMMETRY (28 Aug 2026, Marco): above tideRef the tide bites 20% harder than the same distance below it credits. tideGain still sets the overall scale; this tilts only the high side. 1.0 restores the symmetric behaviour.
   // WILLYWEATHER BACKUP CALIBRATION (owner's choice, 5 Oct 2026). Read ONLY on WW inputs
   // (useWWInputs in calcScore), so no NS-fed hour ever sees them. The backup scores
@@ -8036,7 +8036,9 @@ const SITE_DEFAULTS = {
   // SURGE — rawBL demerits (LOWER = better), same direction as Entry. steady ≤ AQ10,
   //   drifty ≤ AQ11, surgy ≤ AQ12, else washy. AQ13 = scaleMax (far end of the Washy band).
   //   Rail is drawn best-on-left. Display score = max(0, round(60 − rawBL)).
-  surgeThresholds: { steady: 15, drifty: 30, surgy: 45, scaleMax: 60 },
+  //   BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here.
+  //   (Were 15/30/45/60 here, a stale fallback under the sheet's 20/35/50/75.)
+  surgeThresholds: { steady: 20, drifty: 35, surgy: 50, scaleMax: 75 },
   // ── SURGE AT THE POINT (12 Sep 2026) ───────────────────────────────────────
   // The point (-33.798801, 151.292228) sits ~10% along the S Steyne → Shelly line,
   // and it is the ONE place on the swim where energy CONCENTRATES rather than
@@ -8117,9 +8119,9 @@ const SITE_DEFAULTS = {
                          // and the locus says where, without promoting the DAY to a safety
                          // caution for a knee-high swell. Re-fit as more days are logged.
                          //
-                         // TUNED AGAINST THE LIVE BAND EDGES, NOT THE ONES BELOW. The sheet
-                         // loads surgeThresholds {20, 35, 50, 75}; the fallbacks in this file
-                         // are the older {15, 30, 45, 60} and have been stale for a while. The
+                         // TUNED AGAINST THE LIVE BAND EDGES {20, 35, 50, 75}, which the sheet
+                         // loaded until 11 Nov 2026 and SITE_DEFAULTS now holds. (The code's old
+                         // fallbacks were {15, 30, 45, 60}, stale for a while.) The
                          // first cut of this knob was 4.5, fitted to the fallbacks, and scored
                          // the observed morning at 16.9 — which reads Drifty on paper and
                          // STEADY in the actual app. Anything re-fitting this must read the
@@ -8172,8 +8174,47 @@ const SITE_DEFAULTS = {
   gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
   nsDisp:         null, // NS "New NS" tab SS dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked). See SITE.nsDispFold.
   ssWaveSens:     5,    // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path. Baked from the sheet 27 Aug 2026; the sheet still wins at runtime, this is the offline/cold-boot value.
-  blDisp:         null, // BL (Bower Lane / bay) dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT % — New NS tab, cols W:AL. See SITE.blDispFold.
-  blWaveSens:     5,    // New NS tab V2 (bl_wave_sens) — BL swell+sea sensitivity for the Swim metric. Baked from the sheet 27 Aug 2026.
+  // BL (Bower Lane / bay) dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT %, rows
+  // bearing 0°…350°, columns period 2…17 s. BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here. (was New NS cols W:AL)
+  blDisp: [
+    [100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],   // 0°
+    [100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],   // 10°
+    [100,100,100,100,100,100,100,100,100,100,100,100,100,100,100,100],   // 20°
+    [98.5,98.5,98.5,98.6,98.7,98.9,99.1,99.3,99.4,99.6,99.8,99.9,100,100,100,100],   // 30°
+    [86.7,86.7,86.9,87.5,88.3,89.4,90.6,92,93.3,94.5,95.6,96.4,97,97.2,97.2,97.2],   // 40°
+    [68.5,68.5,68.9,70,71.7,73.8,76.2,78.8,81.3,83.7,85.8,87.5,88.6,89,89,89],   // 50°
+    [51.2,51.2,51.7,53.2,55.4,58.2,61.4,64.7,68,71.2,74,76.2,77.7,78.2,78.2,78.2],   // 60°
+    [38.5,38.5,39,40.4,42.4,45,47.9,51,54.1,57,59.6,61.6,63,63.5,63.5,63.5],   // 70°
+    [26.6,26.6,26.9,27.7,28.9,30.3,32,33.8,35.6,37.3,38.8,39.9,40.7,41,41,41],   // 80°
+    [16.7,16.7,16.8,17.1,17.5,18,18.6,19.3,19.9,20.5,21,21.4,21.7,21.8,21.8,21.8],   // 90°
+    [9.1,9.1,9.1,9.2,9.3,9.4,9.6,9.8,9.9,10.1,10.2,10.3,10.4,10.4,10.4,10.4],   // 100°
+    [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],   // 110°
+    [1.5,1.5,1.5,1.6,1.6,1.7,1.8,2,2.1,2.2,2.3,2.3,2.4,2.4,2.4,2.4],   // 120°
+    [0.2,0.2,0.2,0.3,0.4,0.5,0.7,0.8,0.9,1.1,1.2,1.3,1.4,1.4,1.4,1.4],   // 130°
+    [0.3,0.3,0.3,0.3,0.4,0.5,0.5,0.6,0.7,0.7,0.8,0.9,0.9,0.9,0.9,0.9],   // 140°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 150°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 160°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 170°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 180°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 190°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 200°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 210°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 220°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 230°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 240°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 250°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 260°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 270°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 280°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 290°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 300°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 310°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 320°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 330°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 340°
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],   // 350°
+  ],
+  blWaveSens:     6,    // bl_wave_sens — BL swell+sea sensitivity for the Swim metric. BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here. (was New NS V2; 5 here was stale)
   blChopImpact:   2.5,  // New NS tab V3 (bl_chop_impact) — "BL chop impact": single knob scaling the whole BL chop crossfade (wind-sea + wind-wave), no handover jump. Baked from the sheet 27 Aug 2026.
   // Wind-chop directional shelter at the CHOP point (measured on the bathymetry
   // grid). 72 bins @ 5° (index 0=0°N … 71=355°). Value =
@@ -9306,18 +9347,15 @@ function parseNsDispCSV(text) {
 function applySavedNsDisp(c) {
   SITE.nsDisp = c.table;
   SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : (c.nsDispFold !== false);  // Entry frozen
-  SITE.blDispFold = (c.blDispFold !== false);   // absent → safe legacy mirror
   if (c.ssWaveSens != null) SITE.ssWaveSens = c.ssWaveSens;
   if (c.windSeaSens != null) SITE.windSeaSens = c.windSeaSens;
-  if (c.tideGain != null) SITE.tideGain = c.tideGain;
-  if (c.blDisp) SITE.blDisp = c.blDisp;
-  if (c.blWaveSens != null) SITE.blWaveSens = c.blWaveSens;
   if (c.blChopImpact != null) SITE.blChopImpact = c.blChopImpact;
   if (c.chopRefFetchM != null) SITE.chopRefFetchM = c.chopRefFetchM;
-  if (c.tideRef != null) SITE.tideRef = c.tideRef;
   if (c.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...c.entryThresholds };
   if (c.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...c.swimThresholds };
-  if (c.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...c.surgeThresholds };
+  // NOT read from the sheet any more (11 Nov 2026, owner): blDisp, blDispFold, blWaveSens,
+  // tideGain, tideRef and surgeThresholds are code defaults (SITE_DEFAULTS), so the Worker's
+  // Surge, generated from this file, cannot drift from the app on a sheet edit.
 }
 
 async function loadNsDispConfig(force) {
@@ -9327,7 +9365,7 @@ async function loadNsDispConfig(force) {
     if (!o) return;
     if (o.entryThresholds) SITE.entryThresholds = { ...SITE_DEFAULTS.entryThresholds, ...o.entryThresholds };
     if (o.swimThresholds)  SITE.swimThresholds  = { ...SITE_DEFAULTS.swimThresholds,  ...o.swimThresholds };
-    if (o.surgeThresholds) SITE.surgeThresholds = { ...SITE_DEFAULTS.surgeThresholds, ...o.surgeThresholds };
+    // surgeThresholds: a code default since 11 Nov 2026, never the sheet (see applySavedNsDisp).
   };
   try {
     const cached = JSON.parse(localStorage.getItem(NS_DISP_CONFIG_KEY) || 'null');
@@ -9353,15 +9391,12 @@ async function loadNsDispConfig(force) {
     if (parsed) {
       SITE.nsDisp = parsed.table;
       SITE.nsDispFold = SS_DISP_LOCK_FOLD ? true : parsed.nsDispFold;  // Entry frozen
-      SITE.blDispFold = parsed.blDispFold;
+      // blDisp, blDispFold, blWaveSens, tideGain, tideRef: code defaults since 11 Nov 2026,
+      // not read from the sheet (see applySavedNsDisp).
       if (parsed.ssWaveSens != null) SITE.ssWaveSens = parsed.ssWaveSens;
       if (parsed.windSeaSens != null) SITE.windSeaSens = parsed.windSeaSens;
-      if (parsed.tideGain != null) SITE.tideGain = parsed.tideGain;
-      if (parsed.blDisp) SITE.blDisp = parsed.blDisp;
-      if (parsed.blWaveSens != null) SITE.blWaveSens = parsed.blWaveSens;
       if (parsed.blChopImpact != null) SITE.blChopImpact = parsed.blChopImpact;
       if (parsed.chopRefFetchM != null) SITE.chopRefFetchM = parsed.chopRefFetchM;
-      if (parsed.tideRef != null) SITE.tideRef = parsed.tideRef;
       applyThresh(parsed);
       localStorage.setItem(NS_DISP_CONFIG_KEY, JSON.stringify({
         fetchedAt: Date.now(), table: parsed.table, nsDispFold: parsed.nsDispFold, blDispFold: parsed.blDispFold,
@@ -9379,9 +9414,6 @@ async function loadNsDispConfig(force) {
         '[NS disp] SS table has all 36 rows, but SS_DISP_LOCK_FOLD is holding the legacy ' +
         'mirror so ENTRY cannot move: a >180° direction still reads its reflection ' +
         '(300° -> row 60). Deliberate. Flip SS_DISP_LOCK_FOLD to false to unfreeze Entry.');
-      if (parsed.blDispFold) console.warn(
-        '[NS disp] BL rows 190°–350° are blank — holding the legacy 19-row mirror for Chop/Surge. ' +
-        'Fill those rows and the full 36-row lookup switches on by itself.');
     } else {
       diag('NS disp: parse returned null — check New NS tab (expected ' + NS_DISP_ROWS + ' dir rows × 16 period cols from row 11)');
       keepLastGoodNsDisp('sheet unparseable');
@@ -9727,9 +9759,8 @@ function pointSurge(d) {
   // CEILING = THE LIVE SURGY EDGE, read at call time rather than kept as its own knob.
   // The point alone can therefore raise a caution but never a Washy — a Washy call still
   // needs the bay itself to be running, which is what narrows the entry advice to Shelly.
-  // Derived, not stored, because the edge is sheet-owned (AQ12) and a second copy in SITE
-  // would quietly stop agreeing with it: the surgeThresholds fallbacks in this file are
-  // already 5 points adrift of what the sheet actually loads.
+  // Derived, not stored, so a second copy in SITE cannot quietly stop agreeing with the
+  // band edge (SITE_DEFAULTS.surgeThresholds; from the sheet until 11 Nov 2026).
   const cap = (SITE.surgeThresholds && SITE.surgeThresholds.surgy) || 45;
   const raw = swellPower(H, P) * t * g * sens;
   // RELEASE (pointWashyMult, off by default): past `mult × cap` of raw energy, and only
@@ -18132,7 +18163,7 @@ const TUNE_PARAMS = [
   { key:'swimThresholds.glassy', label:'CHOP · Smooth edge (cm)', min:0, max:30, step:0.5, hint:'New NS AQ6 — COPY here (ALL of AQ6:AQ9 must be filled or CHOP reverts to default). Steep-face height (cm) below this = Smooth.' },
   { key:'swimThresholds.ripply', label:'CHOP · Ripply edge (cm)', min:0, max:45, step:0.5, hint:'New NS AQ7 — COPY here. Face height (cm) ≤ this = Ripply.' },
   { key:'swimThresholds.choppy', label:'CHOP · Choppy edge (cm)', min:0, max:60, step:0.5, hint:'New NS AQ8 — COPY here. Face height (cm) ≤ this = Choppy, else Messy.' },
-  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:20, step:0.05, hint:'New NS V2 — COPY tuned value here. Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
+  { key:'blWaveSens', label:'SURGE · BL wave sensitivity (bl_wave_sens)', min:0, max:20, step:0.05, hint:'CODE — SITE_DEFAULTS in index.html (baked from the New NS tab 11 Nov 2026; the sheet no longer feeds it). Scales the BL swell+sea energy for the SURGE metric (energy × BL transmit × this, +tide).' },
   // Surge at the point (12 Sep 2026). LOCAL — no sheet cell; SITE is the only
   // home, so the panel is the only place to turn them. Moves re-score live through
   // pointSurge(), which reads SITE on every call.
@@ -18162,9 +18193,9 @@ const TUNE_PARAMS = [
   //                         entirely: defaults, parser, cache and panel.
   // Tune the CHOP cm band edges or CHOP_EXPO instead — chopCm is a physical height and has
   // no gain knob by design.
-  { key:'surgeThresholds.steady', label:'SURGE · Steady edge', min:0, max:60, step:1, hint:'New NS AQ10 — COPY here (ALL of AQ10:AQ13 must be filled or SURGE reverts to default). rawBL ≤ this = Steady.' },
-  { key:'surgeThresholds.drifty', label:'SURGE · Drifty edge', min:0, max:60, step:1, hint:'New NS AQ11 — COPY here. rawBL ≤ this = Drifty.' },
-  { key:'surgeThresholds.surgy',  label:'SURGE · Surgy edge',  min:0, max:60, step:1, hint:'New NS AQ12 — COPY here. rawBL ≤ this = Surgy, else Washy.' },
+  { key:'surgeThresholds.steady', label:'SURGE · Steady edge', min:0, max:60, step:1, hint:'CODE — SITE_DEFAULTS in index.html (baked from the New NS tab 11 Nov 2026; the sheet no longer feeds it). rawBL ≤ this = Steady.' },
+  { key:'surgeThresholds.drifty', label:'SURGE · Drifty edge', min:0, max:60, step:1, hint:'CODE — SITE_DEFAULTS in index.html (baked from the New NS tab 11 Nov 2026; the sheet no longer feeds it). rawBL ≤ this = Drifty.' },
+  { key:'surgeThresholds.surgy',  label:'SURGE · Surgy edge',  min:0, max:60, step:1, hint:'CODE — SITE_DEFAULTS in index.html (baked from the New NS tab 11 Nov 2026; the sheet no longer feeds it). rawBL ≤ this = Surgy, else Washy.' },
   { key:'entryThresholds.easy',    label:'ENTRY · Easy edge',    min:0, max:60, step:1, hint:'New NS AQ2 — COPY here (ALL of AQ2:AQ5 must be filled or ENTRY reverts to default). total ≤ this = Easy.' },
   { key:'entryThresholds.doable',  label:'ENTRY · Doable edge',  min:0, max:60, step:1, hint:'New NS AQ3 — COPY here. total ≤ this = Doable.' },
   { key:'entryThresholds.caution', label:'ENTRY · Caution edge', min:0, max:60, step:1, hint:'New NS AQ4 — COPY here. total ≤ this = Caution, else Dangerous.' },
@@ -18182,7 +18213,7 @@ const TUNE_PARAMS = [
   { key:'entrySeaSteepFloor', label:'ENTRY · Gentle sea — share counted', min:0, max:1, step:0.05, hint:'LOCAL — no sheet cell. How much of a gentle (low, long) forecast sea still counts at the entry. 1 turns the weighting off. 0.4 = 27 Sep 07:00 reads Easy 8.' },
   { key:'entrySeaSteepLo', label:'ENTRY · Gentle sea — below this steepness', min:0.002, max:0.02, step:0.0005, hint:'LOCAL — no sheet cell. Steepness (H over wavelength) at or below which the sea counts only the share above. 0.6 m at 7 s is 0.008.' },
   { key:'entrySeaSteepHi', label:'ENTRY · Gentle sea — full from this steepness', min:0.004, max:0.03, step:0.0005, hint:'LOCAL — no sheet cell. Steepness at or above which the sea counts in full. 0.9 m at 5.8 s (14 Sep) is 0.017. Keep above the one before.' },
-  { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'New NS C5 — COPY tuned value here (now sheet-fed). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
+  { key:'tideRef', label:'TIDE · neutral height (m) — ENTRY + SURGE', min:0, max:2, step:0.05, hint:'CODE — SITE_DEFAULTS in index.html (baked from the New NS tab 11 Nov 2026; the sheet no longer feeds it). At/below it the tide adds nothing; above it high water amplifies s1_d + ww_d for BOTH Entry and Surge (never Chop). Monotone. Default 0.7 m.' },
 ];
 
 // ── LIVE (global) tune values ────────────────────────────────────────────────
@@ -18206,6 +18237,7 @@ const TUNE_LIVE_KEYS = [
 function tuneSheetCell(key) {
   if (TUNE_LIVE_KEYS.indexOf(key) >= 0) return null;
   const p = TUNE_PARAMS.find(q => q.key === key);
+  if (p && /^CODE\b/.test(p.hint || '')) return 'SITE_DEFAULTS in index.html (no sheet cell)';
   const m = p && /New NS\s+([A-Z]{1,3}\d+)/.exec(p.hint || '');
   return m ? 'New NS ' + m[1] : 'its sheet cell';
 }
@@ -18351,11 +18383,11 @@ const TW_GROUPS = [
     ] } },
   { cls:'shared', badge:'SHARED', feeds:'one knob, two metrics',
     knobs:[
-      { key:'tideRef', name:'Tide neutral height', desc:'Above this, high water amplifies. Feeds <span class="tw-to entry">Entry</span> + <span class="tw-to surge">Surge</span>, <b>never Chop</b>. Gain lives at tide_ref · C7.', cell:'tide_ref · C5 · m', prov:'wired', provTxt:'STEP A · wired · C5' },
+      { key:'tideRef', name:'Tide neutral height', desc:'Above this, high water amplifies. Feeds <span class="tw-to entry">Entry</span> + <span class="tw-to surge">Surge</span>, <b>never Chop</b>. Gain is tideGain, a code default.', cell:'code · SITE defaults · m', prov:'local', provTxt:'CODE · bake into SITE_DEFAULTS' },
     ] },
   { cls:'surge', badge:'SURGE', feeds:'swell + sea heave across the bay',
     knobs:[
-      { key:'blWaveSens', name:'BL wave sensitivity', desc:'Weight of BL swell + sea-heave.', cell:'bl_wave_sens · V2', prov:'sheet', provTxt:'SHEET · copy to V2' },
+      { key:'blWaveSens', name:'BL wave sensitivity', desc:'Weight of BL swell + sea-heave.', cell:'code · SITE defaults', prov:'local', provTxt:'CODE · bake into SITE_DEFAULTS' },
       // prov:'local' — no sheet cell at all; SITE is the only home, so the panel is
       // authoritative rather than a copy-to-cell staging area.
       { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the point</b>, and this scales the point. The point is the one spot on the line where long-period swell is concentrated rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
@@ -18365,7 +18397,7 @@ const TW_GROUPS = [
       { key:'surgeSouthTideLo', name:'South swell — starts (m tide)', tag:'DRAFT', desc:'Below this tide the swell breaks on the shelf and nothing reaches the wall.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'surgeSouthTideHi', name:'South swell — full (m tide)', tag:'DRAFT', desc:'Tide at which the full strength applies; smooth in between. 1.7 puts 29 Oct 14:45 (0.99 m) at ~14, Steady.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
-    bands:{ label:'Bands', edges:'AQ10:AQ13', items:[
+    bands:{ label:'Bands', edges:'code · SITE defaults', items:[
       { key:'surgeThresholds.steady', lab:'Steady ≤' },
       { key:'surgeThresholds.drifty', lab:'Drifty ≤' },
       { key:'surgeThresholds.surgy',  lab:'Surgy ≤' },

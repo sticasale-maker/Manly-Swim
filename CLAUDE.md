@@ -115,8 +115,13 @@ and its CLAUDE.md holds the rules. The Drive `worker-*.js` copies are retired.
   swim-worker's `src/surge-model.js`. After any change to the Surge code (`blSwimWater`,
   `surgeSouthWrap`, `pointSurge`, ...) or `SITE_DEFAULTS`, push here, then in swim-worker
   run `npm run gen:surge`, `npm test`, and deploy when the owner says go. Until then the
-  Worker scores the old Surge, which is how 11 Nov's Steady-vs-Drifty happened. New NS
-  sheet edits and live `/tune` values reach the Worker by themselves.
+  Worker scores the old Surge, which is how 11 Nov's Steady-vs-Drifty happened. Live
+  `/tune` values reach the Worker by themselves.
+- **Surge reads no sheet** (owner, 11 Nov 2026). The BL table, `blWaveSens`, the Surge
+  band edges, `tideGain` and `tideRef` live in `SITE_DEFAULTS`; the New NS tab still holds
+  them but the app ignores those cells (Entry and Chop still read theirs). Never wire one
+  back to the sheet: the Worker's generator refuses to run if you do, because the Worker
+  could not follow a sheet edit.
 - A deploy from this app session is blocked by the permission classifier unless the
   owner allows `npx wrangler deploy`; otherwise the owner runs it after saying go.
 
