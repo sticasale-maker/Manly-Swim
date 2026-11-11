@@ -8029,10 +8029,10 @@ const SITE_DEFAULTS = {
   //   back-compat with the classifier, but the values are CENTIMETRES, not q7 energy.
   //   NOTE: New NS AQ6:AQ9 must hold 4/8/12/20 or the sheet parse clobbers these back.
   //   AQ is the sole source now (the MASTER-tab AK read is dormant/commented out).
-  swimThresholds: { glassy: 4, ripply: 8, choppy: 12, scaleMax: 20 },
+  swimThresholds: { glassy: 4, ripply: 8, choppy: 12, scaleMax: 30 },   // scaleMax 20 -> 30, baked from the live sheet 11 Nov 2026 as the fallback; the sheet still wins for Entry and Chop
   // ENTRY — `total` demerits (LOWER = better). easy ≤ AQ2, doable ≤ AQ3, caution ≤ AQ4,
   //   else dangerous. AQ5 = scaleMax. (caution:50 here is a stale fallback; sheet loads 45.)
-  entryThresholds: { easy: 15, doable: 30, caution: 50, scaleMax: 60 },
+  entryThresholds: { easy: 11, doable: 25, caution: 50, scaleMax: 75 },  // 15/30/50/60 -> 11/25/50/75, baked from the live sheet 11 Nov 2026 as the fallback; the sheet still wins for Entry and Chop
   // SURGE — rawBL demerits (LOWER = better), same direction as Entry. steady ≤ AQ10,
   //   drifty ≤ AQ11, surgy ≤ AQ12, else washy. AQ13 = scaleMax (far end of the Washy band).
   //   Rail is drawn best-on-left. Display score = max(0, round(60 − rawBL)).
@@ -8171,9 +8171,69 @@ const SITE_DEFAULTS = {
   // wider than pure line-of-sight to the east, and closes out only the southerlies
   // North Head already blocks.
   pointDirKnots:  [[55, 0], [85, 1], [140, 1], [170, 0]],
-  gemTable:       null, // 2D array [19 dirs][20 periods] % energy loss — GEM model only (retired; kept null)
-  nsDisp:         null, // NS "New NS" tab SS dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked). See SITE.nsDispFold.
-  ssWaveSens:     5,    // NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path. Baked from the sheet 27 Aug 2026; the sheet still wins at runtime, this is the offline/cold-boot value.
+  // 2D array [19 dirs][20 periods] % energy loss — GEM model. baked from the live sheet 11 Nov 2026 as the fallback; the sheet still wins for Entry and Chop.
+  gemTable: [
+    [100,  100,  99,  98,  96,  93,  89,  82,  72,  61,  52,  45,  38,  32,  27,  24,  22,  20,  18,  17],
+    [100,  99,  98,  96,  93,  89,  84,  76,  66,  55,  46,  39,  33,  27,  23,  21,  19,  17,  15,  14],
+    [98,  97,  94,  90,  85,  78,  70,  61,  51,  40,  33,  26,  21,  17,  15,  13,  11,  10,  9,  8],
+    [92,  90,  84,  78,  70,  60,  50,  41,  32,  24,  18,  14,  10,  8,  7,  6,  5,  4,  4,  3],
+    [80,  75,  68,  60,  51,  40,  31,  23,  16,  11,  8,  5,  4,  3,  2,  2,  2,  1,  1,  1],
+    [60,  54,  47,  38,  31,  23,  16,  11,  7,  4,  3,  2,  1,  0.6,  0.5,  0.4,  0.3,  0.3,  0.2,  0.2],
+    [37,  31,  26,  20,  15,  10,  6,  4,  2,  1,  0.6,  0.4,  0.2,  0.1,  0.1,  0.1,  0,  0,  0,  0],
+    [19,  16,  12,  9,  6,  4,  2,  1,  0.7,  0.4,  0.2,  0.1,  0.1,  0,  0,  0,  0,  0,  0,  0],
+    [22,  20,  18,  16,  13,  11,  9,  8,  7,  5,  4,  3,  2,  1,  0.1,  0.1,  0.1,  0,  0,  0],
+    [39,  36,  34,  31,  27,  24,  21,  18,  16,  12,  9,  7,  5,  3,  0.8,  0.6,  0.4,  0.3,  0.2,  0.1],
+    [59,  56,  53,  50,  45,  41,  37,  33,  28,  22,  17,  13,  9,  6,  3,  2,  2,  1,  0.8,  0.5],
+    [78,  75,  72,  70,  65,  60,  56,  51,  46,  36,  30,  24,  18,  14,  9,  7,  5,  4,  3,  2],
+    [91,  89,  88,  86,  83,  79,  75,  71,  66,  55,  47,  40,  33,  26,  20,  16,  13,  11,  9,  7],
+    [97,  97,  96,  95,  94,  91,  89,  86,  82,  73,  66,  59,  51,  44,  36,  31,  27,  23,  19,  16],
+    [99,  99,  99,  99,  98,  97,  96,  94,  92,  86,  81,  75,  69,  62,  55,  50,  44,  40,  35,  31],
+    [100,  100,  100,  100,  100,  99,  98,  97,  96,  93,  90,  87,  82,  78,  72,  68,  63,  58,  54,  50],
+    [100,  100,  100,  100,  100,  99,  99,  98,  97,  96,  95,  93,  91,  88,  85,  81,  78,  75,  71,  68],
+    [100,  100,  100,  100,  100,  100,  99,  99,  98,  97,  97,  96,  94,  93,  91,  89,  87,  85,  83,  80],
+    [100,  100,  100,  100,  100,  100,  99,  99,  98,  98,  97,  96,  95,  94,  93,  92,  90,  89,  87,  85],
+  ],
+  // NS "New NS" tab SS dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT % (100=full energy through, 0=blocked). See SITE.nsDispFold.
+  // baked from the live sheet 11 Nov 2026 as the fallback; the sheet still wins for Entry and Chop. Built in, a sheet outage no longer leaves the app without a table (no TABLE NOT LOADED, no vecchio failover).
+  nsDisp: [
+    [100,  100,  100,  100,  100,  100,  100,  100,  100,  100,  100,  100,  100,  100,  100,  100],
+    [99,  99,  99,  99,  99,  99,  99,  99,  100,  100,  100,  100,  100,  100,  100,  100],
+    [99,  99,  99,  99,  99,  99,  99,  99,  100,  100,  100,  100,  100,  100,  100,  100],
+    [98,  98,  98,  98,  98,  99,  99,  99,  99,  99,  99,  99,  100,  100,  100,  100],
+    [93,  93,  94,  94,  95,  95,  96,  96,  97,  97,  98,  98,  98,  99,  99,  100],
+    [84,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  94,  95,  96,  97],
+    [74,  74,  75,  77,  78,  79,  80,  82,  83,  84,  85,  86,  88,  89,  90,  91],
+    [64,  64,  66,  68,  69,  71,  72,  74,  75,  77,  79,  80,  82,  83,  85,  87],
+    [54,  54,  56,  58,  59,  61,  63,  65,  66,  68,  70,  71,  73,  75,  77,  78],
+    [45,  45,  47,  48,  50,  52,  53,  55,  57,  58,  60,  61,  63,  65,  66,  68],
+    [36,  36,  38,  39,  40,  41,  42,  44,  45,  46,  47,  49,  50,  51,  52,  53],
+    [27,  27,  28,  29,  30,  31,  32,  32,  33,  34,  35,  36,  37,  37,  38,  39],
+    [21,  21,  21,  22,  22,  22,  23,  23,  24,  24,  25,  25,  26,  26,  27,  27],
+    [14,  14,  15,  15,  15,  16,  16,  16,  17,  17,  17,  18,  18,  18,  19,  19],
+    [8.9,  8.9,  9,  9,  9.1,  9.2,  9.3,  9.3,  9.4,  9.5,  9.5,  9.6,  9.7,  9.8,  9.8,  9.9],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+    [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0],
+  ],
+  ssWaveSens:     5.2,  // 5 -> 5.2, baked from the live sheet 11 Nov 2026 as the fallback; the sheet still wins for Entry and Chop. NS tab C2 (ss_wave_sens) — SS swell+sea sensitivity, replaces swellSens/wwSens in the NS dispersion path. Baked from the sheet 27 Aug 2026; the sheet still wins at runtime, this is the offline/cold-boot value.
   // BL (Bower Lane / bay) dispersion table: [36 dirs 0–350°][16 periods 2–17s] TRANSMIT %, rows
   // bearing 0°…350°, columns period 2…17 s. BAKED from the New NS tab, 11 Nov 2026 (owner): the sheet no longer feeds this, so the Worker's generated Surge model and the app read one value. Tune it here. (was New NS cols W:AL)
   blDisp: [
@@ -8318,7 +8378,7 @@ const SITE_DEFAULTS = {
   // Wind now does exactly one thing: raise local chop inside the bay. Magnitude from a
   // single reference fetch; direction from CHOP_EXPO and nowhere else. No geography,
   // no duration, no sector boundaries, no blend widths.
-  chopRefFetchM: 5000,  // effective fetch (m) for locally-generated chop — THE wind knob
+  chopRefFetchM: 3000,  // 5000 -> 3000, baked from the live sheet 11 Nov 2026 as the fallback; the sheet still wins for Entry and Chop. effective fetch (m) for locally-generated chop — THE wind knob
   // ── Lee shelter for CHOP through the land arc (11 Aug 2026) ─────────────────────
   // Wind from S→W crosses the land and the buildings on the west side of the swim
   // patch before it reaches the water, so it grows less sea than its raw speed says.
