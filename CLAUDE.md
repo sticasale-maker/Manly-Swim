@@ -219,6 +219,12 @@ saved copy.
 
 ## Editing and deploying
 
+**The owner runs commands in Windows PowerShell 5.1** (owner, 11 Nov 2026). Every command
+you give them must work there: no `&&` or `||` (one command per block instead), no
+bash-only syntax (`export`, `$(...)`, heredocs, `grep`), Windows paths, and say which
+folder to `cd` into first. Fence the blocks as `powershell`.
+
+
 The working folder is a **Google-Drive-synced copy, not a git repo**. Never
 `git init` here — Drive corrupts `.git`.
 
