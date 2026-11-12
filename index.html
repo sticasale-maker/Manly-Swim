@@ -21950,6 +21950,7 @@ function submitFeedback(e) {
   }
   window.updateBoardDot = updateBoardDot;
 
+  var _bdUnfolded = {};   // post ids opened this page view (see renderList)
   function renderList(){
     var box = $('frList'); if (!box) return;
     var posts = sortPosts(_cache);
@@ -21966,7 +21967,9 @@ function submitFeedback(e) {
     var openIds = {};
     unseenReplyPosts().forEach(function(p){ openIds[p.id] = 1; });
     box.innerHTML = posts.map(function(p, i){
-      var folded = (i > 0) && !openIds[p.id];
+      // A card the visitor opened stays open: reacting, replying and the
+      // background refresh all redraw the list, and must not fold it again.
+      var folded = (i > 0) && !openIds[p.id] && !_bdUnfolded[String(p.id)];
       return cardHTML(p, BOARD_ADMIN, mineCtx, folded);
     }).join('');
   }
@@ -22169,6 +22172,7 @@ function submitFeedback(e) {
     if (unf){
       var card = unf.closest('.bd-card');
       if (card) card.classList.remove('bd-card--fold');
+      _bdUnfolded[String(unf.getAttribute('data-unfold'))] = 1;
       return;
     }
     var rtog = t.closest('[data-replytoggle]');
