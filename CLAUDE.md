@@ -9,6 +9,51 @@ Almost everything is in `index.html` (~20k lines). Also: `bag-reports.html`
 
 ---
 
+## 0. Start every session with an automation check (owner, 12 Nov 2026)
+
+The owner opens sessions on the Drive folder `C:\Users\stica\Google Drive\VIZ\APPS\Manly swim`
+(on the PC) or as a cloud session. **Before the first task, run the checks below and
+open your first reply with a short "Automation check": one line per item, ✓ or what is
+missing, and for anything missing the exact fix** (PowerShell for the PC: one command per
+block, say which folder). Keep it to the list; do not re-explain items that pass.
+Check, don't assume, and say "couldn't check" when a check is impossible from where you run.
+
+On the PC (Drive folder session):
+1. **Repo clones** — `C:\Users\stica\repos\Manly-Swim` and `C:\Users\stica\repos\swim-worker`
+   exist, `git status` is clean, and `git fetch` shows them level with `origin/main`.
+   Work happens in the clones, never in the Drive folder.
+2. **This file in step** — `node tools/drive-check.js` from the Manly-Swim clone exits 0;
+   if not, `node tools/drive-check.js --fix`. The Drive copy is what briefs sessions.
+3. **Worker in step** — in swim-worker, `node tools/make-surge-module.cjs --check` passes,
+   and `/bower-surge?debug=1`'s `model.hash` equals `SURGE_MODEL_HASH` in
+   `src/surge-model.js`. If not: `npm run gen:surge`, commit, push, owner deploys.
+4. **Scheduled tasks** (desktop app) — "Wall check on south-swell high-tide days" exists,
+   its direction rule reads 140-210 deg, and it has the LOG step that appends to
+   `wall-checks.csv` in the Drive folder.
+5. **Surfline login** in the desktop app's browser pane (the wall check needs it).
+
+In a cloud session:
+1. **Repos** — both `sticasale-maker/manly-swim` and `sticasale-maker/swim-worker` are
+   attached and cloned as siblings (`/home/user/Manly-Swim`, `/home/user/swim-worker`). If
+   swim-worker is missing, attach it (`add_repo`, push) and clone it; say the owner can
+   add it to the environment's Repositories so it comes by default.
+2. **Environment** — the session runs on the "manly-swim" environment, and these answer:
+   `gkspukabnfbzrvjoewpc.supabase.co` (history), `bold-rain-6ded.sticasale.workers.dev`,
+   `middleman-to-sheet.sticasale.workers.dev`, `camstills.cdn-surfline.com`. A proxy 403
+   on any of them means the wrong environment.
+3. **Worker in step** — same as PC item 3, run in `/home/user/swim-worker`.
+4. **Connectors** — Google Drive (to read `wall-checks.csv`) and Gmail. Say which are
+   missing; the weekly review below cannot work without both.
+5. **Scheduled task "Swim Manly wall-check weekly review"** (cloud, Sundays 09:46 Sydney) —
+   exists, is enabled, and has the Google Drive and Gmail connectors plus email
+   notifications (the owner sets those in claude.ai; a session cannot).
+6. **What a cloud session cannot do**, stated once: deploy the Worker (`npx wrangler deploy`
+   needs the owner's Cloudflare login on the PC), open the owner's PC folders (Remote
+   Control folders are listed but not offered to cloud sessions on this account), see
+   desktop-app scheduled tasks, or use the Surfline login.
+
+---
+
 ## 1. Red zone means "which way in", not "the bay is shut"
 
 A Dangerous entry off South Steyne does **not** mean the bay is closed. It means
