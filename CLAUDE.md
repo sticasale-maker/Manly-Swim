@@ -124,6 +124,15 @@ and its CLAUDE.md holds the rules. The Drive `worker-*.js` copies are retired.
   could not follow a sheet edit.
 - A deploy from this app session is blocked by the permission classifier unless the
   owner allows `npx wrangler deploy`; otherwise the owner runs it after saying go.
+- **Cloud sessions attach swim-worker too** (owner, 12 Nov 2026). It is on GitHub as
+  the private `sticasale-maker/swim-worker`. If a cloud session working on this app does
+  not have it, attach it with `add_repo` (push access) and clone it to a sibling of this
+  repo (`/home/user/swim-worker` beside `/home/user/Manly-Swim`), because its generator
+  reads `../Manly-Swim/index.html`. Then after a Surge or `SITE_DEFAULTS` push here, run
+  `npm run gen:surge` there, check `node test/surge-fixtures.mjs`, commit
+  `src/surge-model.js` and push. The owner only runs `npx wrangler deploy` on the PC.
+  Commit the regenerated file every time: on 11 Nov one was deployed from the PC and never
+  pushed, which left GitHub's `main` behind the live Worker.
 
 ## 7. Bake tuned knobs into `SITE` defaults
 
