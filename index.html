@@ -5768,6 +5768,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
       #featureCard .bd-reply-time{color:var(--dim);font-size:11px;margin-left:auto;}
       #featureCard .bd-reply-trash{flex:none;margin-left:6px;background:none;border:none;color:var(--red);font-size:13px;cursor:pointer;padding:2px 4px;line-height:1;}
       #featureCard .bd-reply-body{color:var(--text);font-size:13.5px;line-height:1.45;word-break:break-word;white-space:pre-wrap;}
+      #featureCard .bd-link{color:var(--ocean);text-decoration:underline;text-underline-offset:2px;}
       #featureCard .bd-foot{display:flex;align-items:center;gap:10px;margin-top:10px;}
       #featureCard .fr-pill{flex:none;display:inline-flex;align-items:center;gap:4px;min-width:48px;justify-content:center;padding:6px 10px;border-radius:999px;border:1px solid var(--ocean);background:#fff;color:var(--ocean);font-family:'Inter',sans-serif;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;}
       #featureCard .fr-pill .fr-arrow{font-size:14px;line-height:1;}
@@ -21275,6 +21276,23 @@ function submitFeedback(e) {
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
     return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]; }); }
 
+  // Turn web addresses in ALREADY-ESCAPED post/reply text into links. Only
+  // http(s):// and www. addresses, so no javascript: or data: href can form.
+  // The match stops at an escaped quote or bracket, and trailing punctuation
+  // ("see https://x.com.") stays outside the link.
+  function bdLinkify(html){
+    return String(html).replace(/(https?:\/\/|www\.)[^\s<>"']+/gi, function (m) {
+      var tail = '';
+      var cut = m.search(/&(?:quot|lt|gt|#39);/);
+      if (cut >= 0){ tail = m.slice(cut); m = m.slice(0, cut); }
+      var p = m.match(/[.,;:!?)\]]+$/);
+      if (p){ tail = p[0] + tail; m = m.slice(0, -p[0].length); }
+      if (!/^(https?:\/\/|www\.)[^.\s]/i.test(m) || m.length < 8) return m + tail;
+      var href = /^www\./i.test(m) ? 'https://' + m : m;
+      return '<a class="bd-link" href="' + href + '" target="_blank" rel="noopener nofollow ugc">' + m + '</a>' + tail;
+    });
+  }
+
   // ---- basic foul-language filter (unchanged) -----------------------------
   var FR_WORDS = ['anal','anus','arse','arsehole','ass','asshole','asshat','asswipe',
     'bastard','bitch','blowjob','bollocks','boner','bullshit','clit','cock','cocksucker',
@@ -21699,7 +21717,7 @@ function submitFeedback(e) {
           '<span class="bd-uname">' + un + '</span>' +
           '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
         '</div>' +
-        '<div class="bd-reply-body">' + esc(frMask(r.body)) + '</div>' + rphoto + replyReactHTML(r) +
+        '<div class="bd-reply-body">' + bdLinkify(esc(frMask(r.body))) + '</div>' + rphoto + replyReactHTML(r) +
       '</div>';
     }
     return '<div class="bd-reply' + fresh + '">' +
@@ -21709,7 +21727,7 @@ function submitFeedback(e) {
         '<span class="bd-viz">VIZ</span>' +
         '<span class="bd-reply-time">' + esc(relTime(r.created_at)) + '</span>' + trash +
       '</div>' +
-      '<div class="bd-reply-body">' + esc(r.body) + '</div>' + rphoto + replyReactHTML(r) +
+      '<div class="bd-reply-body">' + bdLinkify(esc(r.body)) + '</div>' + rphoto + replyReactHTML(r) +
     '</div>';
   }
 
@@ -21801,7 +21819,7 @@ function submitFeedback(e) {
         (isMine ? '<span class="bd-mine-tag">yours</span>' : '') +
         '<span class="bd-time">' + esc(relTime(p.created_at)) + '</span>' +
       '</div>' +
-      '<div class="bd-body">' + esc(frMask(p.body)) + '</div>' + photo +
+      '<div class="bd-body">' + bdLinkify(esc(frMask(p.body))) + '</div>' + photo +
       '<div class="bd-foot">' + vote + '</div>' +   // post reactions sit directly under the post, above any replies
       replies + replyUI +
       (adminOn ? adminHTML(p) : '') + unfold +
