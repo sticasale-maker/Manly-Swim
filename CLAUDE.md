@@ -162,6 +162,12 @@ and its CLAUDE.md holds the rules. The Drive `worker-*.js` copies are retired.
   run `npm run gen:surge`, `npm test`, and deploy when the owner says go. Until then the
   Worker scores the old Surge, which is how 11 Nov's Steady-vs-Drifty happened. Live
   `/tune` values reach the Worker by themselves.
+- **After a Surge change in the app, the whole manual routine** (owner, 12 Nov 2026), on the PC:
+  1. `cd C:\Users\stica\repos\Manly-Swim`, then `git pull`
+  2. `cd C:\Users\stica\repos\swim-worker`, then `npm run gen:surge`
+  3. commit and push `src/surge-model.js` (every time, or GitHub falls behind the live Worker)
+  4. `npx wrangler deploy` once the owner says go
+  Sheet edits and live `/tune` values need none of this.
 - **Surge reads no sheet** (owner, 11 Nov 2026). The BL table, `blWaveSens`, the Surge
   band edges, `tideGain` and `tideRef` live in `SITE_DEFAULTS`; the New NS tab still holds
   them but the app ignores those cells (Entry and Chop still read theirs). Never wire one
