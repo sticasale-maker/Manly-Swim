@@ -26655,14 +26655,15 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 //   - hot or cold: the forecast maximum at Manly is 4 C or more above or below the bay's
 //     normal maximum for that month (STORM_CLIMO.airMaxNormC);
 //   - heavy rain: 20 mm or more forecast for the day.
-// Tomorrow is checked from midday Sydney time; today all day. Facts only: what is
+// Tomorrow is checked from midday Sydney time; today until 3 pm (owner, 14 Nov 2026: the
+// day's box goes at 15:00, its event is mostly over). Facts only: what is
 // forecast and how far from normal. It never says whether to swim.
 // Popup: once per event per device, closed only by its X or by "Never show weather
 // alerts again" (persistSet, so Safari's 7-day localStorage purge cannot undo it). The
 // banner stays either way; it is part of today's forecast, not an alert. No forecast,
 // no banner and no popup: absent data never reads as a normal day.
 (function () {
-  var HOT_COLD_C = 4, RAIN_MM = 20;
+  var HOT_COLD_C = 4, RAIN_MM = 20, TODAY_UNTIL_H = 15;
   var CACHE_KEY = 'swim_wxalert_fc_v1', CACHE_MAX_MS = 12 * 3600e3;
   var SEEN_KEY = 'swim_wxalert_seen', OFF_KEY = 'swim_wxalert_off';
   var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -26690,8 +26691,9 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
 
   function findEvents(fc) {
     var out = [], today = sydDate(0), tomorrow = sydDate(1);
-    var days = [{ iso: today, when: 'Today' }];
-    if (sydHour() >= 12) days.push({ iso: tomorrow, when: 'Tomorrow' });
+    var h = sydHour(), days = [];
+    if (h < TODAY_UNTIL_H) days.push({ iso: today, when: 'Today' });
+    if (h >= 12) days.push({ iso: tomorrow, when: 'Tomorrow' });
     days.forEach(function (d) {
       var i = fc.time.indexOf(d.iso); if (i < 0) return;
       // BOM's rain is a range: a 50% chance of at least the lower figure, so the lower
@@ -26818,8 +26820,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     return fc.time.length ? fc : null;
   }
 
+  var _fc = null;
   function use(fc) {
     if (!fc || !Array.isArray(fc.time)) return;
+    _fc = fc;
     _src = fc.src || '';
     _events = findEvents(fc);
     paintBanner();
@@ -26858,6 +26862,13 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   var _lastLoad = 0;
   function maybeReload() { if (!document.hidden && Date.now() - _lastLoad > 30 * 60e3) { _lastLoad = Date.now(); load(); } }
   document.addEventListener('visibilitychange', maybeReload);
+  // The 3 pm drop (and the midday add) also happen on an open page: re-read the saved
+  // forecast every minute and repaint only when the list of events changed.
+  function ids(evs) { return evs.map(function (e) { return e.id; }).join(';'); }
+  setInterval(function () {
+    if (!_fc) return;
+    if (ids(findEvents(_fc)) !== ids(_events)) use(_fc);
+  }, 60e3);
   function init() { _lastLoad = Date.now(); load(); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
