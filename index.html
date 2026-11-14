@@ -26504,7 +26504,19 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (s === 'scheduled') return { c: '#b57708', bg: 'rgba(212,144,10,.16)', lab: 'SCHEDULED' };
     return { c: '#7a8a92', bg: 'rgba(122,138,146,.15)', lab: 'PAST' };
   }
-  function rowHtml(x, idx, count){
+  // Admin list order: LIVE, then SCHEDULED, then PAST; saved sort_order within each.
+  var STATUS_RANK = { live: 0, scheduled: 1 };
+  function byStatus(rows){
+    return rows.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) {
+      var ra = STATUS_RANK[a.x.status] != null ? STATUS_RANK[a.x.status] : 2;
+      var rb = STATUS_RANK[b.x.status] != null ? STATUS_RANK[b.x.status] : 2;
+      return (ra - rb) || (a.i - b.i);
+    }).map(function (o) { return o.x; });
+  }
+  function rowHtml(x, idx, count, rows){
+    // Arrows move a post within its own status group only; the sort would undo anything else.
+    var upOff = idx === 0 || rows[idx - 1].status !== x.status;
+    var downOff = idx === count - 1 || rows[idx + 1].status !== x.status;
     var st = statusStyle(x.status);
     var thumb = x.image_url
       ? '<img class="aa-thumb" src="' + escText(x.image_url) + '" alt="">'
@@ -26514,8 +26526,8 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var excHtml = exc ? '<div class="aa-pexc">' + escText(exc) + '</div>' : '';
     return '<div class="aa-prow">' +
         '<div class="aa-arrows">' +
-          '<button type="button" class="aa-abtn" data-up="' + escText(x.id) + '"' + (idx === 0 ? ' disabled' : '') + ' aria-label="Move up">\u25b2</button>' +
-          '<button type="button" class="aa-abtn" data-down="' + escText(x.id) + '"' + (idx === count - 1 ? ' disabled' : '') + ' aria-label="Move down">\u25bc</button>' +
+          '<button type="button" class="aa-abtn" data-up="' + escText(x.id) + '"' + (upOff ? ' disabled' : '') + ' aria-label="Move up">\u25b2</button>' +
+          '<button type="button" class="aa-abtn" data-down="' + escText(x.id) + '"' + (downOff ? ' disabled' : '') + ' aria-label="Move down">\u25bc</button>' +
         '</div>' +
         thumb +
         '<div class="aa-pmeta">' +
@@ -26532,7 +26544,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
   }
   function groupHtml(appKey, rows){
     var body = rows.length
-      ? rows.map(function (x, i) { return rowHtml(x, i, rows.length); }).join('')
+      ? rows.map(function (x, i) { return rowHtml(x, i, rows.length, rows); }).join('')
       : '<div class="aa-empty">No posts yet.</div>';
     return '<div class="aa-grp">' +
         '<div class="aa-grp-h">' + escText(APP_LABEL[appKey] || appKey) +
@@ -26550,9 +26562,10 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var r = await fetch(RPC + 'admin_list_announcements', { method: 'POST', headers: hdrs, body: JSON.stringify({ p_token: tk }) });
       if (!r.ok) { var lt = await r.text().catch(function () { return ''; }); throw new Error(r.status + ' ' + lt.slice(0, 180)); }
       var rows = await r.json(); if (!Array.isArray(rows)) rows = [];
-      _rows = rows;   // already ordered by app, then sort_order (see admin_list RPC)
-      var swim = rows.filter(function (x) { return appOf(x) === 'swim'; });
-      var viz  = rows.filter(function (x) { return appOf(x) === 'viz'; });
+      // The RPC orders by app, then sort_order; the list shows LIVE, SCHEDULED, PAST.
+      var swim = byStatus(rows.filter(function (x) { return appOf(x) === 'swim'; }));
+      var viz  = byStatus(rows.filter(function (x) { return appOf(x) === 'viz'; }));
+      _rows = swim.concat(viz);   // display order: moveRow swaps neighbours in it
       box.innerHTML = groupHtml('swim', swim) + groupHtml('viz', viz);
       Array.prototype.forEach.call(box.querySelectorAll('[data-edit]'), function (b) { b.addEventListener('click', function () { editRow(b.getAttribute('data-edit')); }); });
       Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),  function (b) { b.addEventListener('click', function () { delRow(b.getAttribute('data-del')); }); });
