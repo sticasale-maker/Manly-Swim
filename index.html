@@ -25862,7 +25862,28 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       ".aa-pexc{font-size:11px;color:var(--dim,#4a5f6e);line-height:1.35;margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}" +
       ".aa-acts{display:flex;gap:2px;flex-shrink:0;}" +
       ".aa-iconbtn{background:none;border:none;cursor:pointer;font-size:14px;padding:4px;line-height:1;}" +
-      ".aa-empty{color:var(--dim,#4a5f6e);font-size:12px;padding:2px 0 4px;}";
+      ".aa-empty{color:var(--dim,#4a5f6e);font-size:12px;padding:2px 0 4px;}" +
+      ".aa-pwhen{font-size:11px;color:var(--text,#113541);margin-top:3px;line-height:1.35;}" +
+      ".aa-pwhen .aa-on,.aa-pwhen .aa-off{font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--dim,#4a5f6e);}" +
+      ".aa-pwhen .aa-arr,.aa-pwhen .aa-rel{color:var(--dim,#4a5f6e);}" +
+      ".aa-viewseg{margin-top:4px;}" +
+      ".aa-tl{position:relative;}" +
+      ".aa-tl-row{display:flex;align-items:center;gap:8px;}" +
+      ".aa-tl-lab{width:112px;flex-shrink:0;text-align:left;font-size:11.5px;font-weight:600;color:var(--text,#113541);background:none;border:none;padding:0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}" +
+      ".aa-tl-axl{cursor:default;}" +
+      ".aa-tl-track{position:relative;flex:1;height:28px;border-bottom:1px solid rgba(74,143,173,.12);}" +
+      ".aa-tl-track::after{content:'';position:absolute;top:0;bottom:0;left:var(--now);width:2px;margin-left:-1px;background:#c0392b;opacity:.5;}" +
+      ".aa-tl-axis{height:24px;border-bottom:1px solid rgba(74,143,173,.4);}.aa-tl-axis::after{display:none;}" +
+      ".aa-tl-tick{position:absolute;bottom:0;height:6px;border-left:1px solid rgba(74,143,173,.55);}" +
+      ".aa-tl-tick span{position:absolute;bottom:7px;left:0;transform:translateX(-50%);font-size:9.5px;color:var(--dim,#4a5f6e);white-space:nowrap;}" +
+      ".aa-tl-now{position:absolute;left:var(--now);bottom:0;height:24px;border-left:2px solid #c0392b;margin-left:-1px;}" +
+      ".aa-tl-now span{position:absolute;top:-1px;left:3px;font-size:9px;font-weight:700;color:#c0392b;text-transform:uppercase;background:#fff;padding:0 2px;}" +
+      ".aa-tl-bar{position:absolute;top:7px;height:14px;border:none;border-radius:7px;padding:0;cursor:pointer;opacity:.85;}" +
+      ".aa-tl-bar:hover{opacity:1;}" +
+      ".aa-tl-bar.cut-l{border-top-left-radius:0;border-bottom-left-radius:0;}" +
+      ".aa-tl-bar.cut-r{border-top-right-radius:0;border-bottom-right-radius:0;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 16px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 16px),transparent);}" +
+      ".aa-tl-key{font-size:10.5px;color:var(--dim,#4a5f6e);margin-top:6px;line-height:1.5;}" +
+      ".aa-tl-key i{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 3px -1px 6px;}.aa-tl-key i:first-child{margin-left:0;}";
     document.head.appendChild(css);
     var ov = document.createElement('div'); ov.id = 'annAdminOverlay';
     ov.innerHTML =
@@ -26504,19 +26525,116 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     if (s === 'scheduled') return { c: '#b57708', bg: 'rgba(212,144,10,.16)', lab: 'SCHEDULED' };
     return { c: '#7a8a92', bg: 'rgba(122,138,146,.15)', lab: 'PAST' };
   }
-  // Admin list order: LIVE, then SCHEDULED, then PAST; saved sort_order within each.
+  // Admin list order (owner, 17 Nov 2026): LIVE first, in their saved sort_order (the order
+  // the app shows them in, so the arrows still matter there); then SCHEDULED by the time
+  // they go on, earliest first; then PAST, most recently ended first.
   var STATUS_RANK = { live: 0, scheduled: 1 };
+  function tms(iso){ var t = iso ? Date.parse(iso) : NaN; return isNaN(t) ? null : t; }
   function byStatus(rows){
     return rows.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) {
       var ra = STATUS_RANK[a.x.status] != null ? STATUS_RANK[a.x.status] : 2;
       var rb = STATUS_RANK[b.x.status] != null ? STATUS_RANK[b.x.status] : 2;
-      return (ra - rb) || (a.i - b.i);
+      if (ra !== rb) return ra - rb;
+      if (ra === 1) { var sa = tms(a.x.starts_at), sb = tms(b.x.starts_at); if (sa != null && sb != null && sa !== sb) return sa - sb; }
+      if (ra === 2) { var ea = tms(a.x.ends_at), eb = tms(b.x.ends_at); if (ea != null && eb != null && ea !== eb) return eb - ea; }
+      return a.i - b.i;
     }).map(function (o) { return o.x; });
+  }
+
+  /* ---- on/off times, always in Sydney time ----------------------------------- */
+  var SYD = 'Australia/Sydney';
+  function sydParts(t){
+    var o = {};
+    try {
+      new Intl.DateTimeFormat('en-AU', { timeZone: SYD, weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+        .formatToParts(new Date(t)).forEach(function (p) { o[p.type] = p.value; });
+    } catch (e) {
+      var d = new Date(t);
+      o = { weekday: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()], day: String(d.getDate()), month: d.toLocaleString('en', { month: 'short' }), year: String(d.getFullYear()), hour: String(d.getHours()), minute: String(d.getMinutes()).padStart(2, '0') };
+    }
+    o.h = (+o.hour) % 24; o.m = +o.minute;
+    return o;
+  }
+  function fmtWhen(iso){
+    var t = tms(iso); if (t == null) return '';
+    var p = sydParts(t), nowY = sydParts(Date.now()).year;
+    var h12 = p.h % 12 || 12, time = h12 + (p.m ? ':' + String(p.m).padStart(2, '0') : '') + (p.h < 12 ? 'am' : 'pm');
+    return p.weekday + ' ' + p.day + ' ' + p.month + (p.year !== nowY ? ' ' + p.year : '') + ', ' + time;
+  }
+  function fmtGap(ms){
+    var m = Math.round(Math.abs(ms) / 60000);
+    if (m < 60) return m + ' min';
+    var h = Math.round(m / 60); if (h < 48) return h + ' h';
+    return Math.round(h / 24) + ' days';
+  }
+  function whenHtml(x){
+    var on = tms(x.starts_at), off = tms(x.ends_at), now = Date.now();
+    var onTxt = on != null ? fmtWhen(x.starts_at) : (tms(x.created_at) != null ? fmtWhen(x.created_at) : 'when published');
+    var offTxt = off != null ? fmtWhen(x.ends_at) : 'no end date';
+    var rel = '';
+    if (x.status === 'live') rel = off != null ? 'ends in ' + fmtGap(off - now) : 'stays on';
+    else if (x.status === 'scheduled') { if (on != null) rel = 'goes on in ' + fmtGap(on - now); }
+    else if (off != null) rel = 'ended ' + fmtGap(now - off) + ' ago';
+    return '<div class="aa-pwhen"><span class="aa-on">On</span> ' + escText(onTxt) +
+           ' <span class="aa-arr">→</span> <span class="aa-off">Off</span> ' + escText(offTxt) +
+           (rel ? ' <span class="aa-rel">· ' + escText(rel) + '</span>' : '') + '</div>';
+  }
+
+  /* ---- timeline (Gantt) view: what shows when ---------------------------------- */
+  var _view = 'list';
+  try { if (localStorage.getItem('ann_admin_view') === 'timeline') _view = 'timeline'; } catch (e) {}
+  try { var _qv = new URLSearchParams(location.search).get('view'); if (_qv === 'timeline' || _qv === 'list') _view = _qv; } catch (e) {}   // &view=timeline links straight to it
+  var DAY = 864e5;
+  function sydMidnight(t){ var p = sydParts(t); return t - (p.h * 36e5 + p.m * 6e4) - (t % 6e4); }
+  function timelineHtml(appKey, rows){
+    var now = Date.now(), from = sydMidnight(now - 7 * DAY);
+    // What is live or coming, plus anything that ended inside the window.
+    var vis = rows.filter(function (x) {
+      if (x.status === 'live' || x.status === 'scheduled') return true;
+      var off = tms(x.ends_at); return off != null && off >= from;
+    });
+    var to = from + 35 * DAY;
+    vis.forEach(function (x) { [tms(x.starts_at), tms(x.ends_at)].forEach(function (t) { if (t != null && t + 3 * DAY > to && t + 3 * DAY <= from + 70 * DAY) to = t + 3 * DAY; }); });
+    to = Math.min(to, from + 70 * DAY);   // a long-running post just runs off the edge
+    var span = to - from, pct = function (t) { return Math.max(0, Math.min(100, (t - from) / span * 100)); };
+    // Axis: a label every day for short windows, every Monday up to ~10 weeks, else each month.
+    var days = span / DAY, ticks = '';
+    for (var t = sydMidnight(from + 36e5 * 26); t < to; t = sydMidnight(t + 36e5 * 26)) {
+      var p = sydParts(t), show = days <= 21 ? true : days <= 75 ? p.weekday === 'Mon' : +p.day === 1;
+      if (!show) continue;
+      ticks += '<div class="aa-tl-tick" style="left:' + pct(t).toFixed(2) + '%"><span>' + escText(days <= 75 ? p.day + ' ' + p.month : p.month) + '</span></div>';
+    }
+    var nowX = pct(now).toFixed(2);
+    var body = vis.length ? vis.map(function (x) {
+      var st = statusStyle(x.status);
+      var a = tms(x.starts_at); if (a == null) a = tms(x.created_at); if (a == null) a = from;
+      var b = tms(x.ends_at), open = b == null; if (open) b = to;
+      var l = pct(a), w = Math.max(pct(b) - l, 1);
+      var tip = (x.title || '(untitled)') + '\nOn: ' + (tms(x.starts_at) != null ? fmtWhen(x.starts_at) : 'when published') +
+                '\nOff: ' + (open ? 'no end date' : fmtWhen(x.ends_at));
+      return '<div class="aa-tl-row">' +
+          '<button type="button" class="aa-tl-lab" data-edit="' + escText(x.id) + '" title="' + escText(tip) + '">' + escText(x.title || '(untitled)') + '</button>' +
+          '<div class="aa-tl-track">' +
+            '<button type="button" class="aa-tl-bar' + (a < from ? ' cut-l' : '') + (open || b > to ? ' cut-r' : '') + '" data-edit="' + escText(x.id) + '" title="' + escText(tip) + '" aria-label="Edit ' + escText(x.title || 'post') + '" ' +
+              'style="left:' + l.toFixed(2) + '%;width:' + w.toFixed(2) + '%;background:' + st.c + ';"></button>' +
+          '</div>' +
+        '</div>';
+    }).join('') : '<div class="aa-empty">Nothing live or scheduled.</div>';
+    return '<div class="aa-grp">' +
+        '<div class="aa-grp-h">' + escText(APP_LABEL[appKey] || appKey) + '<span class="aa-count">' + vis.length + '</span></div>' +
+        '<div class="aa-tl" style="--now:' + nowX + '%">' +
+          '<div class="aa-tl-row"><div class="aa-tl-lab aa-tl-axl"></div><div class="aa-tl-track aa-tl-axis">' + ticks +
+            '<div class="aa-tl-now"><span>now</span></div></div></div>' +
+          body +
+        '</div>' +
+        '<div class="aa-tl-key"><i style="background:#2b6d47"></i>Live <i style="background:#b57708"></i>Scheduled <i style="background:#7a8a92"></i>Past · a fading end runs on past the view. Tap a bar to edit.</div>' +
+      '</div>';
   }
   function rowHtml(x, idx, count, rows){
     // Arrows move a post within its own status group only; the sort would undo anything else.
-    var upOff = idx === 0 || rows[idx - 1].status !== x.status;
-    var downOff = idx === count - 1 || rows[idx + 1].status !== x.status;
+    // Only LIVE rows can be moved: SCHEDULED and PAST are sorted by date.
+    var upOff = x.status !== 'live' || idx === 0 || rows[idx - 1].status !== x.status;
+    var downOff = x.status !== 'live' || idx === count - 1 || rows[idx + 1].status !== x.status;
     var st = statusStyle(x.status);
     var thumb = x.image_url
       ? '<img class="aa-thumb" src="' + escText(x.image_url) + '" alt="">'
@@ -26534,7 +26652,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
           '<div class="aa-phead">' +
             '<span class="aa-ptitle">' + ttl + '</span>' +
             '<span class="aa-pbadge" style="color:' + st.c + ';background:' + st.bg + ';">' + st.lab + '</span>' + rowTags(x) +
-          '</div>' + excHtml +
+          '</div>' + whenHtml(x) + excHtml +
         '</div>' +
         '<div class="aa-acts">' +
           '<button type="button" class="aa-iconbtn" data-edit="' + escText(x.id) + '" aria-label="Edit" style="color:var(--dim,#4a5f6e);">\u270e</button>' +
@@ -26566,7 +26684,17 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
       var swim = byStatus(rows.filter(function (x) { return appOf(x) === 'swim'; }));
       var viz  = byStatus(rows.filter(function (x) { return appOf(x) === 'viz'; }));
       _rows = swim.concat(viz);   // display order: moveRow swaps neighbours in it
-      box.innerHTML = groupHtml('swim', swim) + groupHtml('viz', viz);
+      var tog = '<div class="aa-seg aa-viewseg">' +
+          '<button type="button" class="aa-segbtn' + (_view === 'list' ? ' on' : '') + '" data-view="list">List</button>' +
+          '<button type="button" class="aa-segbtn' + (_view === 'timeline' ? ' on' : '') + '" data-view="timeline">Timeline</button>' +
+        '</div>';
+      box.innerHTML = tog + (_view === 'timeline'
+        ? timelineHtml('swim', swim) + timelineHtml('viz', viz)
+        : groupHtml('swim', swim) + groupHtml('viz', viz));
+      Array.prototype.forEach.call(box.querySelectorAll('[data-view]'), function (b) { b.addEventListener('click', function () {
+        _view = b.getAttribute('data-view'); try { localStorage.setItem('ann_admin_view', _view); } catch (e) {}
+        loadAdminList();
+      }); });
       Array.prototype.forEach.call(box.querySelectorAll('[data-edit]'), function (b) { b.addEventListener('click', function () { editRow(b.getAttribute('data-edit')); }); });
       Array.prototype.forEach.call(box.querySelectorAll('[data-del]'),  function (b) { b.addEventListener('click', function () { delRow(b.getAttribute('data-del')); }); });
       Array.prototype.forEach.call(box.querySelectorAll('[data-up]'),   function (b) { b.addEventListener('click', function () { moveRow(b.getAttribute('data-up'), -1); }); });
