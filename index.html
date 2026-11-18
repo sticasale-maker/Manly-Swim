@@ -16661,6 +16661,13 @@ async function loadAndRender(forceRefresh = false) {
         renderDayPicker(_matrix);
         renderSlider(_matrix);
         renderTimeline(_matrix, _wxMatrix);
+        // The day cards (rails and lines) were drawn by renderSnapshot before history
+        // arrived, so today's early hours it filled with logged NSW data stayed grey.
+        const hNow = _matrix[_sliderIdx];
+        if (hNow) {
+          try { renderDayWindow(hNow.dateTime); } catch (e) {}
+          try { renderDayLines(hNow.dateTime);  } catch (e) {}
+        }
         // The backfilled history carries YESTERDAY's wind, so the bluebottle strip must
         // redraw to add its yesterday tile — the earlier renderSnapshot ran before this
         // data arrived. (Without this the strip stays at today+forward only.)
@@ -22431,17 +22438,45 @@ async function loadForecastHistory() {
       return base;
     });
 
+    // TODAY'S EARLY HOURS (18 Nov 2026). WillyWeather's rows start at local midnight,
+    // but NSW's run starts at 00:00 UTC (11:00 AEDT, 10:00 AEST). Once a new run is
+    // published, the live rows before its first hour carry no NSW data and score grey,
+    // while the Worker logged every one of them with NSW partitions. Those hours are on
+    // the matrix already, so the prepend below never reached them. Give such a row its
+    // logged NSW swell and sea, the same fields mergeNearshoreMatrix sets; its wind and
+    // tide stay as they are. Never in WW backup mode: the Worker logs from whatever run
+    // it has, a stale one included, and the backup already scores those hours.
+    let filled = 0;
+    if (!wwBackupOn() && !FORCE_WW) {
+      const histNs = new Map();
+      histRows.forEach(h => { if (h._nsFeed === true && h.dateTime) histNs.set(h.dateTime, h); });
+      _matrix = _matrix.map(row => {
+        if (!row || !row.dateTime || row._nsFeed === true) return row;
+        const h = histNs.get(row.dateTime.substring(0, 13) + ':00:00');
+        if (!h) return row;
+        filled++;
+        return Object.assign({}, row, {
+          swell1H: h.swell1H, swell1P: h.swell1P, swell1Dir: h.swell1Dir,
+          swell2H: 0, swell2Dir: 0, swell2P: 8,
+          windWaveH: h.windWaveH, windWaveP: h.windWaveP, windWaveDir: h.windWaveDir,
+          _nsFeed: true,
+          _nsLogged: true,
+          _ww: row._ww || h._ww,
+        });
+      });
+    }
+
     // Keep only rows strictly before the earliest dt already in _matrix
     // (avoid duplicating the live forecast's first hours).
     const firstLive = _matrix.length ? _matrix[0].dateTime : '9999';
     const seen = new Set(_matrix.map(r => r.dateTime));
     const toPrepend = histRows.filter(r => r.dateTime < firstLive && !seen.has(r.dateTime));
-    if (!toPrepend.length) return 0;
+    if (!toPrepend.length) return filled;
 
     _matrix = toPrepend.concat(_matrix);
     // _sliderIdx was an index into the old _matrix; shift it forward.
     _sliderIdx += toPrepend.length;
-    return toPrepend.length;
+    return toPrepend.length + filled;
   } catch (e) {
     console.warn('forecast history load failed (non-fatal):', e);
     return 0;
