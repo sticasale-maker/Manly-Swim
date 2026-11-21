@@ -1022,6 +1022,35 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
   .aqm-foot a { color: var(--ann-link, #1e6c8c); }
   .aq-tile.aq-none .aq-level { color: var(--dim); }
   .aq-tile.aq-none .aq-attr { display: none; }
+  /* METRIC-NAME VOTE (21 Nov 2026) — one-time ballot card on Today; see initNameVote */
+  .nv-card { margin: 0 0 10px; padding: 12px 14px; background: var(--card);
+    border: 1.5px solid var(--border); border-radius: var(--radius); color: var(--text); }
+  .nv-card[hidden] { display: none; }
+  .nv-q { font-size: 15px; font-weight: 700; line-height: 1.3; margin: 2px 0 4px; }
+  .nv-sub { font-size: 12px; color: var(--dim); line-height: 1.4; margin-bottom: 10px; }
+  .nv-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .nv-opt { font: inherit; color: var(--text); text-align: left; cursor: pointer;
+    background: rgba(255,255,255,0.35); border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 9px 10px; min-height: 44px; }
+  .nv-opt:hover, .nv-opt:focus-visible { border-color: var(--text); outline: none; }
+  .nv-opt[disabled] { opacity: .55; cursor: default; }
+  .nv-opt-h { display: block; font-size: 13px; font-weight: 700; margin-bottom: 5px; }
+  .nv-opt-n { display: block; font-size: 12px; line-height: 1.5; }
+  .nv-opt-n s { color: var(--dim); text-decoration: none; }
+  .nv-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 9px; min-height: 22px; }
+  .nv-msg { font-size: 12px; color: var(--dim); }
+  .nv-skip { font: inherit; font-size: 12px; color: var(--dim); background: none; border: 0;
+    padding: 4px 2px; cursor: pointer; text-decoration: underline; }
+  .nv-tally { font-size: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+  .nv-res-h { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 6px; }
+  .nv-res { margin-bottom: 7px; }
+  .nv-res-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 3px; }
+  .nv-mine .nv-res-top span { font-weight: 700; }
+  .nv-bar { height: 8px; border-radius: 4px; background: rgba(17,53,65,0.12); overflow: hidden; }
+  .nv-bar i { display: block; height: 100%; background: var(--dim); border-radius: 4px; }
+  .nv-mine .nv-bar i { background: var(--text); }
   .aq-warn { margin: 0 0 10px; padding: 10px 14px; border-radius: 12px; background: #3a2419;
     border-left: 5px solid var(--aq-col, #e08a3c); color: #f1e3d3; font-size: 13.5px; line-height: 1.45; }
   .aq-warn b { color: #fff; }
@@ -4534,6 +4563,31 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
           <span class="poll-peng-wrap"><img id="pollutionPenguin" class="poll-penguin" alt="Pollution forecast" style="display:none"></span>
         </a>
       </div>
+    </div>
+
+    <!-- METRIC-NAME VOTE (21 Nov 2026) — once per device: keep Entry/Surge/Chop, or rename
+         them South Steyne/Bower Lane/Wind Chop. A card, not a popup, so it can never sit on
+         the announcement or weather popups. Votes go to Supabase (migrations/metric_name_vote.sql).
+         The winner ships later as a separate change. Filled and shown by initNameVote(). -->
+    <div class="nv-card" id="nameVoteCard" data-tab="today" hidden role="group" aria-labelledby="nvQ">
+      <div class="quality-card-label">Your vote</div>
+      <div class="nv-q" id="nvQ">Should the three readings get new names?</div>
+      <div class="nv-sub">One vote per phone. The names that win go in a later update.</div>
+      <div class="nv-opts">
+        <button type="button" class="nv-opt" data-choice="keep">
+          <span class="nv-opt-h">Keep them</span>
+          <span class="nv-opt-n">Entry<br>Surge<br>Chop</span>
+        </button>
+        <button type="button" class="nv-opt" data-choice="rename">
+          <span class="nv-opt-h">New names</span>
+          <span class="nv-opt-n">South Steyne <s>(Entry)</s><br>Bower Lane <s>(Surge)</s><br>Wind Chop <s>(Chop)</s></span>
+        </button>
+      </div>
+      <div class="nv-foot">
+        <span class="nv-msg" id="nvMsg" aria-live="polite"></span>
+        <button type="button" class="nv-skip" id="nvSkip">Skip</button>
+      </div>
+      <div class="nv-tally" id="nvTally" hidden></div>
     </div>
 
     <!-- AIR QUALITY TILE (18 Sep 2026) — Google Air Quality, NSW categories, via the Worker's
@@ -30654,6 +30708,100 @@ else theftLoad();
   });
 })();
 </script>
+
+  <script>
+// ===== METRIC-NAME VOTE (21 Nov 2026) =====
+// One ballot per device: keep Entry / Surge / Chop, or rename them South Steyne /
+// Bower Lane / Wind Chop. persistSet('swim_namevote') holds 'keep' | 'rename' |
+// 'skipped' and once set the card never shows again. Skip counts as an answer.
+// Identity is the device UUID only (md5'd server-side). It is a card on Today,
+// not a popup, so it can never cover the announcement or weather popups.
+//   ?namevote=1     admin: always shows the card plus the live tally; still votes for real
+//   ?namevote=stub  local preview: fake tally, nothing sent, nothing saved
+(function initNameVote() {
+  var KEY = 'swim_namevote';
+  var q = location.search.match(/[?&]namevote=([^&]*)/);
+  var ADMIN = !!q && q[1] === '1', STUB = !!q && q[1] === 'stub';
+  var card = document.getElementById('nameVoteCard');
+  if (!card) return;
+  var pg = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  var ps = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
+  if (!ADMIN && !STUB && pg(KEY)) return;
+
+  var URL_ = 'https://gkspukabnfbzrvjoewpc.supabase.co/rest/v1/rpc/';
+  var KEY_ = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
+  var msg = document.getElementById('nvMsg'), tally = document.getElementById('nvTally');
+  var btns = card.querySelectorAll('.nv-opt');
+  var stubRows = [{ choice: 'keep', votes: 14 }, { choice: 'rename', votes: 23 }];
+
+  function device() {
+    try {
+      var id = localStorage.getItem('swim_device_id');
+      if (!id) {
+        id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+        localStorage.setItem('swim_device_id', id);
+      }
+      return id;
+    } catch (e) { return null; }
+  }
+  function rpc(fn, body) {
+    if (STUB) return new Promise(function (res) { setTimeout(function () { res(stubRows); }, 300); });
+    return fetch(URL_ + fn, { method: 'POST',
+      headers: { apikey: KEY_, Authorization: 'Bearer ' + KEY_, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}) })
+      .then(function (r) { if (!r.ok) throw new Error(fn + ' ' + r.status); return r.json(); });
+  }
+  // Results so far, as two bars. Every voter sees them straight after voting (owner,
+  // 21 Nov 2026), from the counts vote_metric_names returns; ?namevote=1 sees them
+  // before voting too. Counts only, never who voted what.
+  function showTally(rows, mine) {
+    if (!Array.isArray(rows)) return;
+    var n = { keep: 0, rename: 0 };
+    rows.forEach(function (r) { n[r.choice] = Number(r.votes) || 0; });
+    var tot = n.keep + n.rename;
+    function row(key, label) {
+      var p = tot ? Math.round(100 * n[key] / tot) : 0;
+      return '<div class="nv-res' + (mine === key ? ' nv-mine' : '') + '">' +
+        '<div class="nv-res-top"><span>' + label + (mine === key ? ' \u00b7 your vote' : '') +
+        '</span><b>' + p + '%</b></div>' +
+        '<div class="nv-bar"><i style="width:' + p + '%"></i></div></div>';
+    }
+    tally.innerHTML = '<div class="nv-res-h">Results so far \u00b7 ' + tot + ' vote' + (tot === 1 ? '' : 's') +
+      (STUB ? ' (stub)' : '') + '</div>' + row('keep', 'Keep them') + row('rename', 'New names');
+    tally.hidden = false;
+  }
+  function setBusy(b) { for (var i = 0; i < btns.length; i++) btns[i].disabled = b; }
+  var voted = false, skip = document.getElementById('nvSkip');
+
+  for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
+    var choice = this.getAttribute('data-choice'), id = device();
+    if (!id) { msg.textContent = 'This phone is blocking storage, so the vote can\u2019t be kept.'; return; }
+    setBusy(true); msg.textContent = 'Sending\u2026';
+    rpc('vote_metric_names', { p_device: id, p_choice: choice }).then(function (rows) {
+      voted = true;
+      if (!STUB) ps(KEY, choice);
+      msg.textContent = 'Thanks \u2014 your vote is in.';
+      skip.textContent = 'Close';
+      showTally(rows, choice);
+    }).catch(function () {
+      setBusy(false); msg.textContent = 'Couldn\u2019t send it. Try again in a moment.';
+    });
+  });
+  // Skip before voting is an answer and hides the card for good; after voting the same
+  // button reads Close and must not overwrite the saved vote with 'skipped'.
+  skip.addEventListener('click', function () {
+    if (!voted && !ADMIN && !STUB) ps(KEY, 'skipped');
+    card.hidden = true;
+  });
+
+  card.hidden = false;
+  if (ADMIN) rpc('metric_name_tally').then(function (r) { showTally(r); }).catch(function () {
+    tally.textContent = 'Tally unavailable (has migrations/metric_name_vote.sql been run?)';
+    tally.hidden = false;
+  });
+})();
+  </script>
 
   <!-- Time-picker preference poll removed 2026-07-25 -->
 </body>
