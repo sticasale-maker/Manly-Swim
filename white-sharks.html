@@ -958,5 +958,25 @@ function sharePage(btn){
   try{navigator.clipboard.writeText(url).then(function(){say('Link copied. Paste it anywhere.');},function(){say(url,true);});}catch(e){say(url,true);}
 }
 </script>
+<script>/* FROM-FORECAST (owner, 22 Nov 2026): opened from the VIZ Forecast app, whose More tab and
+   announcement links add ?from=forecast. The way back is to Forecast V2, not to Swim Manly, and the
+   flag rides along on this site's links to the other article pages so it holds through the shark hub. */
+(function () {
+  try { if (new URLSearchParams(location.search).get('from') !== 'forecast') return; } catch (e) { return; }
+  var a = document.getElementById('backLink') || document.getElementById('back-link') || document.querySelector('.back-link');
+  if (a) { a.href = 'https://app.viz.net.au/Forecast/v2.html'; a.innerHTML = '&larr;&nbsp; Back to VIZ Forecast'; }
+  var n = document.querySelector('.topbar-name'); if (n) n.textContent = 'VIZ Forecast';
+  Array.prototype.forEach.call(document.querySelectorAll('a[href]'), function (el) {
+    if (el === a) return;
+    try {
+      var u = new URL(el.getAttribute('href'), location.href);
+      if (u.origin !== location.origin || u.pathname.indexOf('/Manly-Swim/') !== 0 || !/\.html$/.test(u.pathname)) return;
+      if (u.pathname === location.pathname) return;   // in-page anchors stay as they are
+      u.searchParams.set('from', 'forecast');
+      el.setAttribute('href', u.toString());
+    } catch (e) {}
+  });
+})();
+</script>
 </body>
 </html>
