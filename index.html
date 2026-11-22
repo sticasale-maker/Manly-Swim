@@ -11362,6 +11362,47 @@ function mergeNearshoreMatrix(matrix, nsMap) {
   });
 }
 
+// TIDE FOR DAYS 8-10 (owner, 22 Nov 2026: "find out why the mismatch", then "yes, fix it").
+// /forecast stops at 7 days (its cap, shared with the Forecast App, is not ours to move), so
+// the swell-only rows past WW's horizon had tideM null. Surge then scored NO tide term and no
+// high-water ceiling there: up to 27 points under the Worker's /bower-surge, Surgy where it
+// read Washy, i.e. a missing tide read as a gentle one (CLAUDE.md §8). Entry lost its tide too.
+// /bower-surge already interpolates the SAME CTB tide table (WW 23217, 11 days from
+// yesterday) with the same cosine for every NS hour, so its per-hour tideM fills ONLY those
+// rows. Hours inside WW's window keep the app's own tide, byte-identical. Saved on the phone
+// with the forecast (SAVED_FORECAST_MAX_MS) so an offline open scores days 8-10 the same.
+// No answer and no save: the rows stay tide-less, exactly as before.
+const OUTLOOK_TIDE_KEY = 'outlookTide:v1';
+let _outlookTide = null;   // { 'YYYY-MM-DD HH:00:00': metres }
+try {
+  const c = JSON.parse(localStorage.getItem(OUTLOOK_TIDE_KEY) || 'null');
+  if (c && c.at && c.tide && Date.now() - c.at < SAVED_FORECAST_MAX_MS) _outlookTide = c.tide;
+} catch (e) {}
+async function fetchOutlookTide() {
+  const res = await fetch('https://bold-rain-6ded.sticasale.workers.dev/bower-surge');
+  if (!res.ok) throw new Error('bower-surge ' + res.status);
+  const j = await res.json();
+  const m = {};
+  (j && j.hours || []).forEach(x => { if (x && x.t && typeof x.tideM === 'number') m[x.t] = x.tideM; });
+  if (!Object.keys(m).length) return null;
+  _outlookTide = m;
+  try { localStorage.setItem(OUTLOOK_TIDE_KEY, JSON.stringify({ at: Date.now(), tide: m })); } catch (e) {}
+  return m;
+}
+// Fill the tide on swell-only rows that lack one. Returns how many it filled.
+function fillOutlookTide() {
+  if (!_outlookTide || !_matrix || !_matrix.length) return 0;
+  let n = 0;
+  _matrix = _matrix.map(r => {
+    if (!r || !r._swellOnly || r.tideM != null) return r;
+    const t = _outlookTide[String(r.dateTime).substring(0, 13) + ':00:00'];
+    if (typeof t !== 'number') return r;
+    n++;
+    return Object.assign({}, r, { tideM: t });
+  });
+  return n;
+}
+
 // Append NS swell-only outlook rows (days ~8-10) past WillyWeather's horizon so the
 // day 6-10 strip fills even on a warm/standalone (tile) launch, not only after the
 // slower live NS fetch. Shared by the cache + live merge paths. Idempotent: once the
@@ -11387,6 +11428,7 @@ function appendNsOutlook(nsMap){
   if (extra.length) {
     _matrix = _matrix.concat(extra).sort((a, b) => a.dateTime < b.dateTime ? -1 : a.dateTime > b.dateTime ? 1 : 0);
   }
+  fillOutlookTide();
   return extra.length;
 }
 
@@ -16627,13 +16669,15 @@ async function loadAndRender(forceRefresh = false) {
     // until the user pulled to refresh.
     try {
       const withTimeout = (p, ms) => Promise.race([p, new Promise((_,rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
-      const [omRes, wxRes, bwRes, nsRes, obRes] = await Promise.allSettled([
+      const [omRes, wxRes, bwRes, nsRes, obRes, otRes] = await Promise.allSettled([
         withTimeout(fetchOMarine(),    14000),
         withTimeout(fetchOMWeather(),  16000),
         withTimeout(fetchBeachwatch(), 12000),
         withTimeout(fetchNearshore(),  12000),
         withTimeout(fetchWindObs(8000), 9000),
+        withTimeout(fetchOutlookTide(), 9000),   // tide for the days 8-10 rows (fillOutlookTide)
       ]);
+      if (otRes.status !== 'fulfilled' || !otRes.value) diag('Outlook tide unavailable — days 8-10 keep no tide');
 
       setSrc('om', (omRes.status === 'fulfilled' && omRes.value) ? 'ok' : 'down');
       if (omRes.status === 'fulfilled' && omRes.value) {
