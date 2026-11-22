@@ -9955,11 +9955,46 @@ function wwSouthPeriod(d) {
   for (let k = -half; k <= half; k++) { const p = _wwPMap.get(t + k * 3600e3); if (p > 0) { sum += p; n++; } }
   return n ? sum / n : own;
 }
+// The hour's WillyWeather swell for the south term (owner, 22 Nov 2026: "fix the Worker's
+// 3-hourly south-swell spikes too"). From about day 6 WW reports swell only every 3 hours, so
+// on an exact-hour match the two hours between got NO south term and the score zig-zagged:
+// the Worker's /bower-surge read Washy at 11 am and 2 pm and Surgy either side (30 Nov 2026).
+// On such a gap hour this interpolates between the WW hours either side, at most 3 h apart
+// (direction the short way round). An hour WW reports keeps its own values, byte-identical;
+// past WW's last hour, or across a longer gap, there is still nothing (no extrapolation).
+let _wwSMap = null, _wwSMapSrc = null, _wwSMapLen = -1;
+function wwSouthSwell(d) {
+  const w = d && d._ww;
+  if (w && w.swell1H > 0) return w;
+  if (!d || !d.dateTime || typeof _matrix === 'undefined' || !_matrix || !_matrix.length) return null;
+  if (_wwSMapSrc !== _matrix || _wwSMapLen !== _matrix.length) {
+    _wwSMap = new Map();
+    for (const r of _matrix) if (r && r.dateTime && r._ww && r._ww.swell1H > 0) _wwSMap.set(Date.parse(String(r.dateTime).replace(' ', 'T')), r._ww);
+    _wwSMapSrc = _matrix; _wwSMapLen = _matrix.length;
+  }
+  const t = Date.parse(String(d.dateTime).replace(' ', 'T'));
+  if (!isFinite(t)) return null;
+  let a = null, b = null, ka = 0, kb = 0;
+  for (let k = 1; k <= 2; k++) {
+    if (!a) { const x = _wwSMap.get(t - k * 3600e3); if (x) { a = x; ka = k; } }
+    if (!b) { const x = _wwSMap.get(t + k * 3600e3); if (x) { b = x; kb = k; } }
+  }
+  if (!a || !b || ka + kb > 3) return null;
+  const f = ka / (ka + kb);
+  const dd = ((((b.swell1Dir || 0) - (a.swell1Dir || 0)) % 360) + 540) % 360 - 180;
+  return {
+    swell1H: a.swell1H + f * (b.swell1H - a.swell1H),
+    swell1P: (a.swell1P || 0) + f * ((b.swell1P || 0) - (a.swell1P || 0)),
+    swell1Dir: (((a.swell1Dir || 0) + f * dd) % 360 + 360) % 360,
+  };
+}
 function surgeSouthWrap(d, tideM) {
   const cap = (SITE.surgeSouthMaxPts != null) ? SITE.surgeSouthMaxPts : 0;
-  const w = d && d._ww;
+  const w = wwSouthSwell(d);
   if (!(cap > 0) || !w || tideM == null || !isFinite(tideM)) return 0;
-  const H = w.swell1H || 0, T = wwSouthPeriod(d), D = w.swell1Dir || 0;
+  // A gap hour has no period of its own: wwSouthPeriod then averages its WW neighbours, or
+  // returns 0 when none is in reach, and the interpolated period stands in.
+  const H = w.swell1H || 0, T = wwSouthPeriod(d) || w.swell1P || 0, D = w.swell1Dir || 0;
   if (!(H > 0) || !(T > 0)) return 0;
   const ss = (x, a, b) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   const lo = (SITE.surgeSouthTideLo != null) ? SITE.surgeSouthTideLo : 0.5;
