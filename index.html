@@ -11424,12 +11424,20 @@ async function fetchOutlookTide() {
   try { localStorage.setItem(OUTLOOK_TIDE_KEY, JSON.stringify({ at: Date.now(), tide: m })); } catch (e) {}
   return m;
 }
-// Fill the tide on swell-only rows that lack one. Returns how many it filled.
+// Fill the tide on swell-only rows that lack one, AND on the last WW hours after WW's final
+// tide turn: getTide holds those flat at that turn's height (no turn after it to bracket them),
+// which on 28 Nov 2026 kept 7-11 pm at a 0.26 m low while the tide rose to 1.14 m and Surge read
+// 16 points under /bower-surge. Hours bracketed by WW's own turns are never touched.
+// Returns how many it filled.
 function fillOutlookTide() {
   if (!_outlookTide || !_matrix || !_matrix.length) return 0;
+  const real = (_tidePts || []).filter(p => p && !p.est && isFinite(p.ts));
+  const lastTurn = real.length ? real[real.length - 1].ts : Infinity;
   let n = 0;
   _matrix = _matrix.map(r => {
-    if (!r || !r._swellOnly || r.tideM != null) return r;
+    if (!r || !r.dateTime) return r;
+    const pastTurns = Date.parse(String(r.dateTime).replace(' ', 'T')) > lastTurn;
+    if (!(r._swellOnly && r.tideM == null) && !(pastTurns && !r._swellOnly)) return r;
     const t = _outlookTide[String(r.dateTime).substring(0, 13) + ':00:00'];
     if (typeof t !== 'number') return r;
     n++;
