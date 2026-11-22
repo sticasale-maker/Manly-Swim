@@ -1050,6 +1050,11 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
   .nv-msg { font-size: 12px; color: var(--dim); }
   .nv-skip { font: inherit; font-size: 12px; color: var(--dim); background: none; border: 0;
     padding: 4px 2px; cursor: pointer; text-decoration: underline; }
+  .nv-res-top small { font-weight: 400; color: var(--dim); }
+  .nv-rescard { margin: 0 0 12px; }
+  .nv-rescard .nv-q { font-size: 14px; margin-bottom: 8px; }
+  .nv-votebtn { width: 100%; text-align: center; }
+  .nv-votebtn .nv-opt-h { margin: 0; }
   .nv-tally { font-size: 12px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
   .nv-res-h { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
     color: var(--dim); margin-bottom: 6px; }
@@ -4709,6 +4714,14 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
 
     <!-- ── Community section ("Swimmers' Corner") — reports & hellos from swimmers ── -->
     <div class="community-group" data-tab="community">
+
+    <!-- NAME VOTE RESULTS (22 Nov 2026) - live results of the metric-name vote for phones that
+         have voted; a Vote button for phones that have not. Filled by initNameVote(). -->
+    <div class="nv-card nv-rescard" id="nameVoteResults" hidden>
+      <div class="quality-card-label">Name vote · still open</div>
+      <div class="nv-q">Entry, Surge, Chop or South Steyne, Bower Lane, Wind Chop?</div>
+      <div id="nvResBody"></div>
+    </div>
 
     <!-- Underwater visibility strip — swimmer reports (Supabase), last 28h -->
     <div id="visSection">
@@ -30935,33 +30948,44 @@ else theftLoad();
 </script>
 
   <script>
-// ===== METRIC-NAME VOTE (21 Nov 2026) =====
-// One ballot per device: keep Entry / Surge / Chop, or rename them South Steyne /
-// Bower Lane / Wind Chop. persistSet('swim_namevote') holds 'keep' | 'rename' |
-// 'skipped' and once set the card never shows again. Skip counts as an answer.
-// Identity is the device UUID only (md5'd server-side).
-// A POPUP since 21 Nov 2026 (owner: a card on Today went unseen). It waits ~8 s after
-// load, then until no announcement, weather popup, settings panel, bars tip, stats or
-// admin overlay and no splash is showing, and sits under the announcement and weather
-// popups if they open later. A tap outside closes it without an answer, so it comes
-// back on a later open, at most NV_MAX_SHOWS times in all.
-//   ?namevote=1     admin: always shows the card plus the live tally; still votes for real
-//   ?namevote=stub  local preview: fake tally, nothing sent, nothing saved
+// ===== METRIC-NAME VOTE (21 Nov 2026; poll kept open and results public 22 Nov) =====
+// Ballot: keep Entry / Surge / Chop, or rename them South Steyne / Bower Lane / Wind
+// Chop. persistSet('swim_namevote') holds 'keep' | 'rename' once this phone has VOTED
+// ('skipped' is not a vote). Identity is the device UUID only (md5'd server-side).
+// Owner, 22 Nov 2026: "poll still going, show the current results (and number of
+// votes) to everybody, allowing new votes only to the ones who havent voted yet".
+//   - Not voted: the ballot popup (at most NV_MAX_SHOWS showings, Skip included);
+//     the results, with the number of votes, appear right after the vote.
+//   - Voted: never the ballot again. One results-only popup, then the Community card.
+//   - Community tab: #nameVoteResults always shows the live results to voters, and a
+//     Vote button (opens the ballot) to phones that have not voted.
+// The popup waits ~8 s after load, then until no announcement, weather popup,
+// settings panel, bars tip, stats or admin overlay and no splash is showing, and sits
+// under the announcement and weather popups if they open later.
+//   ?namevote=1          admin: ballot popup every time plus the live tally; votes for real
+//   ?namevote=stub       local preview of a phone that has not voted (fake tally, nothing sent)
+//   ?namevote=stubvoted  local preview of a phone that has voted 'rename'
 (function initNameVote() {
   var KEY = 'swim_namevote';
   var q = location.search.match(/[?&]namevote=([^&]*)/);
-  var ADMIN = !!q && q[1] === '1', STUB = !!q && q[1] === 'stub';
+  var mode = q ? q[1] : '';
+  var ADMIN = mode === '1', STUB = mode === 'stub' || mode === 'stubvoted';
   var card = document.getElementById('nameVoteCard');
+  var resCard = document.getElementById('nameVoteResults');
   if (!card) return;
   var pg = window.persistGet || function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } };
   var ps = window.persistSet || function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} };
-  if (!ADMIN && !STUB && pg(KEY)) return;
+
+  var mine = mode === 'stubvoted' ? 'rename' : (STUB ? null : pg(KEY));
+  if (mine !== 'keep' && mine !== 'rename') mine = null;
+  if (ADMIN) mine = null;                       // the admin view always offers the ballot
 
   var URL_ = 'https://gkspukabnfbzrvjoewpc.supabase.co/rest/v1/rpc/';
   var KEY_ = 'sb_publishable_TkhnIKIYdRCNQ-DSVLqjLw_dTMcLIqW';
   var msg = document.getElementById('nvMsg'), tally = document.getElementById('nvTally');
   var btns = card.querySelectorAll('.nv-opt');
-  var stubRows = [{ choice: 'keep', votes: 14 }, { choice: 'rename', votes: 23 }];
+  var stubRows = [{ choice: 'keep', votes: 25 }, { choice: 'rename', votes: 21 }];
+  var LABEL = { keep: 'Keep them', rename: 'New names' };
 
   function device() {
     try {
@@ -30981,78 +31005,125 @@ else theftLoad();
       body: JSON.stringify(body || {}) })
       .then(function (r) { if (!r.ok) throw new Error(fn + ' ' + r.status); return r.json(); });
   }
-  // Results so far, as two bars. Every voter sees them straight after voting (owner,
-  // 21 Nov 2026), from the counts vote_metric_names returns; ?namevote=1 sees them
-  // before voting too. Never who voted what. Voters see percentages only; the number of
-  // votes is for the owner's ?namevote=1 view alone (owner, 21 Nov 2026).
-  function showTally(rows, mine) {
-    if (!Array.isArray(rows)) return;
+  // Results so far: two bars with percentages, and the number of votes (public since
+  // 22 Nov 2026). Counts only, never who voted what.
+  function tallyHtml(rows, my) {
     var n = { keep: 0, rename: 0 };
     rows.forEach(function (r) { n[r.choice] = Number(r.votes) || 0; });
     var tot = n.keep + n.rename;
-    function row(key, label) {
+    function row(key) {
       var p = tot ? Math.round(100 * n[key] / tot) : 0;
-      return '<div class="nv-res' + (mine === key ? ' nv-mine' : '') + '">' +
-        '<div class="nv-res-top"><span>' + label + (mine === key ? ' \u00b7 your vote' : '') +
-        '</span><b>' + p + '%</b></div>' +
+      return '<div class="nv-res' + (my === key ? ' nv-mine' : '') + '">' +
+        '<div class="nv-res-top"><span>' + LABEL[key] + (my === key ? ' · your vote' : '') +
+        '</span><b>' + p + '% <small>(' + n[key] + ')</small></b></div>' +
         '<div class="nv-bar"><i style="width:' + p + '%"></i></div></div>';
     }
-    tally.innerHTML = '<div class="nv-res-h">Results so far' +
-      (ADMIN ? ' \u00b7 ' + tot + ' vote' + (tot === 1 ? '' : 's') : '') +
-      (STUB ? ' (stub)' : '') + '</div>' + row('keep', 'Keep them') + row('rename', 'New names');
+    return '<div class="nv-res-h">Results so far · ' + tot + ' vote' + (tot === 1 ? '' : 's') +
+      (STUB ? ' (stub)' : '') + '</div>' + row('keep') + row('rename');
+  }
+  function showTally(rows, my) {
+    if (!Array.isArray(rows)) return;
+    tally.innerHTML = tallyHtml(rows, my);
     tally.hidden = false;
+    paintResCard(rows);
   }
   function setBusy(b) { for (var i = 0; i < btns.length; i++) btns[i].disabled = b; }
-  var voted = false, skip = document.getElementById('nvSkip');
+  var skip = document.getElementById('nvSkip');
+  card.insertBefore(tally, card.querySelector('.nv-foot'));   // results above Close/Skip
+
+  // Results-only face of the popup, for a phone that has already voted.
+  function resultsFace() {
+    card.querySelector('.nv-opts').hidden = true;
+    var subs = card.querySelectorAll('.nv-sub');
+    for (var i = 0; i < subs.length; i++) subs[i].hidden = true;
+    card.querySelector('.quality-card-label').textContent = 'Name vote';
+    document.getElementById('nvQ').textContent = 'Entry, Surge, Chop or new names? The vote is still open.';
+    msg.textContent = '';
+    skip.textContent = 'Close';
+  }
 
   for (var i = 0; i < btns.length; i++) btns[i].addEventListener('click', function () {
     var choice = this.getAttribute('data-choice'), id = device();
-    if (!id) { msg.textContent = 'This phone is blocking storage, so the vote can\u2019t be kept.'; return; }
-    setBusy(true); msg.textContent = 'Sending\u2026';
+    if (!id) { msg.textContent = 'This phone is blocking storage, so the vote can’t be kept.'; return; }
+    setBusy(true); msg.textContent = 'Sending…';
     rpc('vote_metric_names', { p_device: id, p_choice: choice }).then(function (rows) {
-      voted = true;
+      if (!ADMIN) mine = choice;
       if (!STUB) ps(KEY, choice);
-      msg.textContent = 'Thanks \u2014 your vote is in.';
+      msg.textContent = 'Thanks — your vote is in.';
       skip.textContent = 'Close';
       showTally(rows, choice);
     }).catch(function () {
-      setBusy(false); msg.textContent = 'Couldn\u2019t send it. Try again in a moment.';
+      setBusy(false); msg.textContent = 'Couldn’t send it. Try again in a moment.';
     });
   });
-  // Skip before voting is an answer and hides the card for good; after voting the same
-  // button reads Close and must not overwrite the saved vote with 'skipped'.
+
   var ov = document.createElement('div');
   ov.id = 'nameVoteOverlay';
-  card.removeAttribute('data-tab');          // no longer a Today card: the overlay shows on any tab
+  card.removeAttribute('data-tab');          // not a Today card: the overlay shows on any tab
   card.setAttribute('role', 'dialog'); card.setAttribute('aria-modal', 'true');
   ov.appendChild(card);
   document.body.appendChild(ov);
   function close() { ov.classList.remove('show'); }
-
+  // Skip is "not now" (it no longer ends the ballot: only a vote does); after a vote
+  // the same button reads Close.
   skip.addEventListener('click', function () {
-    if (!voted && !ADMIN && !STUB) ps(KEY, 'skipped');
+    if (!mine && !ADMIN && !STUB) ps(KEY, 'skipped');
     close();
   });
-  // Tap outside = "not now": no answer saved, so it can come back on a later open.
   ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
 
-  var NV_MAX_SHOWS = 3, SHOWN_KEY = 'swim_namevote_shown';
+  // ---- Community card: live results for voters, a Vote button for everyone else
+  function paintResCard(rows) {
+    if (!resCard) return;
+    var body = document.getElementById('nvResBody');
+    if (mine && Array.isArray(rows)) {
+      body.innerHTML = tallyHtml(rows, mine);
+    } else if (!mine) {
+      body.innerHTML = '<div class="nv-sub" style="margin-bottom:8px">You haven’t voted yet. ' +
+        'The results show once you have.</div>' +
+        '<button type="button" class="nv-opt nv-votebtn" id="nvVoteNow"><span class="nv-opt-h">Vote</span></button>';
+      document.getElementById('nvVoteNow').onclick = function () { card.hidden = false; ov.classList.add('show'); };
+    }
+    resCard.hidden = false;
+  }
+  function loadResults() {
+    if (!mine) { paintResCard(null); return; }
+    rpc('metric_name_tally').then(paintResCard)
+      .catch(function () { if (resCard) resCard.hidden = true; });
+  }
+  loadResults();
+  // A results card left open on Community refreshes when the app comes back to the front.
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && mine) loadResults(); });
+
+  // ---- Which popup, if any, this open
+  var NV_MAX_SHOWS = 3, SHOWN_KEY = 'swim_namevote_shown', RES_KEY = 'swim_namevote_results_seen';
   function blocked() {
     if (document.querySelector('#annOverlay.show, #wxAlertOverlay.show, #customPanel.show, #barsTip,' +
         ' #statsOverlay.show, #adminOverlay.show, #annAdminOverlay.show, #btOverlay.show')) return true;
     var sp = document.getElementById('video-splash');
     return !!(sp && getComputedStyle(sp).display !== 'none');
   }
+  var want = null;
+  if (mine) {
+    if (STUB || !pg(RES_KEY)) want = 'results';          // one results-only showing per voted phone
+  } else if (ADMIN || STUB || (parseInt(pg(SHOWN_KEY) || '0', 10) || 0) < NV_MAX_SHOWS) {
+    want = 'ballot';
+  }
+  if (!want) return;
   function open() {
+    if (want === 'results') {
+      resultsFace();
+      rpc('metric_name_tally').then(function (r) { tally.innerHTML = tallyHtml(r, mine); tally.hidden = false; })
+        .catch(function () { tally.textContent = 'Results unavailable right now.'; tally.hidden = false; });
+      if (!STUB) ps(RES_KEY, '1');
+    } else {
+      if (!ADMIN && !STUB) ps(SHOWN_KEY, String((parseInt(pg(SHOWN_KEY) || '0', 10) || 0) + 1));
+      if (ADMIN) rpc('metric_name_tally').then(function (r) { tally.innerHTML = tallyHtml(r); tally.hidden = false; })
+        .catch(function () { tally.textContent = 'Tally unavailable.'; tally.hidden = false; });
+    }
     card.hidden = false;
     ov.classList.add('show');
-    if (!ADMIN && !STUB) ps(SHOWN_KEY, String((parseInt(pg(SHOWN_KEY) || '0', 10) || 0) + 1));
-    if (ADMIN) rpc('metric_name_tally').then(function (r) { showTally(r); }).catch(function () {
-      tally.textContent = 'Tally unavailable (has migrations/metric_name_vote.sql been run?)';
-      tally.hidden = false;
-    });
   }
-  if (!ADMIN && !STUB && (parseInt(pg(SHOWN_KEY) || '0', 10) || 0) >= NV_MAX_SHOWS) return;
   var tries = 0;
   setTimeout(function attempt() {
     if (!blocked()) { open(); return; }
