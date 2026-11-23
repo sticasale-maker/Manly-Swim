@@ -8215,7 +8215,18 @@ const SITE_DEFAULTS = {
   // OFFSHORE swell x period gate (8->10 s) x surgeSouthMaxPts x (1 - exp(-H^2 T / 12)).
   // Multiplicative in tide (no swell, no points). Zero on ENE days, so 14 Sep, 26 Sep and
   // 25 Oct score exactly as before. 0 turns it off.
-  surgeSouthMaxPts: 40,    // ceiling at full tide for a big long south swell; 0 = off. 45 → 30 (8 Nov 2026, owner: too strong; 29 Oct 11-13 Drifty ~25) → 40 (11 Nov, owner, with the SSE gate below)
+  surgeSouthMaxPts: 30,    // points per size unit at full tide; 0 = off. 45 → 30 (8 Nov 2026) → 40 (11 Nov) → 30 per unit with the size curve below (24 Nov 2026, "tamer Shape B")
+  // Size and tide shape ("tamer Shape B", owner's "release it", 24 Nov 2026). Was cap × (1 − exp(−H²T/12)),
+  // 83% saturated at 1.4 m 11 s, so a 2.4-3 m swell scored barely above a 1.4 m one while the
+  // wall cam showed 2-4x the wash (10 Nov abs p90 108 vs 29 Oct 27). Now size = min(SizeMax,
+  // H²T / SizeDiv), so it keeps growing to twice a 1.5 m 10 s swell. And a bigger swell reaches
+  // the wall lower down the tide: the TideLo/TideHi window drops TideShift m per metre of swell
+  // above 1.5 m. Rank agreement with the cam over 29-30 Oct and 9-10 Nov: 0.31 → 0.43. 9-10 Nov
+  // 07-11 read Washy ~52 (soft ceiling) and Steady by 14:00; 29 Oct and 11 Nov a few points
+  // lower. Full Shape B (SizeMax 4, shift 0.35) fit 0.51 but read 9 Nov Washy into low tide.
+  surgeSouthSizeDiv:   22.5, // H²T that counts as one size unit (1.5 m 10 s)
+  surgeSouthSizeMax:   2,    // size units at most
+  surgeSouthTideShift: 0.175, // m the tide window drops per metre of swell above 1.5 m
   // Direction gate (11 Nov 2026, owner). Was fixed at 140→155 deg, so a 149 deg swell counted
   // at about half. Tue 10 Nov (WW 2.4 m 149 deg 11 s, 1.77 m tide): the cam's wall whitewash
   // was the biggest on record (abs p90 70 at 10:00 vs 18 on 29 Oct, both cloudless) and a
@@ -10041,13 +10052,17 @@ function surgeSouthWrap(d, tideM) {
   const H = w.swell1H || 0, T = wwSouthPeriod(d) || w.swell1P || 0, D = w.swell1Dir || 0;
   if (!(H > 0) || !(T > 0)) return 0;
   const ss = (x, a, b) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-  const lo = (SITE.surgeSouthTideLo != null) ? SITE.surgeSouthTideLo : 0.5;
-  const hi = (SITE.surgeSouthTideHi != null) ? SITE.surgeSouthTideHi : 1.7;
+  const shiftK = (SITE.surgeSouthTideShift != null) ? SITE.surgeSouthTideShift : 0;
+  const shift = shiftK * Math.max(0, H - 1.5);
+  const lo = ((SITE.surgeSouthTideLo != null) ? SITE.surgeSouthTideLo : 0.5) - shift;
+  const hi = ((SITE.surgeSouthTideHi != null) ? SITE.surgeSouthTideHi : 1.7) - shift;
   const dLo = (SITE.surgeSouthDirLo != null) ? SITE.surgeSouthDirLo : 125;
   const dHi = (SITE.surgeSouthDirFull != null) ? SITE.surgeSouthDirFull : 140;
   const g = ss(D, dLo, Math.max(dLo + 1, dHi)) * (1 - ss(D, 190, 210)) * ss(T, 8, 10) * ss(tideM, lo, Math.max(lo + 0.05, hi));
   if (!(g > 0)) return 0;
-  return g * cap * (1 - Math.exp(-(H * H * T) / 12));
+  const div = (SITE.surgeSouthSizeDiv > 0) ? SITE.surgeSouthSizeDiv : 22.5;
+  const sMax = (SITE.surgeSouthSizeMax > 0) ? SITE.surgeSouthSizeMax : 2;
+  return g * cap * Math.min(sMax, (H * H * T) / div);
 }
 
 // High-water ceilings (26 Oct 2026) — see SITE_DEFAULTS.entryTideMaxPts. Only ever lowers a
@@ -18568,7 +18583,7 @@ const TUNE_PARAMS = [
   { key:'surgeWallMaxPts', label:'SURGE · Wall reflection — ceiling (pts)', min:0, max:60, step:1, hint:'LOCAL — no sheet cell. The most the wall can add at full reflection, however big the sea. Stops a big wind-sea doubling the bay.' },
   { key:'surgeWallTideLo', label:'SURGE · Wall reflection — starts (m tide)', min:0.5, max:2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which water starts reaching the wall. Below it, no reflection.' },
   { key:'surgeWallTideHi', label:'SURGE · Wall reflection — full (m tide)', min:0.6, max:2.2, step:0.05, hint:'LOCAL — no sheet cell. Tide height at which the full reflected share applies. Keep above the start.' },
-  { key:'surgeSouthMaxPts', label:'SURGE · South swell at the wall — strength (pts)', min:0, max:60, step:1, hint:'LOCAL — DRAFT 29 Oct 2026, no sheet cell. Most a big long SOUTH/SSE swell (WW offshore, 140-190 deg, 10 s+) can add to the bay at full tide; a 1.5 m 10 s swell gets ~85% of it. 0 turns it off. 40 (11 Nov) reads 29 Oct 11-13 Drifty 33-35 and 10 Nov 09-11 Surgy 42; 30 read them Drifty 25 and 21; 45 read 29 Oct Surgy ~38.' },
+  { key:'surgeSouthMaxPts', label:'SURGE · South swell at the wall — strength (pts)', min:0, max:60, step:1, hint:'LOCAL, no sheet cell. Points per size unit at full tide for a long SOUTH/SSE swell (WW offshore, 140-190 deg, 10 s+). One unit = a 1.5 m 10 s swell; up to 2 units (surgeSouthSizeMax). 0 turns it off. 30 since 24 Nov 2026 (tamer Shape B): 10 Nov 07-11 Washy ~52, 29 Oct 11-13 Drifty 27-31.' },
   { key:'surgeSouthDirLo', label:'SURGE · South swell at the wall — gate starts (deg)', min:100, max:170, step:1, hint:'LOCAL, no sheet cell. Swell direction where the south term starts to count (smoothstep to full weight).' },
   { key:'surgeSouthDirFull', label:'SURGE · South swell at the wall — full from (deg)', min:110, max:180, step:1, hint:'LOCAL, no sheet cell. Full weight from here to 190 deg. 140 since 11 Nov 2026 (was 155): 10 Nov 149 deg had the biggest wall wash on record.' },
   { key:'surgeSouthTideLo', label:'SURGE · South swell at the wall — starts (m tide)', min:0, max:1.5, step:0.05, hint:'LOCAL — DRAFT. Below this tide the south swell breaks on the shelf and nothing reaches the wall. 0.5 m.' },
@@ -18790,7 +18805,7 @@ const TW_GROUPS = [
       { key:'pointSens', name:'Point sensitivity', tag:'LIVE', desc:'Surge is the <b>worse of the bay and the point</b>, and this scales the point. The point is the one spot on the line where long-period swell is concentrated rather than sheltered. 0 turns it off.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointPeriodLo', name:'Point period floor', tag:'LIVE', desc:'Below this period the point term is <b>exactly zero</b> — long swell feels the shelf, short swell does not. This is what keeps ordinary days scoring as they always did. The point term is capped at the <b>Surgy edge</b> below, so the point alone can reach Surgy but never Washy — unless the release below is on.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'pointWashyMult', name:'Point Washy release', tag:'DRAFT', desc:'<b>0 = off.</b> On a long-period swell (≥14 s) that keeps building, lets the point go past the Surgy cap once its energy reaches this many × the Surgy edge — so a 1.4 m 15 s SE swell no longer reads the same as a 0.6 m one. At 15 s: 2 ≈ 0.74 m, 3 ≈ 0.91 m, 4 ≈ 1.05 m. Washy under a Caution entry makes the day <b>dangerous</b>.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
-      { key:'surgeSouthMaxPts', name:'South swell at the wall', tag:'DRAFT', desc:'A long <b>south or south-south-east</b> swell offshore (WillyWeather, 140–190°, 10 s+) that the NSW node misses. Points it can add to the bay at full tide; a 1.5 m 10 s swell gets ~85%. <b>0 = off.</b> Zero on ENE days.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
+      { key:'surgeSouthMaxPts', name:'South swell at the wall', tag:'DRAFT', desc:'A long <b>south or south-south-east</b> swell offshore (WillyWeather, 140–190°, 10 s+) that the NSW node misses. Points per size unit at full tide; one unit = a 1.5 m 10 s swell, up to 2 units. <b>0 = off.</b> Zero on ENE days.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'surgeSouthTideLo', name:'South swell — starts (m tide)', tag:'DRAFT', desc:'Below this tide the swell breaks on the shelf and nothing reaches the wall.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
       { key:'surgeSouthTideHi', name:'South swell — full (m tide)', tag:'DRAFT', desc:'Tide at which the full strength applies; smooth in between. 1.7 puts 29 Oct 14:45 (0.99 m) at ~14, Steady.', cell:'local · no sheet cell', prov:'local', provTxt:'LOCAL · push to live' },
     ],
