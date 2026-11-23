@@ -10507,7 +10507,62 @@ function seaGuardRow(d) {
   return Object.assign({}, d, { windWaveH: 0, windWaveP: 0, _seaGuard: true });
 }
 
+// CAM CORRECTIONS (owner, 24 Nov 2026: "a command where i push a button and the check takes
+// place on command ... only on days that look very different from forecast"). The owner runs
+// the on-demand "Cam check now" task; it reads the South Steyne cam and, when the cam and the
+// forecast differ by a band or more, writes one entry here and pushes:
+//   'YYYY-MM-DD': { at: 'HH:MM', from: H, until: H, entry: 'doable', surge: 'drifty' }
+// For that date's hours from..until (Sydney), Entry and/or Surge move ONE band toward the cam
+// read, to just inside that band's edge (the smallest move that changes the band). Never
+// lowers a Dangerous entry or a Washy surge: a few frames are not enough to clear a red call.
+// Raising is allowed. It goes through calcScore, so the answer line, rails, ribbon, Oracle
+// facts and timeline all follow, and the card caption says "cam HH:MM" instead of a modelled
+// height. The live forecast path only: CAL/compare (modelOverride) and no-call hours are left
+// alone. Client only: the Worker's /bower-surge does not see it.
+// Kept OUT of SITE_DEFAULTS on purpose: the Worker's generator hashes SITE_DEFAULTS, and a
+// daily entry here must not put the Worker out of step. Add new dates at the TOP; old ones
+// can be pruned freely (a date only ever matches its own day).
+const CAM_CORRECTIONS = {
+};
+const CAM_BANDS = {
+  entry: { labels: ['Easy', 'Doable', 'Caution', 'Dangerous'], keys: ['easy', 'doable', 'caution'], th: 'entryThresholds' },
+  water: { labels: ['Steady', 'Drifty', 'Surgy', 'Washy'],     keys: ['steady', 'drifty', 'surgy'],  th: 'surgeThresholds' },
+};
+const CAM_CLS = ['green', 'amber', 'yellow', 'red'];
+function camCorrectionFor(d) {
+  const all = CAM_CORRECTIONS;
+  if (!all || !d || !d.dateTime) return null;
+  const c = all[String(d.dateTime).slice(0, 10)];
+  if (!c) return null;
+  const h = +String(d.dateTime).slice(11, 13);
+  const from = (c.from != null) ? c.from : +String(c.at || '06').slice(0, 2);
+  const until = (c.until != null) ? c.until : 10;
+  return (h >= from && h <= until) ? c : null;
+}
+function camAdjust(m, kind, want, at) {
+  const B = CAM_BANDS[kind], t = SITE[B.th];
+  if (!m || !t || !want) return m;
+  const i = B.labels.indexOf(m.label), j = B.labels.map(s => s.toLowerCase()).indexOf(String(want).toLowerCase());
+  if (i < 0 || j < 0 || i === j) return m;
+  if (j < i && i === 3) return m;                       // never clear a Dangerous / Washy call
+  const k = i + (j > i ? 1 : -1);                       // one band at most
+  const raw = (k > i) ? t[B.keys[k - 1]] + 0.5          // just over the lower edge of the band above
+                      : t[B.keys[k]] - 0.5;             // just under the upper edge of the band below
+  return Object.assign({}, m, { label: B.labels[k], cls: CAM_CLS[k], raw: raw,
+    score: Math.max(0, Math.round(60 - raw)), cam: { at: at, fromLabel: m.label, fromRaw: m.raw } });
+}
 function calcScore(d, modelOverride) {
+  const r = calcScoreBase(d, modelOverride);
+  if (modelOverride || !r || r.noData) return r;
+  const c = camCorrectionFor(d);
+  if (!c) return r;
+  const out = Object.assign({}, r);
+  if (c.entry) out.entry = camAdjust(r.entry, 'entry', c.entry, c.at);
+  if (c.surge) out.water = camAdjust(r.water, 'water', c.surge, c.at);
+  return out;
+}
+
+function calcScoreBase(d, modelOverride) {
   d = seaGuardRow(d);
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
@@ -14903,7 +14958,10 @@ function renderSnapshot(h, wx) {
     const chopCm = (result.swim && result.swim.raw != null) ? (Math.round(result.swim.raw * 10) / 10) + ' cm' : '';
     // No NS data → no readouts: the ramp and bay heights are modelled from the NS swell
     // (_nsWaves: off on a no-call hour and throughout the WillyWeather backup).
-    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false, _nsWaves ? _entryBreakH.toFixed(1) + ' m at the ramp' : '');
+    // A cam-corrected rail names the cam instead of a modelled height (camAdjust).
+    setMetric('metricEntry', 'metricEntryVal', 'metricEntryScore', result.entry, false,
+      (result.entry && result.entry.cam) ? 'cam ' + result.entry.cam.at
+      : _nsWaves ? _entryBreakH.toFixed(1) + ' m at the ramp' : '');
     setMetric('metricSwim',  'metricSwimVal',  'metricSwimScore',  result.swim, true, chopCm);
     // Surge's readout follows the LOCUS, because on a point day the bay figure is no
     // longer describing what set the band and printing it would put a reassuring number
@@ -14919,6 +14977,7 @@ function renderSnapshot(h, wx) {
     const atWall = !!(wp && result.water.locus !== 'point' && wp.south > 0.5 * result.water.raw &&
       result.water.raw > ((SITE.surgeThresholds && SITE.surgeThresholds.steady) || 20));
     const surgeCap = result.noData ? ''
+      : (result.water && result.water.cam) ? 'cam ' + result.water.cam.at
       : (result.water && result.water.locus === 'point')
       ? 'surge at the point'
       : atWall ? 'surge at the wall'
