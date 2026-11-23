@@ -19,6 +19,14 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#113541">
 <meta name="color-scheme" content="dark">
+<script>/* METRIC NAMES (owner, 23 Nov 2026): per-device choice of label set, More > Place names.
+   Labels only: scores, bands, prose and the Oracle are untouched. metricLabel(key) is the ONE
+   reader; keys entry | surge | swim (chop and water are aliases). */
+window.SWIM_NAME_SETS={std:{entry:'Entry',surge:'Surge',swim:'Chop'},place:{entry:'South Steyne',surge:'Bower Lane',swim:'Wind Chop'}};
+window.metricNameSet=function(){try{var v=localStorage.getItem('swim_metric_names');if(!v){var m=document.cookie.match(/(?:^|; )swim_metric_names=([^;]*)/);v=m&&m[1];}return v==='place'?'place':'std';}catch(e){return 'std';}};
+window.metricLabel=function(k){if(k==='chop')k='swim';if(k==='water')k='surge';var t=window.SWIM_NAME_SETS[window.metricNameSet()];return (t&&t[k])||window.SWIM_NAME_SETS.std[k]||k;};
+window.applyMetricNames=function(){var els=document.querySelectorAll('[data-mname]');for(var i=0;i<els.length;i++)els[i].textContent=window.metricLabel(els[i].getAttribute('data-mname'));};
+document.addEventListener('DOMContentLoaded',function(){window.applyMetricNames();});</script>
 <script>try{var hcV=localStorage.getItem('swim_high_contrast');if(!hcV){var hcM=document.cookie.match(/(?:^|; )swim_high_contrast=([^;]*)/);hcV=hcM&&hcM[1];}if(hcV==='1')document.documentElement.classList.add('hc');}catch(e){}</script>
 <script>/* First open on this device? (10 Nov 2026) Read before anything writes the device id
    or a preference cookie. New = no swim_device_id AND no swim_* cookie at all (the cookie
@@ -3816,6 +3824,8 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
      the extreme the WHEN label gives way - the three safety labels never truncate. */
   #tabRibbon .tr-top { display: flex; align-items: center; gap: 6px; font-size: clamp(9.5px, 2.95vw, 12.5px); font-weight: 600; white-space: nowrap; min-width: 0; }
   #tabRibbon .tr-text { flex: none; }
+  /* Place names (More > Place names) do not fit one line on a phone: wrap rather than truncate. */
+  #tabRibbon.names-place .tr-text { flex: 1 1 auto; min-width: 0; white-space: normal; line-height: 1.3; }
   #tabRibbon .tr-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #7d8f97; }
   #tabRibbon.good .tr-dot      { background: var(--rail-green); }
   #tabRibbon.caution .tr-dot   { background: var(--rail-yellow); }
@@ -3929,8 +3939,8 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
   html.hc .metrics-panel .metric-block.sand-block { background:#fff; }
   .more-switch { flex:none; width:40px; height:24px; border-radius:12px; background:#5b7683; position:relative; transition:background .15s; }
   .more-switch::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .15s; }
-  #moreContrast[aria-checked="true"] .more-switch { background:var(--ocean); }
-  #moreContrast[aria-checked="true"] .more-switch::after { transform:translateX(16px); }
+  .more-item[role="switch"][aria-checked="true"] .more-switch { background:var(--ocean); }
+  .more-item[role="switch"][aria-checked="true"] .more-switch::after { transform:translateX(16px); }
 </style>
 </head>
 <body>
@@ -4373,7 +4383,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
              has a scored hour to give it (CLAUDE.md §8, absent data is grey, never green). -->
         <div class="metric-block none" id="metricEntry" onclick="openMetricModal('entry')">
           <div class="metric-header">
-            <div class="metric-name">Entry: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-name"><span data-mname="entry">Entry</span>: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricEntryVal">—</div>
             <div class="metric-score" id="metricEntryScore">—</div>
           </div>
@@ -4399,7 +4409,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
         </div>
         <div class="metric-block none" id="metricSurge" onclick="openMetricModal('surge')">
           <div class="metric-header">
-            <div class="metric-name">Surge: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-name"><span data-mname="surge">Surge</span>: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSurgeVal">—</div>
             <div class="metric-score" id="metricSurgeScore">—</div>
           </div>
@@ -4425,7 +4435,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
         </div>
         <div class="metric-block none" id="metricSwim" onclick="openMetricModal('swim')">
           <div class="metric-header">
-            <div class="metric-name">Chop: <span class="metric-info">ⓘ</span></div>
+            <div class="metric-name"><span data-mname="swim">Chop</span>: <span class="metric-info">ⓘ</span></div>
             <div class="metric-value" id="metricSwimVal">—</div>
             <div class="metric-score" id="metricSwimScore">—</div>
           </div>
@@ -5786,7 +5796,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
           <div class="cond-unit">metres</div>
         </div>
         <div class="cond-card">
-          <div class="cond-label">Chop</div>
+          <div class="cond-label" data-mname="swim">Chop</div>
           <div class="cond-value" id="sChop">—</div>
           <div class="cond-unit">metres · steep face</div>
         </div>
@@ -6211,6 +6221,9 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
   <button type="button" class="more-item" data-more="contrast" id="moreContrast" role="switch" aria-checked="false">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17a8.5 8.5 0 0 0 0-17z" fill="currentColor" stroke="none"/></svg>
     <span>High contrast<small>White cards and darker text, easier to read</small></span><span class="more-switch" aria-hidden="true"></span></button>
+  <button type="button" class="more-item" data-more="names" id="moreNames" role="switch" aria-checked="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></svg>
+    <span>Place names<small>South Steyne · Bower Lane · Wind Chop instead of Entry · Surge · Chop</small></span><span class="more-switch" aria-hidden="true"></span></button>
   </section>
   <!-- Install the tile: always here for anyone who dismissed the banner and later wants
        it (26 Sep 2026, per user). Hidden by default; the Add-to-Home-Screen script shows
@@ -6418,6 +6431,16 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
     if (e.target.closest('#annWhatsNew')) { setMore(false); return; }
     var b = e.target.closest('[data-more]'); if (!b) return;
     var what = b.getAttribute('data-more');
+    if (what === 'names') {      // stays open; relabels in place (labels only, never a score)
+      var place = window.metricNameSet() !== 'place';
+      if (window.persistSet) window.persistSet('swim_metric_names', place ? 'place' : 'std');
+      b.setAttribute('aria-checked', place ? 'true' : 'false');
+      window.applyMetricNames();
+      try { if (typeof renderDayWindow === 'function' && window._dwLastArg) renderDayWindow(window._dwLastArg); } catch (e) {}
+      try { window.dispatchEvent(new Event('bannerfacts')); } catch (e) {}   // tab ribbon and other facts readers
+      try { if (window.track) window.track('metric_names', { set: place ? 'place' : 'std', explicit: true }); } catch (e) {}
+      return;
+    }
     if (what === 'contrast') {   // stays open, so the change shows straight away
       var hcOn = document.documentElement.classList.toggle('hc');
       b.setAttribute('aria-checked', hcOn ? 'true' : 'false');
@@ -6437,6 +6460,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
   });
 
   document.getElementById('moreContrast').setAttribute('aria-checked', document.documentElement.classList.contains('hc') ? 'true' : 'false');
+  document.getElementById('moreNames').setAttribute('aria-checked', window.metricNameSet() === 'place' ? 'true' : 'false');
 
   // Move the view switch and the feedback card into the sheet. Moving, not copying,
   // keeps every listener already attached to them.
@@ -6473,6 +6497,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
     var f = facts();
     var text = ribbon.querySelector('.tr-text'), when = ribbon.querySelector('.tr-when');
     ribbon.classList.remove('good', 'caution', 'dangerous');
+    ribbon.classList.toggle('names-place', !!(window.metricNameSet && metricNameSet() === 'place'));
     // No NS data at the Oracle's hour: no call, said in grey rather than left on
     // "Forecast loading" (it has loaded; there is just nothing to call).
     if (f && f.noData) {
@@ -6487,7 +6512,7 @@ try{window._swimFirstOpen=!localStorage.getItem('swim_device_id')&&!/(?:^|;\s*)s
       ribbon.setAttribute('aria-label', 'Forecast loading. Go to Today');
     } else {
       if (f.safetyLevel === 'good' || f.safetyLevel === 'caution' || f.safetyLevel === 'dangerous') ribbon.classList.add(f.safetyLevel);
-      text.textContent = 'Entry ' + f.verdict.entry + ' · Chop ' + f.verdict.swim + ' · Surge ' + f.verdict.surge;
+      text.textContent = metricLabel('entry') + ' ' + f.verdict.entry + ' · ' + metricLabel('swim') + ' ' + f.verdict.swim + ' · ' + metricLabel('surge') + ' ' + f.verdict.surge;
       // The Oracle's reference hour, not the hour picked on Today — so it is named.
       // Just the hour, never the day (13 Sep 2026, per user): "Tomorrow 07:00" was cut off
       // beside long labels. Screen readers still hear the day, via the aria-label below.
@@ -12030,6 +12055,7 @@ function _bindDayCardSwipe(card){
 var DW_BAND_FILL = { green:'var(--rail-green)', amber:'var(--rail-amber)',
                      yellow:'var(--rail-yellow)', red:'var(--rail-red)' };
 function renderDayWindow(dateTimeStr){
+  window._dwLastArg = dateTimeStr;   // re-drawn with the same day when the name set changes
   var svg    = document.getElementById('dayWindowSvg');
   var bestEl = document.getElementById('dayWindowBest');
   if (!svg) return;
@@ -12094,13 +12120,13 @@ function renderDayWindow(dateTimeStr){
   // so their crown lands at y=2). fullH: ribH+26 clears the hour-tick baseline at
   // ribH+16 plus the descender on the "p" of 12p/3p/6p/9p. Both were clipped before.
   // No badges any more (see below), so a fixed 8px of headroom for the caret.
-  var W = 360, L = 46, R = 8, top = 8, rowH = 16, gap = 4, cols = pts.length;   // rows 26 -> 16 (owner, 9 Nov 2026)
+  var W = 360, L = (metricNameSet() === 'place' ? 92 : 46), R = 8, top = 8, rowH = 16, gap = 4, cols = pts.length;   // place names need the wider column   // rows 26 -> 16 (owner, 9 Nov 2026)
   var cellW = (W - L - R) / cols;
   var ribH  = top + 3*rowH + 2*gap;
   var fullH = ribH + 26;
   svg.setAttribute('viewBox', '0 0 ' + W + ' ' + fullH);
 
-  var ROWS = [['Entry','entry'], ['Surge','surge'], ['Chop','chop']];
+  var ROWS = [[metricLabel('entry'),'entry'], [metricLabel('surge'),'surge'], [metricLabel('chop'),'chop']];
   var cells = '', labels = '';
   ROWS.forEach(function(row, r){
     var ry = top + r*(rowH + gap);
@@ -23012,7 +23038,10 @@ function refreshMetricModalBody(key) {
   const blk = document.getElementById('metric' + key.charAt(0).toUpperCase() + key.slice(1));
   const ro  = blk && blk.dataset.readout;
   const roHTML = ro ? '<p style="margin:0 0 10px;font-family:\'Bebas Neue\',sans-serif;font-size:22px;letter-spacing:1px;color:var(--deep);">' + ro + '</p>' : '';
-  body.innerHTML = roHTML + '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key) + whyLinkHTML(key);
+  // Place names: say which reading it is, and that Bower Lane's covers the whole bay.
+  var alias = metricNameSet() !== 'place' ? '' : ({ entry: 'This is the Entry reading.', swim: 'This is the Chop reading.',
+    surge: 'This is the Surge reading. It is named after Bower Lane, but it covers the push and pull across the whole bay and the point.' })[key] || '';
+  body.innerHTML = roHTML + (alias ? '<p style="margin:0 0 8px;font-weight:600;">' + alias + '</p>' : '') + '<p style="margin:0 0 10px;">' + info.text + '</p>' + metricBreakdownHTML(key) + whyLinkHTML(key);
 }
 
 function openMetricModal(key) {
@@ -23022,7 +23051,7 @@ function openMetricModal(key) {
   const overlay = document.getElementById('metric-modal');
   const title   = document.getElementById('metric-modal-title');
   if (!overlay) return;
-  if (title) title.textContent = info.title;
+  if (title) title.textContent = (key === 'entry' || key === 'swim' || key === 'surge') ? metricLabel(key) : info.title;
   refreshMetricModalBody(key);
   _openMetricKey = key;
   overlay.classList.add('open');
@@ -24555,6 +24584,7 @@ if ('serviceWorker' in navigator) {
     try {
       if (window.track) {
         window.track('rail_style', { style: getMetricStyle(), explicit: _pGet(METRIC_KEY) != null });
+        window.track('metric_names', { set: window.metricNameSet ? window.metricNameSet() : 'std', explicit: _pGet('swim_metric_names') != null });
         // Back-fill for devices that chose a mode before MODE_CHOSEN_KEY existed:
         // 'complete' is the only value reachable without a tap, so any other value
         // is itself proof of choice.
@@ -24689,7 +24719,7 @@ var STORM_COAST = "M12.7 13.5 L12.4 14.7 L13.6 15.8 L15.0 21.6 L15.8 22.0 L17.9 
     var i = ZONE_IDX[met.cls] != null ? ZONE_IDX[met.cls] : 0;
     var prefix = MET_PREFIX[kind] || 'entry';
     return '<div class="ssd-met">' +
-      '<div class="ssd-met-cap">' + (MET_CAP[kind] || kind) + '</div>' +
+      '<div class="ssd-met-cap">' + (window.metricLabel ? metricLabel(kind) : (MET_CAP[kind] || kind)) + '</div>' +
       '<div class="ssd-met-fig"><img src="images/' + prefix + '-' + ICON_WORD[kind][i] + '.png" alt="" loading="lazy">' +
         (readout ? '<span class="ssd-met-read">' + readout + '</span>' : '') + '</div>' +
       '<div class="ssd-met-lab" style="color:' + (RAIL_COL[met.cls] || '#113541') + '">' + met.label + '</div>' +
