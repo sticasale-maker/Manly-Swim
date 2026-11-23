@@ -8224,6 +8224,10 @@ const SITE_DEFAULTS = {
   // above 1.5 m. Rank agreement with the cam over 29-30 Oct and 9-10 Nov: 0.31 → 0.43. 9-10 Nov
   // 07-11 read Washy ~52 (soft ceiling) and Steady by 14:00; 29 Oct and 11 Nov a few points
   // lower. Full Shape B (SizeMax 4, shift 0.35) fit 0.51 but read 9 Nov Washy into low tide.
+  // Dated sea guard (24 Nov 2026, owner) — see seaGuardRow(). Sydney dates it applies on.
+  seaGuardDates: ['2026-11-24'],
+  seaGuardMinKmh: 20,
+  seaGuardMinDeg: 90,
   surgeSouthSizeDiv:   22.5, // H²T that counts as one size unit (1.5 m 10 s)
   surgeSouthSizeMax:   2,    // size units at most
   surgeSouthTideShift: 0.175, // m the tide window drops per metre of swell above 1.5 m
@@ -10481,7 +10485,30 @@ function wwSurgeCurve(x) {
   return (!(x > 0) || x >= D) ? x : x * (m + (1 - m) * x / D);
 }
 
+// SEA GUARD, DATED (owner, 24 Nov 2026: "add a guard ... for this morning, now, so we fix the
+// misleading information"). On the listed Sydney dates only, an NSW sea partition that runs more
+// than SITE.seaGuardMinDeg off a wind of SITE.seaGuardMinKmh or more is dropped from the score.
+// 24 Nov: NSW had 0.87 m of 7.5 s sea from 60 deg under a 30 km/h southerly, and Entry read
+// Caution 42 where the owner judged it between Doable and Caution. CAVEAT, told to the owner:
+// the MHL Sydney buoy measured that ENE sea offshore (1.5 m, 8 s, 64 deg at 02:00, from
+// Sunday's north-easterly), so this overrides a forecast the buoy partly supports; it is a
+// dated stopgap, not a fix. Not general: over 2,738 logged hours a general version turned 6
+// Dangerous Entry hours to Caution (4 Oct 16, 26 Oct 01-02 and 09-10). Empty list = off.
+// Client only: the Worker's /bower-surge does not see it.
+function seaGuardRow(d) {
+  const days = SITE.seaGuardDates;
+  if (!d || d._nsFeed !== true || !Array.isArray(days) || !days.length || !d.dateTime) return d;
+  if (!days.includes(String(d.dateTime).slice(0, 10))) return d;
+  const minKmh = (SITE.seaGuardMinKmh != null) ? SITE.seaGuardMinKmh : 20;
+  const minDeg = (SITE.seaGuardMinDeg != null) ? SITE.seaGuardMinDeg : 90;
+  if (!((d.windKmh || 0) >= minKmh) || !((d.windWaveH || 0) > 0)) return d;
+  const off = Math.abs((((d.windWaveDir || 0) - (d.windDir || 0)) % 360 + 540) % 360 - 180);
+  if (!(off > minDeg)) return d;
+  return Object.assign({}, d, { windWaveH: 0, windWaveP: 0, _seaGuard: true });
+}
+
 function calcScore(d, modelOverride) {
+  d = seaGuardRow(d);
   // modelOverride: 'gem' | 'orig' | undefined. When omitted, follows the
   // global GEM_MODEL flag (live behaviour). Lets the CAL tab run both models
   // on the same forecast slot for side-by-side comparison.
