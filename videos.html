@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swim Manly &mdash; One-Minute Ocean</title>
+<meta name="description" content="One-minute videos about the sea at Cabbage Tree Bay and how the Swim Manly forecast is made.">
+<meta name="author" content="Marco Bordieri">
+<meta name="theme-color" content="#0d2b3e">
+<link rel="canonical" href="https://app.viz.net.au/Manly-Swim/videos.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Swim Manly">
+<meta property="og:title" content="One-Minute Ocean">
+<meta property="og:description" content="One-minute videos about the sea at Cabbage Tree Bay and how the Swim Manly forecast is made.">
+<meta property="og:url" content="https://app.viz.net.au/Manly-Swim/videos.html">
+<link rel="icon" href="images/logos/favicon-32.png">
+<!-- One-Minute Ocean shelf (27 Nov 2026, per owner). Opened from More > About.
+     Videos are phone-sized copies (720x1280, ~4 MB) in videos/, served by GitHub Pages.
+     Nothing downloads until a tile is tapped (preload="none"), nothing autoplays, and the
+     service worker does not intercept them (CLAUDE.md 9: media needs HTTP Range on iOS).
+     To add a clip: put <slug>.mp4 and <slug>.jpg in videos/ and add one line to CLIPS, newest first. -->
+<style>
+:root{
+  --bg:#fbf6ec; --surface:#ffffff; --ink:#0d2b3e; --muted:#5e7f8b; --rule:rgba(13,43,62,.14);
+  --accent:#0b6e7f;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5}
+.wrap{max-width:1040px;margin:0 auto;padding-block:8px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:24px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:calc(14px + env(safe-area-inset-top, 0px))}
+.topbar-name{font-weight:650;font-size:17px}
+.back-link{display:inline-flex;align-items:center;min-height:44px;font-size:14px;color:var(--muted);text-decoration:none;white-space:nowrap}
+.eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{margin:0;font-size:clamp(2rem,7vw,3rem);font-weight:750;letter-spacing:-.02em;line-height:1.08}
+.lede{margin:0;font-size:1.08rem;max-width:60ch}
+.shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
+.clip{margin:0;display:grid;gap:6px;min-width:0}
+.clip button{position:relative;display:block;width:100%;aspect-ratio:9/16;padding:0;border:0;border-radius:10px;overflow:hidden;background:#0d2b3e center/cover no-repeat;cursor:pointer}
+.clip button::after{content:"";position:absolute;left:50%;top:80%;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;background:rgba(6,18,28,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 6l10 6-10 6z' fill='white'/%3E%3C/svg%3E") center/24px no-repeat}
+.clip button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.clip video{display:block;width:100%;aspect-ratio:9/16;border-radius:10px;background:#000}
+.clip figcaption{display:grid;gap:1px}
+.clip b{font-size:.95rem;font-weight:650;line-height:1.25}
+.clip span{font-family:var(--mono);font-size:.72rem;color:var(--muted)}
+.clip .new{color:#fff;font-family:var(--body);display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;background:var(--accent);color:#fff;font:700 .62rem/1.5 var(--body);letter-spacing:.06em;vertical-align:2px}
+.small{margin:0;font-size:.85rem;color:var(--muted);max-width:70ch}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar"><span class="topbar-name">Swim Manly</span><a class="back-link" href="./">&lsaquo; Back to the forecast</a></div>
+  <header style="display:grid;gap:10px">
+    <div class="eyebrow">One-Minute Ocean</div>
+    <h1>Short videos about the bay</h1>
+    <p class="lede">How the sea works at Cabbage Tree Bay, and what goes on behind the forecast. One minute each. Tap to play.</p>
+  </header>
+  <div class="shelf" id="shelf"></div>
+  <p class="small">Each video is about 3 MB. Nothing downloads until you tap it. Free. Built by the community, for the community.</p>
+</div>
+<script>
+// Newest first. slug = file name in videos/ (.mp4 + .jpg poster). date = when it was published.
+var CLIPS = [
+  { slug: '21-who-checks-the-forecast', title: 'Who checks the forecast?', date: '28 Nov 2026', mins: '1:01' }
+  // 20-corkscrew-shark-egg held back 27 Nov 2026: owner flagged the mouth-wedging line as false; returns once corrected.
+];
+var NEW_DAYS = 7;
+(function () {
+  var shelf = document.getElementById('shelf');
+  function isNew(d) { var t = Date.parse(d); return t && (Date.now() - t) < NEW_DAYS * 864e5; }
+  CLIPS.forEach(function (c) {
+    var fig = document.createElement('figure'); fig.className = 'clip';
+    var btn = document.createElement('button'); btn.type = 'button';
+    btn.style.backgroundImage = 'url("videos/' + c.slug + '.jpg")';
+    btn.setAttribute('aria-label', 'Play: ' + c.title + ', ' + c.mins);
+    var cap = document.createElement('figcaption');
+    var b = document.createElement('b'); b.textContent = c.title;
+    if (isNew(c.date)) { var n = document.createElement('span'); n.className = 'new'; n.textContent = 'NEW'; b.appendChild(n); }
+    var s = document.createElement('span'); s.textContent = c.date + ' · ' + c.mins;
+    cap.appendChild(b); cap.appendChild(s);
+    btn.addEventListener('click', function () {
+      // Only one plays at a time: stop any other video first.
+      Array.prototype.forEach.call(document.querySelectorAll('.clip video'), function (v) { v.pause(); });
+      var v = document.createElement('video');
+      v.src = 'videos/' + c.slug + '.mp4'; v.poster = 'videos/' + c.slug + '.jpg';
+      v.controls = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+      v.addEventListener('play', function () {
+        Array.prototype.forEach.call(document.querySelectorAll('.clip video'), function (o) { if (o !== v) o.pause(); });
+      });
+      fig.replaceChild(v, btn);
+      var p = v.play(); if (p && p.catch) p.catch(function () {});
+    });
+    fig.appendChild(btn); fig.appendChild(cap); shelf.appendChild(fig);
+  });
+})();
+</script>
+</body>
+</html>
