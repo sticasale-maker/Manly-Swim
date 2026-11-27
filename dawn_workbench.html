@@ -15,6 +15,7 @@ h1{font-family:"Bebas Neue",sans-serif;letter-spacing:1px;color:var(--deep);marg
 .date{font-weight:600}
 .badge{padding:3px 10px;border-radius:20px;color:#fff;font-size:12px}
 .L{background:#d6457f}.P{background:var(--yellow)}.U{background:var(--dim)}
+.badge.v2{background:transparent;border:1.5px solid currentColor}.badge.v2.L{color:#d6457f}.badge.v2.P{color:var(--yellow)}.badge.v2.U{color:var(--dim)}
 .bar{height:8px;border-radius:4px;background:#dbe9ef;margin:8px 0;overflow:hidden}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#7b6fd6,#e0609a,#f29a5c)}
 .det{font-size:11px;color:var(--dim);line-height:1.6}
@@ -82,7 +83,15 @@ function score(loc,ray,i){
   let s=screen*gap*local;
   if(rh>CFG.rhCut) s*=CFG.rhPen;
   if(rain>CFG.rainCut) s*=CFG.rainPen;
-  return {s:Math.round(s*100),screen,gap,local,lo,mid,hi,c,farLow,rh,rain};
+  // v2 (shape C, on forward test since 28 Nov 2026): any mid/high cloud is a screen (full at
+  // 30% cover, overcast not penalised); horizon gap from the MEAN ray low cloud, not the worst.
+  const screen2=Math.min(1,c/0.3);
+  const meanLow=ray.reduce((a,r)=>a+r.hourly.cloud_cover_low[i]/100,0)/ray.length;
+  const gap2=(1-meanLow)**CFG.gapExp;
+  let s2=screen2*gap2*local;
+  if(rh>CFG.rhCut) s2*=CFG.rhPen;
+  if(rain>CFG.rainCut) s2*=CFG.rainPen;
+  return {s:Math.round(s*100),screen,gap,local,lo,mid,hi,c,farLow,rh,rain,s2:Math.round(s2*100),screen2,gap2,meanLow};
 }
 
 let ROWS=[];
@@ -102,7 +111,8 @@ async function run(){
     const key=d+'T'+String(t.getHours()).padStart(2,'0')+':00';
     const i=loc.time.indexOf(key); if(i<0) return;
     const r=score(loc,ray,i);
-    const lab=r.s>=CFG.likely?['Likely','L']:r.s>=CFG.possible?['Possible','P']:['Unlikely','U'];
+    const label=v=>v>=CFG.likely?['Likely','L']:v>=CFG.possible?['Possible','P']:['Unlikely','U'];
+    const lab=label(r.s), lab2=label(r.s2);
     const past=new Date(sr)<today;
     // Airport layers only exist for mornings already gone, and the source keeps about 7 days.
     const inWindow=t<today && today-t<7*864e5;
@@ -110,9 +120,10 @@ async function run(){
     const airport=!inWindow?(t<today?'<div class="det na">Sydney Airport: older than its 7-day archive</div>':''):mx?'<div class="det">Sydney Airport '+mx.time+': '+metarText(mx)+'</div>'
       :'<div class="det na">Sydney Airport: '+(metar?'no report near this time':'not available')+'</div>';
     ROWS.push({date:d,...r,obs:obs[d]??'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:''});
-    html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span class="badge '+lab[1]+'">'+lab[0]+' '+r.s+'</span></div>'
+    html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span><span class="badge '+lab[1]+'" title="current">'+lab[0]+' '+r.s+'</span> <span class="badge v2 '+lab2[1]+'" title="v2 on test">v2 '+r.s2+'</span></span></div>'
       +'<div class="bar"><i style="width:'+r.s+'%"></i></div>'
       +'<div class="det">screen '+r.screen.toFixed(2)+' (mid '+Math.round(r.mid*100)+'% high '+Math.round(r.hi*100)+'%) · horizon gap '+r.gap.toFixed(2)+' (max far low '+Math.round(r.farLow*100)+'%) · local low '+Math.round(r.lo*100)+'% · RH '+r.rh+'% · rain '+r.rain+'mm</div>'
+      +'<div class="det">v2: screen '+r.screen2.toFixed(2)+' · horizon gap '+r.gap2.toFixed(2)+' (mean far low '+Math.round(r.meanLow*100)+'%)</div>'
       +airport
       +(past?'<div class="det">Observed: <select data-d="'+d+'">'+['','0','1','2','3'].map(v=>'<option'+(String(obs[d]??'')===v?' selected':'')+'>'+v+'</option>').join('')+'</select></div>':'')
       +'</div>';
@@ -121,8 +132,8 @@ async function run(){
   document.querySelectorAll('select[data-d]').forEach(s=>s.onchange=()=>{const o=store('pinkdawn_obs');o[s.dataset.d]=s.value;store('pinkdawn_obs',o);const row=ROWS.find(x=>x.date===s.dataset.d);if(row)row.obs=s.value});
 }
 document.getElementById('csv').onclick=()=>{
-  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed,metar_time,metar_cloud';
-  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs,r.metar_time,r.metar_cloud].join(',')).join('\n');
+  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed,metar_time,metar_cloud,score_v2,screen_v2,gap_v2,mean_low';
+  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs,r.metar_time,r.metar_cloud,r.s2,r.screen2.toFixed(3),r.gap2.toFixed(3),Math.round(r.meanLow*100)].join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h+'\n'+body],{type:'text/csv'}));a.download='pinkdawn_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 };
 run().catch(e=>document.getElementById('out').textContent='Error: '+e.message);
