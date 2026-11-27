@@ -18,6 +18,12 @@ h1{font-family:"Bebas Neue",sans-serif;letter-spacing:1px;color:var(--deep);marg
 .badge.v2{background:transparent;border:1.5px solid currentColor}.badge.v2.L{color:#d6457f}.badge.v2.P{color:var(--yellow)}.badge.v2.U{color:var(--dim)}
 .bars{display:grid;grid-template-columns:auto 1fr 2.2em;align-items:center;gap:3px 8px;margin:8px 0;font-size:11px;color:var(--dim)}
 .bars b{font-weight:600;text-align:right;color:var(--text)}
+.bar.obs i{background:var(--deep)}.bar.na{background:repeating-linear-gradient(45deg,#e3e9ec 0 4px,#d3dde2 4px 8px)}.bars b.na{color:var(--dim)}
+.strip{height:26px;border-radius:6px;margin:10px 0 2px;border:1px solid var(--border)}.strip.na{background:repeating-linear-gradient(45deg,#e3e9ec 0 6px,#d3dde2 6px 12px)}
+.strip-ax{display:flex;justify-content:space-between;margin-bottom:4px}
+.dyn{display:block;width:100%;height:56px;margin:2px 0 0}.dyn-key{display:flex;gap:12px}.dyn-key span:last-child{margin-left:auto}
+.k::before{content:"";display:inline-block;width:12px;height:0;border-top:2px solid;vertical-align:middle;margin-right:4px}
+.k.b::before{border-color:#2a78d6}.k.p::before{border-color:#d6457f;border-top-style:dashed}.k.o::before{border-color:#eb6834;border-top-style:dotted}.det.na{color:#8a9aa3;font-style:italic}
 .bar{height:6px;border-radius:3px;background:#dbe9ef;overflow:hidden}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#7b6fd6,#e0609a,#f29a5c)}
 .det{font-size:11px;color:var(--dim);line-height:1.6}
@@ -31,8 +37,7 @@ button{font-family:inherit;background:var(--ocean);color:#fff;border:0;border-ra
 <div class="sub">Manly · Open-Meteo cloud layers · ray to the sunrise horizon · not production</div>
 <div id="out">Loading…</div>
 <div class="card">
-  <div class="row"><span>Calibration log (observed via Surfline rewind)</span><button id="csv">Export CSV</button></div>
-  <div class="det">Pick the observed colour for past mornings: 0 none, 1 faint, 2 good, 3 vivid. Stored in this browser only.</div>
+  <div class="row"><span>Observed colour comes from the Manly Beach cam, measured each morning</span><button id="csv">Export CSV</button></div>
 </div>
 <script>
 const LAT=-33.7989, LON=151.2899, R=6371;
@@ -72,6 +77,27 @@ function metarText(x){
     return g;
   }).join(' · ');
 }
+// Observed dawn colour per date, published from the daily check's log. OBS_URL is unset until
+// published by the daily check (pink-dawn-data repo, owner's choice 28 Nov 2026). Grey when absent.
+const OBS_URL='https://app.viz.net.au/pink-dawn-data/obs.json';
+const OBS_FULL=50;   // measured colour (blue+pink+orange) at which the observed bar is full; 28 Nov 2026 vivid peaked at 43
+async function loadObs(){if(!OBS_URL)return null;try{const r=await fetch(OBS_URL,{cache:'no-store'});return r.ok?await r.json():null}catch(e){return null}}
+// Colour dynamic: blue, pink and orange share of the sky per frame, -30 min to sunrise.
+function seriesSvg(series){
+  const pts=String(series||'').split(';').map(p=>p.split(':').map(Number)).filter(p=>p.length===4&&p.every(v=>!isNaN(v))).sort((a,b)=>a[0]-b[0]);
+  if(pts.length<2)return '';
+  const W=300,H=56,top=Math.max(20,...pts.map(p=>Math.max(p[1],p[2],p[3])));
+  const x=m=>((m+30)/30*W).toFixed(1), y=v=>(H-2-v/top*(H-4)).toFixed(1);
+  const line=(k,c,d)=>'<polyline fill="none" stroke="'+c+'" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke"'+(d?' stroke-dasharray="'+d+'"':'')+' points="'+pts.map(p=>x(p[0])+','+y(p[k])).join(' ')+'"/>';
+  return '<svg class="dyn" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="Blue, pink and orange share of the sky from 30 minutes before sunrise">'
+    +line(1,'#2a78d6','')+line(2,'#d6457f','5 3')+line(3,'#eb6834','1.5 3')+'</svg>'
+    +'<div class="det dyn-key"><span class="k b">blue</span><span class="k p">pink</span><span class="k o">orange</span><span>top of chart '+Math.round(top)+'</span></div>';
+}
+function stripCss(strip){
+  const st=String(strip).split(';').map(p=>p.split(':')).filter(p=>p.length===2).map(([m,c])=>[+m,c]).sort((a,b)=>a[0]-b[0]);
+  if(!st.length)return '#ccd';
+  return 'linear-gradient(90deg,'+st.map(([m,c])=>c+' '+((m+30)/30*100).toFixed(1)+'%').join(',')+')';
+}
 function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'{}');localStorage.setItem(k,JSON.stringify(v))}catch(e){return {}}}
 
 function score(loc,ray,i){
@@ -102,9 +128,8 @@ async function run(){
   const pts=[[LAT,LON],...RAY_KM.map(k=>dest(LAT,LON,az,k))];
   const url='https://api.open-meteo.com/v1/forecast?latitude='+pts.map(p=>p[0]).join(',')+'&longitude='+pts.map(p=>p[1]).join(',')
     +'&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,relative_humidity_2m,precipitation&daily=sunrise&timezone=Australia%2FSydney&past_days=7&forecast_days=4';
-  const [res,metar]=await Promise.all([fetch(url).then(r=>r.json()),loadMetar()]);
+  const [res,metar,obsAll]=await Promise.all([fetch(url).then(r=>r.json()),loadMetar(),loadObs()]);
   const loc=res[0].hourly, ray=res.slice(1), days=res[0].daily;
-  const obs=store('pinkdawn_obs');
   let html='<div class="det" style="margin-bottom:8px">Sunrise azimuth today '+az.toFixed(1)+'° · ray points '+RAY_KM.join('/')+' km</div>';
   ROWS=[];
   days.time.forEach((d,k)=>{
@@ -114,25 +139,31 @@ async function run(){
     const i=loc.time.indexOf(key); if(i<0) return;
     const r=score(loc,ray,i);
     const label=v=>v>=CFG.likely?['Likely','L']:v>=CFG.possible?['Possible','P']:['Unlikely','U'];
-    const lab=label(r.s), lab2=label(r.s2);
-    const past=new Date(sr)<today;
+    const lab=label(r.s2);
     // Airport layers only exist for mornings already gone, and the source keeps about 7 days.
     const inWindow=t<today && today-t<7*864e5;
     const mx=inWindow&&metar?metarNear(metar,t):null;
     const airport=!inWindow?(t<today?'<div class="det na">Sydney Airport: older than its 7-day archive</div>':''):mx?'<div class="det">Sydney Airport '+mx.time+': '+metarText(mx)+'</div>'
       :'<div class="det na">Sydney Airport: '+(metar?'no report near this time':'not available')+'</div>';
-    ROWS.push({date:d,...r,obs:obs[d]??'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:''});
-    html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span><span class="badge '+lab[1]+'" title="current">'+lab[0]+' '+r.s+'</span> <span class="badge v2 '+lab2[1]+'" title="v2 on test">v2 '+r.s2+'</span></span></div>'
-      +'<div class="bars"><span>current</span><div class="bar"><i style="width:'+r.s+'%"></i></div><b>'+r.s+'</b>'
-      +'<span>v2</span><div class="bar"><i style="width:'+r.s2+'%"></i></div><b>'+r.s2+'</b></div>'
-      +'<div class="det">screen '+r.screen.toFixed(2)+' (mid '+Math.round(r.mid*100)+'% high '+Math.round(r.hi*100)+'%) · horizon gap '+r.gap.toFixed(2)+' (max far low '+Math.round(r.farLow*100)+'%) · local low '+Math.round(r.lo*100)+'% · RH '+r.rh+'% · rain '+r.rain+'mm</div>'
-      +'<div class="det">v2: screen '+r.screen2.toFixed(2)+' · horizon gap '+r.gap2.toFixed(2)+' (mean far low '+Math.round(r.meanLow*100)+'%)</div>'
+    // Observed: measured from the Manly Beach cam by the daily check. Grey when absent.
+    const o=obsAll&&obsAll[d];
+    const isPast=new Date(sr)<today;
+    const obsBar=!isPast?'':o&&o.colour_peak!==''&&o.colour_peak!=null
+      ?'<span>observed</span><div class="bar obs"><i style="width:'+Math.min(100,o.colour_peak/OBS_FULL*100)+'%"></i></div><b>'+o.colour_peak+'</b>'
+      :'<span>observed</span><div class="bar na"></div><b class="na">–</b>';
+    const strip=!isPast?'':o&&o.strip?'<div class="strip" title="Sky colour above the horizon, 30 min before sunrise to sunrise" style="background:'+stripCss(o.strip)+'"></div><div class="det strip-ax"><span>−30 min</span><span>sunrise</span></div>'+seriesSvg(o.series)
+      :'<div class="strip na" title="No camera measurement for this morning"></div><div class="det strip-ax na"><span>sky colour not measured</span><span></span></div>';
+    const fam=o&&o.colour_peak!==''&&o.colour_peak!=null?'<div class="det">observed: peak '+o.colour_peak+' at '+Math.abs(o.colour_peak_min)+' min before sunrise · blue '+o.blue_mean+' · pink '+o.pink_mean+' · orange '+o.orange_mean+' (window means)</div>':'';
+    ROWS.push({date:d,...r,obs:o?o.colour_peak:'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:''});
+    html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span class="badge '+lab[1]+'">'+lab[0]+' '+r.s2+'</span></div>'
+      +strip
+      +'<div class="bars"><span>forecast</span><div class="bar"><i style="width:'+r.s2+'%"></i></div><b>'+r.s2+'</b>'+obsBar+'</div>'
+      +fam
+      +'<div class="det">screen '+r.screen2.toFixed(2)+' (mid '+Math.round(r.mid*100)+'% high '+Math.round(r.hi*100)+'%) · horizon gap '+r.gap2.toFixed(2)+' (mean far low '+Math.round(r.meanLow*100)+'%) · local low '+Math.round(r.lo*100)+'% · RH '+r.rh+'% · rain '+r.rain+'mm</div>'
       +airport
-      +(past?'<div class="det">Observed: <select data-d="'+d+'">'+['','0','1','2','3'].map(v=>'<option'+(String(obs[d]??'')===v?' selected':'')+'>'+v+'</option>').join('')+'</select></div>':'')
       +'</div>';
   });
   document.getElementById('out').innerHTML=html;
-  document.querySelectorAll('select[data-d]').forEach(s=>s.onchange=()=>{const o=store('pinkdawn_obs');o[s.dataset.d]=s.value;store('pinkdawn_obs',o);const row=ROWS.find(x=>x.date===s.dataset.d);if(row)row.obs=s.value});
 }
 document.getElementById('csv').onclick=()=>{
   const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed,metar_time,metar_cloud,score_v2,screen_v2,gap_v2,mean_low';
