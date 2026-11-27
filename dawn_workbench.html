@@ -18,6 +18,7 @@ h1{font-family:"Bebas Neue",sans-serif;letter-spacing:1px;color:var(--deep);marg
 .bar{height:8px;border-radius:4px;background:#dbe9ef;margin:8px 0;overflow:hidden}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#7b6fd6,#e0609a,#f29a5c)}
 .det{font-size:11px;color:var(--dim);line-height:1.6}
+.det.na{color:#8a9aa3;font-style:italic}
 select{font-family:inherit;font-size:12px;padding:3px}
 button{font-family:inherit;background:var(--ocean);color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
 </style>
@@ -46,6 +47,28 @@ function dest(lat,lon,brg,km){
   const l2=l1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(p1),Math.cos(d)-Math.sin(p1)*Math.sin(p2));
   return [+(p2*180/Math.PI).toFixed(3),+(l2*180/Math.PI).toFixed(3)];
 }
+// Sydney Airport (YSSY) cloud layers, observed, via the Worker (aviationweather.gov sends no
+// CORS header). Last 7 days only. null = could not load; shown grey, never as clear sky.
+const METAR_URL='https://bold-rain-6ded.sticasale.workers.dev/metar';
+async function loadMetar(){try{const r=await fetch(METAR_URL);if(!r.ok)return null;const a=await r.json();return Array.isArray(a)?a:null}catch(e){return null}}
+function metarNear(list,t){
+  let best=null;for(const m of list){const d=Math.abs(m.obsTime*1000-t.getTime());if(!best||d<best.d)best={d,m}}
+  if(!best||best.d>45*60e3)return null;
+  const layers=best.m.rawOb.match(/\b(FEW|SCT|BKN|OVC)\d{3}(CB|TCU)?\b|\b(NCD|NSC|CLR|SKC|CAVOK)\b|\bVV\d{3}\b/g)||[];
+  const time=new Date(best.m.obsTime*1000).toLocaleTimeString('en-AU',{timeZone:'Australia/Sydney',hour:'2-digit',minute:'2-digit',hour12:false});
+  return {time,code:layers.join(' '),layers};
+}
+const COVER={FEW:'few',SCT:'scattered',BKN:'broken',OVC:'overcast'};
+function metarText(x){
+  if(!x.layers.length)return 'no cloud group in the report';
+  return x.layers.map(g=>{
+    const m=g.match(/^(FEW|SCT|BKN|OVC)(\d{3})(CB|TCU)?$/);
+    if(m){const ft=+m[2]*100;return COVER[m[1]]+' '+ft.toLocaleString('en-AU')+' ft'+(ft<6500?' (low)':ft<20000?' (mid)':' (high)')+(m[3]?' '+m[3]:'')}
+    if(g==='NCD')return 'none detected (automatic sensor; can miss thin high cloud)';
+    if(g==='NSC'||g==='CAVOK')return 'no significant cloud';
+    return g;
+  }).join(' · ');
+}
 function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'{}');localStorage.setItem(k,JSON.stringify(v))}catch(e){return {}}}
 
 function score(loc,ray,i){
@@ -68,7 +91,7 @@ async function run(){
   const pts=[[LAT,LON],...RAY_KM.map(k=>dest(LAT,LON,az,k))];
   const url='https://api.open-meteo.com/v1/forecast?latitude='+pts.map(p=>p[0]).join(',')+'&longitude='+pts.map(p=>p[1]).join(',')
     +'&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,relative_humidity_2m,precipitation&daily=sunrise&timezone=Australia%2FSydney&past_days=7&forecast_days=4';
-  const res=await (await fetch(url)).json();
+  const [res,metar]=await Promise.all([fetch(url).then(r=>r.json()),loadMetar()]);
   const loc=res[0].hourly, ray=res.slice(1), days=res[0].daily;
   const obs=store('pinkdawn_obs');
   let html='<div class="det" style="margin-bottom:8px">Sunrise azimuth today '+az.toFixed(1)+'° · ray points '+RAY_KM.join('/')+' km</div>';
@@ -81,10 +104,16 @@ async function run(){
     const r=score(loc,ray,i);
     const lab=r.s>=CFG.likely?['Likely','L']:r.s>=CFG.possible?['Possible','P']:['Unlikely','U'];
     const past=new Date(sr)<today;
-    ROWS.push({date:d,...r,obs:obs[d]??''});
+    // Airport layers only exist for mornings already gone, and the source keeps about 7 days.
+    const inWindow=t<today && today-t<7*864e5;
+    const mx=inWindow&&metar?metarNear(metar,t):null;
+    const airport=!inWindow?(t<today?'<div class="det na">Sydney Airport: older than its 7-day archive</div>':''):mx?'<div class="det">Sydney Airport '+mx.time+': '+metarText(mx)+'</div>'
+      :'<div class="det na">Sydney Airport: '+(metar?'no report near this time':'not available')+'</div>';
+    ROWS.push({date:d,...r,obs:obs[d]??'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:''});
     html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span class="badge '+lab[1]+'">'+lab[0]+' '+r.s+'</span></div>'
       +'<div class="bar"><i style="width:'+r.s+'%"></i></div>'
       +'<div class="det">screen '+r.screen.toFixed(2)+' (mid '+Math.round(r.mid*100)+'% high '+Math.round(r.hi*100)+'%) · horizon gap '+r.gap.toFixed(2)+' (max far low '+Math.round(r.farLow*100)+'%) · local low '+Math.round(r.lo*100)+'% · RH '+r.rh+'% · rain '+r.rain+'mm</div>'
+      +airport
       +(past?'<div class="det">Observed: <select data-d="'+d+'">'+['','0','1','2','3'].map(v=>'<option'+(String(obs[d]??'')===v?' selected':'')+'>'+v+'</option>').join('')+'</select></div>':'')
       +'</div>';
   });
@@ -92,8 +121,8 @@ async function run(){
   document.querySelectorAll('select[data-d]').forEach(s=>s.onchange=()=>{const o=store('pinkdawn_obs');o[s.dataset.d]=s.value;store('pinkdawn_obs',o);const row=ROWS.find(x=>x.date===s.dataset.d);if(row)row.obs=s.value});
 }
 document.getElementById('csv').onclick=()=>{
-  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed';
-  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs].join(',')).join('\n');
+  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed,metar_time,metar_cloud';
+  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs,r.metar_time,r.metar_cloud].join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h+'\n'+body],{type:'text/csv'}));a.download='pinkdawn_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 };
 run().catch(e=>document.getElementById('out').textContent='Error: '+e.message);
