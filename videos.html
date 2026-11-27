@@ -45,6 +45,9 @@ h1{margin:0;font-size:clamp(2rem,7vw,3rem);font-weight:750;letter-spacing:-.02em
 .clip b{font-size:.95rem;font-weight:650;line-height:1.25}
 .clip span{font-family:var(--mono);font-size:.72rem;color:var(--muted)}
 .clip .new{color:#fff;font-family:var(--body);display:inline-block;margin-left:6px;padding:1px 6px;border-radius:3px;background:var(--accent);color:#fff;font:700 .62rem/1.5 var(--body);letter-spacing:.06em;vertical-align:2px}
+/* A direct link (videos.html?v=<slug>) puts that clip first, large, ready to play. */
+.clip.focus{grid-column:1/-1;max-width:420px;width:100%;justify-self:center}
+.clip.focus b{font-size:1.1rem}
 .small{margin:0;font-size:.85rem;color:var(--muted);max-width:70ch}
 </style>
 </head>
@@ -91,8 +94,18 @@ var NEW_DAYS = 7;
       fig.replaceChild(v, btn);
       var p = v.play(); if (p && p.catch) p.catch(function () {});
     });
+    fig.id = c.slug;
     fig.appendChild(btn); fig.appendChild(cap); shelf.appendChild(fig);
   });
+  // Direct link to one clip (28 Nov 2026, owner: the announcement must open THIS video):
+  // videos.html?v=<slug> (or #<slug>) moves it first and shows it large. Still one tap to play,
+  // so nothing downloads until the swimmer asks for it.
+  var m = location.search.match(/[?&]v=([\w-]+)/), want = m ? m[1] : location.hash.slice(1);
+  var f = want && document.getElementById(want);
+  if (f && f.parentNode === shelf) {
+    f.classList.add('focus'); shelf.insertBefore(f, shelf.firstChild);
+    try { f.scrollIntoView({ block: 'start' }); } catch (e) {}
+  }
 })();
 </script>
 </body>
