@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pink Dawn Workbench — Swim Manly</title>
+<style>
+:root{--sky:#e8f4f8;--ocean:#0a7ea4;--deep:#064e6e;--foam:#f0faff;--text:#0d2b3e;--dim:#5a8a9f;--border:rgba(10,126,164,0.15);--green:#1a9e6e;--yellow:#d4900a;--red:#c0392b;--card:rgba(255,255,255,0.72);--radius:14px}
+*{box-sizing:border-box}
+body{margin:0;font-family:"DM Mono",ui-monospace,monospace;background:var(--sky);color:var(--text);padding:16px;max-width:760px;margin:auto}
+h1{font-family:"Bebas Neue",sans-serif;letter-spacing:1px;color:var(--deep);margin:4px 0 2px;font-size:30px}
+.sub{color:var(--dim);font-size:12px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.date{font-weight:600}
+.badge{padding:3px 10px;border-radius:20px;color:#fff;font-size:12px}
+.L{background:#d6457f}.P{background:var(--yellow)}.U{background:var(--dim)}
+.bar{height:8px;border-radius:4px;background:#dbe9ef;margin:8px 0;overflow:hidden}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#7b6fd6,#e0609a,#f29a5c)}
+.det{font-size:11px;color:var(--dim);line-height:1.6}
+select{font-family:inherit;font-size:12px;padding:3px}
+button{font-family:inherit;background:var(--ocean);color:#fff;border:0;border-radius:8px;padding:8px 12px;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>Pink Dawn Workbench</h1>
+<div class="sub">Manly · Open-Meteo cloud layers · ray to the sunrise horizon · not production</div>
+<div id="out">Loading…</div>
+<div class="card">
+  <div class="row"><span>Calibration log (observed via Surfline rewind)</span><button id="csv">Export CSV</button></div>
+  <div class="det">Pick the observed colour for past mornings: 0 none, 1 faint, 2 good, 3 vivid. Stored in this browser only.</div>
+</div>
+<script>
+const LAT=-33.7989, LON=151.2899, R=6371;
+const RAY_KM=[100,200,300,400];
+const CFG={peak:0.45,width:0.25,gapExp:1.5,localExp:1.2,rhCut:90,rhPen:0.7,rainCut:0.2,rainPen:0.3,likely:55,possible:30};
+
+function sunriseAzimuth(d){
+  const doy=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);
+  const dec=-23.44*Math.cos(2*Math.PI*(doy+10)/365)*Math.PI/180;
+  return Math.acos(Math.sin(dec)/Math.cos(LAT*Math.PI/180))*180/Math.PI; // degrees from N
+}
+function dest(lat,lon,brg,km){
+  const p1=lat*Math.PI/180,l1=lon*Math.PI/180,b=brg*Math.PI/180,d=km/R;
+  const p2=Math.asin(Math.sin(p1)*Math.cos(d)+Math.cos(p1)*Math.sin(d)*Math.cos(b));
+  const l2=l1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(p1),Math.cos(d)-Math.sin(p1)*Math.sin(p2));
+  return [+(p2*180/Math.PI).toFixed(3),+(l2*180/Math.PI).toFixed(3)];
+}
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||'{}');localStorage.setItem(k,JSON.stringify(v))}catch(e){return {}}}
+
+function score(loc,ray,i){
+  const lo=loc.cloud_cover_low[i]/100, mid=loc.cloud_cover_mid[i]/100, hi=loc.cloud_cover_high[i]/100;
+  const c=1-(1-mid)*(1-hi);
+  const screen=Math.exp(-(((c-CFG.peak)/CFG.width)**2));
+  const farLow=Math.max(...ray.map(r=>r.hourly.cloud_cover_low[i]/100));
+  const gap=(1-farLow)**CFG.gapExp;
+  const local=(1-lo)**CFG.localExp;
+  const rh=loc.relative_humidity_2m[i], rain=loc.precipitation[i];
+  let s=screen*gap*local;
+  if(rh>CFG.rhCut) s*=CFG.rhPen;
+  if(rain>CFG.rainCut) s*=CFG.rainPen;
+  return {s:Math.round(s*100),screen,gap,local,lo,mid,hi,c,farLow,rh,rain};
+}
+
+let ROWS=[];
+async function run(){
+  const today=new Date(), az=sunriseAzimuth(today);
+  const pts=[[LAT,LON],...RAY_KM.map(k=>dest(LAT,LON,az,k))];
+  const url='https://api.open-meteo.com/v1/forecast?latitude='+pts.map(p=>p[0]).join(',')+'&longitude='+pts.map(p=>p[1]).join(',')
+    +'&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,relative_humidity_2m,precipitation&daily=sunrise&timezone=Australia%2FSydney&past_days=7&forecast_days=4';
+  const res=await (await fetch(url)).json();
+  const loc=res[0].hourly, ray=res.slice(1), days=res[0].daily;
+  const obs=store('pinkdawn_obs');
+  let html='<div class="det" style="margin-bottom:8px">Sunrise azimuth today '+az.toFixed(1)+'° · ray points '+RAY_KM.join('/')+' km</div>';
+  ROWS=[];
+  days.time.forEach((d,k)=>{
+    const sr=days.sunrise[k];                     // e.g. 2026-11-28T05:40
+    const t=new Date(sr); t.setMinutes(t.getMinutes()-20);  // peak colour ~20 min before sunrise
+    const key=d+'T'+String(t.getHours()).padStart(2,'0')+':00';
+    const i=loc.time.indexOf(key); if(i<0) return;
+    const r=score(loc,ray,i);
+    const lab=r.s>=CFG.likely?['Likely','L']:r.s>=CFG.possible?['Possible','P']:['Unlikely','U'];
+    const past=new Date(sr)<today;
+    ROWS.push({date:d,...r,obs:obs[d]??''});
+    html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span class="badge '+lab[1]+'">'+lab[0]+' '+r.s+'</span></div>'
+      +'<div class="bar"><i style="width:'+r.s+'%"></i></div>'
+      +'<div class="det">screen '+r.screen.toFixed(2)+' (mid '+Math.round(r.mid*100)+'% high '+Math.round(r.hi*100)+'%) · horizon gap '+r.gap.toFixed(2)+' (max far low '+Math.round(r.farLow*100)+'%) · local low '+Math.round(r.lo*100)+'% · RH '+r.rh+'% · rain '+r.rain+'mm</div>'
+      +(past?'<div class="det">Observed: <select data-d="'+d+'">'+['','0','1','2','3'].map(v=>'<option'+(String(obs[d]??'')===v?' selected':'')+'>'+v+'</option>').join('')+'</select></div>':'')
+      +'</div>';
+  });
+  document.getElementById('out').innerHTML=html;
+  document.querySelectorAll('select[data-d]').forEach(s=>s.onchange=()=>{const o=store('pinkdawn_obs');o[s.dataset.d]=s.value;store('pinkdawn_obs',o);const row=ROWS.find(x=>x.date===s.dataset.d);if(row)row.obs=s.value});
+}
+document.getElementById('csv').onclick=()=>{
+  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed';
+  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs].join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h+'\n'+body],{type:'text/csv'}));a.download='pinkdawn_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+};
+run().catch(e=>document.getElementById('out').textContent='Error: '+e.message);
+</script>
+</body>
+</html>
