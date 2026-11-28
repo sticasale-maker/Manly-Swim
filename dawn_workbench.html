@@ -25,6 +25,7 @@ h1{font-family:"Bebas Neue",sans-serif;letter-spacing:1px;color:var(--deep);marg
 .k::before{content:"";display:inline-block;width:12px;height:0;border-top:2px solid;vertical-align:middle;margin-right:4px}
 .k.b::before{border-color:#2a78d6}.k.p::before{border-color:#d6457f;border-top-style:dashed}.k.o::before{border-color:#eb6834;border-top-style:dotted}.det.na{color:#8a9aa3;font-style:italic}
 .bar{height:6px;border-radius:3px;background:#dbe9ef;overflow:hidden}
+.bar.rng{position:relative;overflow:visible}.bar.rng i{position:absolute;top:0;background:#b9c7d0}.bar.rng u{position:absolute;top:-2px;width:8px;height:10px;margin-left:-4px;border-radius:50%;border:1px solid #fff;box-sizing:border-box}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#7b6fd6,#e0609a,#f29a5c)}
 .det{font-size:11px;color:var(--dim);line-height:1.6}
 .det.na{color:#8a9aa3;font-style:italic}
@@ -132,13 +133,34 @@ function score(loc,ray,i){
   return {s:Math.round(s*100),screen,gap,local,lo,mid,hi,c,farLow,rh,rain,s2:Math.round(s2*100),screen2,gap2,meanLow};
 }
 
+// Model spread (owner, 28 Nov 2026): the same score from four weather models. A wide band means
+// the models disagree about the cloud, so the forecast is less sure. Not part of the score.
+const MODELS=[['ecmwf_ifs025','European','#3b6fb6'],['gfs_seamless','American','#c0563f'],['icon_seamless','German','#4f9a5a'],['jma_seamless','Japanese','#9a6bc0']];
+async function loadModels(pts){
+  try{
+    const u='https://api.open-meteo.com/v1/forecast?latitude='+pts.map(p=>p[0]).join(',')+'&longitude='+pts.map(p=>p[1]).join(',')
+      +'&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,relative_humidity_2m,precipitation&models='+MODELS.map(m=>m[0]).join(',')
+      +'&timezone=Australia%2FSydney&past_days=7&forecast_days=4';
+    const r=await fetch(u); if(!r.ok)return null; const a=await r.json(); return Array.isArray(a)?a:[a];
+  }catch(e){return null}
+}
+// One model's score at hour key: re-shape its suffixed series so score() reads them unchanged.
+function modelScore(res,mdl,key){
+  const pick=h=>{const o={};for(const v of ['cloud_cover_low','cloud_cover_mid','cloud_cover_high','relative_humidity_2m','precipitation'])o[v]=h[v+'_'+mdl];return o};
+  const loc=pick(res[0].hourly), i=res[0].hourly.time.indexOf(key);
+  if(i<0||!loc.cloud_cover_low)return null;
+  const ray=res.slice(1).map(x=>({hourly:pick(x.hourly)}));
+  const vals=[loc.cloud_cover_low[i],loc.cloud_cover_mid[i],loc.cloud_cover_high[i],...ray.map(x=>x.hourly.cloud_cover_low&&x.hourly.cloud_cover_low[i])];
+  if(vals.some(v=>v==null))return null;
+  return score(loc,ray,i).s2;
+}
 let ROWS=[];
 async function run(){
   const today=new Date(), az=sunriseAzimuth(today);
   const pts=[[LAT,LON],...RAY_KM.map(k=>dest(LAT,LON,az,k))];
   const url='https://api.open-meteo.com/v1/forecast?latitude='+pts.map(p=>p[0]).join(',')+'&longitude='+pts.map(p=>p[1]).join(',')
     +'&hourly=cloud_cover_low,cloud_cover_mid,cloud_cover_high,relative_humidity_2m,precipitation&daily=sunrise&timezone=Australia%2FSydney&past_days=7&forecast_days=4';
-  const [res,metar,obsAll]=await Promise.all([fetch(url).then(r=>r.json()),loadMetar(),loadObs()]);
+  const [res,metar,obsAll,mres]=await Promise.all([fetch(url).then(r=>r.json()),loadMetar(),loadObs(),loadModels(pts)]);
   const loc=res[0].hourly, ray=res.slice(1), days=res[0].daily;
   let html='<div class="det" style="margin-bottom:8px">Sunrise azimuth today '+az.toFixed(1)+'° · ray points '+RAY_KM.join('/')+' km</div>';
   ROWS=[];
@@ -167,11 +189,19 @@ async function run(){
       :'<div class="strip na" title="No camera measurement for this morning"></div><div class="det strip-ax na"><span>sky colour not measured</span><span></span></div>';
     const pm=x=>Math.round(x.v)+' at −'+Math.abs(x.m)+' min';
     const fam=fp?'<div class="det">observed peak '+o.colour_peak+' at −'+Math.abs(o.colour_peak_min)+' min · blue '+pm(fp.blue)+' · pink '+pm(fp.pink)+' · orange '+pm(fp.orange)+'</div>':'';
-    ROWS.push({date:d,...r,obs:o?o.colour_peak:'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:''});
+    const ms=mres?MODELS.map(([id,name,col])=>({name,col,v:modelScore(mres,id,key)})).filter(x=>x.v!=null):[];
+    const spread=ms.length>1?Math.max(...ms.map(x=>x.v))-Math.min(...ms.map(x=>x.v)):null;
+    const modelBar=ms.length>1
+      ?'<span>models</span><div class="bar rng" title="'+ms.map(x=>x.name+' '+x.v).join(' · ')+'"><i style="left:'+Math.min(...ms.map(x=>x.v))+'%;width:'+Math.max(1,spread)+'%"></i>'
+        +ms.map(x=>'<u style="left:'+x.v+'%;background:'+x.col+'"></u>').join('')+'</div><b title="spread: highest minus lowest">±'+Math.round(spread/2)+'</b>'
+      :'<span>models</span><div class="bar na"></div><b class="na">–</b>';
+    const modelDet=ms.length>1?'<div class="det">models: '+ms.map(x=>'<span style="color:'+x.col+'">●</span> '+x.name+' '+x.v).join(' · ')+' · spread '+spread+'</div>'
+      :'<div class="det na">model spread not available</div>';
+    ROWS.push({date:d,...r,obs:o?o.colour_peak:'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:'',models:ms,spread});
     html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span class="badge '+lab[1]+'">'+lab[0]+' '+r.s2+'</span></div>'
       +strip
-      +'<div class="bars"><span>forecast</span><div class="bar"><i style="width:'+r.s2+'%"></i></div><b>'+r.s2+'</b>'+obsBar+'</div>'
-      +fam
+      +'<div class="bars"><span>forecast</span><div class="bar"><i style="width:'+r.s2+'%"></i></div><b>'+r.s2+'</b>'+modelBar+obsBar+'</div>'
+      +fam+modelDet
       +'<div class="det">screen '+r.screen2.toFixed(2)+' (mid '+Math.round(r.mid*100)+'% high '+Math.round(r.hi*100)+'%) · horizon gap '+r.gap2.toFixed(2)+' (mean far low '+Math.round(r.meanLow*100)+'%) · local low '+Math.round(r.lo*100)+'% · RH '+r.rh+'% · rain '+r.rain+'mm</div>'
       +airport
       +'</div>';
@@ -179,8 +209,8 @@ async function run(){
   document.getElementById('out').innerHTML=html;
 }
 document.getElementById('csv').onclick=()=>{
-  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed,metar_time,metar_cloud,score_v2,screen_v2,gap_v2,mean_low';
-  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs,r.metar_time,r.metar_cloud,r.s2,r.screen2.toFixed(3),r.gap2.toFixed(3),Math.round(r.meanLow*100)].join(',')).join('\n');
+  const h='date,score,screen,gap,local,low,mid,high,far_low,rh,rain,observed,metar_time,metar_cloud,score_v2,screen_v2,gap_v2,mean_low,model_spread,models';
+  const body=ROWS.map(r=>[r.date,r.s,r.screen.toFixed(3),r.gap.toFixed(3),r.local.toFixed(3),r.lo,r.mid,r.hi,r.farLow,r.rh,r.rain,r.obs,r.metar_time,r.metar_cloud,r.s2,r.screen2.toFixed(3),r.gap2.toFixed(3),Math.round(r.meanLow*100),r.spread==null?'':r.spread,(r.models||[]).map(x=>x.name+' '+x.v).join(' ')].join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([h+'\n'+body],{type:'text/csv'}));a.download='pinkdawn_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 };
 run().catch(e=>document.getElementById('out').textContent='Error: '+e.message);
