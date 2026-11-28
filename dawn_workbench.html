@@ -18,7 +18,7 @@ h1{font-family:"Bebas Neue",sans-serif;letter-spacing:1px;color:var(--deep);marg
 .badge.v2{background:transparent;border:1.5px solid currentColor}.badge.v2.L{color:#d6457f}.badge.v2.P{color:var(--yellow)}.badge.v2.U{color:var(--dim)}
 .bars{display:grid;grid-template-columns:auto 1fr 2.2em;align-items:center;gap:3px 8px;margin:8px 0;font-size:11px;color:var(--dim)}
 .bars b{font-weight:600;text-align:right;color:var(--text)}
-.bar.obs i{background:var(--deep)}.bar.fb i{background:#2a78d6}.bar.fp i{background:#d6457f}.bar.fo i{background:#eb6834}.bar.na{background:repeating-linear-gradient(45deg,#e3e9ec 0 4px,#d3dde2 4px 8px)}.bars b.na{color:var(--dim)}
+.bar.obs i{background:var(--deep)}.bar.na{background:repeating-linear-gradient(45deg,#e3e9ec 0 4px,#d3dde2 4px 8px)}.bars b.na{color:var(--dim)}
 .strip{height:26px;border-radius:6px;margin:10px 0 2px;border:1px solid var(--border)}.strip.na{background:repeating-linear-gradient(45deg,#e3e9ec 0 6px,#d3dde2 6px 12px)}
 .strip-ax{display:flex;justify-content:space-between;margin-bottom:4px}
 .dyn{display:block;width:100%;height:56px;margin:2px 0 0}.dyn-key{display:flex;gap:12px}.dyn-key span:last-child{margin-left:auto}
@@ -80,6 +80,7 @@ function metarText(x){
 // Observed dawn colour per date, published from the daily check's log. OBS_URL is unset until
 // published by the daily check (pink-dawn-data repo, owner's choice 28 Nov 2026). Grey when absent.
 const OBS_URL='https://app.viz.net.au/pink-dawn-data/obs.json';
+const OBS_TOTAL_FULL=50;   // total colour (blue+pink+orange) at which the observed bar is full; 23 Nov 2026 peaked at 65
 const OBS_FULL=40;   // one colour family's peak at which its observed bar is full (same scale for all three, so they compare); 23 Nov 2026 blue hour ~65, 28 Nov pink ~30
 // Peak of each colour family (blue, pink, orange) over -30 min..sunrise, from the per-frame series.
 // Shown as three bars, not one total: a clear morning's deep blue hour would otherwise outrank a
@@ -158,13 +159,14 @@ async function run(){
     const o=obsAll&&obsAll[d];
     const isPast=new Date(sr)<today;
     const fp=o?famPeaks(o.series):null;
-    const famBar=(name,cls,x)=>'<span>'+name+'</span><div class="bar '+cls+'"><i style="width:'+Math.min(100,x.v/OBS_FULL*100)+'%"></i></div><b title="peak at '+Math.abs(x.m)+' min before sunrise">'+Math.round(x.v)+'</b>';
-    const obsBar=!isPast?'':fp
-      ?famBar('blue','fb',fp.blue)+famBar('pink','fp',fp.pink)+famBar('orange','fo',fp.orange)
-      :['blue','pink','orange'].map(n=>'<span>'+n+'</span><div class="bar na"></div><b class="na">–</b>').join('');
+    // One observed bar (owner, 28 Nov 2026: prefers it to the three components): total colour peak.
+    const obsBar=!isPast?'':o&&o.colour_peak!==''&&o.colour_peak!=null
+      ?'<span>observed</span><div class="bar obs"><i style="width:'+Math.min(100,o.colour_peak/OBS_TOTAL_FULL*100)+'%"></i></div><b title="peak at '+Math.abs(o.colour_peak_min)+' min before sunrise">'+o.colour_peak+'</b>'
+      :'<span>observed</span><div class="bar na"></div><b class="na">–</b>';
     const strip=!isPast?'':o&&o.strip?'<div class="strip" title="Sky colour above the horizon, 30 min before sunrise to sunrise" style="background:'+stripCss(o.strip)+'"></div><div class="det strip-ax"><span>−30 min</span><span>sunrise</span></div>'+seriesSvg(o.series)
       :'<div class="strip na" title="No camera measurement for this morning"></div><div class="det strip-ax na"><span>sky colour not measured</span><span></span></div>';
-    const fam=fp?'<div class="det">observed peaks, −30 min to sunrise: blue at '+Math.abs(fp.blue.m)+' · pink at '+Math.abs(fp.pink.m)+' · orange at '+Math.abs(fp.orange.m)+' min before sunrise</div>':'';
+    const pm=x=>Math.round(x.v)+' at −'+Math.abs(x.m)+' min';
+    const fam=fp?'<div class="det">observed peak '+o.colour_peak+' at −'+Math.abs(o.colour_peak_min)+' min · blue '+pm(fp.blue)+' · pink '+pm(fp.pink)+' · orange '+pm(fp.orange)+'</div>':'';
     ROWS.push({date:d,...r,obs:o?o.colour_peak:'',metar_time:mx?mx.time:'',metar_cloud:mx?mx.code:''});
     html+='<div class="card"><div class="row"><span class="date">'+d+' · sunrise '+sr.slice(11)+'</span><span class="badge '+lab[1]+'">'+lab[0]+' '+r.s2+'</span></div>'
       +strip
